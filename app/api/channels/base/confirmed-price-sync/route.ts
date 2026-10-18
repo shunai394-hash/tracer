@@ -77,7 +77,12 @@ export async function POST(request: Request) {
       const baseIdentifier = typeof item.identifier === "string" ? item.identifier.trim() : null;
       // SKU-only price correction is safe only when that SKU occurs exactly
       // once in the complete BASE snapshot; it never changes the stored ID.
-      if (!baseIdentifier || liveSkuCounts.get(baseIdentifier.toUpperCase()) !== 1) return [];
+      if (!baseIdentifier) return [];
+      // Duplicate live SKUs do not block a price-only repair when this exact
+      // BASE item ID already identifies one DB listing. SKU-only fallback
+      // still requires a unique SKU in the complete live snapshot.
+      const hasExactId = listings.filter((row) => row.externalProductId === baseItemId).length === 1;
+      if (!hasExactId && liveSkuCounts.get(baseIdentifier.toUpperCase()) !== 1) return [];
       const decision = decideConfirmedPriceSync({
         baseItemId,
         baseIdentifier,
