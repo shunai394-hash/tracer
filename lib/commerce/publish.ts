@@ -378,7 +378,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     if (currentState?.external_product_id && supplierEvidenceUnverified) {
       const reason = !rawOffer ? "supplier_offer_missing" :
         rawOffer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        !preflightShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
+        !preflightShippingKnown ? "japan_freight_unconfirmed" :
+        !preflightStockKnown ? "supplier_stock_unconfirmed" :
+        !preflightFresh ? "supplier_verification_stale" :
+        rawOffer.tracking_supported !== true ? "tracking_not_verified" :
+        rawOffer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
+        !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0 ? "supplier_out_of_stock" :
+        "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
         const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 1));

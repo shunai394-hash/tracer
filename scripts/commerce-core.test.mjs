@@ -934,6 +934,10 @@ test("price reconciliation disables unverified listings once without starving st
   assert.match(route, /startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(route, /synced\.processed \?\? synced\.published/);
   assert.match(publish, /supplierEvidenceUnverified/);
+  assert.match(publish, /!preflightFresh \? "supplier_verification_stale"/);
+  assert.match(publish, /rawOffer\.tracking_supported !== true \? "tracking_not_verified"/);
+  assert.match(publish, /rawOffer\.ship_to !== "JP" \? "supplier_not_shipping_to_japan"/);
+  assert.match(publish, /Number\(rawOffer\.inventory\) <= 0 \? "supplier_out_of_stock"/);
   assert.match(publish, /supplier_offer_not_fulfillable:/);
   assert.match(publish, /shopify_unpublish_failed:/);
   assert.match(publish, /staleListings\.unpublished\+\+/);
