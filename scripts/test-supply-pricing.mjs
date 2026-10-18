@@ -24,7 +24,7 @@ const actualFreight = calculateSupplySellingPriceJpy({
   sourceFxRateToSelling: 150,
   ...fees,
 });
-assert.equal(actualFreight, 4900, "a missing price can be suggested from actual supplier cost and quoted freight");
+assert.equal(actualFreight, 15700, "a missing price is suggested to meet the 50% contribution margin target");
 const estimatedFreight = calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: null,
   sourceCost: 10,
@@ -32,7 +32,7 @@ const estimatedFreight = calculateSupplySellingPriceJpy({
   sourceFxRateToSelling: 150,
   ...fees,
 });
-assert.equal(estimatedFreight, 8700, "labelled allowance can be used for a separate sales-test estimate");
+assert.equal(estimatedFreight, 28000, "labelled allowance price meets the 50% contribution margin target");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: null,
   sourceCost: 10,
@@ -60,28 +60,28 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 2500, "merchant-selected price below the target margin is preserved");
+}), 15700, "stored price below target is raised to the 50% margin floor");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 5200,
   sourceCost: 10,
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 5200, "merchant-selected price above the target margin is preserved");
+}), 15700, "stored price above cost but below the 50% target is raised");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2499.5,
   sourceCost: 10,
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 2499.5, "merchant-selected fractional price is preserved exactly");
+}), 15700, "fractional stored price below target is raised to a rounded safe price");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2500,
   sourceCost: 10,
   shippingCost: null,
   sourceFxRateToSelling: null,
   ...fees,
-}), 2500, "merchant-selected price is preserved even when costs are incomplete");
+}), 2500, "stored price remains unchanged when cost inputs are incomplete");
 assert.equal(calculateRecommendedSupplySellingPriceJpy({
   existingSellingPriceJpy: 2500,
   sourceCost: 10,
