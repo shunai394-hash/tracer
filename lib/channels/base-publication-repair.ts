@@ -23,16 +23,15 @@ export const HIDDEN_DUPLICATE_DELETES: DeletePair[] = [
   { staleId: "163130238", canonicalId: "163240521", sku: "TRC-6F1BC5912E694CF799BC38BB", price: 5194 },
   { staleId: "163159274", canonicalId: "163159273", sku: "TRC-015C4A01F2694EBC8A868B57", price: 4314 },
   { staleId: "163159329", canonicalId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345", price: 1458 },
+  { staleId: "163159679", canonicalId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345", price: 1458 },
+  { staleId: "163159245", canonicalId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386 },
 ];
 
 /**
- * Visible items that are not the DB row. 163159679 duplicates the published canonical.
- * 163159245 duplicates the hidden error row 163159246, so it must not stay on sale.
+ * Visible items that are not the DB row. Keep this list empty unless a live item
+ * must first be hidden; the two previously hidden duplicates are now delete-allowlisted.
  */
-export const VISIBLE_NONCANONICAL_HIDES: HidePair[] = [
-  { staleId: "163159679", canonicalId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345", price: 1458, canonicalVisible: true },
-  { staleId: "163159245", canonicalId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386, canonicalVisible: true },
-];
+export const VISIBLE_NONCANONICAL_HIDES: HidePair[] = [];
 
 /** Visible BASE items whose DB row is error. They stay in error and are hidden on BASE. */
 export const VISIBLE_ERROR_HIDES: Array<{ itemId: string; sku: string; price: number }> = [

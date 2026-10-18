@@ -25,13 +25,22 @@ const items = new Map([
 assert.equal(assessHiddenDelete(first, items, first.canonicalId).ok, true);
 assert.equal(assessHiddenDelete(first, items, first.staleId).ok, false);
 
-const hide = VISIBLE_NONCANONICAL_HIDES[1];
-const hideItems = new Map([
-  [hide.staleId, item(hide.staleId, hide.sku, true, hide.price)],
-  [hide.canonicalId, item(hide.canonicalId, hide.sku, true, hide.price)],
-]);
-assert.equal(assessVisibleHide(hide, hideItems, hide.canonicalId).ok, true);
-assert.equal(assessVisibleHide(hide, hideItems, hide.staleId).reason, "listing_does_not_point_at_canonical");
+assert.equal(VISIBLE_NONCANONICAL_HIDES.length, 0);
+for (const staleId of ["163159679", "163159245"]) {
+  const pair = HIDDEN_DUPLICATE_DELETES.find((candidate) => candidate.staleId === staleId);
+  assert.ok(pair, `missing delete allowlist entry for ${staleId}`);
+  const validItems = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, false, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, validItems, pair.canonicalId).ok, true);
+  assert.equal(assessHiddenDelete(pair, validItems, pair.staleId).ok, false);
+  const visibleStale = new Map([
+    [pair.staleId, item(pair.staleId, pair.sku, true, pair.price)],
+    [pair.canonicalId, item(pair.canonicalId, pair.sku, true, pair.price)],
+  ]);
+  assert.equal(assessHiddenDelete(pair, visibleStale, pair.canonicalId).ok, false);
+}
 
 const errorItem = ERROR_HIDDEN_LEAVE[0];
 const errorItems = new Map([[errorItem.itemId, item(errorItem.itemId, errorItem.sku, false, errorItem.price)]]);
@@ -62,7 +71,7 @@ assert.equal(resumed.items[0].price, 10);
 
 const route = readFileSync(new URL("../app/api/channels/base/publication-repair/route.ts", import.meta.url), "utf8");
 const costRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/route.ts", import.meta.url), "utf8");
-assert.match(route, /REPAIR_ELEVEN_BASE_PUBLICATION_MISMATCHES/);
+assert.match(route, /REPAIR_BASE_PUBLICATION_MISMATCHES_AND_HIDDEN_DUPLICATES/);
 assert.match(route, /deleteAllowlistedStaleBaseItem/);
 assert.match(route, /見つかりません/);
 assert.match(route, /already_absent_verified/);
