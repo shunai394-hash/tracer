@@ -6,6 +6,7 @@ export const SALE_EVIDENCE_FIELDS = [
   "cost",
   "domestic_shipping",
   "profit",
+  "verification",
 ] as const;
 
 export type SaleEvidenceField = (typeof SALE_EVIDENCE_FIELDS)[number];
@@ -44,8 +45,10 @@ export function missingSaleEvidence(input: SaleEvidenceInput): SaleEvidenceField
   if (!shippingKnown) missing.push("domestic_shipping");
   const profitKnown = input.currency === "JPY" && Number(input.sellingPrice) > 0 && Number(input.expectedProfit) > 0;
   if (!profitKnown) missing.push("profit");
+  // Keep supplier identity separate from evidence verification/freshness. In
+  // particular, a stale timestamp must not be reported as a missing supplier.
   if (input.sourceStatus !== "verified" || input.evidenceFresh !== true) {
-    if (!missing.includes("supplier")) missing.push("supplier");
+    missing.push("verification");
   }
   return missing;
 }
