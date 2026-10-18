@@ -63,6 +63,27 @@ jobs:
             const out = "base-actual-item-reconciliation-artifacts";
             await fs.mkdir(out, { recursive: true });
             await fs.writeFile(`${out}/report.json`, JSON.stringify(report, null, 2) + "\n");
+            const items = Array.isArray(body.items) ? body.items : [];
+            await fs.writeFile(`${out}/items.json`, JSON.stringify(items, null, 2) + "\n");
+            const itemColumns = [
+              "baseItemId", "title", "baseIdentifier", "basePrice", "tracerVariantId",
+              "tracerSku", "tracerPrice", "baseVisibility", "mappingStatus", "mappingMethod",
+              "candidateCount", "candidateListingIds", "priceMatches", "skuMatches", "discrepancyReasons",
+            ];
+            const itemCell = (value) => {
+              const s = value == null ? "" : Array.isArray(value) ? value.join("|") : String(value);
+              return /[",\\r\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
+            const itemCsv = (rows) => [
+              itemColumns.join(","),
+              ...rows.map((item) => itemColumns.map((key) => itemCell(item[key])).join(",")),
+            ].join("\\n") + "\\n";
+            await fs.writeFile(`${out}/items.csv`, itemCsv(items));
+            await fs.writeFile(`${out}/certain-matches.csv`, itemCsv(items.filter((item) =>
+              item.mappingStatus === "matched" && ["base_item_id", "exact_sku"].includes(item.mappingMethod)
+            )));
+            await fs.writeFile(`${out}/ambiguous.csv`, itemCsv(items.filter((item) => item.mappingStatus === "ambiguous")));
+            await fs.writeFile(`${out}/unmapped.csv`, itemCsv(items.filter((item) => item.mappingStatus === "unmapped")));
             const columns = Object.keys(report);
             const cell = (value) => {
               const s = value == null ? "" : String(value);
@@ -82,7 +103,7 @@ jobs:
               `- Unknown visibility / unreadable prices: **${report.unknownVisibility} / ${report.unreadablePrices}**`,
               `- Audit rows persisted: **${report.auditRowsWritten}**`,
               `- Run ID: ${report.runId ?? "not returned"}`, "",
-              "JSON and CSV summary are attached as artifact `base-actual-item-reconciliation-audit`.", ""
+              "Summary JSON/CSV plus item-level JSON/CSV and separate certain-match, ambiguous, and unmapped CSVs are attached as artifact `base-actual-item-reconciliation-audit`.", ""
             ].join("\n");
             await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
             console.log(JSON.stringify(report, null, 2));
