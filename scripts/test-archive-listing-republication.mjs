@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const [migration, basePublisher, shopifySync, inventoryRefresh, basePriceReconcile] = await Promise.all([
+  readFile("supabase/migrations/20261019070000_shop_listings_archive_guard.sql", "utf8"),
+  readFile("lib/channels/base-publisher.ts", "utf8"),
+  readFile("lib/shopify/sync-published-listings.ts", "utf8"),
+  readFile("app/api/cron/inventory-refresh/route.ts", "utf8"),
+  readFile("app/api/cron/base-legacy-price-reconcile/route.ts", "utf8"),
+]);
+
+assert.match(migration, /add column if not exists archived_at timestamptz/i);
+assert.match(migration, /add column if not exists archive_reason text/i);
+assert.match(migration, /where archived_at is null/i);
+
+// The filter is applied before the explicit listingIds branch, so admin retries
+// cannot bypass the archive guard.
+assert.match(basePublisher, /from\("shop_listings"\)[\s\S]*?\.is\("archived_at", null\)[\s\S]*?if \(listingIds && listingIds\.length > 0\)/);
+assert.match(shopifySync, /from\("shop_listings"\)[\s\S]*?\.is\("archived_at", null\)[\s\S]*?if \(listingIds\?\.length\)/);
+
+// Both inventory-refresh work pools and the BASE legacy price reconciler must
+// exclude archived listings before reading candidates for downstream updates.
+assert.equal((inventoryRefresh.match(/\.is\("archived_at", null\)/g) ?? []).length, 2);
+assert.match(basePriceReconcile, /from\("shop_listings"\)[\s\S]*?\.is\("archived_at", null\)[\s\S]*?\.eq\("published", true\)/);
+
+console.log("Archived listing republication guards passed.");
