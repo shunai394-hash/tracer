@@ -50,8 +50,9 @@ jobs:
             -H "Authorization: Bearer ${token}" \
             "https://tracer-pied-alpha.vercel.app/api/admin/channels/base/legacy-15-live-audit")"
           echo "=== BASE 15-PAIR LIVE AUDIT HTTP ${code} ==="
-          python3 - <<'PY'
-          import json, sys
+          HTTP_CODE="$code" python3 - <<'PY'
+          import json, os, sys
+          code = os.environ.get("HTTP_CODE", "")
           with open("base-legacy-15-live-audit.json", encoding="utf-8") as f:
               r=json.load(f)
           print(json.dumps({k:r.get(k) for k in ("ok","readOnly","generatedAt","pairsChecked","itemDetailsAttempted","oldFound","oldNotFound404","currentFound","errors")}, ensure_ascii=False))
