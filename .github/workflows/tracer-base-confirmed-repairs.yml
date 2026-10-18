@@ -1,0 +1,109 @@
+name: BASE confirmed link and price repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_links:
+        description: Write external item IDs for exact unique SKU matches with a null channel ID
+        type: boolean
+        default: false
+      apply_prices:
+        description: Push the TRACER price to BASE when the item ID and SKU already match one listing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out commit history for deployment verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/36: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production is not at this commit or a descendant."
+          exit 1
+
+      - name: Repair confirmed BASE links and prices, then read them back
+        env:
+          APPLY_LINKS: ${{ inputs.apply_links }}
+          APPLY_PRICES: ${{ inputs.apply_prices }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          mkdir -p repair-results
+          token() {
+            curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          post() {
+            local path="$1" body="$2" output="$3"
+            local code
+            code="$(curl -sS --max-time 180 -o "$output" -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
+              --data "$body" "${BASE}${path}")"
+            echo "$path HTTP $code"
+            [[ "$code" == "200" ]]
+          }
+          post /api/channels/base/identity-repair '{"apply":false,"repairStaleExternalIds":false,"limit":1000}' repair-results/link-dry-run.json
+          if [[ "$APPLY_LINKS" == "true" ]]; then
+            post /api/channels/base/identity-repair '{"apply":true,"repairStaleExternalIds":false,"limit":1000}' repair-results/link-apply.json
+          fi
+          post /api/channels/base/confirmed-price-sync '{"apply":false,"limit":25}' repair-results/price-dry-run.json
+          if [[ "$APPLY_PRICES" == "true" ]]; then
+            remaining=25
+            for offset in 1 2 3; do
+              post /api/channels/base/confirmed-price-sync '{"apply":true,"limit":25}' "repair-results/price-apply-${offset}.json"
+              remaining="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(int(d.get("deferredByLimit") or 0))' "repair-results/price-apply-${offset}.json")"
+              [[ "$remaining" == "0" ]] && break
+            done
+          fi
+          code="$(curl -sS --max-time 180 -o repair-results/base-readback.json -w "%{http_code}" \
+            -H "Authorization: Bearer $(token)" "${BASE}/api/channels/base/reconciliation")"
+          echo "readback HTTP $code"
+          [[ "$code" == "200" ]]
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          readback = json.loads(Path("repair-results/base-readback.json").read_text(encoding="utf-8"))
+          summary = {key: readback.get(key) for key in (
+              "evidenceComplete","itemCount","pages","apiErrors","auditRowsWritten","auditStorage",
+              "auditWriteErrorCode","exactIdMatches","exactSkuMatches","unmappedItems","ambiguousItems",
+              "priceMismatches","skuMismatches","publicationMismatches","itemRowsExported")}
+          summary["itemRowsExported"] = len(readback.get("items") or [])
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          if summary["evidenceComplete"] is not True or summary["itemCount"] != summary["auditRowsWritten"] or summary["itemCount"] != summary["itemRowsExported"]:
+              raise SystemExit("BASE readback did not persist every fetched item")
+          PY
+
+      - name: Upload repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-confirmed-repair
+          path: repair-results/
+          if-no-files-found: warn
+          retention-days: 30
