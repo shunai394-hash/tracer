@@ -62,21 +62,21 @@ export async function GET(request: Request) {
     let classification: "old_id_not_found" | "current_id_migration_candidate" | "indeterminate";
     let reason: string;
     if (oldError?.httpStatus === 404 && currentItem && currentItem.sku === target.sku) {
-      classification = "old_id_not_found";
+      classification = "current_id_migration_candidate";
       reason = "old_detail_http_404_and_current_item_sku_matches_audit";
     } else if (oldItem && currentItem && oldItem.sku === target.sku &&
                currentItem.sku === target.sku && oldItem.itemId !== currentItem.itemId) {
       classification = "indeterminate";
       reason = "both_ids_resolve_with_same_sku_possible_duplicate_requires_manual_review";
+    } else if (oldError?.httpStatus === 404) {
+      classification = "old_id_not_found";
+      reason = "old_detail_http_404_but_current_item_not_verified_as_same_sku";
     } else if (oldError && oldError.httpStatus !== 404) {
       classification = "indeterminate";
       reason = "old_id_read_failed_without_authoritative_not_found";
     } else if (currentError || !currentItem || currentItem.sku !== target.sku) {
       classification = "indeterminate";
       reason = "current_id_unverified_or_sku_mismatch";
-    } else if (oldError?.httpStatus === 404) {
-      classification = "indeterminate";
-      reason = "old_id_404_but_current_item_not_verified";
     } else {
       classification = "indeterminate";
       reason = "response_does_not_prove_safe_migration";
