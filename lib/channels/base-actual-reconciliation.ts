@@ -71,8 +71,10 @@ function visibleValue(value: unknown): boolean | null {
 /** Known BASE visibility disagrees with the linked channel_listings status. */
 export function publicationAgrees(visible: boolean | null, status: string | null): boolean | null {
   if (visible === null || !status) return null;
-  if (visible) return status === "published";
-  return status === "hidden";
+  // Only publication states can be compared with BASE visibility. "error" and
+  // "pending" describe sync workflow state, not whether BASE exposes the item.
+  if (status !== "published" && status !== "hidden") return null;
+  return visible ? status === "published" : status === "hidden";
 }
 
 export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], listings: BaseChannelListing[]) {
@@ -116,13 +118,17 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const externalPrice = priceValue(item.price);
     const visible = visibleValue(item.visible);
     const canonicalPrice = listing && Number.isFinite(Number(listing.sellingPrice)) ? Number(listing.sellingPrice) : null;
-    const priceMatches = listing && externalPrice !== null && canonicalPrice !== null
+    // A SKU-only candidate whose stored BASE item ID differs is a conflict,
+    // not a confirmed mapping. Keep its candidate evidence, but do not report
+    // price/publication comparisons as authoritative until the link is verified.
+    const trustedListing = mappingStatus === "matched" ? listing : null;
+    const priceMatches = trustedListing && externalPrice !== null && canonicalPrice !== null
       ? Math.round(externalPrice) === Math.round(canonicalPrice)
       : null;
     const skuMatches = listing && identifier
       ? identifier.toUpperCase() === String(listing.externalSku ?? "").toUpperCase()
       : null;
-    const publicationMatches = listing ? publicationAgrees(visible, listing.status) : null;
+    const publicationMatches = trustedListing ? publicationAgrees(visible, trustedListing.status) : null;
     const reasons = [
       ...(candidates.length === 0 ? ["no_db_mapping"] : []),
       ...(candidates.length > 1 ? ["ambiguous_db_mapping"] : []),
