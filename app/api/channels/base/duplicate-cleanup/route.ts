@@ -11,7 +11,7 @@ const COMMERCE_SKU = /^TRC-[0-9A-F]{24}$/i;
 
 // BASE API visibility may be serialized as a boolean, number, or numeric string.
 // Treat only documented truthy encodings as visible; unknown values remain blocked.
-// The read-only audit also reports aggregate value categories so visibility parsing can be verified from production evidence.
+// The read-only audit reports aggregate value categories; its workflow also attaches direct BASE detail evidence for legacy IDs.
 function isBaseVisible(value: unknown): boolean {
   return value === true || value === 1 || value === "1";
 }
