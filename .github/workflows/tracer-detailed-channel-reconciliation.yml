@@ -1,3 +1,4 @@
+# Re-run this read-only reconciliation after targeted Shopify restoration.
 name: TRACER Detailed Channel Reconciliation (Read Only)
 
 on:
