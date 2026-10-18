@@ -239,19 +239,26 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
 
       if (listingError) throw new Error(listingError.message);
 
-      const listingByBaseItem = new Map(
-        (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
-      );
-      const unresolved = itemIds.filter((id) => !listingByBaseItem.has(id));
+      const listingRowsByBaseItem = new Map<string, NonNullable<typeof listings>>();
+      for (const listing of listings ?? []) {
+        const key = String(listing.base_item_id);
+        const rows = listingRowsByBaseItem.get(key) ?? [];
+        rows.push(listing);
+        listingRowsByBaseItem.set(key, rows);
+      }
+      const unresolved = itemIds.filter((id) => (listingRowsByBaseItem.get(id)?.length ?? 0) !== 1);
       if (unresolved.length > 0) {
         results.push({
           baseOrderKey,
           ok: false,
           imported: false,
-          error: `base_items_not_mapped:${unresolved.join(",")}`,
+          error: `base_items_not_uniquely_mapped:${unresolved.join(",")}`,
         });
         continue;
       }
+      const listingByBaseItem = new Map(
+        [...listingRowsByBaseItem.entries()].map(([id, rows]) => [id, rows[0]]),
+      );
 
       const firstListing = listingByBaseItem.get(itemIds[0]);
       if (!firstListing) throw new Error("base listing mapping missing");
