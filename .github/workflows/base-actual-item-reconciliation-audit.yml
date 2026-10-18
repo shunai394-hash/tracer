@@ -48,6 +48,8 @@ jobs:
               pages: Number(body.pages ?? 0),
               dbListingCount: Number(body.dbListingCount ?? 0),
               mappedItems: Number(body.mappedItems ?? 0),
+              exactIdMatches: Number(body.exactIdMatches ?? 0),
+              exactSkuMatches: Number(body.exactSkuMatches ?? 0),
               unmappedItems: Number(body.unmappedItems ?? 0),
               ambiguousItems: Number(body.ambiguousItems ?? 0),
               missingSku: Number(body.missingSku ?? 0),
@@ -62,8 +64,9 @@ jobs:
             };
             const out = "base-actual-item-reconciliation-artifacts";
             await fs.mkdir(out, { recursive: true });
-            await fs.writeFile(`${out}/report.json`, JSON.stringify(report, null, 2) + "\n");
             const items = Array.isArray(body.items) ? body.items : [];
+            report.itemRowsExported = items.length;
+            await fs.writeFile(`${out}/report.json`, JSON.stringify(report, null, 2) + "\n");
             await fs.writeFile(`${out}/items.json`, JSON.stringify(items, null, 2) + "\n");
             const itemColumns = [
               "baseItemId", "title", "baseIdentifier", "basePrice", "tracerVariantId",
@@ -72,12 +75,12 @@ jobs:
             ];
             const itemCell = (value) => {
               const s = value == null ? "" : Array.isArray(value) ? value.join("|") : String(value);
-              return /[",\\r\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+              return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
             };
             const itemCsv = (rows) => [
               itemColumns.join(","),
               ...rows.map((item) => itemColumns.map((key) => itemCell(item[key])).join(",")),
-            ].join("\\n") + "\\n";
+            ].join("\n") + "\n";
             await fs.writeFile(`${out}/items.csv`, itemCsv(items));
             await fs.writeFile(`${out}/certain-matches.csv`, itemCsv(items.filter((item) =>
               item.mappingStatus === "matched" && ["base_item_id", "exact_sku"].includes(item.mappingMethod)
@@ -97,6 +100,8 @@ jobs:
               `- API scan complete: **${report.apiReadComplete}** (${report.pages} pages)`,
               `- TRACER BASE listing rows: **${report.dbListingCount}**`,
               `- Mapped / unmapped / ambiguous: **${report.mappedItems} / ${report.unmappedItems} / ${report.ambiguousItems}**`,
+              `- Exact ID / exact SKU matches: **${report.exactIdMatches} / ${report.exactSkuMatches}**`,
+              `- Item-level rows exported: **${report.itemRowsExported}**`,
               `- Missing SKU / API errors: **${report.missingSku} / ${report.apiErrors}**`,
               `- Price mismatches: **${report.priceMismatches}**`,
               `- SKU mismatches: **${report.skuMismatches}**`,
@@ -107,7 +112,7 @@ jobs:
             ].join("\n");
             await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
             console.log(JSON.stringify(report, null, 2));
-            if (!response.ok || !report.apiReadComplete || report.itemCount !== report.auditRowsWritten || !report.ok) {
+            if (!response.ok || !report.apiReadComplete || report.itemCount !== report.auditRowsWritten || report.itemCount !== report.itemRowsExported || !report.ok) {
               throw new Error("BASE reconciliation found discrepancies or did not persist a complete audit");
             }
           })().catch((error) => {
