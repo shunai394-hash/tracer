@@ -1,0 +1,123 @@
+name: TRACER targeted three handbag channel readback
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-targeted-three-channel-readback.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-targeted-three-channel-readback
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check production deployment contains this audit workflow
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for production commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 30); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 10
+          done
+          echo "Production does not contain this audit commit; refusing stale API reads."
+          exit 1
+      - name: Read actual BASE items and Shopify catalog (no publish/order writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs/promises");
+          (async () => {
+            const origin = "https://tracer-pied-alpha.vercel.app";
+            const oidcUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            oidcUrl.searchParams.set("audience", origin);
+            const oidc = await fetch(oidcUrl, {headers:{Authorization:`Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`}});
+            if (!oidc.ok) throw new Error(`OIDC HTTP ${oidc.status}`);
+            const {value: token} = await oidc.json();
+            if (!token) throw new Error("OIDC token missing");
+            const get = async (path) => {
+              const res = await fetch(new URL(path, origin), {headers:{Authorization:`Bearer ${token}`,Accept:"application/json"},cache:"no-store"});
+              const text = await res.text();
+              let body;
+              try { body = JSON.parse(text); } catch { body = {nonJson:text.slice(0,500)}; }
+              return {status:res.status, body};
+            };
+            const [base, catalog, reconcile, auth] = await Promise.all([
+              get("/api/channels/base/reconciliation"),
+              get("/api/admin/shopify/catalog"),
+              get("/api/admin/shopify/reconcile"),
+              get("/api/admin/shopify/auth-check")
+            ]);
+            const targets = [
+              {color:"red", variantId:"c9916fe0-297a-41ac-add8-e19b765e213b", sku:"TRC-C9916FE0297A41ACADD8E19B", baseId:"163355942", shopifyProductId:"gid://shopify/Product/8621374898220", shopifyVariantId:"gid://shopify/ProductVariant/46410259922988"},
+              {color:"purple", variantId:"45370d77-89bc-4d34-984e-a727ff44f63d", sku:"TRC-45370D7789BC4D34984EA727", baseId:"163355946", shopifyProductId:"gid://shopify/Product/8621374996524", shopifyVariantId:"gid://shopify/ProductVariant/46410260021292"},
+              {color:"orange", variantId:"19c334f2-fd19-4cd3-ab99-f3892a8e75e0", sku:"TRC-19C334F2FD194CD3AB99F389", baseId:"163355950", shopifyProductId:"gid://shopify/Product/8621375094828", shopifyVariantId:"gid://shopify/ProductVariant/46410260119596"}
+            ];
+            const flatten = (v, out=[]) => {
+              if (Array.isArray(v)) for (const x of v) flatten(x,out);
+              else if (v && typeof v === "object") {
+                out.push(v);
+                for (const x of Object.values(v)) if (x && typeof x === "object") flatten(x,out);
+              }
+              return out;
+            };
+            const baseItems = Array.isArray(base.body?.items) ? base.body.items : [];
+            const catObjects = flatten(catalog.body);
+            const recObjects = flatten(reconcile.body);
+            const pick = (obj, keys) => Object.fromEntries(keys.filter(k=>obj && obj[k]!==undefined).map(k=>[k,obj[k]]));
+            const result = targets.map(t => {
+              const baseItem = baseItems.find(x => String(x.baseItemId ?? x.id ?? "") === t.baseId || String(x.existingExternalProductId ?? "") === t.baseId || String(x.tracerVariantId ?? "") === t.variantId || String(x.tracerSku ?? x.sku ?? "") === t.sku) ?? null;
+              const shopifyMatches = [...catObjects,...recObjects].filter(x =>
+                [x.id,x.productId,x.product_id,x.admin_graphql_api_id,x.variantId,x.variant_id,x.sku,x.externalSku,x.external_sku,x.externalProductId,x.external_product_id,x.externalVariantId,x.external_variant_id].some(v =>
+                  v != null && [t.shopifyProductId,t.shopifyVariantId,t.sku,t.variantId,t.shopifyProductId.split("/").pop(),t.shopifyVariantId.split("/").pop()].includes(String(v))
+                )
+              );
+              return {
+                target:t,
+                baseItem:baseItem ? pick(baseItem,["baseItemId","title","baseIdentifier","basePrice","tracerVariantId","tracerSku","tracerPrice","baseVisibility","dbStatus","existingExternalProductId","mappingStatus","mappingMethod","priceMatches","skuMatches","publicationMatches","discrepancyReasons"]) : null,
+                shopifyMatches:shopifyMatches.slice(0,12).map(x=>pick(x,["id","title","status","published","publishedAt","productId","product_id","variantId","variant_id","sku","externalSku","external_sku","price","compareAtPrice","inventoryQuantity","availableForSale","admin_graphql_api_id","externalProductId","external_product_id","externalVariantId","external_variant_id","errors"]))
+              };
+            });
+            const report = {
+              generatedAt:new Date().toISOString(),
+              readOnly:true,
+              note:"No publish/unpublish, price update, order, or payment actions were called. BASE reconciliation endpoint may persist audit evidence only.",
+              http:{baseReconciliation:base.status,shopifyCatalog:catalog.status,shopifyReconcile:reconcile.status,shopifyAuthCheck:auth.status},
+              baseSummary:pick(base.body,["ok","apiReadComplete","apiErrors","itemCount","pages","dbListingCount","mappedItems","exactIdMatches","exactSkuMatches","unmappedItems","ambiguousItems","priceMismatches","skuMismatches","publicationMismatches","evidenceComplete","error"]),
+              shopifyAuthSummary:pick(auth.body,["ok","authenticated","adminApi","shop","shopId","apiVersion","missingScopes","errors"]),
+              result
+            };
+            await fs.mkdir("targeted-three-channel-readback",{recursive:true});
+            await fs.writeFile("targeted-three-channel-readback/report.json",JSON.stringify(report,null,2)+"\n");
+            await fs.appendFile(process.env.GITHUB_STEP_SUMMARY,"# Targeted three handbag channel readback\n\n```json\n"+JSON.stringify(report,null,2)+"\n```\n");
+            console.log(JSON.stringify(report,null,2));
+            if (base.status!==200 || catalog.status!==200 || reconcile.status!==200 || auth.status!==200) throw new Error("One or more read-only channel API requests failed; see report");
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+      - name: Upload readback report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: targeted-three-channel-readback
+          path: targeted-three-channel-readback/
+          if-no-files-found: warn
+          retention-days: 30
