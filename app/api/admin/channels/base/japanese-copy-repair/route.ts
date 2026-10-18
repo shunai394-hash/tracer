@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { editBaseItem, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -42,7 +42,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   if (!isJapaneseProductTitle(translatedTitle) || !hasJapaneseCopy(translatedTitle)) {
     throw new Error("translated_title_not_japanese");
   }
-  if (!translatedDetail || !hasJapaneseCopy(translatedDetail)) {
+  if (!isJapaneseProductDescription(translatedDetail)) {
     throw new Error("translated_detail_not_japanese");
   }
   return { title: translatedTitle, detail: translatedDetail };
