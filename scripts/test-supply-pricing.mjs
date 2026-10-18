@@ -23,6 +23,7 @@ const actualFreight = calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 });
 assert.equal(actualFreight, 15700, "a missing price is suggested to meet the 50% contribution margin target");
 const estimatedFreight = calculateSupplySellingPriceJpy({
@@ -31,6 +32,7 @@ const estimatedFreight = calculateSupplySellingPriceJpy({
   shippingCost: 15,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 });
 assert.equal(estimatedFreight, 28000, "labelled allowance price meets the 50% contribution margin target");
 assert.equal(calculateSupplySellingPriceJpy({
@@ -39,6 +41,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: null,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 }), null, "unknown freight cannot be silently treated as zero");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: null,
@@ -53,6 +56,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 }), actualFreight, "invalid stored zero price is recalculated");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2500,
@@ -60,6 +64,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 }), 15700, "stored price below target is raised to the 50% margin floor");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 5200,
@@ -67,6 +72,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 }), 15700, "stored price above cost but below the 50% target is raised");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2499.5,
@@ -74,6 +80,7 @@ assert.equal(calculateSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
+  targetContributionMargin: 0.50,
 }), 15700, "fractional stored price below target is raised to a rounded safe price");
 assert.equal(calculateSupplySellingPriceJpy({
   existingSellingPriceJpy: 2500,
@@ -88,5 +95,7 @@ assert.equal(calculateRecommendedSupplySellingPriceJpy({
   shippingCost: 4,
   sourceFxRateToSelling: 150,
   ...fees,
-}), 4900, "recommended target-margin price is calculated separately from the merchant's price");
+  targetContributionMargin: 0.50,
+  targetContributionMargin: 0.20,
+}), 4900, "recommended helper supports an explicit 20% target");
 console.log("Supply pricing: 9 cases passed");
