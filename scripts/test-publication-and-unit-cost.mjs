@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import {
   ERROR_HIDDEN_LEAVE,
   HIDDEN_DUPLICATE_DELETES,
+  VISIBLE_ERROR_HIDES,
   VISIBLE_NONCANONICAL_HIDES,
   assessErrorHidden,
   assessHiddenDelete,
+  assessVisibleErrorHide,
   assessVisibleHide,
 } from "../lib/channels/base-publication-repair.ts";
 import { judgeUnitCost } from "../lib/shopify/unit-cost-reconcile.ts";
@@ -26,13 +28,15 @@ assert.equal(assessHiddenDelete(first, items, first.staleId).ok, false);
 const hide = VISIBLE_NONCANONICAL_HIDES[1];
 const hideItems = new Map([
   [hide.staleId, item(hide.staleId, hide.sku, true, hide.price)],
-  [hide.canonicalId, item(hide.canonicalId, hide.sku, false, hide.price)],
+  [hide.canonicalId, item(hide.canonicalId, hide.sku, true, hide.price)],
 ]);
 assert.equal(assessVisibleHide(hide, hideItems, hide.canonicalId).ok, true);
 assert.equal(assessVisibleHide(hide, hideItems, hide.staleId).reason, "listing_does_not_point_at_canonical");
 
 const errorItem = ERROR_HIDDEN_LEAVE[0];
 const errorItems = new Map([[errorItem.itemId, item(errorItem.itemId, errorItem.sku, false, errorItem.price)]]);
+const visibleError = VISIBLE_ERROR_HIDES[0];
+assert.equal(assessVisibleErrorHide(visibleError, new Map([[visibleError.itemId, item(visibleError.itemId, visibleError.sku, true, visibleError.price)]]), { externalId: visibleError.itemId, status: "error" }).action, "hide_visible_error_listing");
 assert.equal(assessErrorHidden(errorItem, errorItems, { externalId: errorItem.itemId, status: "error" }).action, "leave_db_error_base_already_hidden");
 assert.equal(assessErrorHidden(errorItem, errorItems, { externalId: errorItem.itemId, status: "published" }).ok, false);
 
@@ -60,6 +64,8 @@ const route = readFileSync(new URL("../app/api/channels/base/publication-repair/
 const costRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/route.ts", import.meta.url), "utf8");
 assert.match(route, /REPAIR_ELEVEN_BASE_PUBLICATION_MISMATCHES/);
 assert.match(route, /deleteAllowlistedStaleBaseItem/);
+assert.match(route, /見つかりません/);
+assert.match(route, /already_absent_verified/);
 assert.match(route, /visible: false/);
 assert.doesNotMatch(route, /visible:\s*true/);
 assert.match(costRoute, /unitCost \{ amount currencyCode \}/);

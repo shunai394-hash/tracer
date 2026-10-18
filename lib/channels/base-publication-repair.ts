@@ -31,14 +31,18 @@ export const HIDDEN_DUPLICATE_DELETES: DeletePair[] = [
  */
 export const VISIBLE_NONCANONICAL_HIDES: HidePair[] = [
   { staleId: "163159679", canonicalId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345", price: 1458, canonicalVisible: true },
-  { staleId: "163159245", canonicalId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386, canonicalVisible: false },
+  { staleId: "163159245", canonicalId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386, canonicalVisible: true },
+];
+
+/** Visible BASE items whose DB row is error. They stay in error and are hidden on BASE. */
+export const VISIBLE_ERROR_HIDES: Array<{ itemId: string; sku: string; price: number }> = [
+  { itemId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386 },
+  { itemId: "163159307", sku: "TRC-47764FBB44634AF681E42173", price: 7148 },
 ];
 
 /** BASE is already hidden. The DB error is the reason it is off sale, so the row is not rewritten. */
 export const ERROR_HIDDEN_LEAVE: Array<{ itemId: string; sku: string; price: number }> = [
   { itemId: "163159169", sku: "TRC-93135EF6AFA041DC9B62F282", price: 1846 },
-  { itemId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386 },
-  { itemId: "163159307", sku: "TRC-47764FBB44634AF681E42173", price: 7148 },
   { itemId: "163182794", sku: "TRC-5E9AC91B718544139984AF7A", price: 12566 },
   { itemId: "163182796", sku: "TRC-FC41A1D350304A6899D60549", price: 12566 },
 ];
@@ -67,6 +71,15 @@ export function assessVisibleHide(pair: HidePair, items: Map<string, Publication
   if (canonicalReason) return { ok: false as const, reason: `canonical_${canonicalReason}` };
   if (listingExternalId !== pair.canonicalId) return { ok: false as const, reason: "listing_does_not_point_at_canonical" };
   return { ok: true as const };
+}
+
+export function assessVisibleErrorHide(target: { itemId: string; sku: string; price: number }, items: Map<string, PublicationRepairItem>, listing: { externalId: string | null; status: string | null } | null) {
+  const reason = same(items.get(target.itemId), target.itemId, target.sku, target.price, true);
+  if (reason) return { ok: false as const, reason };
+  if (!listing || listing.externalId !== target.itemId || listing.status !== "error") {
+    return { ok: false as const, reason: "db_link_or_status_changed" };
+  }
+  return { ok: true as const, action: "hide_visible_error_listing" as const };
 }
 
 export function assessErrorHidden(target: { itemId: string; sku: string; price: number }, items: Map<string, PublicationRepairItem>, listing: { externalId: string | null; status: string | null } | null) {

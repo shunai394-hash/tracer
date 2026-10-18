@@ -14,9 +14,11 @@ import {
 import {
   ERROR_HIDDEN_LEAVE,
   HIDDEN_DUPLICATE_DELETES,
+  VISIBLE_ERROR_HIDES,
   VISIBLE_NONCANONICAL_HIDES,
   assessErrorHidden,
   assessHiddenDelete,
+  assessVisibleErrorHide,
   assessVisibleHide,
   type PublicationRepairItem,
 } from "@/lib/channels/base-publication-repair";
@@ -49,7 +51,7 @@ async function readDetail(itemId: string): Promise<PublicationRepairItem | "abse
     return asItem(await getBaseItemDetail(itemId));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("HTTP_404")) return "absent";
+    if (message.includes("HTTP_404") || (message.includes("HTTP_400") && message.includes("見つかりません"))) return "absent";
     throw error;
   }
 }
@@ -127,6 +129,11 @@ export async function POST(request: Request) {
       action: "delete_hidden_duplicate" as const,
       ...assessHiddenDelete(pair, items, listingFor(pair.sku)?.externalId ?? null),
     }));
+    const errorHides = VISIBLE_ERROR_HIDES.map((target) => ({
+      ...target,
+      action: "hide_visible_error_listing" as const,
+      ...assessVisibleErrorHide(target, items, listingFor(target.sku)),
+    }));
     const hides = VISIBLE_NONCANONICAL_HIDES.map((pair) => ({
       ...pair,
       action: "hide_visible_noncanonical" as const,
@@ -153,10 +160,11 @@ export async function POST(request: Request) {
       observed: observed(row.staleId ?? row.itemId ?? ""),
       canonicalObserved: row.canonicalId ? observed(row.canonicalId) : undefined,
     });
-    const blocked = deletes.some((row) => !row.ok) || hides.some((row) => !row.ok) || errors.some((row) => !row.ok)
+    const blocked = deletes.some((row) => !row.ok) || hides.some((row) => !row.ok) || errorHides.some((row) => !row.ok) || errors.some((row) => !row.ok)
       || orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0;
     const readyDeletes = deletes.filter((row) => row.ok);
     const readyHides = hides.filter((row) => row.ok);
+    const readyErrorHides = errorHides.filter((row) => row.ok);
 
     if (!apply || orders.complete !== true || orders.matches.length > 0 || listingReferences.length > 0) {
       return NextResponse.json({
@@ -166,6 +174,7 @@ export async function POST(request: Request) {
         itemCount: snapshot.items.length,
         deletes: deletes.map(withObserved),
         hides: hides.map(withObserved),
+        errorHides: errorHides.map(withObserved),
         errorItems: errors.map(withObserved),
         orderScan: orders,
         listingReferences,
@@ -178,12 +187,20 @@ export async function POST(request: Request) {
 
     const results: Array<{ itemId: string; outcome: string }> = [];
     for (const pair of HIDDEN_DUPLICATE_DELETES.filter((candidate) => readyDeletes.some((row) => row.staleId === candidate.staleId))) {
-      const before = new Map<string, PublicationRepairItem>();
-      for (const id of [pair.staleId, pair.canonicalId]) {
-        const detail = await readDetail(id);
-        if (detail === "absent") throw new Error(`DELETE_PRECHECK_ITEM_ABSENT:${id}`);
-        before.set(detail.itemId, detail);
+      const staleDetail = await readDetail(pair.staleId);
+      const canonicalDetail = await readDetail(pair.canonicalId);
+      if (canonicalDetail === "absent") throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
+      if (staleDetail === "absent") {
+        if (canonicalDetail.sku !== pair.sku || canonicalDetail.price !== pair.price || canonicalDetail.visible !== true) {
+          throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
+        }
+        results.push({ itemId: pair.staleId, outcome: "already_absent_verified" });
+        continue;
       }
+      const before = new Map<string, PublicationRepairItem>([
+        [staleDetail.itemId, staleDetail],
+        [canonicalDetail.itemId, canonicalDetail],
+      ]);
       const decision = assessHiddenDelete(pair, before, listingFor(pair.sku)?.externalId ?? null);
       if (!decision.ok) throw new Error(`DELETE_PRECHECK_FAILED:${pair.staleId}:${decision.reason}`);
       await deleteAllowlistedStaleBaseItem(pair.staleId);
@@ -219,6 +236,23 @@ export async function POST(request: Request) {
         throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
       }
       results.push({ itemId: pair.staleId, outcome: "hidden_and_readback_verified" });
+    }
+
+    for (const target of VISIBLE_ERROR_HIDES.filter((candidate) => readyErrorHides.some((row) => row.itemId === candidate.itemId))) {
+      const raw = await getBaseItemDetail(target.itemId);
+      const title = typeof raw.title === "string" ? raw.title : "";
+      const detail = typeof raw.detail === "string" ? raw.detail : null;
+      const stock = Number(raw.stock);
+      const current = asItem(raw);
+      if (detail === null || !title || !Number.isFinite(stock) || stock < 0) throw new Error(`HIDE_PRECHECK_FAILED:${target.itemId}`);
+      const decision = assessVisibleErrorHide(target, new Map([[current.itemId, current]]), listingFor(target.sku));
+      if (!decision.ok) throw new Error(`HIDE_PRECHECK_FAILED:${target.itemId}:${decision.reason}`);
+      await editBaseItem({ itemId: target.itemId, title, detail, price: target.price, stock, visible: false });
+      const hidden = await readDetail(target.itemId);
+      if (hidden === "absent" || hidden.visible !== false || hidden.sku !== target.sku || hidden.price !== target.price) {
+        throw new Error(`HIDE_READBACK_FAILED:${target.itemId}`);
+      }
+      results.push({ itemId: target.itemId, outcome: "error_listing_hidden_and_readback_verified" });
     }
 
     return NextResponse.json({
