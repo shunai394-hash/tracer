@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { editBaseItem, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
-import { isJapaneseProductDescription, isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { deterministicJapaneseCopy } from "@/lib/channels/base/japanese-copy-fallback";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -29,19 +30,6 @@ function visibleOf(value: unknown): boolean | null {
   if (value === true || value === 1 || value === "1") return true;
   if (value === false || value === 0 || value === "0") return false;
   return null;
-}
-
-function deterministicJapaneseCopy(title: string, detail: string): JapaneseCopy | null {
-  const sourceCopy = title + "\n" + detail;
-  const fallbackTitle = localizeProductTitle(sourceCopy, title);
-  if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle) || !hasJapaneseCopy(fallbackTitle)) {
-    return null;
-  }
-  const fallbackDetail =
-    localizeProductDescription(sourceCopy) ??
-    "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
-  if (!isJapaneseProductDescription(fallbackDetail)) return null;
-  return { title: fallbackTitle, detail: fallbackDetail };
 }
 
 async function translate(title: string, detail: string): Promise<JapaneseCopy> {
