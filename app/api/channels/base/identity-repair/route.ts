@@ -330,6 +330,13 @@ export async function POST(request: Request) {
       repairStaleExternalIds,
       targetBaseItemIds: targetBaseItemIdSet ? targetBaseItemIds : null,
       targetScoped: targetBaseItemIdSet !== null,
+      targetIdentifierDiagnostics: targetBaseItemIdSet
+        ? items.filter((item) => targetBaseItemIdSet.has(item.baseItemId)).map((item) => ({
+            baseItemId: item.baseItemId,
+            identifier: item.identifier,
+            identifierKind: classifyBaseIdentifier(item.identifier).kind,
+          }))
+        : undefined,
       snapshotComplete: snapshot.complete,
       scannedBaseItems: items.length,
       stableIdentifierCandidates: identityCandidates.length,
