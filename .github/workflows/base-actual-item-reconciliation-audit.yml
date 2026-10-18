@@ -7,6 +7,8 @@ on:
     paths:
       - '.github/workflows/base-actual-item-reconciliation-audit.yml'
       - 'app/api/channels/base/reconciliation/route.ts'
+      - 'lib/channels/base-actual-reconciliation.ts'
+      - 'scripts/test-base-actual-reconciliation.mjs'
 
 permissions:
   contents: read
