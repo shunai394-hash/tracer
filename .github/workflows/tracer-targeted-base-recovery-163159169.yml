@@ -1,0 +1,87 @@
+name: TRACER Targeted BASE Recovery - 163159169
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Execute the one-variant BASE retry (publishing state may change)
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: Type RETRY_BASE_163159169 to authorize the live retry
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  targeted-retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate manual authorization
+        env:
+          APPLY: ${{ inputs.apply }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$APPLY" != "true" ]]; then
+            echo "Read-only mode: no production request made."
+            exit 0
+          fi
+          [[ "$CONFIRMATION" == "RETRY_BASE_163159169" ]] || {
+            echo "Exact confirmation phrase required; no production request made."
+            exit 1
+          }
+
+      - name: Retry only the specified BASE variant and record response
+        if: inputs.apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-pied-alpha.vercel.app"
+          mkdir -p result
+          token_url="$(python3 - <<'PY'
+          import os, urllib.parse
+          u=urllib.parse.urlparse(os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"])
+          q=urllib.parse.parse_qsl(u.query, keep_blank_values=True)
+          q=[(k,v) for k,v in q if k != "audience"]
+          q.append(("audience","https://tracer-pied-alpha.vercel.app"))
+          print(urllib.parse.urlunparse(u._replace(query=urllib.parse.urlencode(q))))
+          PY
+          )"
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$token_url" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS --max-time 300 -o result/publish-response.json -w "%{http_code}" \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/json" \
+            "https://tracer-pied-alpha.vercel.app/api/cron/commerce-publish-base?limit=1&onlyUnpublished=false&variantIds=93135ef6-afa0-41dc-9b62-f2829d8830e0" || true)"
+          echo "BASE retry HTTP $code"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("result/publish-response.json")
+          try:
+              d=json.loads(p.read_text())
+          except Exception:
+              print(p.read_text(errors="replace")[:12000] if p.exists() else "No response body")
+              raise SystemExit("Response was not valid JSON")
+          print(json.dumps(d, ensure_ascii=False, indent=2)[:20000])
+          results=d.get("results")
+          if isinstance(results,list):
+              target=[r for r in results if r.get("variantId")=="93135ef6-afa0-41dc-9b62-f2829d8830e0"]
+              if len(target)!=1:
+                  raise SystemExit("Expected exactly one result for the target variant")
+          elif d.get("variantId") != "93135ef6-afa0-41dc-9b62-f2829d8830e0":
+              raise SystemExit("Target result not confirmed in response")
+          PY
+          echo "HTTP $code" > result/http-status.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: targeted-base-recovery-163159169-${{ github.run_id }}
+          path: result/
