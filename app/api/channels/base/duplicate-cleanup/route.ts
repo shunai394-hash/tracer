@@ -12,10 +12,10 @@ const COMMERCE_SKU = /^TRC-[0-9A-F]{24}$/i;
 /**
  * Hide only an exact duplicate BASE copy. The canonical item remains visible.
  * A duplicate must share an exact TRC SKU with exactly one published channel
- * listing, match the canonical item's exact title, be visible itself, and have
- * no legacy or commerce listing referencing its BASE item ID. Price/stock may
- * differ: those are the stale fields this cleanup is intended to isolate.
- * Default is dry-run; apply=true hides only, never deletes.
+ * listing, be visible itself, and have no legacy or commerce listing referencing
+ * its BASE item ID. Exact TRC SKU uniqueness is the identity proof; title, price,
+ * and stock can be stale on the unlinked copy. Preserve its title/price and hide
+ * it only when apply=true. Default is dry-run; never deletes.
  */
 export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 
     const candidates: Array<{
       sku: string; listingId: string; canonicalBaseItemId: string; duplicateBaseItemId: string;
-      title: string; duplicatePrice: number;
+      duplicateTitle: string; duplicatePrice: number;
     }> = [];
     for (const [sku, group] of itemsBySku) {
       if (group.length !== 2) continue;
@@ -112,16 +112,13 @@ export async function POST(request: Request) {
 
       const canonical = itemsById.get(canonicalId);
       if (!canonical || canonical.visible !== true || duplicate.visible !== true) continue;
-      const title = String(canonical.title ?? "").trim();
       const duplicateTitle = String(duplicate.title ?? "").trim();
-      const price = Number(canonical.price);
       const duplicatePrice = Number(duplicate.price);
-      if (!title || title !== duplicateTitle || !Number.isFinite(price) || price <= 0 ||
-          !Number.isFinite(duplicatePrice) || duplicatePrice <= 0) continue;
+      if (!duplicateTitle || !Number.isFinite(duplicatePrice) || duplicatePrice <= 0) continue;
 
       candidates.push({
         sku, listingId: listingRows[0].id, canonicalBaseItemId: canonicalId, duplicateBaseItemId: duplicateId,
-        title, duplicatePrice,
+        duplicateTitle, duplicatePrice,
       });
     }
 
@@ -137,7 +134,7 @@ export async function POST(request: Request) {
         const duplicate = itemsById.get(candidate.duplicateBaseItemId);
         const detail = String(duplicate?.detail ?? duplicate?.description ?? candidate.title);
         await editBaseItem({
-          itemId: candidate.duplicateBaseItemId, title: candidate.title, detail,
+          itemId: candidate.duplicateBaseItemId, title: candidate.duplicateTitle, detail,
           price: candidate.duplicatePrice, stock: 0, visible: false,
         });
         hidden += 1;
