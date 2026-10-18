@@ -219,6 +219,7 @@ for (const [source, expected] of [
   ["Diamond-embedded Large Intestine Hair Ring Hair Accessories Women", "ラインストーン装飾 ヘアリング"],
   ["Women's Fashion Hairpin Hairpin Hair Accessories Women", "レディース ファッションヘアピン"],
   ["Vintage Hair Accessories Headband For Women", "ヴィンテージデザイン ヘッドバンド"],
+  ["Niche Design Flame Irregular Hair Accessories Women", "フレームデザイン ヘアアクセサリー"],
 ]) {
   assert.equal(localizeProductTitle(source), expected, `audited CJ title must localize specifically: ${source}`);
 }

@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/niche design flame irregular hair accessories women/i, "フレームデザイン ヘアアクセサリー"],
   [/one word clip frog buckle pearl full diamond hair accessories women/i, "パール装飾 カエルモチーフ ヘアクリップ"],
   [/combination suit women side clip hair accessories/i, "レディース サイドヘアクリップ セット"],
   [/sponge hair band women gold velvet diamond accessories/i, "ゴールド装飾 ベルベットヘアバンド"],
