@@ -27,7 +27,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const CONFIRMATION = "REPAIR_ELEVEN_BASE_PUBLICATION_MISMATCHES";
+const CONFIRMATION = "REPAIR_BASE_PUBLICATION_MISMATCHES_AND_HIDDEN_DUPLICATES";
 const ACTION_IDS = [
   ...HIDDEN_DUPLICATE_DELETES.map((pair) => pair.staleId),
   ...VISIBLE_NONCANONICAL_HIDES.map((pair) => pair.staleId),
