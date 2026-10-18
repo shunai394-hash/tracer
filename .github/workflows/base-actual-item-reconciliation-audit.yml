@@ -21,6 +21,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Check out commit history for deployment verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/36: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production is not at this commit or a descendant; refusing a stale BASE scan."
+          exit 1
+
       - name: Reconcile the actual BASE /items snapshot against TRACER
         env:
           BASE_AUDIT_ORIGIN: https://tracer-pied-alpha.vercel.app
@@ -62,10 +86,16 @@ jobs:
               unreadablePrices: Number(body.unreadablePrices ?? 0),
               priceMismatches: Number(body.priceMismatches ?? 0),
               skuMismatches: Number(body.skuMismatches ?? 0),
+              publicationMismatches: Number(body.publicationMismatches ?? 0),
               auditRowsWritten: Number(body.auditRowsWritten ?? 0),
+              auditStorage: body.auditStorage ?? null,
+              auditWriteErrorCode: body.auditWriteErrorCode ?? null,
+              auditWriteError: body.auditWriteError ?? null,
+              auditFailedItemIds: Array.isArray(body.auditFailedItemIds) ? body.auditFailedItemIds : [],
               runId: body.runId ?? null,
               ok: body.ok === true,
-              error: body.error ?? null,
+              evidenceComplete: body.evidenceComplete === true,
+              error: body.error ?? body.auditWriteError ?? null,
             };
             const out = "base-actual-item-reconciliation-artifacts";
             await fs.mkdir(out, { recursive: true });
@@ -75,8 +105,9 @@ jobs:
             await fs.writeFile(`${out}/items.json`, JSON.stringify(items, null, 2) + "\n");
             const itemColumns = [
               "baseItemId", "title", "baseIdentifier", "basePrice", "tracerVariantId",
-              "tracerSku", "tracerPrice", "baseVisibility", "mappingStatus", "mappingMethod",
-              "candidateCount", "candidateListingIds", "priceMatches", "skuMatches", "discrepancyReasons",
+              "tracerSku", "tracerPrice", "baseVisibility", "dbStatus", "existingExternalProductId",
+              "mappingStatus", "mappingMethod", "candidateCount", "candidateListingIds",
+              "priceMatches", "skuMatches", "publicationMatches", "discrepancyReasons",
             ];
             const itemCell = (value) => {
               const s = value == null ? "" : Array.isArray(value) ? value.join("|") : String(value);
@@ -110,15 +141,17 @@ jobs:
               `- Missing SKU / API errors: **${report.missingSku} / ${report.apiErrors}**`,
               `- Price mismatches: **${report.priceMismatches}**`,
               `- SKU mismatches: **${report.skuMismatches}**`,
+              `- Publication mismatches: **${report.publicationMismatches}**`,
               `- Unknown visibility / unreadable prices: **${report.unknownVisibility} / ${report.unreadablePrices}**`,
-              `- Audit rows persisted: **${report.auditRowsWritten}**`,
+              `- Audit rows persisted: **${report.auditRowsWritten}** in ${report.auditStorage ?? "unknown"}`,
+              `- Audit write error: ${report.auditWriteErrorCode ?? "none"} ${report.auditWriteError ?? ""}`,
               `- Run ID: ${report.runId ?? "not returned"}`, "",
               "Summary JSON/CSV plus item-level JSON/CSV and separate certain-match, ambiguous, and unmapped CSVs are attached as artifact `base-actual-item-reconciliation-audit`.", ""
             ].join("\n");
             await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
             console.log(JSON.stringify(report, null, 2));
-            if (!response.ok || !report.apiReadComplete || report.itemCount !== report.auditRowsWritten || report.itemCount !== report.itemRowsExported || !report.ok) {
-              throw new Error("BASE reconciliation found discrepancies or did not persist a complete audit");
+            if (response.status !== 200 || !report.apiReadComplete || report.apiErrors !== 0 || report.itemCount < 1 || report.itemCount !== report.auditRowsWritten || report.itemCount !== report.itemRowsExported || report.evidenceComplete !== true) {
+              throw new Error("BASE reconciliation did not persist one audit row for every fetched item");
             }
           })().catch((error) => {
             console.error(error);

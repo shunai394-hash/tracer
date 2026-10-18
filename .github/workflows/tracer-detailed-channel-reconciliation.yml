@@ -81,8 +81,18 @@ jobs:
 
           print("=== BASE LIVE API ITEM RECONCILIATION ===")
           for key, value in base_api.items():
-              if key != "details":
+              if key not in ("details", "items"):
                   print(f"{key}: {json.dumps(value, ensure_ascii=False, separators=(',', ':'))}")
+          def write_csv(path, rows, columns):
+              import csv
+              with path.open("w", encoding="utf-8", newline="") as handle:
+                  writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+                  writer.writeheader()
+                  for row in rows:
+                      writer.writerow({key: "|".join(map(str, value)) if isinstance(value, list) else value for key, value in row.items()})
+          base_items = base_api.get("items") if isinstance(base_api.get("items"), list) else []
+          if base_items:
+              write_csv(Path("audit-results/base-items.csv"), base_items, list(base_items[0].keys()))
 
           print("=== BASE SUMMARY ===")
           for key in ("itemAuditComplete", "visibleItemsReturned", "visibleItemsMatchedToDatabase",
@@ -110,9 +120,18 @@ jobs:
 
           print("=== SHOPIFY RECONCILIATION SUMMARY ===")
           print("ok:", shopify.get("ok"), "complete:", shopify.get("complete"))
+          catalog = shopify.get("catalog") if isinstance(shopify.get("catalog"), dict) else {}
+          commerce_items = catalog.get("commerceItems") if isinstance(catalog.get("commerceItems"), list) else []
+          if commerce_items:
+              write_csv(Path("audit-results/shopify-commerce-items.csv"), commerce_items, list(commerce_items[0].keys()))
+          shopify_items = shopify.get("items") if isinstance(shopify.get("items"), list) else []
+          if shopify_items:
+              write_csv(Path("audit-results/shopify-linked-items.csv"), shopify_items, list(shopify_items[0].keys()))
           for key, value in shopify.items():
-              if key not in ("products", "samples", "checks"):
+              if key not in ("products", "samples", "checks", "items", "unlinkedProducts", "catalog"):
                   print(f"{key}: {json.dumps(value, ensure_ascii=False, separators=(',', ':'))}")
+          catalog_summary = {key: value for key, value in catalog.items() if key != "commerceItems"}
+          print("catalog:", json.dumps(catalog_summary, ensure_ascii=False, separators=(',', ':')))
           print("=== SHOPIFY MISMATCH SAMPLES ===")
           for key, rows in (shopify.get("samples") or {}).items():
               print(key + ":")
@@ -121,9 +140,10 @@ jobs:
           PY
 
       - name: Upload detailed audit evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tracer-channel-reconciliation-read-only
-          path: audit-results/*.json
+          path: audit-results/*
           if-no-files-found: error
           retention-days: 14

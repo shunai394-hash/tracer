@@ -127,5 +127,6 @@ export function reconcileShopifyCatalog(input: {
       return { variantId: id, inDb: Boolean(row), externalSku: row?.external_sku ?? null, check, shopifyProductsWithSku: owners.length };
     }),
     commerceMismatchSamples: commerceChecks.filter((row) => row.dbStatus === "published" && !(row.live && row.skuMatches && row.priceMatches)).slice(0, 10),
+    commerceItems: commerceChecks,
   };
 }

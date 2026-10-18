@@ -330,7 +330,8 @@ export async function POST(request: Request) {
       listingAlreadyLinked,
       baseItemAlreadyMapped,
       publicationChanged: false,
-      results: results.slice(0, 100),
+      resultCount: results.length,
+      results,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({
