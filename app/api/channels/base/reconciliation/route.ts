@@ -72,20 +72,32 @@ export async function GET(request: Request) {
 
     const listings = (listingData ?? []) as ListingRow[];
     const byExternalId = new Map<string, ListingRow[]>();
+    const bySku = new Map<string, ListingRow[]>();
     for (const row of listings) {
-      if (!row.external_product_id) continue;
-      const key = String(row.external_product_id);
-      const group = byExternalId.get(key) ?? [];
-      group.push(row);
-      byExternalId.set(key, group);
+      if (row.external_product_id) {
+        const key = String(row.external_product_id);
+        const group = byExternalId.get(key) ?? [];
+        group.push(row);
+        byExternalId.set(key, group);
+      }
+      const sku = textValue(row.external_sku)?.toUpperCase();
+      if (sku) {
+        const group = bySku.get(sku) ?? [];
+        group.push(row);
+        bySku.set(sku, group);
+      }
     }
 
     const observedAt = new Date().toISOString();
     const auditRows = snapshot.items.map((item: BaseItem) => {
       const externalId = textValue(item.item_id);
       const identifier = textValue(item.identifier);
-      const candidates = externalId ? byExternalId.get(externalId) ?? [] : [];
+      const idCandidates = externalId ? byExternalId.get(externalId) ?? [] : [];
+      const skuCandidates = identifier ? bySku.get(identifier.toUpperCase()) ?? [] : [];
+      const candidates = idCandidates.length > 0 ? idCandidates : skuCandidates;
+      const mappingMethod = idCandidates.length > 0 ? "base_item_id" : skuCandidates.length > 0 ? "exact_sku" : "none";
       const listing = candidates.length === 1 ? candidates[0] : null;
+      const mappingStatus = candidates.length === 0 ? "unmapped" : candidates.length > 1 ? "ambiguous" : "matched";
       const externalPrice = priceValue(item.price);
       const visible = visibleValue(item.visible);
       const title = textValue(item.title);
@@ -118,7 +130,9 @@ export async function GET(request: Request) {
           apiVisible: visible,
           apiPricePresent: externalPrice !== null,
           mappingCount: candidates.length,
-          mappingStatus: candidates.length === 0 ? "unmapped" : candidates.length > 1 ? "ambiguous" : "matched",
+          mappingStatus,
+          mappingMethod,
+          candidateListingIds: candidates.map((candidate) => candidate.id),
           dbListingStatus: listing?.status ?? null,
           dbExternalSku: listing?.external_sku ?? null,
           identifier,
@@ -158,11 +172,15 @@ export async function GET(request: Request) {
 
     const summary = {
       apiReadComplete: true,
+      apiErrors: 0,
       itemCount: snapshot.items.length,
       dbListingCount: listings.length,
       mappedItems: auditRows.filter((row) => row.details.mappingStatus === "matched").length,
+      exactIdMatches: auditRows.filter((row) => row.details.mappingMethod === "base_item_id" && row.details.mappingStatus === "matched").length,
+      exactSkuMatches: auditRows.filter((row) => row.details.mappingMethod === "exact_sku" && row.details.mappingStatus === "matched").length,
       unmappedItems: auditRows.filter((row) => row.details.mappingStatus === "unmapped").length,
       ambiguousItems: auditRows.filter((row) => row.details.mappingStatus === "ambiguous").length,
+      missingSku: auditRows.filter((row) => !textValue(row.external_sku)).length,
       unknownVisibility: auditRows.filter((row) => row.product_status === "visibility_unknown").length,
       unreadablePrices: auditRows.filter((row) => row.external_price === null).length,
       priceMismatches: auditRows.filter((row) => row.price_matches === false).length,
@@ -178,6 +196,23 @@ export async function GET(request: Request) {
       pages: snapshot.pages,
       auditRowsWritten: written,
       ...summary,
+      items: auditRows.map((row) => ({
+        baseItemId: row.external_product_id,
+        title: row.product_title,
+        baseIdentifier: row.external_sku,
+        basePrice: row.external_price,
+        tracerVariantId: row.details.mappingStatus === "matched" ? row.variant_id : null,
+        tracerSku: row.internal_sku,
+        tracerPrice: row.canonical_price,
+        baseVisibility: row.details.apiVisible,
+        mappingStatus: row.details.mappingStatus,
+        mappingMethod: row.details.mappingMethod,
+        candidateCount: row.details.mappingCount,
+        candidateListingIds: row.details.candidateListingIds,
+        priceMatches: row.price_matches,
+        skuMatches: row.sku_matches,
+        discrepancyReasons: row.details.discrepancyReasons,
+      })),
     }, { headers });
   } catch (error) {
     const message = error instanceof Error ? error.message : "BASE_RECONCILIATION_FAILED";
