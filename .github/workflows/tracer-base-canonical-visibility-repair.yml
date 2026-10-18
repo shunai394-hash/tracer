@@ -9,10 +9,10 @@ on:
         type: boolean
         default: false
       limit:
-        description: "Maximum canonical items to repair in this batch (1-10)"
+        description: "Maximum canonical items to repair in this run (1-70; processed in verified batches of 10)"
         required: false
         type: number
-        default: 5
+        default: 70
 
 permissions:
   contents: read
@@ -59,19 +59,44 @@ jobs:
           if (typeof tokenBody.value !== "string" || !tokenBody.value) throw new Error("OIDC_TOKEN_MISSING");
           const endpoint = audience + "/api/channels/base/visibility-repair";
           const headers = { Authorization: "Bearer " + tokenBody.value, "Content-Type": "application/json", Accept: "application/json" };
-          const limit = Math.max(1, Math.min(10, Math.floor(Number(process.env.REPAIR_LIMIT) || 5)));
-          const preflightResponse = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ apply: false, limit }), signal: AbortSignal.timeout(110000) });
-          const preflight = await preflightResponse.json().catch(() => ({}));
-          console.log(JSON.stringify({ stage: "read-only preflight", status: preflightResponse.status, ...preflight }, null, 2));
-          if (!preflightResponse.ok || preflight.ok !== true || preflight.readOnly !== true) throw new Error("BASE_VISIBILITY_REPAIR_PREFLIGHT_FAILED");
+          const maxItems = Math.max(1, Math.min(70, Math.floor(Number(process.env.REPAIR_LIMIT) || 70)));
+          const request = async (apply, limit) => {
+            const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ apply, limit }), signal: AbortSignal.timeout(110000) });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.ok !== true) throw new Error("BASE_VISIBILITY_REPAIR_REQUEST_FAILED:" + response.status);
+            return { status: response.status, result };
+          };
+          const first = await request(false, Math.min(10, maxItems));
+          let preflight = first.result;
+          console.log(JSON.stringify({ stage: "read-only preflight", status: first.status, ...preflight }, null, 2));
+          if (preflight.readOnly !== true || preflight.snapshotComplete !== true) throw new Error("BASE_VISIBILITY_REPAIR_PREFLIGHT_FAILED");
           let result = preflight;
+          const batches = [];
+          let totalVerified = 0;
           if (process.env.APPLY === "true") {
-            const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ apply: true, limit }), signal: AbortSignal.timeout(110000) });
-            result = await response.json().catch(() => ({}));
-            console.log(JSON.stringify({ stage: "bounded repair", status: response.status, ...result }, null, 2));
-            if (!response.ok || result.ok !== true || result.readbackFailed > 0) throw new Error("BASE_VISIBILITY_REPAIR_FAILED");
+            let remaining = maxItems;
+            for (let batchNo = 1; batchNo <= 10 && remaining > 0; batchNo++) {
+              if (Number(preflight.eligibleCandidates) <= 0) break;
+              const limit = Math.min(10, remaining);
+              const applied = await request(true, limit);
+              result = applied.result;
+              console.log(JSON.stringify({ stage: "apply batch " + batchNo, status: applied.status, ...result }, null, 2));
+              if (result.readbackFailed > 0 || result.failed > 0 || result.readbackVerified <= 0) {
+                throw new Error("BASE_VISIBILITY_REPAIR_BATCH_FAILED:" + batchNo);
+              }
+              batches.push({ batchNo, requested: limit, selected: result.selected, published: result.published, readbackVerified: result.readbackVerified, readbackFailed: result.readbackFailed, readback: result.readback });
+              totalVerified += Number(result.readbackVerified || 0);
+              remaining -= Number(result.readbackVerified || 0);
+              const next = await request(false, Math.min(10, remaining || 1));
+              preflight = next.result;
+              if (preflight.readOnly !== true || preflight.snapshotComplete !== true) throw new Error("BASE_VISIBILITY_REPAIR_PREFLIGHT_FAILED_AFTER_BATCH");
+              if (result.readbackVerified === 0 || (Number(preflight.eligibleCandidates) > 0 && remaining <= 0)) break;
+            }
+            result = { ok: batches.length > 0 && batches.every(x => x.readbackFailed === 0), apply: true, readOnly: false, maxItems, totalVerified, batches, remainingEligible: preflight.eligibleCandidates, finalPreflight: preflight };
+            if (result.ok !== true) throw new Error("BASE_VISIBILITY_REPAIR_FAILED");
           } else {
             console.log("Read-only mode: no BASE item was edited.");
+            result = { ...preflight, maxItems, batches: [], totalVerified: 0 };
           }
           await writeFile("base-canonical-visibility-repair-result.json", JSON.stringify(result, null, 2), { mode: "0600" });
           await writeFile(process.env.GITHUB_STEP_SUMMARY, [
