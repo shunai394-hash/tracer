@@ -319,7 +319,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       advertisingAllowanceRate: PROFIT_ASSUMPTIONS.advertising_allowance_rate,
       returnRefundReserveRate: PROFIT_ASSUMPTIONS.return_refund_reserve_rate,
       fxReserveRate: PROFIT_ASSUMPTIONS.fx_reserve_rate,
-      targetContributionMargin: 0.20,
+      targetContributionMargin: 0.50,
     });
     if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_unknown");
     const profit = simulateContributionProfit({
