@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { editBaseItem, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
-import { isJapaneseProductDescription, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -31,6 +31,19 @@ function visibleOf(value: unknown): boolean | null {
   return null;
 }
 
+function deterministicJapaneseCopy(title: string, detail: string): JapaneseCopy | null {
+  const sourceCopy = title + "\n" + detail;
+  const fallbackTitle = localizeProductTitle(sourceCopy, title);
+  if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle) || !hasJapaneseCopy(fallbackTitle)) {
+    return null;
+  }
+  const fallbackDetail =
+    localizeProductDescription(sourceCopy) ??
+    "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。";
+  if (!isJapaneseProductDescription(fallbackDetail)) return null;
+  return { title: fallbackTitle, detail: fallbackDetail };
+}
+
 async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   const request = {
     systemInstruction: "あなたは日本のEC商品編集者です。英語の商品名と説明を自然な日本語の販売用コピーにしてください。商品名は簡潔な日本語、説明は読みやすい日本語にします。ブランド名、型番、色名など必要な固有名詞だけ原文を残してください。入力にない機能・素材・サイズ・性能・認証・保証・配送条件を創作しないでください。商品名と説明の両方を日本語にし、JSONのみ返してください。",
@@ -47,9 +60,16 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
       const message = error instanceof Error ? error.message : "";
       const isTemporaryCapacityError =
         /HTTP 503\s+UNAVAILABLE|HTTP 429\s+RESOURCE_EXHAUSTED/i.test(message);
-      if (!isTemporaryCapacityError || attempt === 1) throw error;
-      // Retry only explicit capacity/rate-limit responses; do not repeat timeouts
-      // or other failures that could consume the route's execution budget.
+      if (!isTemporaryCapacityError) throw error;
+      if (attempt === 1) {
+        // Gemini quota/capacity can remain exhausted after retry. Use only the
+        // repository's deterministic source-title mappings; never invent specs.
+        const fallback = deterministicJapaneseCopy(title, detail);
+        if (fallback) return fallback;
+        throw error;
+      }
+      // Retry only explicit capacity/rate-limit responses; do not repeat unrelated
+      // failures that could consume the route's execution budget.
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
