@@ -32,11 +32,28 @@ function visibleOf(value: unknown): boolean | null {
 }
 
 async function translate(title: string, detail: string): Promise<JapaneseCopy> {
-  const result = await generateStructuredJson<JapaneseCopy>({
+  const request = {
     systemInstruction: "あなたは日本のEC商品編集者です。英語の商品名と説明を自然な日本語の販売用コピーにしてください。商品名は簡潔な日本語、説明は読みやすい日本語にします。ブランド名、型番、色名など必要な固有名詞だけ原文を残してください。入力にない機能・素材・サイズ・性能・認証・保証・配送条件を創作しないでください。商品名と説明の両方を日本語にし、JSONのみ返してください。",
     prompt: JSON.stringify({ title, detail }),
     timeoutMs: 12_000,
-  });
+  } as const;
+
+  let result: JapaneseCopy | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      result = await generateStructuredJson<JapaneseCopy>(request);
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const isTemporaryCapacityError =
+        /HTTP 503\\s+UNAVAILABLE|HTTP 429\\s+RESOURCE_EXHAUSTED/i.test(message);
+      if (!isTemporaryCapacityError || attempt === 1) throw error;
+      // Retry only explicit capacity/rate-limit responses; do not repeat timeouts
+      // or other failures that could consume the route's execution budget.
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+
   const translatedTitle = text(result?.title);
   const translatedDetail = text(result?.detail);
   if (!isJapaneseProductTitle(translatedTitle) || !hasJapaneseCopy(translatedTitle)) {
