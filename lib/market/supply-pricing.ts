@@ -12,14 +12,18 @@ export type SupplyPriceInputs = {
 };
 
 /**
- * Return the configured selling price unchanged when one exists.
- * A target margin is a pricing recommendation, not permission to overwrite
- * the merchant's chosen price or prevent them from testing a lower price.
+ * Never keep a stored price below the configured contribution-margin target
+ * when landed cost, freight and FX are known. Preserve a higher chosen price.
+ * If cost inputs are incomplete, return the stored price for diagnostics; the
+ * publication gate independently blocks unknown economics.
  */
 export function calculateSupplySellingPriceJpy(inputs: SupplyPriceInputs): number | null {
   const existing = inputs.existingSellingPriceJpy;
-  if (existing !== null && Number.isFinite(existing) && existing > 0) return existing;
-  return calculateRecommendedSupplySellingPriceJpy(inputs);
+  const recommended = calculateRecommendedSupplySellingPriceJpy(inputs);
+  if (existing !== null && Number.isFinite(existing) && existing > 0) {
+    return recommended === null ? existing : Math.max(existing, recommended);
+  }
+  return recommended;
 }
 
 /** Estimate a suggested price from landed cost, fees and a target contribution margin. */
