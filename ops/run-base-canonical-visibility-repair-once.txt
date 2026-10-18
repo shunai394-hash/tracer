@@ -1,0 +1,1 @@
+One-time execution marker: restore only exact-mapped canonical BASE items in duplicate SKU groups that pass the endpoint's live supplier, shipping, tracking, stock, Japanese copy, image, price, and margin gates. Process at most 70 items in batches of 10 with readback verification. Duplicate copies remain hidden; no item is deleted.
