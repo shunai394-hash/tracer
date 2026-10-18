@@ -66,9 +66,14 @@ const workflow = readFileSync(new URL("../.github/workflows/base-actual-item-rec
 assert.match(route, /auditWriteErrorCode/);
 assert.match(route, /from\("commerce_events"\)/);
 assert.match(route, /items: reconciled\.items/);
-assert.match(route, /PGRST205/);
+assert.match(route, /Walking them/);
+assert.doesNotMatch(route, /for \(const row of batch\)/);
 assert.match(route, /range\(from, from \+ 999\)/);
 assert.doesNotMatch(route, /\.delete\(|editBaseItem\(|createBaseItem\(/);
+const grant = readFileSync(new URL("../supabase/migrations/20261018020000_channel_price_reconciliation_audit_grants.sql", import.meta.url), "utf8");
+assert.match(grant, /42501/);
+assert.match(grant, /disable row level security/);
+assert.match(grant, /grant all privileges on table public.channel_price_reconciliation_audit to service_role/);
 assert.match(priceRoute, /body\.apply === true/);
 assert.match(priceRoute, /visible,/);
 assert.match(priceRoute, /stock,/);
