@@ -2,6 +2,11 @@ name: TRACER targeted CJ variant re-verification (three handbag variants)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-targeted-cj-variant-reverify-three.yml"
 
 permissions:
   contents: read
@@ -10,6 +15,7 @@ permissions:
 
 jobs:
   reverify:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run exact three CJ variant re-verification after deployment')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
