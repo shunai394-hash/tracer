@@ -1,0 +1,139 @@
+name: BASE targeted stale ID repair (three handbag variants)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply the allowlisted three-item repair after reviewing the dry-run artifact
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  targeted-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out commit history for deployment verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/36: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 10
+          done
+          echo "Production does not yet contain this commit; do not call a stale route."
+          exit 1
+
+      - name: Run target-scoped dry run, optionally apply only the allowlisted three IDs
+        env:
+          APPLY: ${{ inputs.apply }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          mkdir -p repair-results
+          TARGETS='["163159366","163159368","163159369"]'
+          token() {
+            curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          post() {
+            local body="$1" output="$2" code
+            code="$(curl -sS --max-time 180 -o "$output" -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
+              --data "$body" "$BASE/api/channels/base/identity-repair")"
+            echo "identity-repair HTTP $code"
+            [[ "$code" == "200" ]]
+          }
+          post "{\"apply\":false,\"repairStaleExternalIds\":false,\"limit\":3,\"targetBaseItemIds\":$TARGETS}" repair-results/dry-run.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("repair-results/dry-run.json").read_text())
+          targets={"163159366","163159368","163159369"}
+          rows=[r for r in d.get("results",[]) if str(r.get("baseItemId")) in targets]
+          unexpected=[r for r in d.get("results",[]) if str(r.get("baseItemId")) not in targets]
+          print(json.dumps({
+            "readOnly":d.get("readOnly"),
+            "snapshotComplete":d.get("snapshotComplete"),
+            "targetScoped":d.get("targetScoped"),
+            "targetBaseItemIds":d.get("targetBaseItemIds"),
+            "scannedBaseItems":d.get("scannedBaseItems"),
+            "commerceRepairable":d.get("commerceRepairable"),
+            "ambiguous":d.get("ambiguous"),
+            "baseItemAlreadyMapped":d.get("baseItemAlreadyMapped"),
+            "targetResults":rows,
+            "unexpectedResults":len(unexpected)
+          },ensure_ascii=False,indent=2))
+          if d.get("readOnly") is not True or d.get("snapshotComplete") is not True or d.get("targetScoped") is not True or set(d.get("targetBaseItemIds") or []) != targets:
+            raise SystemExit("dry run scope or complete snapshot check failed")
+          if unexpected:
+            raise SystemExit("dry run returned results outside the allowlist")
+          by_id={str(r.get("baseItemId")):r for r in rows}
+          if set(by_id) != targets:
+            raise SystemExit("dry run must produce exactly one safe candidate per target ID")
+          for target,row in by_id.items():
+            if row.get("outcome") != "repairable_dry_run" or "exact_commerce_sku" not in (row.get("source") or []):
+              raise SystemExit(f"target {target} is not an exact-SKU repair candidate")
+          PY
+          if [[ "$APPLY" == "true" ]]; then
+            # The API allowlist and limit constrain this mutation to these three BASE item IDs.
+            post "{\"apply\":true,\"repairStaleExternalIds\":true,\"limit\":3,\"targetBaseItemIds\":$TARGETS}" repair-results/apply.json
+          fi
+          code="$(curl -sS --max-time 180 -o repair-results/base-readback.json -w "%{http_code}" \
+            -H "Authorization: Bearer $(token)" "$BASE/api/channels/base/reconciliation")"
+          echo "BASE readback HTTP $code"
+          [[ "$code" == "200" ]]
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("repair-results/base-readback.json").read_text())
+          targets={"163159366","163159368","163159369"}
+          rows=[r for r in d.get("items",[]) if str(r.get("baseItemId") or r.get("base_item_id") or r.get("baseId") or "") in targets]
+          print(json.dumps({
+            "apiReadComplete":d.get("apiReadComplete"),
+            "evidenceComplete":d.get("evidenceComplete"),
+            "itemCount":d.get("itemCount"),
+            "auditRowsWritten":d.get("auditRowsWritten"),
+            "priceMismatches":d.get("priceMismatches"),
+            "publicationMismatches":d.get("publicationMismatches"),
+            "targetRowsFound":len(rows),
+            "targetRows":rows
+          },ensure_ascii=False,indent=2))
+          if d.get("evidenceComplete") is not True:
+            raise SystemExit("BASE readback evidence incomplete")
+          if os.environ.get("APPLY") == "true":
+            by_id={str(r.get("baseItemId")):r for r in rows}
+            if set(by_id) != targets:
+              raise SystemExit("post-repair readback must contain all three target IDs")
+            for target,row in by_id.items():
+              if row.get("mappingStatus") != "matched" or row.get("mappingMethod") != "base_item_id" or row.get("skuMatches") is not True or row.get("priceMatches") is not True:
+                raise SystemExit(f"post-repair identity/price verification failed for {target}")
+            # Publication is deliberately not changed by this workflow; hidden BASE items remain a separate task.
+          PY
+
+      - name: Upload targeted repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-targeted-three-stale-id-repair
+          path: repair-results/
+          if-no-files-found: warn
+          retention-days: 30

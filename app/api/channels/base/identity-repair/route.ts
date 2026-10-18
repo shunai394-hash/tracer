@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
-  let body: { apply?: unknown; repairStaleExternalIds?: unknown; limit?: unknown } = {};
+  let body: { apply?: unknown; repairStaleExternalIds?: unknown; limit?: unknown; targetBaseItemIds?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -31,6 +31,16 @@ export async function POST(request: Request) {
 
   const apply = body.apply === true;
   const repairStaleExternalIds = body.repairStaleExternalIds === true;
+  const targetBaseItemIds = Array.isArray(body.targetBaseItemIds)
+    ? [...new Set(body.targetBaseItemIds.map((value) => String(value).trim()))]
+    : [];
+  if (body.targetBaseItemIds !== undefined && (!Array.isArray(body.targetBaseItemIds)
+    || targetBaseItemIds.length === 0
+    || targetBaseItemIds.length > 100
+    || targetBaseItemIds.some((id) => !/^\d+$/.test(id)))) {
+    return NextResponse.json({ ok: false, error: "invalid_target_base_item_ids" }, { status: 400 });
+  }
+  const targetBaseItemIdSet = targetBaseItemIds.length ? new Set(targetBaseItemIds) : null;
   const requestedLimit = Number(body.limit ?? 1000);
   const limit = Number.isFinite(requestedLimit)
     ? Math.max(1, Math.min(1000, Math.floor(requestedLimit)))
@@ -53,6 +63,7 @@ export async function POST(request: Request) {
     const itemIds = new Set(items.map((item) => item.baseItemId));
 
     const identityCandidates = items.flatMap((item) => {
+      if (targetBaseItemIdSet && !targetBaseItemIdSet.has(item.baseItemId)) return [];
       const match = item.identifier.match(TRACER_IDENTIFIER);
       return match?.[1] ? [{ baseItemId: item.baseItemId, listingId: match[1], source: "exact_identifier" as const }] : [];
     });
@@ -71,7 +82,7 @@ export async function POST(request: Request) {
     const recoveryCandidates = (markerRows ?? []).flatMap((row) => {
       const marker = String(row.base_last_error ?? "").match(CREATE_ID_MARKER);
       const baseItemId = marker?.[1]?.trim() ?? "";
-      return baseItemId && itemIds.has(baseItemId)
+      return baseItemId && (!targetBaseItemIdSet || targetBaseItemIdSet.has(baseItemId)) && itemIds.has(baseItemId)
         ? [{ baseItemId, listingId: String(row.id), source: "persisted_create_marker" as const }]
         : [];
     });
@@ -199,6 +210,7 @@ export async function POST(request: Request) {
 
     const skuGroups = new Map<string, string[]>();
     for (const item of items) {
+      if (targetBaseItemIdSet && !targetBaseItemIdSet.has(item.baseItemId)) continue;
       const identity = classifyBaseIdentifier(item.identifier);
       if (identity.kind !== "commerce_sku") continue;
       const group = skuGroups.get(identity.sku) ?? [];
@@ -316,6 +328,8 @@ export async function POST(request: Request) {
         "A stale channel ID may be rebound only when absent from a complete BASE snapshot, the exact SKU is unique, and the new BASE item ID is not already mapped",
       ],
       repairStaleExternalIds,
+      targetBaseItemIds: targetBaseItemIdSet ? targetBaseItemIds : null,
+      targetScoped: targetBaseItemIdSet !== null,
       snapshotComplete: snapshot.complete,
       scannedBaseItems: items.length,
       stableIdentifierCandidates: identityCandidates.length,
