@@ -1,0 +1,78 @@
+name: TRACER targeted CJ variant re-verification (three handbag variants)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  reverify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout commit history for production ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production contains this reviewed workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-descendant-of=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production contains this reviewed workflow commit."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production does not contain this commit; refusing supplier API calls."
+          exit 1
+
+      - name: Reverify only the three exact CJ variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          AUTH="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          VARIANTS="1392008578709196800,1392008578696613888,1392008578684030976"
+          code="$(curl -sS -o reverify.json -w "%{http_code}" --max-time 240 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/commerce-cj-import?variantIds=$VARIANTS" || true)"
+          echo "Targeted CJ import HTTP $code"
+          export HTTP_STATUS="$code"
+          python3 - <<'PY' > report.md
+          import json, os
+          try:
+              data = json.load(open("reverify.json"))
+          except Exception:
+              data = {"ok": False, "error": "non_json_or_timeout"}
+          stats = data.get("stats") or {}
+          report = {
+              "workflowRunId": os.environ.get("GITHUB_RUN_ID"),
+              "commit": os.environ.get("GITHUB_SHA"),
+              "targetCJVariantIds": [
+                  "1392008578709196800",
+                  "1392008578696613888",
+                  "1392008578684030976"
+              ],
+              "httpStatus": os.environ.get("HTTP_STATUS"),
+              "result": {k: data.get(k) for k in ("ok", "error", "query", "page", "fxRate", "fxSource")},
+              "stats": stats,
+              "policy": "Only the three exact CJ variants were re-verified. This workflow does not publish, unpublish, change BASE/Shopify listings, place supplier orders, or make payments. Estimated freight is not treated as verified freight."
+          }
+          print("# TRACER targeted CJ variant re-verification")
+          print()
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+          cat report.md
+          gh issue create --repo shunai394-hash/tracer --title "[TRACER CJ variant reverify] Run $GITHUB_RUN_ID" --body-file report.md
+        env:
+          GH_TOKEN: ${{ github.token }}
