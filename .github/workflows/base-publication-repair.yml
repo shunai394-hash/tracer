@@ -12,6 +12,11 @@ on:
         description: Type REPAIR_TWO_REQUESTED_BASE_DUPLICATES only when authorizing the repair
         type: string
         required: false
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/base-publication-repair.yml
 
 permissions:
   contents: read
