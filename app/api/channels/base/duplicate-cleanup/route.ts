@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       }
       try {
         const duplicate = itemsById.get(candidate.duplicateBaseItemId);
-        const detail = String(duplicate?.detail ?? duplicate?.description ?? candidate.title);
+        const detail = String(duplicate?.detail ?? duplicate?.description ?? candidate.duplicateTitle);
         await editBaseItem({
           itemId: candidate.duplicateBaseItemId, title: candidate.duplicateTitle, detail,
           price: candidate.duplicatePrice, stock: 0, visible: false,
