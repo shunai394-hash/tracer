@@ -9,6 +9,12 @@ export const maxDuration = 120;
 
 const COMMERCE_SKU = /^TRC-[0-9A-F]{24}$/i;
 
+// BASE API visibility may be serialized as a boolean, number, or numeric string.
+// Treat only documented truthy encodings as visible; unknown values remain blocked.
+function isBaseVisible(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
 /**
  * Hide only an exact duplicate BASE copy. The canonical item remains visible.
  * A duplicate must share an exact TRC SKU with exactly one published channel
@@ -125,8 +131,8 @@ export async function POST(request: Request) {
       if (duplicate && (!duplicateId || legacyMappedIds.has(duplicateId))) blockers.push("duplicate_has_legacy_mapping");
 
       const canonical = canonicalInGroup ? itemsById.get(canonicalId) : undefined;
-      if (canonicalInGroup && (!canonical || canonical.visible !== true)) blockers.push("canonical_not_visible");
-      if (duplicate && duplicate.visible !== true) blockers.push("duplicate_not_visible");
+      if (canonicalInGroup && (!canonical || !isBaseVisible(canonical.visible))) blockers.push("canonical_not_visible");
+      if (duplicate && !isBaseVisible(duplicate.visible)) blockers.push("duplicate_not_visible");
       const title = String(canonical?.title ?? "").trim();
       const price = Number(canonical?.price);
       const stock = Number(canonical?.stock);
@@ -138,7 +144,7 @@ export async function POST(request: Request) {
         sku, baseItemIds: ids, baseItemCount: group.length, listingRowCount: listingRows.length,
         listingStatuses: listingRows.map((row) => String(row.status ?? "null")),
         listingExternalProductIds: listingRows.map((row) => String(row.external_product_id ?? "")),
-        visibleItemIds: group.filter((item) => item.visible === true).map((item) => String(item.item_id ?? "")),
+        visibleItemIds: group.filter((item) => isBaseVisible(item.visible)).map((item) => String(item.item_id ?? "")),
         commerceMappedItemIds: ids.filter((id) => commerceMappedIds.has(id)),
         legacyMappedItemIds: ids.filter((id) => legacyMappedIds.has(id)),
         blockers: [...new Set(blockers)],
