@@ -86,6 +86,12 @@ jobs:
             raise SystemExit("dry run scope or complete snapshot check failed")
           if unexpected:
             raise SystemExit("dry run returned results outside the allowlist")
+          by_id={str(r.get("baseItemId")):r for r in rows}
+          if set(by_id) != targets:
+            raise SystemExit("dry run must produce exactly one safe candidate per target ID")
+          for target,row in by_id.items():
+            if row.get("outcome") != "repairable_dry_run" or "exact_commerce_sku" not in (row.get("source") or []):
+              raise SystemExit(f"target {target} is not an exact-SKU repair candidate")
           PY
           if [[ "$APPLY" == "true" ]]; then
             # The API allowlist and limit constrain this mutation to these three BASE item IDs.
@@ -108,10 +114,19 @@ jobs:
             "auditRowsWritten":d.get("auditRowsWritten"),
             "priceMismatches":d.get("priceMismatches"),
             "publicationMismatches":d.get("publicationMismatches"),
-            "targetRowsFoundByKnownFields":len(rows)
+            "targetRowsFound":len(rows),
+            "targetRows":rows
           },ensure_ascii=False,indent=2))
           if d.get("evidenceComplete") is not True:
             raise SystemExit("BASE readback evidence incomplete")
+          if "${APPLY}" == "true":
+            by_id={str(r.get("baseItemId")):r for r in rows}
+            if set(by_id) != targets:
+              raise SystemExit("post-repair readback must contain all three target IDs")
+            for target,row in by_id.items():
+              if row.get("mappingStatus") != "matched" or row.get("mappingMethod") != "base_item_id" or row.get("skuMatches") is not True or row.get("priceMatches") is not True:
+                raise SystemExit(f"post-repair identity/price verification failed for {target}")
+            # Publication is deliberately not changed by this workflow; hidden BASE items remain a separate task.
           PY
 
       - name: Upload targeted repair evidence
