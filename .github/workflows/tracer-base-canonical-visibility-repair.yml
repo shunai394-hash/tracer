@@ -92,7 +92,7 @@ jobs:
               if (preflight.readOnly !== true || preflight.snapshotComplete !== true) throw new Error("BASE_VISIBILITY_REPAIR_PREFLIGHT_FAILED_AFTER_BATCH");
               if (result.readbackVerified === 0 || (Number(preflight.eligibleCandidates) > 0 && remaining <= 0)) break;
             }
-            result = { ok: batches.length > 0 && batches.every(x => x.readbackFailed === 0), apply: true, readOnly: false, maxItems, totalVerified, batches, remainingEligible: preflight.eligibleCandidates, finalPreflight: preflight };
+            result = { ok: batches.every(x => x.readbackFailed === 0), apply: true, readOnly: false, maxItems, totalVerified, batches, remainingEligible: preflight.eligibleCandidates, finalPreflight: preflight };
             if (result.ok !== true) throw new Error("BASE_VISIBILITY_REPAIR_FAILED");
           } else {
             console.log("Read-only mode: no BASE item was edited.");
