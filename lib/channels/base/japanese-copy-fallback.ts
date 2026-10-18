@@ -28,7 +28,7 @@ export function deterministicJapaneseCopy(title: string, detail: string): Japane
   if (!cleanDetail && (/^[A-Za-z][A-Za-z0-9-]*$/.test(cleanTitle) || colorOnly.test(cleanTitle))) {
     return null;
   }
-  const sourceCopy = cleanTitle + "\\n" + cleanDetail;
+  const sourceCopy = cleanTitle + "\n" + cleanDetail;
   const fallbackTitle = localizeProductTitle(sourceCopy, title);
   if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle) || !hasJapaneseCopy(fallbackTitle)) {
     return null;
