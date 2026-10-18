@@ -7,6 +7,7 @@ on:
       - ".github/workflows/tracer-readonly-commerce-audit.yml"
       - "app/api/admin/commerce/status/route.ts"
       - "app/api/admin/commerce/live-price-audit/route.ts"
+      - "app/api/admin/channels/base/legacy-id-detail-audit/route.ts"
       - "app/api/channels/base/diagnostics/route.ts"
       - "app/api/cron/commerce-reprice-existing/route.ts"
       - "lib/commerce/publish.ts"
@@ -100,6 +101,23 @@ jobs:
                   print(key + ":", json.dumps(r[key], ensure_ascii=False, separators=(",",":")))
           PY
           test "${repair_code}" = "200"
+
+          legacy_token="$(get_oidc_token)"
+          legacy_code="$(curl --silent --show-error --max-time 150 -o base-legacy-id-detail-audit.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${legacy_token}" \
+            "${BASE}/api/admin/channels/base/legacy-id-detail-audit")"
+          echo "=== BASE LEGACY ID DETAIL AUDIT HTTP ${legacy_code} ==="
+          python3 - <<'PY'
+          import json
+          with open("base-legacy-id-detail-audit.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "generatedAt:", r.get("generatedAt"))
+          print("checked:", r.get("checked"), "oldIdNotFound:", r.get("oldIdNotFound"),
+                "migrationCandidates:", r.get("migrationCandidates"), "indeterminate:", r.get("indeterminate"))
+          for row in r.get("results", []):
+              print(json.dumps({k: row.get(k) for k in ("oldId", "expectedCurrentId", "expectedSku", "classification", "reason", "oldItem", "oldError", "currentItem", "currentError")}, ensure_ascii=False, separators=(",",":")))
+          PY
+          test "${legacy_code}" = "200"
 
           audit_token="$(get_oidc_token)"
           audit_code="$(curl --silent --show-error --max-time 300 -o live-price-audit.json -w "%{http_code}" \
