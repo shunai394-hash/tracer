@@ -199,6 +199,37 @@ export async function GET(request: Request) {
   if (listingReadError) {
     result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
   } else {
+    // Use the latest external API audit as a second source of truth. A listing's DB
+    // price can already equal the canonical price while the actual storefront still
+    // shows an old value; those rows must remain eligible for bounded readback sync.
+    const [baseAuditRead, shopifyAuditRead] = await Promise.all([
+      db.from("channel_price_reconciliation_audit")
+        .select("variant_id,channel,price_matches,observed_at")
+        .eq("channel", "base")
+        .order("observed_at", { ascending: false })
+        .limit(5000),
+      db.from("channel_price_reconciliation_audit")
+        .select("variant_id,channel,price_matches,observed_at")
+        .eq("channel", "shopify")
+        .order("observed_at", { ascending: false })
+        .limit(5000),
+    ]);
+    const latestExternalPriceAuditByKey = new Map<string, { price_matches: boolean | null; observed_at: string | null }>();
+    for (const audit of [...(baseAuditRead.data ?? []), ...(shopifyAuditRead.data ?? [])]) {
+      const key = String(audit.channel) + ":" + String(audit.variant_id);
+      if (!latestExternalPriceAuditByKey.has(key)) {
+        latestExternalPriceAuditByKey.set(key, {
+          price_matches: audit.price_matches,
+          observed_at: audit.observed_at,
+        });
+      }
+    }
+    if (baseAuditRead.error || shopifyAuditRead.error) {
+      result.storefrontSyncErrors.push({
+        channel: "audit_lookup",
+        reason: [baseAuditRead.error?.message, shopifyAuditRead.error?.message].filter(Boolean).join("; ").slice(0, 180),
+      });
+    }
     // Select only rows that are still stale. Including every repriced variant here
     // re-synced already-correct listings and starved the real backlog on each cron run.
     for (const channel of ["base", "shopify"] as const) {
@@ -210,13 +241,19 @@ export async function GET(request: Request) {
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
+        const externalAudit = latestExternalPriceAuditByKey.get(channel + ":" + variantId);
+        const auditObservedAt = externalAudit?.observed_at ? Date.parse(externalAudit.observed_at) : Number.NaN;
+        const listingSyncedAt = row.last_synced_at ? Date.parse(String(row.last_synced_at)) : Number.NaN;
+        const externalPriceNeedsSync = externalAudit?.price_matches === false &&
+          Number.isFinite(auditObservedAt) &&
+          (!Number.isFinite(listingSyncedAt) || auditObservedAt > listingSyncedAt);
         // Disable unverified supplier listings once, then stop re-queueing the safety state.
         if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) {
           return row.status === "published" &&
             !String(row.last_error ?? "").startsWith("supplier_offer_not_fulfillable:");
         }
         return canonicalPrice !== undefined &&
-          (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync);
+          (Number(row.selling_price) !== canonicalPrice || row.status !== "published" || contentNeedsSync || externalPriceNeedsSync);
       });
       const priority = (row: (typeof eligibleRows)[number]) => {
         const variantId = String(row.variant_id);
