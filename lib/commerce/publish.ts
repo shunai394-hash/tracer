@@ -470,7 +470,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
     // Do not create a visible but non-purchasable listing for an unverified offer.
     if (!supplierSaleable && !currentState?.external_product_id) {
-      results.push({ variantId: candidate.id, ok: false, error: "supplier_offer_not_fulfillable" });
+      const blocker = !supplierShippingKnown ? "japan_freight_unconfirmed" : !supplierStockKnown ? "supplier_stock_unconfirmed" : offer.source_status !== "verified" ? "supplier_offer_not_verified" : offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" : offer.tracking_supported !== true ? "tracking_not_verified" : !supplierEvidenceFresh ? "supplier_verification_stale" : Number(offer.inventory) <= 0 ? "supplier_out_of_stock" : "supplier_offer_invalid";
+      results.push({ variantId: candidate.id, ok: false, error: "supplier_offer_not_fulfillable:" + blocker });
       continue;
     }
     const storefrontStock = toStorefrontStockQuantity(
