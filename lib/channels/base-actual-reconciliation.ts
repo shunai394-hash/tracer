@@ -68,11 +68,11 @@ function visibleValue(value: unknown): boolean | null {
   return null;
 }
 
-/** Known BASE visibility disagrees with the linked channel_listings status. */
+/** Known BASE visibility disagrees with a publication status. error and pending are workflow states. */
 export function publicationAgrees(visible: boolean | null, status: string | null): boolean | null {
   if (visible === null || !status) return null;
-  if (visible) return status === "published";
-  return status === "hidden";
+  if (status !== "published" && status !== "hidden") return null;
+  return visible ? status === "published" : status === "hidden";
 }
 
 export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], listings: BaseChannelListing[]) {
@@ -116,15 +116,18 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const externalPrice = priceValue(item.price);
     const visible = visibleValue(item.visible);
     const canonicalPrice = listing && Number.isFinite(Number(listing.sellingPrice)) ? Number(listing.sellingPrice) : null;
-    const priceMatches = listing && externalPrice !== null && canonicalPrice !== null
+    const trustedListing = mappingStatus === "matched" ? listing : null;
+    const priceMatches = trustedListing && externalPrice !== null && canonicalPrice !== null
       ? Math.round(externalPrice) === Math.round(canonicalPrice)
       : null;
     const skuMatches = listing && identifier
       ? identifier.toUpperCase() === String(listing.externalSku ?? "").toUpperCase()
       : null;
-    const publicationMatches = listing ? publicationAgrees(visible, listing.status) : null;
+    const publicationMatches = trustedListing ? publicationAgrees(visible, trustedListing.status) : null;
     const reasons = [
       ...(candidates.length === 0 ? ["no_db_mapping"] : []),
+      ...(mappingStatus === "unmapped" && !identifier ? ["missing_sku"] : []),
+      ...(mappingStatus === "unmapped" && identifier ? ["sku_not_in_tracer"] : []),
       ...(candidates.length > 1 ? ["ambiguous_db_mapping"] : []),
       ...(skuPointsToDifferentId ? ["base_item_id_conflict"] : []),
       ...(visible === null ? ["visibility_unreadable"] : []),

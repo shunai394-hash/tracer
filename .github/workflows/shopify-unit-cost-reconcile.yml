@@ -1,0 +1,57 @@
+name: Shopify unit cost reconciliation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  cost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait until production serves this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 10
+          done
+          exit 1
+      - name: Read Shopify unit costs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          mkdir -p cost-results
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS --max-time 110 -o cost-results/unit-cost.json -w "%{http_code}" -H "Authorization: Bearer $token" "$BASE/api/admin/shopify/unit-cost")"
+          echo "HTTP $code"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("cost-results/unit-cost.json").read_text())
+          summary={k: d.get(k) for k in ("ok","readOnly","listings","shopifyCostRead","costConfirmed","profitConfirmed","shopifyUnitCostMissing","supplierUnitCostMissing","domesticShippingUnconfirmed","accessDenied","auditRowsWritten","auditWriteError")}
+          print(json.dumps(summary, ensure_ascii=False))
+          Path("cost-results/summary.json").write_text(json.dumps(summary, indent=2)+"\n")
+          items=d.get("items") or []
+          Path("cost-results/items.json").write_text(json.dumps(items)+"\n")
+          if d.get("readOnly") is not True or d.get("listings", 0) < 1:
+            raise SystemExit("unit cost read did not return listings")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shopify-unit-cost-${{ github.run_id }}
+          path: cost-results/

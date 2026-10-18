@@ -246,11 +246,14 @@ export async function getBaseItemDetail(itemId: string): Promise<Record<string, 
 }
 
 /**
- * Deletes only the three explicitly allowlisted stale BASE item IDs after the
- * dedicated stale-item route has validated a complete snapshot and canonical
- * replacements. Never call from ordinary reconciliation or cron flows.
+ * Deletes only allowlisted stale BASE item IDs after a dedicated route has
+ * validated a complete snapshot and the canonical replacement. Never call from
+ * ordinary reconciliation or cron flows.
  */
-const BASE_STALE_ITEM_DELETE_ALLOWLIST = new Set(["163159366", "163159368", "163159369"]);
+const BASE_STALE_ITEM_DELETE_ALLOWLIST = new Set([
+  "163159366", "163159368", "163159369",
+  "163125132", "163125145", "163130238", "163159274", "163159329",
+]);
 
 export async function deleteAllowlistedStaleBaseItem(itemId: string) {
   const normalizedId = String(itemId ?? "").trim();

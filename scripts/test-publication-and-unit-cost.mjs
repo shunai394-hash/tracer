@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  ERROR_HIDDEN_LEAVE,
+  HIDDEN_DUPLICATE_DELETES,
+  VISIBLE_NONCANONICAL_HIDES,
+  assessErrorHidden,
+  assessHiddenDelete,
+  assessVisibleHide,
+} from "../lib/channels/base-publication-repair.ts";
+import { judgeUnitCost } from "../lib/shopify/unit-cost-reconcile.ts";
+import { appendSnapshotRows, prepareSnapshotResume } from "../lib/channels/base-snapshot-checkpoint.ts";
+
+function item(id, sku, visible, price) {
+  return { itemId: id, sku, visible, price };
+}
+
+const first = HIDDEN_DUPLICATE_DELETES[0];
+const items = new Map([
+  [first.staleId, item(first.staleId, first.sku, false, first.price)],
+  [first.canonicalId, item(first.canonicalId, first.sku, true, first.price)],
+]);
+assert.equal(assessHiddenDelete(first, items, first.canonicalId).ok, true);
+assert.equal(assessHiddenDelete(first, items, first.staleId).ok, false);
+
+const hide = VISIBLE_NONCANONICAL_HIDES[1];
+const hideItems = new Map([
+  [hide.staleId, item(hide.staleId, hide.sku, true, hide.price)],
+  [hide.canonicalId, item(hide.canonicalId, hide.sku, false, hide.price)],
+]);
+assert.equal(assessVisibleHide(hide, hideItems, hide.canonicalId).ok, true);
+assert.equal(assessVisibleHide(hide, hideItems, hide.staleId).reason, "listing_does_not_point_at_canonical");
+
+const errorItem = ERROR_HIDDEN_LEAVE[0];
+const errorItems = new Map([[errorItem.itemId, item(errorItem.itemId, errorItem.sku, false, errorItem.price)]]);
+assert.equal(assessErrorHidden(errorItem, errorItems, { externalId: errorItem.itemId, status: "error" }).action, "leave_db_error_base_already_hidden");
+assert.equal(assessErrorHidden(errorItem, errorItems, { externalId: errorItem.itemId, status: "published" }).ok, false);
+
+const confirmed = judgeUnitCost({
+  shopifyUnitCost: 100, shopifyCurrency: "JPY", supplierUnitCost: 100, supplierCurrency: "JPY",
+  shippingCost: 20, shippingKnown: true, sellingPrice: 1000, expectedProfit: 400, priceCurrency: "JPY",
+});
+assert.equal(confirmed.profitConfirmed, true);
+const missingShopifyCost = judgeUnitCost({ ...{
+  shopifyUnitCost: null, shopifyCurrency: null, supplierUnitCost: 100, supplierCurrency: "JPY",
+  shippingCost: 20, shippingKnown: true, sellingPrice: 1000, expectedProfit: 400, priceCurrency: "JPY",
+} });
+assert.equal(missingShopifyCost.costConfirmed, false);
+assert.equal(missingShopifyCost.profitConfirmed, false);
+assert.ok(missingShopifyCost.reasons.includes("shopify_unit_cost_missing"));
+
+const prior = [{ item_id: "1", price: 10 }];
+const resumed = prepareSnapshotResume(prior, { nextOffset: 100, pagesFetched: 1, itemIds: ["1"] });
+const again = appendSnapshotRows(resumed.items, resumed.seen, [{ item_id: "1", price: 99 }, { item_id: "2", price: 20 }]);
+assert.deepEqual(again, { added: 1, duplicates: 1 });
+assert.equal(resumed.items.length, 2);
+assert.equal(resumed.items[0].price, 10);
+
+const route = readFileSync(new URL("../app/api/channels/base/publication-repair/route.ts", import.meta.url), "utf8");
+const costRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/route.ts", import.meta.url), "utf8");
+assert.match(route, /REPAIR_ELEVEN_BASE_PUBLICATION_MISMATCHES/);
+assert.match(route, /deleteAllowlistedStaleBaseItem/);
+assert.match(route, /visible: false/);
+assert.doesNotMatch(route, /visible:\s*true/);
+assert.match(costRoute, /unitCost \{ amount currencyCode \}/);
+assert.match(costRoute, /profitConfirmed: accessDenied \? false/);
+console.log("publication repair and unit cost: ok");
