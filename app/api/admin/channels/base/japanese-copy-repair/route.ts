@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { editBaseItem, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductDescription, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { deterministicJapaneseCopy } from "@/lib/channels/base/japanese-copy-fallback";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -47,9 +48,16 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
       const message = error instanceof Error ? error.message : "";
       const isTemporaryCapacityError =
         /HTTP 503\s+UNAVAILABLE|HTTP 429\s+RESOURCE_EXHAUSTED/i.test(message);
-      if (!isTemporaryCapacityError || attempt === 1) throw error;
-      // Retry only explicit capacity/rate-limit responses; do not repeat timeouts
-      // or other failures that could consume the route's execution budget.
+      if (!isTemporaryCapacityError) throw error;
+      if (attempt === 1) {
+        // Gemini quota/capacity can remain exhausted after retry. Use only the
+        // repository's deterministic source-title mappings; never invent specs.
+        const fallback = deterministicJapaneseCopy(title, detail);
+        if (fallback) return fallback;
+        throw error;
+      }
+      // Retry only explicit capacity/rate-limit responses; do not repeat unrelated
+      // failures that could consume the route's execution budget.
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
