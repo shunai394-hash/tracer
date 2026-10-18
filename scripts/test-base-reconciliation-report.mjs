@@ -55,6 +55,10 @@ assert.match(duplicateCleanup, /canonical\.visible !== true \|\| duplicate\.visi
 assert.match(duplicateCleanup, /Stale[\s\S]*duplicate/);
 assert.doesNotMatch(duplicateCleanup, /price !== duplicatePrice/);
 assert.doesNotMatch(duplicateCleanup, /stock !== duplicateStock/);
+assert.match(duplicateCleanup, /duplicateTitle/);
+assert.match(duplicateCleanup, /duplicatePrice/);
+assert.match(duplicateCleanup, /title: duplicateTitle, detail/);
+assert.match(duplicateCleanup, /price: duplicatePrice, stock: 0, visible: false/);
 assert.match(duplicateCleanup, /duplicateId \|\| commerceMappedIds\.has\(duplicateId\) \|\| legacyMappedIds\.has\(duplicateId\)/);
 assert.match(duplicateCleanup, /commerceMappedIds\.has\(duplicateId\) \|\| legacyMappedIds\.has\(duplicateId\)/);
 assert.match(duplicateCleanup, /stock: 0, visible: false/);
