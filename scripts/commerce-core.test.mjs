@@ -666,13 +666,13 @@ test("CJ import reports stale supplier-evidence retry queue progress", async () 
     "finalEvidenceParentCount",
     "missingPublicationRetriesQueued",
     "newDiscoveryCandidatesQueued",
-    assert.match(importer, /discoverySearchPagesScanned/);
-    assert.match(importer, /scanPage <= page \\+ 5/);
-    assert.match(importer, /\.slice\(0, Math\.max\(0, limit - 1\)\)/, "recovery retries must always leave one slot for new-product discovery");
     "finalCandidateCount",
   ]) {
     assert.match(importer, new RegExp(field + ": 0"));
   }
+  assert.match(importer, /discoverySearchPagesScanned/);
+  assert.match(importer, /scanPage <= page \\+ 5/);
+  assert.match(importer, /\.slice\(0, Math\.max\(0, limit - 1\)\)/, "recovery retries must always leave one slot for new-product discovery");
   assert.ok(importer.includes("stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;"));
   assert.ok(importer.includes("stats.evidenceRetryVariantsQueued = evidenceRetryCount;"));
   assert.ok(importer.includes("stats.finalCandidateCount = candidates.length;"));
