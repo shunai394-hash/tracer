@@ -20,7 +20,15 @@ function hasJapaneseCopy(value: string): boolean {
  * validation. Ambiguous titles such as a color or brand alone remain blocked.
  */
 export function deterministicJapaneseCopy(title: string, detail: string): JapaneseCopy | null {
-  const sourceCopy = title + "\n" + detail;
+  const cleanTitle = title.trim();
+  const cleanDetail = detail.trim();
+  // A lone brand/model or variant label is not enough evidence to identify a
+  // product. In particular, do not turn "Blue" into a fabricated product title.
+  const colorOnly = /^(?:blue|red|green|black|white|yellow|pink|purple|orange|brown|grey|gray|beige|navy|silver|gold|reddish brown|dark brown|light brown)$/i;
+  if (!cleanDetail && (/^[A-Za-z][A-Za-z0-9-]*$/.test(cleanTitle) || colorOnly.test(cleanTitle))) {
+    return null;
+  }
+  const sourceCopy = cleanTitle + "\\n" + cleanDetail;
   const fallbackTitle = localizeProductTitle(sourceCopy, title);
   if (!fallbackTitle || !isJapaneseProductTitle(fallbackTitle) || !hasJapaneseCopy(fallbackTitle)) {
     return null;
