@@ -219,6 +219,21 @@ export async function getBaseItemDetail(itemId: string): Promise<Record<string, 
   return item as Record<string, unknown>;
 }
 
+/**
+ * Deletes only the three explicitly allowlisted stale BASE item IDs after the
+ * dedicated stale-item route has validated a complete snapshot and canonical
+ * replacements. Never call from ordinary reconciliation or cron flows.
+ */
+const BASE_STALE_ITEM_DELETE_ALLOWLIST = new Set(["163159366", "163159368", "163159369"]);
+
+export async function deleteAllowlistedStaleBaseItem(itemId: string) {
+  const normalizedId = String(itemId ?? "").trim();
+  if (!BASE_STALE_ITEM_DELETE_ALLOWLIST.has(normalizedId)) {
+    throw new Error("BASE_STALE_ITEM_DELETE_ID_NOT_ALLOWLISTED");
+  }
+  return requestBase("/items/delete", new URLSearchParams({ item_id: normalizedId }));
+}
+
 export async function addBaseItemImage(input: {
   itemId: string;
   imageNo: number;
