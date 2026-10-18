@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   if (body.targetBaseItemIds !== undefined && (!Array.isArray(body.targetBaseItemIds)
     || targetBaseItemIds.length === 0
     || targetBaseItemIds.length > 100
-    || targetBaseItemIds.some((id) => !/^\\d+$/.test(id)))) {
+    || targetBaseItemIds.some((id) => !/^\d+$/.test(id)))) {
     return NextResponse.json({ ok: false, error: "invalid_target_base_item_ids" }, { status: 400 });
   }
   const targetBaseItemIdSet = targetBaseItemIds.length ? new Set(targetBaseItemIds) : null;
