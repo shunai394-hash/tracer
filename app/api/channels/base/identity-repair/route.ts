@@ -212,7 +212,17 @@ export async function POST(request: Request) {
     for (const item of items) {
       if (targetBaseItemIdSet && !targetBaseItemIdSet.has(item.baseItemId)) continue;
       const identity = classifyBaseIdentifier(item.identifier);
-      if (identity.kind !== "commerce_sku") continue;
+      if (identity.kind !== "commerce_sku") {
+        // Keep target-scoped diagnostics for BASE items that cannot enter exact-SKU matching.
+        if (targetBaseItemIdSet) {
+          results.push({
+            baseItemId: item.baseItemId,
+            outcome: "target_identifier_not_commerce_sku",
+            source: [identity.kind],
+          });
+        }
+        continue;
+      }
       const group = skuGroups.get(identity.sku) ?? [];
       group.push(item.baseItemId);
       skuGroups.set(identity.sku, group);
@@ -269,6 +279,14 @@ export async function POST(request: Request) {
           if (decision.outcome === "ambiguous_sku" || decision.outcome === "ambiguous_base_item" || decision.outcome === "base_item_already_mapped") {
             ambiguous += 1;
           }
+          // Previously these target outcomes were silently omitted, making a zero-candidate
+          // dry run impossible to diagnose from its artifact.
+          results.push({
+            baseItemId,
+            listingId: decision.listingId,
+            source: ["exact_commerce_sku"],
+            outcome: decision.outcome,
+          });
           continue;
         }
         const source = decision.outcome === "repairable_stale_external_id"
