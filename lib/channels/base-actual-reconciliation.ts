@@ -24,7 +24,7 @@ export type BaseReconciliationItem = {
   baseVisibility: boolean | null;
   dbStatus: string | null;
   existingExternalProductId: string | null;
-  mappingStatus: "matched" | "unmapped" | "ambiguous";
+  mappingStatus: "matched" | "unmapped" | "ambiguous" | "id_conflict";
   mappingMethod: "base_item_id" | "exact_sku" | "none";
   candidateCount: number;
   candidateListingIds: string[];
@@ -101,7 +101,18 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const candidates = idCandidates.length > 0 ? idCandidates : skuCandidates;
     const mappingMethod = idCandidates.length > 0 ? "base_item_id" : skuCandidates.length > 0 ? "exact_sku" : "none";
     const listing = candidates.length === 1 ? candidates[0] : null;
-    const mappingStatus = candidates.length === 0 ? "unmapped" : candidates.length > 1 ? "ambiguous" : "matched";
+    const skuPointsToDifferentId = idCandidates.length === 0
+      && skuCandidates.length === 1
+      && externalId !== null
+      && textValue(skuCandidates[0].externalProductId) !== null
+      && textValue(skuCandidates[0].externalProductId) !== externalId;
+    const mappingStatus = candidates.length === 0
+      ? "unmapped"
+      : candidates.length > 1
+        ? "ambiguous"
+        : skuPointsToDifferentId
+          ? "id_conflict"
+          : "matched";
     const externalPrice = priceValue(item.price);
     const visible = visibleValue(item.visible);
     const canonicalPrice = listing && Number.isFinite(Number(listing.sellingPrice)) ? Number(listing.sellingPrice) : null;
@@ -115,6 +126,7 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const reasons = [
       ...(candidates.length === 0 ? ["no_db_mapping"] : []),
       ...(candidates.length > 1 ? ["ambiguous_db_mapping"] : []),
+      ...(skuPointsToDifferentId ? ["base_item_id_conflict"] : []),
       ...(visible === null ? ["visibility_unreadable"] : []),
       ...(externalPrice === null ? ["external_price_unreadable"] : []),
       ...(priceMatches === false ? ["price_mismatch"] : []),
@@ -182,6 +194,7 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
       mappedItems: count((item) => item.mappingStatus === "matched"),
       exactIdMatches: count((item) => item.mappingMethod === "base_item_id" && item.mappingStatus === "matched"),
       exactSkuMatches: count((item) => item.mappingMethod === "exact_sku" && item.mappingStatus === "matched"),
+      idConflicts: count((item) => item.mappingStatus === "id_conflict"),
       unmappedItems: count((item) => item.mappingStatus === "unmapped"),
       ambiguousItems: count((item) => item.mappingStatus === "ambiguous"),
       missingSku: count((item) => !item.baseIdentifier),
