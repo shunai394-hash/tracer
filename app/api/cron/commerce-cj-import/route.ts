@@ -314,6 +314,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "invalid_product_ids", imported: 0 }, { status: 400 });
     }
     if (url.searchParams.has("variantIds") && (requestedVariantIds.length === 0 ||
+        (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).length > 6 ||
         (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).some((id) => !/^\d{10,25}$/.test(id)) ||
         (url.searchParams.has("productIds") && requestedProductIds.length === 0))) {
       return NextResponse.json({ ok: false, error: "invalid_variant_ids", maxVariantIds: 6, imported: 0 }, { status: 400 });
