@@ -7,6 +7,12 @@ on:
       - "app/api/channels/base/duplicate-cleanup/route.ts"
       - ".github/workflows/tracer-base-duplicate-cleanup.yml"
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "Hide only verified duplicate BASE copies; default is read-only diagnostics"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,9 +51,10 @@ jobs:
           echo "Production did not report target SHA $TARGET_SHA; refusing BASE visibility changes."
           exit 1
 
-      - name: Run guarded duplicate cleanup
+      - name: Diagnose duplicates and optionally apply guarded cleanup
         env:
           GH_TOKEN: ${{ github.token }}
+          ALLOW_APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply == true }}
         shell: bash
         run: |
           set -euo pipefail
@@ -74,17 +81,26 @@ jobs:
           console.log(JSON.stringify({
             stage: "read-only preflight", httpStatus: preflightResponse.status,
             duplicateSkuGroups: preflight.duplicateSkuGroups, duplicateHideCandidates: preflight.duplicateHideCandidates,
+            diagnosticSummary: preflight.diagnosticSummary, diagnostics: preflight.diagnostics,
           }, null, 2));
-          const response = await fetch(endpoint, {
-            method: "POST", headers, body: JSON.stringify({ apply: true, limit: 65 }), signal: AbortSignal.timeout(110000),
-          });
-          const result = await response.json().catch(() => ({}));
+          const allowApply = process.env.ALLOW_APPLY === "true";
+          let response = preflightResponse;
+          let result = preflight;
+          if (allowApply) {
+            response = await fetch(endpoint, {
+              method: "POST", headers, body: JSON.stringify({ apply: true, limit: 65 }), signal: AbortSignal.timeout(110000),
+            });
+            result = await response.json().catch(() => ({}));
+          } else {
+            console.log("Read-only diagnostics mode; no BASE item visibility or stock was changed.");
+          }
           await writeFile("base-duplicate-cleanup-result.json", JSON.stringify(result, null, 2), { mode: "0600" });
           console.log(JSON.stringify({
-            stage: "apply", httpStatus: response.status, ok: result.ok === true, snapshotComplete: result.snapshotComplete,
+            stage: allowApply ? "apply" : "read-only diagnostics", httpStatus: response.status, ok: result.ok === true, snapshotComplete: result.snapshotComplete,
             duplicateSkuGroups: result.duplicateSkuGroups, duplicateHideCandidates: result.duplicateHideCandidates,
             duplicateHidden: result.duplicateHidden, duplicateHideFailed: result.duplicateHideFailed,
-            deferredByLimit: result.deferredByLimit, sample: (result.results || []).slice(0, 10),
+            deferredByLimit: result.deferredByLimit, diagnosticSummary: result.diagnosticSummary, diagnostics: result.diagnostics,
+            sample: (result.results || []).slice(0, 10),
           }, null, 2));
           if (!response.ok || result.ok !== true || result.duplicateHideFailed > 0 || result.deferredByLimit > 0 || result.duplicateHideCandidates > 65) {
             throw new Error("BASE_DUPLICATE_CLEANUP_FAILED");
@@ -97,6 +113,6 @@ jobs:
           print()
           print("Only exact duplicate TRC SKUs were considered. A duplicate was hidden only when exactly one published canonical listing mapped to the canonical BASE item, the canonical item was visible, and the duplicate item ID had no commerce or legacy mapping. Stale duplicate title/price/stock do not block hiding. No BASE items were deleted.")
           print()
-          print(json.dumps({k:d.get(k) for k in ["ok","snapshotComplete","scannedBaseItems","duplicateSkuGroups","duplicateHideCandidates","duplicateHidden","duplicateHideFailed","deferredByLimit","results"]}, ensure_ascii=False, indent=2))
+          print(json.dumps({k:d.get(k) for k in ["ok","snapshotComplete","scannedBaseItems","duplicateSkuGroups","duplicateHideCandidates","duplicateHidden","duplicateHideFailed","deferredByLimit","diagnosticSummary","diagnostics","results"]}, ensure_ascii=False, indent=2))
           PY
           gh issue create --repo shunai394-hash/tracer --title "[TRACER BASE duplicate SKU cleanup] Run $GITHUB_RUN_ID" --body-file base-duplicate-cleanup-summary.md
