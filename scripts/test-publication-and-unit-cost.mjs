@@ -106,7 +106,7 @@ assert.equal(resumed.items[0].price, 10);
 
 const route = readFileSync(new URL("../app/api/channels/base/publication-repair/route.ts", import.meta.url), "utf8");
 const costRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/route.ts", import.meta.url), "utf8");
-assert.match(route, /REPAIR_BASE_PUBLICATION_MISMATCHES_AND_HIDDEN_DUPLICATES/);
+assert.match(route, /REPAIR_TWO_REQUESTED_BASE_DUPLICATES/);
 assert.match(route, /if \(!apply \|\| blocked\)/, "apply must refuse the entire repair when any preflight guard blocks");
 assert.match(route, /const requestedDeletes = scoped/);
 assert.match(route, /invalid_stale_ids/);
