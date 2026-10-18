@@ -2,6 +2,11 @@ name: BASE actual-item reconciliation audit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/base-actual-item-reconciliation-audit.yml'
+      - 'app/api/channels/base/reconciliation/route.ts'
 
 permissions:
   contents: read
