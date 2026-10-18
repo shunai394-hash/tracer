@@ -188,8 +188,32 @@ export async function POST(request: Request) {
       }
     }
 
+    // Report only normalized visibility value categories, never raw product fields.
+    // This distinguishes a real all-hidden catalog from an API shape/encoding change.
+    const visibilityValueKinds = items.reduce<Record<string, number>>((summary, item) => {
+      const value = item.visible;
+      let kind: string;
+      if (value === undefined) kind = "missing";
+      else if (value === null) kind = "null";
+      else if (typeof value === "boolean") kind = value ? "boolean_true" : "boolean_false";
+      else if (typeof value === "number") kind = value === 1 ? "number_1" : value === 0 ? "number_0" : "number_other";
+      else if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        kind = normalized === "1" ? "string_1"
+          : normalized === "0" ? "string_0"
+          : normalized === "true" ? "string_true"
+          : normalized === "false" ? "string_false"
+          : normalized === "" ? "string_empty" : "string_other";
+      } else if (Array.isArray(value)) kind = "array";
+      else if (typeof value === "object") kind = "object";
+      else kind = "other";
+      summary[kind] = (summary[kind] ?? 0) + 1;
+      return summary;
+    }, {});
+
     return NextResponse.json({
       ok: failed === 0, apply, readOnly: !apply, snapshotComplete: true, scannedBaseItems: items.length,
+      visibilityValueKinds,
       duplicateSkuGroups: duplicateGroups.length, duplicateHideCandidates: candidates.length, duplicateHidden: hidden,
       duplicateHideFailed: failed, deferredByLimit: Math.max(0, candidates.length - results.length), results,
       diagnosticSummary: diagnostics.reduce<Record<string, number>>((summary, group) => {
