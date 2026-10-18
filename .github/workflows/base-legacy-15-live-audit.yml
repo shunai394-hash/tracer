@@ -55,20 +55,23 @@ jobs:
           code = os.environ.get("HTTP_CODE", "")
           with open("base-legacy-15-live-audit.json", encoding="utf-8") as f:
               r=json.load(f)
-          print(json.dumps({k:r.get(k) for k in ("ok","readOnly","generatedAt","pairsChecked","itemDetailsAttempted","oldFound","oldNotFound404","currentFound","errors")}, ensure_ascii=False))
+          print(json.dumps({k:r.get(k) for k in ("ok","readOnly","generatedAt","pairsChecked","itemDetailsAttempted","oldFound","oldNotFound404","currentFound","skuMismatches","errors")}, ensure_ascii=False))
           for row in r.get("results", []):
               old=row.get("oldItem") or {}
               cur=row.get("currentItem") or {}
               print(json.dumps({
                   "oldId": row.get("oldId"),
                   "currentId": row.get("currentId"),
+                  "skuMatch": row.get("skuMatch"),
                   "oldFound": bool(row.get("oldItem")),
                   "oldError": row.get("oldError"),
+                  "oldTitle": old.get("title"),
                   "oldSku": old.get("sku"),
                   "oldVisible": old.get("visible"),
                   "oldPrice": old.get("price"),
                   "currentFound": bool(row.get("currentItem")),
                   "currentError": row.get("currentError"),
+                  "currentTitle": cur.get("title"),
                   "currentSku": cur.get("sku"),
                   "currentVisible": cur.get("visible"),
                   "currentPrice": cur.get("price")
