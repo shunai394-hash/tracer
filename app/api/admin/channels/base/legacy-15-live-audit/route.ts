@@ -73,6 +73,7 @@ export async function GET(request: Request) {
   const results: Array<{
     oldId: string;
     currentId: string;
+    skuMatch: boolean;
     oldItem: ReturnType<typeof summarize> | null;
     oldError: ReturnType<typeof safeError> | null;
     currentItem: ReturnType<typeof summarize> | null;
