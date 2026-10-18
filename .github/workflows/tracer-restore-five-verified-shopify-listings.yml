@@ -1,0 +1,70 @@
+name: TRACER Restore Five Verified Shopify Listings
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-restore-five-verified-shopify-listings.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  restore:
+    if: contains(github.event.head_commit.message, 'restore five supplier-verified Shopify listings')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 10
+          done
+          echo "Production deployment did not include this workflow commit; refusing Shopify writes."
+          exit 1
+
+      - name: Sync only the five exact supplier-verified listing IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          body='{"limit":5,"listingIds":["46b6c888-c253-41c9-aefa-cb644ac5e367","7e1b012c-8154-48bb-96cd-af89879c7f00","620fb020-5384-44e3-9905-9ae10c8c1d7e","b15a21a5-afc4-4ebe-be5c-33ad6a74cc42","b933d8c3-e79d-4e06-bebc-30af75590081"]}'
+          code="$(curl -sS -o shopify-restore.json -w "%{http_code}" --max-time 110 -H "Authorization: Bearer $token" -H "Content-Type: application/json" -X POST "$BASE/api/admin/shopify/sync" -d "$body" || true)"
+          echo "Shopify sync HTTP $code"
+          python3 - <<PY
+          import json,sys
+          try:
+              d=json.load(open("shopify-restore.json"))
+          except Exception:
+              print("Shopify sync returned no valid JSON")
+              sys.exit(1)
+          print(json.dumps(d,ensure_ascii=False,indent=2))
+          if not (200 <= int("$code") < 300) or d.get("ok") is False or d.get("configured") is False:
+              sys.exit(1)
+          if d.get("attempted",0) != 5:
+              print("Expected exactly five attempted listings; refusing to claim completion.")
+              sys.exit(1)
+          if d.get("failed"):
+              print("One or more listings failed to sync; review exact errors.")
+              sys.exit(1)
+          PY
+          {
+            echo "## Targeted Shopify restoration"
+            echo
+            echo "- Scope: five existing shop_listings IDs only."
+            echo "- No BASE writes, supplier orders, or payments."
+            echo
+            echo '### Sync response'
+            cat shopify-restore.json
+          } >> "$GITHUB_STEP_SUMMARY"
