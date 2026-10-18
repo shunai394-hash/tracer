@@ -117,5 +117,6 @@ jobs:
           PGDATABASE: tracer_variant_link_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
       - run: npm run test:base-stale-item-deletion-contract
+      - run: npm run test:archived-listing-republication-guards
       - run: npm run lint
       - run: npm run build
