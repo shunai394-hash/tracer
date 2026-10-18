@@ -64,6 +64,7 @@ jobs:
       - run: node --experimental-strip-types --no-warnings scripts/test-base-item-identity.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-actual-reconciliation.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-snapshot-resume.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-publication-and-unit-cost.mjs
       - run: node scripts/test-base-snapshot-export.mjs
       - run: node scripts/test-cron-schedule-invariants.mjs
       - run: node scripts/test-commerce-status-readonly.mjs
