@@ -307,14 +307,50 @@ export async function GET(request: Request) {
     const requestedProductIds = url.searchParams.has("productIds")
       ? [...new Set((url.searchParams.get("productIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,22}$/.test(id)))].slice(0, limit)
       : [];
+    const requestedVariantIds = url.searchParams.has("variantIds")
+      ? [...new Set((url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,25}$/.test(id)))].slice(0, 6)
+      : [];
     if (url.searchParams.has("productIds") && requestedProductIds.length === 0) {
       return NextResponse.json({ ok: false, error: "invalid_product_ids", imported: 0 }, { status: 400 });
+    }
+    if (url.searchParams.has("variantIds") && (requestedVariantIds.length === 0 ||
+        (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).length > 6 ||
+        (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).some((id) => !/^\d{10,25}$/.test(id)) ||
+        (url.searchParams.has("productIds") && requestedProductIds.length === 0))) {
+      return NextResponse.json({ ok: false, error: "invalid_variant_ids", maxVariantIds: 6, imported: 0 }, { status: 400 });
     }
     const forcedDetails = new Map<string, Awaited<ReturnType<typeof getCJProductDetail>>>();
     let candidates: ImportCandidate[] = [];
     const retryOfferByVariantId = new Map<string, { id: string; raw_data: unknown }>();
-    if (requestedProductIds.length > 0) {
-      for (const id of requestedProductIds) {
+    if (requestedProductIds.length > 0 || requestedVariantIds.length > 0) {
+      const requestedByParent = new Map<string, string[]>();
+      if (requestedVariantIds.length > 0) {
+        const { data: requestedOffers, error: requestedOffersError } = await db
+          .from("supplier_offers")
+          .select("supplier_product_id,supplier_variant_id")
+          .eq("supplier_code", "cj")
+          .in("supplier_variant_id", requestedVariantIds);
+        if (requestedOffersError) throw new Error("requested_variant_lookup_failed:" + requestedOffersError.message);
+        for (const variantId of requestedVariantIds) {
+          const parents = [...new Set((requestedOffers ?? [])
+            .filter((offer) => String(offer.supplier_variant_id) === variantId)
+            .map((offer) => String(offer.supplier_product_id ?? "").trim())
+            .filter((id) => /^\d{10,22}$/.test(id)))];
+          if (parents.length !== 1) {
+            return NextResponse.json({
+              ok: false,
+              error: parents.length === 0 ? "requested_variant_not_found" : "requested_variant_parent_ambiguous",
+              variantId,
+              imported: 0,
+            }, { status: parents.length === 0 ? 404 : 409 });
+          }
+          const group = requestedByParent.get(parents[0]) ?? [];
+          group.push(variantId);
+          requestedByParent.set(parents[0], group);
+        }
+      }
+      const requestedIds = [...new Set([...requestedProductIds, ...requestedByParent.keys()])];
+      for (const id of requestedIds) {
         const detail = await getCJProductDetail(id);
         if (!detail) {
           stats.skipped++;
@@ -322,7 +358,14 @@ export async function GET(request: Request) {
           continue;
         }
         forcedDetails.set(id, detail);
-        candidates.push({ id, title: detail.title, productType: detail.productType, imageUrl: detail.imageUrl });
+        const retryVariantIds = requestedByParent.get(id);
+        candidates.push({
+          id,
+          title: detail.title,
+          productType: detail.productType,
+          imageUrl: detail.imageUrl,
+          ...(retryVariantIds?.length ? { retryVariantIds } : {}),
+        });
       }
       stats.searched = candidates.length;
     } else {
