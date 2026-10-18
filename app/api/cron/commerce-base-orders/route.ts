@@ -34,7 +34,13 @@ function isPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>): boolean 
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) {
-    console.warn("[TRACER BASE ORDER POLL AUTH REJECTED]", { status: authError.status });
+    console.warn("[TRACER BASE ORDER POLL AUTH REJECTED]", {
+      status: authError.status,
+      vercelCron: request.headers.get("x-vercel-cron") === "1",
+      userAgent: (request.headers.get("user-agent") ?? "unknown").slice(0, 120),
+      vercelIdPresent: Boolean(request.headers.get("x-vercel-id")),
+      authorizationScheme: request.headers.get("authorization")?.split(" ", 1)[0] ?? "missing",
+    });
     return authError;
   }
   if (!isBaseConfigured()) return NextResponse.json({ ok: false, error: "base_oauth_not_configured" }, { status: 503 });
