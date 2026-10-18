@@ -59,11 +59,16 @@ export async function GET(request: Request) {
     const oldError = oldResult.status === "rejected" ? safeError(oldResult.reason) : null;
     const currentError = currentResult.status === "rejected" ? safeError(currentResult.reason) : null;
 
-    let classification: "old_id_not_found" | "current_id_migration_candidate" | "indeterminate";
+    let classification: "old_id_not_found" | "current_id_migration_candidate" | "old_id_duplicate_already_hidden" | "indeterminate";
     let reason: string;
     if (oldError?.httpStatus === 404 && currentItem && currentItem.sku === target.sku) {
       classification = "current_id_migration_candidate";
       reason = "old_detail_http_404_and_current_item_sku_matches_audit";
+    } else if (oldItem && currentItem && oldItem.sku === target.sku &&
+               currentItem.sku === target.sku && oldItem.itemId !== currentItem.itemId &&
+               oldItem.visible === false && currentItem.visible === true) {
+      classification = "old_id_duplicate_already_hidden";
+      reason = "both_ids_resolve_same_sku_but_old_item_is_already_hidden_and_current_item_is_visible";
     } else if (oldItem && currentItem && oldItem.sku === target.sku &&
                currentItem.sku === target.sku && oldItem.itemId !== currentItem.itemId) {
       classification = "indeterminate";
@@ -103,6 +108,7 @@ export async function GET(request: Request) {
     checked: results.length,
     oldIdNotFound: results.filter((row) => row.classification === "old_id_not_found").length,
     migrationCandidates: results.filter((row) => row.classification === "current_id_migration_candidate").length,
+    alreadyHiddenDuplicates: results.filter((row) => row.classification === "old_id_duplicate_already_hidden").length,
     indeterminate: results.filter((row) => row.classification === "indeterminate").length,
     results,
   };
