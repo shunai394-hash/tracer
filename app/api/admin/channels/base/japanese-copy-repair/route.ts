@@ -46,7 +46,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       const isTemporaryCapacityError =
-        /HTTP 503\\s+UNAVAILABLE|HTTP 429\\s+RESOURCE_EXHAUSTED/i.test(message);
+        /HTTP 503\s+UNAVAILABLE|HTTP 429\s+RESOURCE_EXHAUSTED/i.test(message);
       if (!isTemporaryCapacityError || attempt === 1) throw error;
       // Retry only explicit capacity/rate-limit responses; do not repeat timeouts
       // or other failures that could consume the route's execution budget.
