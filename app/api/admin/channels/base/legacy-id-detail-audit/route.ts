@@ -12,6 +12,7 @@ const TARGETS = [
   { oldId: "163130238", currentId: "163240521", sku: "TRC-6F1BC5912E694CF799BC38BB" },
   { oldId: "163159274", currentId: "163159273", sku: "TRC-015C4A01F2694EBC8A868B57" },
   { oldId: "163159329", currentId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345" },
+  { oldId: "163159679", currentId: "163159682", sku: "TRC-521C3D01E4B741868E8D1345" },
   { oldId: "163159366", currentId: "163355942", sku: "TRC-C9916FE0297A41ACADD8E19B" },
   { oldId: "163159368", currentId: "163355946", sku: "TRC-45370D7789BC4D34984EA727" },
   { oldId: "163159369", currentId: "163355950", sku: "TRC-19C334F2FD194CD3AB99F389" },
@@ -37,7 +38,7 @@ function itemSummary(item: Record<string, unknown>) {
 }
 
 /**
- * Read-only BASE API check of eight legacy IDs and their canonical counterparts.
+ * Read-only BASE API check of legacy IDs, the triple-SKU group, and their canonical counterparts.
  * No item is edited, deleted, published, or remapped by this route.
  */
 export async function GET(request: Request) {
