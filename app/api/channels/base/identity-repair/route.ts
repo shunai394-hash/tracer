@@ -317,6 +317,23 @@ export async function POST(request: Request) {
       }
     }
 
+    const targetCommerceDiagnostics = targetBaseItemIdSet
+      ? [...skuGroups.entries()].flatMap(([sku, baseItemIds]) => baseItemIds.map((baseItemId) => {
+          const matches = listingsBySku.get(sku) ?? [];
+          return {
+            baseItemId,
+            sku,
+            matchingListingCount: matches.length,
+            matchingListings: matches.map((listing) => ({
+              listingId: listing.id,
+              externalProductId: listing.externalProductId,
+              externalProductIdPresentInSnapshot: listing.externalProductId ? itemIds.has(listing.externalProductId) : null,
+            })),
+            targetBaseItemAlreadyMappedToListingIds: listingIdsByBaseItem.get(baseItemId) ?? [],
+          };
+        }))
+      : undefined;
+
     return NextResponse.json({
       ok: true,
       apply,
@@ -330,6 +347,7 @@ export async function POST(request: Request) {
       repairStaleExternalIds,
       targetBaseItemIds: targetBaseItemIdSet ? targetBaseItemIds : null,
       targetScoped: targetBaseItemIdSet !== null,
+      targetCommerceDiagnostics,
       targetIdentifierDiagnostics: targetBaseItemIdSet
         ? items.filter((item) => targetBaseItemIdSet.has(item.baseItemId)).map((item) => ({
             baseItemId: item.baseItemId,
