@@ -14,6 +14,7 @@ assert.ok(source.includes('identityConfidence: nativeCjSupplyIdentity ? 1 : num(
 assert.ok(source.includes('candidate.price_confirmed === true') && source.includes('candidate.inventory_confirmed === true') && source.includes('candidate.orderable === true') && source.includes('candidate.tracking_available === true') && source.includes('candidate.api_available === true'), "native identity must not bypass price, stock, orderability, tracking or API gates");
 assert.ok(source.includes('profitCalculable: profit.calculable') && source.includes('contributionProfit: profit.contributionProfit'), "estimated freight must flow into contribution-profit validation");
 assert.ok(source.includes("eligibleSamples: eligible.slice(0, 50)") && source.includes("contributionProfit: item.profit.contributionProfit"), "dry-run must expose eligible evidence for quality review");
+assert.ok(source.includes(`.in("supplier", ["cj", "cjdropshipping"])`) && source.includes(`.in("supplier_product_id", detachedSupplierProductIds)`), "detached native CJ lookup must include both supported CJ supplier aliases while matching exact product and variant IDs");
 assert.ok(route.includes('const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"'), "dry-run mode must be explicit");
 assert.ok(route.includes('if (!dryRun) {\n      await recoverStaleCronRun'), "dry-run must not create cron lock records");
 assert.ok(route.includes('if (dryRun) {\n      return NextResponse.json({\n        ok: true,\n        dryRun: true,\n        noWrites: true'), "dry-run must return before downstream publication");
@@ -27,4 +28,4 @@ assert.ok(workflow.includes('$BASE/api/cron/sales-test-publication?dryRun=true')
 assert.ok(workflow.includes('"supplyDryRun": supply_dry_run') || workflow.includes('"supplyDryRun": supplyDryRun'), "diagnostic issue must preserve the supply dry-run result");
 assert.ok(workflow.includes('"app/api/cron/sales-test-publication/route.ts"'), "route changes must trigger production diagnostics after deployment");
 assert.ok(workflow.includes('"lib/intelligence/womens-priority.ts"') && workflow.includes('"lib/intelligence/japanese-product.ts"') && workflow.includes('"lib/catalog/publishable-title.ts"') && workflow.includes('"scripts/test-publishable-title.mjs"'), "quality-gate changes must trigger a fresh production dry run");
-console.log("CJ-native supply identity and no-write dry-run regression: 21 assertions passed");
+console.log("CJ-native supply identity and no-write dry-run regression: 22 assertions passed");

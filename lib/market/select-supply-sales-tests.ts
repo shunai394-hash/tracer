@@ -119,7 +119,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const detachedSupplierProductIds = [...new Set(sourceIdentityPairs.map((item) => item.supplierProductId))];
   const { data: detachedListings, error: detachedListingError } = detachedSupplierProductIds.length
     ? await supabase.from("supplier_listings").select("*")
-        .eq("supplier", "cj")
+        .in("supplier", ["cj", "cjdropshipping"])
         .in("supplier_product_id", detachedSupplierProductIds)
         .order("fetched_at", { ascending: false, nullsFirst: false })
     : { data: [], error: null };
