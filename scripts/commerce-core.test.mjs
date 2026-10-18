@@ -728,7 +728,7 @@ test("CJ catalog importer prioritizes stale evidence and unseen parent products 
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /from\("commerce_products"\)\.select\("source_key"\)\.like\("source_key", "cj:%"\)/);
   assert.match(importer, /Prefer never-imported CJ parents/);
-  assert.match(importer, /while \(newCandidates\.length < Math\.max\(1, limit - retryCandidates\.length - evidenceRetryCandidates\.length - staleListingRetryCandidates\.length\) && scanPage <= page \+ 2\)/);
+  assert.match(importer, /while \\(newCandidates\\.length < 1 && scanPage <= page \\+ 5\\)/);
   assert.match(importer, /const queuedDiscoveryCandidates = newCandidates\.slice\(0, discoverySlots\)/);
   assert.match(importer, /candidates = \[\.\.\.dedupedEvidenceCandidates, \.\.\.missingPublicationRetries, \.\.\.queuedDiscoveryCandidates\]/);
   assert.match(importer, /shopifyVariantIds = new Set/);
