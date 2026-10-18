@@ -201,7 +201,7 @@ export async function GET(request: Request) {
         title: row.product_title,
         baseIdentifier: row.external_sku,
         basePrice: row.external_price,
-        tracerListingId: row.details.mappingStatus === "matched" ? row.variant_id : null,
+        tracerVariantId: row.details.mappingStatus === "matched" ? row.variant_id : null,
         tracerSku: row.internal_sku,
         tracerPrice: row.canonical_price,
         baseVisibility: row.details.apiVisible,
