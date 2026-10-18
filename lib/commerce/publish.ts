@@ -8,6 +8,7 @@ import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
+import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -307,7 +308,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const id = String(item.item_id ?? "").trim();
     if (id) baseItemsById.set(id, item);
   }
-  const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; action?: "published" | "unpublished" }> = [];
+  const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; missingEvidence?: string[]; action?: "published" | "unpublished" }> = [];
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
@@ -376,9 +377,24 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // pending/error rows. Existing unfulfillable items must remain hidden until the
     // exact supplier offer proves fresh JP stock, shipping, and tracking.
     if (currentState?.external_product_id && supplierEvidenceUnverified) {
-      const reason = !rawOffer ? "supplier_offer_missing" :
-        rawOffer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        !preflightShippingKnown ? "japan_freight_unconfirmed" : "supplier_stock_unconfirmed";
+      const missing = rawOffer ? missingSaleEvidence({
+        supplierCode: rawOffer.supplier_code,
+        supplierProductId: rawOffer.supplier_product_id,
+        supplierVariantId: rawOffer.supplier_variant_id,
+        variantSku: candidate.sku,
+        sourceStatus: rawOffer.source_status,
+        stockKnown: preflightStockKnown,
+        inventory: Number(rawOffer.inventory),
+        unitCost: Number(rawOffer.unit_cost),
+        shippingKnown: preflightShippingKnown,
+        shipTo: rawOffer.ship_to,
+        trackingSupported: rawOffer.tracking_supported === true,
+        evidenceFresh: preflightFresh,
+        currency: currentCanonicalPrice?.currency,
+        sellingPrice: Number(currentCanonicalPrice?.selling_price),
+        expectedProfit: Number(currentCanonicalPrice?.expected_profit),
+      }) : ["supplier", "identity", "variant", "stock", "cost", "domestic_shipping", "profit"];
+      const reason = missing.join(",") || "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
         const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 1));
@@ -470,8 +486,29 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
     // Do not create a visible but non-purchasable listing for an unverified offer.
     if (!supplierSaleable && !currentState?.external_product_id) {
-      const blocker = !supplierShippingKnown ? "japan_freight_unconfirmed" : !supplierStockKnown ? "supplier_stock_unconfirmed" : offer.source_status !== "verified" ? "supplier_offer_not_verified" : offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" : offer.tracking_supported !== true ? "tracking_not_verified" : !supplierEvidenceFresh ? "supplier_verification_stale" : Number(offer.inventory) <= 0 ? "supplier_out_of_stock" : "supplier_offer_invalid";
-      results.push({ variantId: candidate.id, ok: false, error: "supplier_offer_not_fulfillable:" + blocker });
+      const missing = missingSaleEvidence({
+        supplierCode: offer.supplier_code,
+        supplierProductId: offer.supplier_product_id,
+        supplierVariantId: offer.supplier_variant_id,
+        variantSku: candidate.sku,
+        sourceStatus: offer.source_status,
+        stockKnown: supplierStockKnown,
+        inventory: Number(offer.inventory),
+        unitCost: Number(offer.unit_cost),
+        shippingKnown: supplierShippingKnown,
+        shipTo: offer.ship_to,
+        trackingSupported: offer.tracking_supported === true,
+        evidenceFresh: supplierEvidenceFresh,
+        currency: price.currency,
+        sellingPrice: Number(price.selling_price),
+        expectedProfit: Number(price.expected_profit),
+      });
+      results.push({
+        variantId: candidate.id,
+        ok: false,
+        error: "supplier_offer_not_fulfillable:" + (missing.length > 0 ? missing.join(",") : "supplier_offer_invalid"),
+        missingEvidence: missing,
+      });
       continue;
     }
     const storefrontStock = toStorefrontStockQuantity(

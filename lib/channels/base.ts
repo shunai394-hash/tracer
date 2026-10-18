@@ -1,4 +1,11 @@
 import "server-only";
+import {
+  appendSnapshotRows,
+  prepareSnapshotResume,
+  type BaseSnapshotCheckpoint,
+} from "@/lib/channels/base-snapshot-checkpoint";
+
+export type { BaseSnapshotCheckpoint };
 
 type BaseItemInput = {
   title: string;
@@ -126,37 +133,55 @@ async function getBaseAccessToken(): Promise<string> {
   return token;
 }
 
+function baseRequestRetryable(error: unknown, status: number | null): boolean {
+  if (status === 429 || (status !== null && status >= 500)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /timeout|aborted|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
 async function requestBase(
   path: string,
   body: URLSearchParams,
+  attempts = 1,
 ): Promise<BaseItemResponse> {
-  const token = await getBaseAccessToken();
-  const response = await fetch(`${BASE_API_URL}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body,
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  const text = await response.text();
-  let data: BaseItemResponse | null = null;
-
-  try {
-    data = JSON.parse(text) as BaseItemResponse;
-  } catch {
-    data = null;
+  const tries = Math.min(3, Math.max(1, Math.floor(attempts)));
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= tries; attempt += 1) {
+    try {
+      const token = await getBaseAccessToken();
+      const response = await fetch(`${BASE_API_URL}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body,
+        cache: "no-store",
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await response.text();
+      let data: BaseItemResponse | null = null;
+      try {
+        data = JSON.parse(text) as BaseItemResponse;
+      } catch {
+        data = null;
+      }
+      if (!response.ok) {
+        const error = new Error(`BASE_API_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(data)}`);
+        if (!baseRequestRetryable(error, response.status) || attempt === tries) throw error;
+        lastError = error;
+      } else {
+        return data ?? { raw: text };
+      }
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      if (!baseRequestRetryable(wrapped, null) || attempt === tries) throw wrapped;
+      lastError = wrapped;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
   }
-
-  if (!response.ok) {
-    throw new Error(`BASE_API_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(data)}`);
-  }
-
-  return data ?? { raw: text };
+  throw lastError ?? new Error("BASE_API_REQUEST_FAILED");
 }
 
 export async function createBaseItem(input: BaseItemInput) {
@@ -191,6 +216,7 @@ export async function editBaseItem(input: {
       stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
       visible: input.visible === false ? "0" : "1",
     }),
+    3,
   );
 }
 
@@ -498,48 +524,91 @@ export async function getBaseOrderDetail(uniqueKey: string): Promise<BaseOrderDe
  * Fetches a complete, read-only product snapshot for an authenticated backup export.
  * This intentionally excludes orders and customer data. Never log returned item payloads.
  */
+/** A page failed after retries. `items` are the pages already fetched, including any resumed rows. */
+export class BaseSnapshotInterrupted extends Error {
+  readonly items: Record<string, unknown>[];
+  readonly checkpoint: BaseSnapshotCheckpoint;
+  constructor(message: string, items: Record<string, unknown>[], checkpoint: BaseSnapshotCheckpoint) {
+    super(message);
+    this.name = "BaseSnapshotInterrupted";
+    this.items = items;
+    this.checkpoint = checkpoint;
+  }
+}
+
+async function fetchBaseItemPage(
+  token: string,
+  pageLimit: number,
+  offset: number,
+): Promise<Record<string, unknown>[]> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${BASE_API_URL}/items?limit=${pageLimit}&offset=${offset}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await response.text();
+      let payload: Record<string, unknown> | null = null;
+      try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+      if (!response.ok) {
+        const error = new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+        if (!baseRequestRetryable(error, response.status) || attempt === 3) throw error;
+        lastError = error;
+      } else if (!payload || !Array.isArray(payload.items)) {
+        throw new Error("BASE_ITEMS_SNAPSHOT_RESPONSE_INVALID");
+      } else {
+        const rows = payload.items.filter(
+          (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item),
+        );
+        if (rows.length !== payload.items.length) throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
+        return rows;
+      }
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      if (wrapped.message.startsWith("BASE_ITEMS_SNAPSHOT_RESPONSE_INVALID") || wrapped.message.startsWith("BASE_ITEMS_SNAPSHOT_ROW_INVALID")) {
+        throw wrapped;
+      }
+      if (!baseRequestRetryable(wrapped, null) || attempt === 3) throw wrapped;
+      lastError = wrapped;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+  }
+  throw lastError ?? new Error("BASE_ITEMS_SNAPSHOT_FAILED");
+}
+
 export async function fetchBaseItemsSnapshot(options?: {
   itemPageLimit?: number;
   itemMaxPages?: number;
-}): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean }> {
+  checkpoint?: BaseSnapshotCheckpoint;
+  priorItems?: Record<string, unknown>[];
+}): Promise<{ items: Record<string, unknown>[]; pages: number; complete: boolean; checkpoint: BaseSnapshotCheckpoint }> {
   const token = await getBaseAccessToken();
   const pageLimit = Math.min(100, Math.max(1, Math.floor(options?.itemPageLimit ?? 100)));
   const maxPages = Math.min(BASE_ITEMS_MAX_PAGES, Math.max(1, Math.floor(options?.itemMaxPages ?? BASE_ITEMS_MAX_PAGES)));
-  const items: Record<string, unknown>[] = [];
-  let pages = 0;
-  let offset = 0;
+  const resumed = prepareSnapshotResume(options?.priorItems ?? [], options?.checkpoint);
+  const items = resumed.items;
+  const seenItemIds = resumed.seen;
+  let pages = resumed.pages;
+  let offset = resumed.offset;
   let complete = false;
 
-  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-    const response = await fetch(`${BASE_API_URL}/items?limit=${pageLimit}&offset=${offset}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
-    });
-    const text = await response.text();
-    let payload: Record<string, unknown> | null = null;
-    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
-    if (!response.ok) {
-      throw new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+  for (let pageIndex = pages; pageIndex < maxPages; pageIndex += 1) {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = await fetchBaseItemPage(token, pageLimit, offset);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "BASE_ITEMS_SNAPSHOT_FAILED";
+      const checkpoint = { nextOffset: offset, pagesFetched: pages, itemIds: [...seenItemIds] };
+      throw new BaseSnapshotInterrupted(
+        `${message}:resumeOffset=${checkpoint.nextOffset}:pagesFetched=${checkpoint.pagesFetched}`,
+        items,
+        checkpoint,
+      );
     }
-    if (!payload || !Array.isArray(payload.items)) {
-      throw new Error("BASE_ITEMS_SNAPSHOT_RESPONSE_INVALID");
-    }
-    const rows = payload.items.filter(
-      (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item),
-    );
-    if (rows.length !== payload.items.length) {
-      throw new Error("BASE_ITEMS_SNAPSHOT_ROW_INVALID");
-    }
-    const seenItemIds = new Set(items.map((item) => String(item.item_id ?? "")).filter(Boolean));
-    for (const row of rows) {
-      const id = String(row.item_id ?? "");
-      if (!id) throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
-      if (seenItemIds.has(id)) continue;
-      seenItemIds.add(id);
-      items.push(row);
-    }
+    appendSnapshotRows(items, seenItemIds, rows);
     pages += 1;
     if (rows.length < pageLimit) {
       complete = true;
@@ -549,15 +618,18 @@ export async function fetchBaseItemsSnapshot(options?: {
   }
   // All pages full: confirm the catalog ends exactly at the cap before calling it incomplete.
   if (!complete && pages === maxPages) {
-    const response = await fetch(`${BASE_API_URL}/items?limit=1&offset=${offset}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
-    });
-    const payload = await response.json().catch(() => null) as { items?: unknown } | null;
-    if (!response.ok) throw new Error(`BASE_ITEMS_SNAPSHOT_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
-    if (Array.isArray(payload?.items) && payload.items.length === 0) complete = true;
+    try {
+      const tail = await fetchBaseItemPage(token, 1, offset);
+      if (tail.length === 0) complete = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "BASE_ITEMS_SNAPSHOT_FAILED";
+      const checkpoint = { nextOffset: offset, pagesFetched: pages, itemIds: [...seenItemIds] };
+      throw new BaseSnapshotInterrupted(
+        `${message}:resumeOffset=${checkpoint.nextOffset}:pagesFetched=${checkpoint.pagesFetched}`,
+        items,
+        checkpoint,
+      );
+    }
   }
 
   if (!complete) throw new Error(`BASE_ITEMS_SNAPSHOT_INCOMPLETE:pages=${pages}:maxPages=${maxPages}`);
@@ -565,7 +637,12 @@ export async function fetchBaseItemsSnapshot(options?: {
   if (ids.length !== items.length || new Set(ids).size !== ids.length) {
     throw new Error("BASE_ITEMS_SNAPSHOT_ID_MISSING_OR_DUPLICATE");
   }
-  return { items, pages, complete };
+  return {
+    items,
+    pages,
+    complete,
+    checkpoint: { nextOffset: offset, pagesFetched: pages, itemIds: ids },
+  };
 }
 
 

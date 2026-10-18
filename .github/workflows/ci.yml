@@ -63,6 +63,7 @@ jobs:
         run: node scripts/test-amazon-child-identifier-retry.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-item-identity.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-actual-reconciliation.mjs
+      - run: node --experimental-strip-types --no-warnings scripts/test-base-snapshot-resume.mjs
       - run: node scripts/test-base-snapshot-export.mjs
       - run: node scripts/test-cron-schedule-invariants.mjs
       - run: node scripts/test-commerce-status-readonly.mjs
