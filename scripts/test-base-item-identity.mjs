@@ -9,6 +9,13 @@ assert.ok(baseReadbackRoute.includes(String.raw`if (!/^\d+$/.test(baseItemId))`)
 assert.equal(/^\d+$/.test("123456789"), true);
 assert.equal(/^\d+$/.test("123abc"), false);
 
+assert.ok(baseReadbackRoute.includes('String(item.identifier ?? "").trim()'), "BASE readback must inspect the actual BASE item identifier");
+assert.ok(baseReadbackRoute.includes("expectedSku === externalSku"), "BASE readback must compare stored SKU with the actual BASE identifier");
+assert.ok(baseReadbackRoute.includes("skuMismatches:"), "BASE readback summary must count SKU mismatches");
+const baseReadbackWorkflow = readFileSync(new URL("../.github/workflows/base-external-readback-audit.yml", import.meta.url), "utf8");
+assert.ok(baseReadbackWorkflow.includes("totals.skuMismatches > 0"), "full BASE audit must fail when actual SKU mismatches exist");
+assert.ok(baseReadbackWorkflow.includes("expectedSku: row.expectedSku, externalSku: row.externalSku"), "BASE audit artifact must preserve expected and actual SKU evidence");
+
 assert.deepEqual(classifyBaseMappingCounts(0, 0), { kind: "none" });
 assert.deepEqual(classifyBaseMappingCounts(1, 0), { kind: "legacy" });
 assert.deepEqual(classifyBaseMappingCounts(2, 0), { kind: "ambiguous" });
