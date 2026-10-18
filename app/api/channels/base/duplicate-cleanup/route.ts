@@ -12,8 +12,9 @@ const COMMERCE_SKU = /^TRC-[0-9A-F]{24}$/i;
 /**
  * Hide only an exact duplicate BASE copy. The canonical item remains visible.
  * A duplicate must share an exact TRC SKU with exactly one published channel
- * listing, match the canonical item's title/price/stock, be visible itself,
- * and have no legacy or commerce listing referencing its BASE item ID.
+ * listing, match the canonical item's exact title, be visible itself, and have
+ * no legacy or commerce listing referencing its BASE item ID. Price/stock may
+ * differ: those are the stale fields this cleanup is intended to isolate.
  * Default is dry-run; apply=true hides only, never deletes.
  */
 export async function POST(request: Request) {
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
 
     const candidates: Array<{
       sku: string; listingId: string; canonicalBaseItemId: string; duplicateBaseItemId: string;
-      title: string; price: number; stock: number;
+      title: string; duplicatePrice: number;
     }> = [];
     for (const [sku, group] of itemsBySku) {
       if (group.length !== 2) continue;
@@ -115,14 +116,12 @@ export async function POST(request: Request) {
       const duplicateTitle = String(duplicate.title ?? "").trim();
       const price = Number(canonical.price);
       const duplicatePrice = Number(duplicate.price);
-      const stock = Number(canonical.stock);
-      const duplicateStock = Number(duplicate.stock);
-      if (!title || title !== duplicateTitle || !Number.isFinite(price) || price <= 0 || price !== duplicatePrice ||
-          !Number.isFinite(stock) || stock <= 0 || stock !== duplicateStock) continue;
+      if (!title || title !== duplicateTitle || !Number.isFinite(price) || price <= 0 ||
+          !Number.isFinite(duplicatePrice) || duplicatePrice <= 0) continue;
 
       candidates.push({
         sku, listingId: listingRows[0].id, canonicalBaseItemId: canonicalId, duplicateBaseItemId: duplicateId,
-        title, price, stock,
+        title, duplicatePrice,
       });
     }
 
@@ -139,7 +138,7 @@ export async function POST(request: Request) {
         const detail = String(duplicate?.detail ?? duplicate?.description ?? candidate.title);
         await editBaseItem({
           itemId: candidate.duplicateBaseItemId, title: candidate.title, detail,
-          price: candidate.price, stock: 0, visible: false,
+          price: candidate.duplicatePrice, stock: 0, visible: false,
         });
         hidden += 1;
         results.push({ sku: candidate.sku, canonicalBaseItemId: candidate.canonicalBaseItemId, duplicateBaseItemId: candidate.duplicateBaseItemId, outcome: "duplicate_hidden" });
