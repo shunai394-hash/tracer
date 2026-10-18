@@ -49,10 +49,6 @@
     {
       "path": "/api/cron/shopify-publish",
       "schedule": "9,24,39,54 * * * *"
-    },
-    {
-      "path": "/api/cron/unpublish-unlinked",
-      "schedule": "11,26,41,56 * * * *"
     }
   ]
 }
