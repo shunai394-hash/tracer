@@ -27,7 +27,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const CONFIRMATION = "REPAIR_BASE_PUBLICATION_MISMATCHES_AND_HIDDEN_DUPLICATES";
+const CONFIRMATION = "REPAIR_TWO_REQUESTED_BASE_DUPLICATES";
 const ALLOWED_DELETE_IDS = HIDDEN_DUPLICATE_DELETES.map((pair) => pair.staleId);
 
 function asItem(item: Record<string, unknown>): PublicationRepairItem {
