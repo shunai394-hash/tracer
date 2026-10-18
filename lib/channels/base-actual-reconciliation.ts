@@ -227,7 +227,8 @@ export function decideConfirmedPriceSync(input: {
   // external ID is known. The caller must also prove the SKU is unique in the
   // complete live BASE snapshot. Never rewrite the external ID here.
   let listing: BaseChannelListing;
-  if (linked.length === 1) {
+  const matchedByExactItemId = linked.length === 1;
+  if (matchedByExactItemId) {
     listing = linked[0];
   } else if (linked.length > 1) {
     return { ok: false, reason: "ambiguous_item_id" };
@@ -247,8 +248,11 @@ export function decideConfirmedPriceSync(input: {
   if (!sku || identifier.toUpperCase() !== sku.toUpperCase()) {
     return { ok: false, reason: "sku_not_exact" };
   }
+  // An exact, unique BASE item ID plus exact SKU is sufficient even if another
+  // listing reuses that SKU. Without an exact item-ID link, SKU fallback must
+  // remain unique across the database listings.
   const sameSku = input.listings.filter((row) => textValue(row.externalSku)?.toUpperCase() === sku.toUpperCase());
-  if (sameSku.length !== 1) return { ok: false, reason: "ambiguous_sku" };
+  if (!matchedByExactItemId && sameSku.length !== 1) return { ok: false, reason: "ambiguous_sku" };
   const canonical = Number(listing.sellingPrice);
   if (!Number.isInteger(canonical) || canonical <= 0) return { ok: false, reason: "canonical_price_invalid" };
   if (input.basePrice === null || !Number.isFinite(input.basePrice)) return { ok: false, reason: "base_price_unreadable" };
