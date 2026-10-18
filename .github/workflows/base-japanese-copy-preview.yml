@@ -63,9 +63,9 @@ jobs:
               data=json.load(f)
           print(json.dumps(data, ensure_ascii=False, indent=2))
           with open("preview-summary.md","w",encoding="utf-8") as f:
-              f.write("# BASE Japanese Copy Preview (read-only)\\n\\n")
-              f.write("HTTP status: " + os.environ["STATUS"] + "\\n\\n")
-              f.write("```json\\n" + json.dumps(data,ensure_ascii=False,indent=2) + "\\n```\\n")
+              f.write("# BASE Japanese Copy Preview (read-only)\n\n")
+              f.write("HTTP status: " + os.environ["STATUS"] + "\n\n")
+              f.write("```json\n" + json.dumps(data,ensure_ascii=False,indent=2) + "\n```\n")
           PY
           test "$STATUS" = "200"
           echo "## BASE Japanese Copy Preview (read-only)" >> "$GITHUB_STEP_SUMMARY"
