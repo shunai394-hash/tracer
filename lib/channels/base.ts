@@ -358,8 +358,22 @@ export async function listBaseOrders(options?: {
     try { payload = JSON.parse(text); } catch { payload = null; }
     throw new Error(`BASE_ORDERS_REQUEST_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
   }
-  const data = JSON.parse(text) as { orders?: BaseOrderSummary[] };
-  return data.orders ?? [];
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("BASE_ORDERS_RESPONSE_INVALID_JSON");
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("BASE_ORDERS_RESPONSE_INVALID");
+  }
+  const orders = (data as { orders?: unknown }).orders;
+  if (!Array.isArray(orders)) {
+    // Never turn an unexpected API envelope into a successful empty poll.
+    // The caller should surface this as a failed poll for investigation.
+    throw new Error("BASE_ORDERS_RESPONSE_MISSING_ORDERS_ARRAY");
+  }
+  return orders as BaseOrderSummary[];
 }
 
 export type BaseReadOnlyProbeResult = {
