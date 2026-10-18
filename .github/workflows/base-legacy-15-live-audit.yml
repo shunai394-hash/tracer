@@ -1,0 +1,77 @@
+name: BASE live audit for 15 legacy item pairs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/api/admin/channels/base/legacy-15-live-audit/route.ts"
+      - ".github/workflows/base-legacy-15-live-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: base-legacy-15-live-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for production to serve this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 36); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||j.commitSha||j.commit||j.sha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then
+              echo "Production serves $TARGET_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production did not report target SHA $TARGET_SHA; refusing to query an unverified deployment."
+          exit 1
+      - name: Query BASE details for the 15 legacy/current pairs (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          token="$(curl --fail-with-body --silent --show-error --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$token_url" |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl --silent --show-error --max-time 150 -o base-legacy-15-live-audit.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${token}" \
+            "https://tracer-pied-alpha.vercel.app/api/admin/channels/base/legacy-15-live-audit")"
+          echo "=== BASE 15-PAIR LIVE AUDIT HTTP ${code} ==="
+          python3 - <<'PY'
+          import json, sys
+          with open("base-legacy-15-live-audit.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print(json.dumps({k:r.get(k) for k in ("ok","readOnly","generatedAt","pairsChecked","itemDetailsAttempted","oldFound","oldNotFound404","currentFound","errors")}, ensure_ascii=False))
+          for row in r.get("results", []):
+              old=row.get("oldItem") or {}
+              cur=row.get("currentItem") or {}
+              print(json.dumps({
+                  "oldId": row.get("oldId"),
+                  "currentId": row.get("currentId"),
+                  "oldFound": bool(row.get("oldItem")),
+                  "oldError": row.get("oldError"),
+                  "oldSku": old.get("sku"),
+                  "oldVisible": old.get("visible"),
+                  "oldPrice": old.get("price"),
+                  "currentFound": bool(row.get("currentItem")),
+                  "currentError": row.get("currentError"),
+                  "currentSku": cur.get("sku"),
+                  "currentVisible": cur.get("visible"),
+                  "currentPrice": cur.get("price")
+              }, ensure_ascii=False))
+          if code != "200" or r.get("readOnly") is not True or r.get("pairsChecked") != 15:
+              sys.exit("BASE 15-pair audit did not return a complete read-only result")
+          PY
