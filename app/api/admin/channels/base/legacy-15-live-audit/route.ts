@@ -87,9 +87,11 @@ export async function GET(request: Request) {
         ? firstOld
         : await readDetail(oldId);
       const currentResult = await readDetail(currentId);
+      const skuMatch = Boolean(oldResult.item && currentResult.item && oldResult.item.sku === currentResult.item.sku);
       return {
         oldId,
         currentId,
+        skuMatch,
         oldItem: oldResult.item,
         oldError: oldResult.error,
         currentItem: currentResult.item,
@@ -100,8 +102,9 @@ export async function GET(request: Request) {
   }
 
   const summary = {
-    ok: results.every((row) => row.oldItem !== null && row.currentItem !== null),
+    ok: results.every((row) => row.oldItem !== null && row.currentItem !== null && row.skuMatch),
     readOnly: true,
+    skuMismatches: results.filter((row) => row.oldItem !== null && row.currentItem !== null && !row.skuMatch).length,
     generatedAt: new Date().toISOString(),
     pairsChecked: results.length,
     itemDetailsAttempted: results.length * 2,
