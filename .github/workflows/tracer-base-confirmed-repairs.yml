@@ -1,6 +1,12 @@
 name: BASE confirmed link and price repair
 
 on:
+  # Merging a change to this workflow triggers one bounded live price repair.
+  # Future runs remain manual unless this workflow file itself changes again.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tracer-base-confirmed-repairs.yml
   workflow_dispatch:
     inputs:
       apply_links:
@@ -27,6 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Wait until production serves this commit
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -48,7 +55,7 @@ jobs:
       - name: Repair confirmed BASE links and prices, then read them back
         env:
           APPLY_LINKS: ${{ inputs.apply_links }}
-          APPLY_PRICES: ${{ inputs.apply_prices }}
+          APPLY_PRICES: ${{ github.event_name == 'push' || inputs.apply_prices }}
         shell: bash
         run: |
           set -euo pipefail
