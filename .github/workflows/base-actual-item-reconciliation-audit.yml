@@ -1,4 +1,5 @@
 name: BASE actual-item reconciliation audit
+# The exported items.csv is the source evidence for targeted BASE item-ID checks.
 
 on:
   workflow_dispatch:
