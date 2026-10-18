@@ -35,7 +35,6 @@ export const VISIBLE_NONCANONICAL_HIDES: HidePair[] = [];
 
 /** Visible BASE items whose DB row is error. They stay in error and are hidden on BASE. */
 export const VISIBLE_ERROR_HIDES: Array<{ itemId: string; sku: string; price: number }> = [
-  { itemId: "163159246", sku: "TRC-CD39130EFD9F48EBB654DF9B", price: 2386 },
   { itemId: "163159307", sku: "TRC-47764FBB44634AF681E42173", price: 7148 },
 ];
 
