@@ -41,6 +41,7 @@ jobs:
           OIDC_TOKEN="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | jq -er '.value')"
           offset=0
           batch=0
+          audit_errors=0
           while (( batch < MAX_BATCHES )); do
             batch=$((batch + 1))
             response="$(curl --silent --show-error --get \
@@ -61,13 +62,18 @@ jobs:
             ok="$(echo "$body" | jq -r '.ok')"
             next_offset="$(echo "$body" | jq -r '.nextOffset')"
             complete="$(echo "$body" | jq -r '.complete')"
+            if [[ "$ok" != "true" ]]; then audit_errors=1; fi
             if [[ "$next_offset" == "$offset" ]]; then
               echo "Offset did not advance; stopping to prevent a loop."
               exit 1
             fi
             offset="$next_offset"
             if [[ "$complete" == "true" ]]; then
-              echo "Archived publication readback completed. No mutations were performed."
+              if (( audit_errors != 0 )); then
+                echo "Readback reached the end, but some provider reads failed. Review the batch summaries above."
+                exit 1
+              fi
+              echo "Archived publication readback completed with no provider read errors. No mutations were performed."
               exit 0
             fi
           done
