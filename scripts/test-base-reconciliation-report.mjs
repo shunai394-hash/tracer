@@ -52,6 +52,10 @@ const duplicateCleanup = await readFile(new URL("../app/api/channels/base/duplic
 assert.match(duplicateCleanup, /COMMERCE_SKU/);
 assert.match(duplicateCleanup, /listingRows\.length !== 1/);
 assert.match(duplicateCleanup, /function isBaseVisible\(value: unknown\): boolean/);
+assert.match(duplicateCleanup, /visibilityValueKinds/);
+assert.match(duplicateCleanup, /normalized visibility value categories/);
+assert.match(duplicateCleanup, /string_true/);
+assert.match(duplicateCleanup, /number_other/);
 assert.match(duplicateCleanup, /value === true \|\| value === 1 \|\| value === "1"/);
 assert.match(duplicateCleanup, /!isBaseVisible\(canonical\.visible\)/);
 assert.match(duplicateCleanup, /!isBaseVisible\(duplicate\.visible\)/);
