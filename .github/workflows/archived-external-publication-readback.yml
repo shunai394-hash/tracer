@@ -1,0 +1,75 @@
+name: TRACER Archived External Publication Readback
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Rows per request (1-15)"
+        required: true
+        default: "10"
+        type: string
+      max_batches:
+        description: "Maximum batches to read in this run"
+        required: true
+        default: "100"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-archived-external-publication-readback
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Read archived publication state (read-only)
+        shell: bash
+        env:
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          MAX_BATCHES: ${{ inputs.max_batches }}
+        run: |
+          set -euo pipefail
+          [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] && (( BATCH_SIZE >= 1 && BATCH_SIZE <= 15 )) || { echo "batch_size must be 1-15"; exit 2; }
+          [[ "$MAX_BATCHES" =~ ^[0-9]+$ ]] && (( MAX_BATCHES >= 1 && MAX_BATCHES <= 1000 )) || { echo "max_batches must be 1-1000"; exit 2; }
+
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          OIDC_TOKEN="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$OIDC_URL" | jq -er '.value')"
+          offset=0
+          batch=0
+          while (( batch < MAX_BATCHES )); do
+            batch=$((batch + 1))
+            response="$(curl --silent --show-error --get \
+              --data-urlencode "limit=$BATCH_SIZE" \
+              --data-urlencode "offset=$offset" \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              -H "Accept: application/json" \
+              -w $'\n%{http_code}' \
+              "https://tracer-pied-alpha.vercel.app/api/cron/archived-external-publication-readback")"
+            http_code="${response##*$'\n'}"
+            body="${response%$'\n'*}"
+            if [[ "$http_code" != "200" && "$http_code" != "207" ]]; then
+              echo "Readback request failed with HTTP $http_code"
+              echo "$body" | jq '{ok,error,details}' 2>/dev/null || true
+              exit 1
+            fi
+            echo "$body" | jq '{ok,generatedAt,offset,limit,totalArchivedRows,rowsReturned,baseChecked,baseStillVisible,baseHidden,baseReadErrors,shopifyChecked,shopifyStillPublished,shopifyUnpublished,shopifyReadErrors,nextOffset,complete,mutationPerformed}'
+            ok="$(echo "$body" | jq -r '.ok')"
+            next_offset="$(echo "$body" | jq -r '.nextOffset')"
+            complete="$(echo "$body" | jq -r '.complete')"
+            if [[ "$next_offset" == "$offset" ]]; then
+              echo "Offset did not advance; stopping to prevent a loop."
+              exit 1
+            fi
+            offset="$next_offset"
+            if [[ "$complete" == "true" ]]; then
+              echo "Archived publication readback completed. No mutations were performed."
+              exit 0
+            fi
+          done
+          echo "Reached max_batches=$MAX_BATCHES before completing the full archived set."
+          exit 1
