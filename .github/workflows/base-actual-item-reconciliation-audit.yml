@@ -65,11 +65,24 @@ jobs:
             const { value: token } = await oidcResponse.json();
             if (!token) throw new Error("GitHub OIDC token was missing");
 
-            const response = await fetch(new URL("/api/channels/base/reconciliation", origin), {
+            let response = await fetch(new URL("/api/channels/base/reconciliation", origin), {
               headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
               cache: "no-store",
             });
-            const body = await response.json();
+            let body = await response.json();
+            if (body.resumable === true && body.checkpoint && Array.isArray(body.priorItems)) {
+              response = await fetch(new URL("/api/channels/base/reconciliation", origin), {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ checkpoint: body.checkpoint, priorItems: body.priorItems }),
+                cache: "no-store",
+              });
+              body = await response.json();
+            }
             const report = {
               generatedAt: new Date().toISOString(),
               httpStatus: response.status,

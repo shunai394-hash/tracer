@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+import { BaseSnapshotInterrupted, fetchBaseItemsSnapshot, isBaseConfigured, type BaseSnapshotCheckpoint } from "@/lib/channels/base";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { reconcileBaseItems, type BaseAuditInsertRow, type BaseChannelListing } from "@/lib/channels/base-actual-reconciliation";
 
@@ -187,6 +187,24 @@ export async function GET(request: Request) {
       items: reconciled.items,
     }, { status: evidenceComplete ? 200 : 207, headers });
   } catch (error) {
+    if (error instanceof BaseSnapshotInterrupted) {
+      return NextResponse.json({
+        ok: false,
+        evidenceComplete: false,
+        resumable: true,
+        phase: "base_item_reconciliation",
+        runId,
+        checkpoint: error.checkpoint,
+        priorItems: error.items,
+        apiReadComplete: false,
+        apiErrors: 1,
+        itemCount: error.items.length,
+        pages: error.checkpoint.pagesFetched,
+        error: "BASE_ITEMS_SNAPSHOT_INTERRUPTED",
+        auditRowsWritten: 0,
+        items: [],
+      }, { status: 200, headers });
+    }
     const message = error instanceof Error ? error.message : "BASE_RECONCILIATION_FAILED";
     const status = Number(message.match(/HTTP_(\d{3})/)?.[1] ?? 0) || null;
     console.error("[TRACER BASE ITEM RECONCILIATION FAILED]", {
@@ -203,6 +221,121 @@ export async function GET(request: Request) {
       apiErrors: 1,
       error: message.split(":")[0].slice(0, 100),
       httpStatus: status,
+      auditRowsWritten: 0,
+      items: [],
+    }, { status: 502, headers });
+  }
+}
+
+/** Continues a snapshot that stopped after a timeout. The caller must return the rows already fetched. */
+export async function POST(request: Request) {
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+  const headers = { "Cache-Control": "no-store" };
+  if (!isBaseConfigured()) {
+    return NextResponse.json(
+      { ok: false, phase: "base_item_reconciliation", error: "BASE_OAUTH_CONFIG_INCOMPLETE" },
+      { status: 503, headers },
+    );
+  }
+  let body: { checkpoint?: BaseSnapshotCheckpoint; priorItems?: unknown } = {};
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400, headers });
+  }
+  const priorItems = Array.isArray(body.priorItems)
+    ? body.priorItems.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  const checkpoint = body.checkpoint;
+  if (!checkpoint || !Number.isFinite(checkpoint.nextOffset) || !Number.isFinite(checkpoint.pagesFetched) || !Array.isArray(checkpoint.itemIds)) {
+    return NextResponse.json({ ok: false, error: "checkpoint_required" }, { status: 400, headers });
+  }
+  if (priorItems.length !== checkpoint.itemIds.length || priorItems.length > 5000) {
+    return NextResponse.json({ ok: false, error: "BASE_ITEMS_SNAPSHOT_CHECKPOINT_MISMATCH" }, { status: 409, headers });
+  }
+  const runId = `base-api-${new Date().toISOString()}-${crypto.randomUUID()}`;
+  try {
+    const snapshot = await fetchBaseItemsSnapshot({
+      itemPageLimit: 100,
+      itemMaxPages: 50,
+      checkpoint,
+      priorItems,
+    });
+    if (!snapshot.complete) {
+      return NextResponse.json({
+        ok: false,
+        phase: "base_item_reconciliation",
+        runId,
+        apiReadComplete: false,
+        error: "BASE_ITEMS_SCAN_INCOMPLETE",
+        auditRowsWritten: 0,
+        items: [],
+      }, { status: 502, headers });
+    }
+    const db = createSupabaseAdminClient();
+    const listings = await readBaseListings(db);
+    const reconciled = reconcileBaseItems(snapshot.items, listings);
+    const observedAt = new Date().toISOString();
+    const auditRows = reconciled.rows.map((row) => ({ ...row, run_id: runId, observed_at: observedAt }));
+    const dedicated = await persistDedicated(db, auditRows);
+    let written = dedicated.written;
+    let storage: "channel_price_reconciliation_audit" | "commerce_events" | "mixed" = "channel_price_reconciliation_audit";
+    let fallbackError: ReturnType<typeof dbFailure> | null = null;
+    let failedIds: string[] = [];
+    if (dedicated.rest.length > 0) {
+      const fallback = await persistEventFallback(db, dedicated.rest);
+      written += fallback.written;
+      failedIds = [...failedIds, ...fallback.failedIds];
+      fallbackError = fallback.error;
+      storage = dedicated.written > 0 ? "mixed" : "commerce_events";
+    }
+    const evidenceComplete = written === reconciled.items.length && failedIds.length === 0;
+    const summary = { apiReadComplete: true, apiErrors: 0, ...reconciled.summary };
+    return NextResponse.json({
+      ok: evidenceComplete && summary.unmappedItems === 0 && summary.ambiguousItems === 0
+        && summary.unknownVisibility === 0 && summary.unreadablePrices === 0
+        && summary.priceMismatches === 0 && summary.skuMismatches === 0
+        && summary.publicationMismatches === 0,
+      evidenceComplete,
+      phase: "base_item_reconciliation",
+      runId,
+      pages: snapshot.pages,
+      resumedFromOffset: checkpoint.nextOffset,
+      auditRowsWritten: written,
+      auditStorage: storage,
+      auditWriteFailed: dedicated.primary !== null || fallbackError !== null,
+      auditWriteErrorCode: dedicated.primary?.code ?? fallbackError?.code ?? null,
+      auditWriteError: dedicated.primary?.message ?? fallbackError?.message ?? null,
+      auditWriteErrorDetails: dedicated.primary?.details ?? fallbackError?.details ?? null,
+      auditFailedItemIds: failedIds,
+      ...summary,
+      items: reconciled.items,
+    }, { status: evidenceComplete ? 200 : 207, headers });
+  } catch (error) {
+    if (error instanceof BaseSnapshotInterrupted) {
+      return NextResponse.json({
+        ok: false,
+        evidenceComplete: false,
+        resumable: true,
+        phase: "base_item_reconciliation",
+        runId,
+        checkpoint: error.checkpoint,
+        priorItems: error.items,
+        apiReadComplete: false,
+        apiErrors: 1,
+        itemCount: error.items.length,
+        pages: error.checkpoint.pagesFetched,
+        error: "BASE_ITEMS_SNAPSHOT_INTERRUPTED",
+        auditRowsWritten: 0,
+        items: [],
+      }, { status: 200, headers });
+    }
+    const message = error instanceof Error ? error.message : "BASE_RECONCILIATION_FAILED";
+    return NextResponse.json({
+      ok: false,
+      evidenceComplete: false,
+      error: message.split(":")[0].slice(0, 100),
       auditRowsWritten: 0,
       items: [],
     }, { status: 502, headers });

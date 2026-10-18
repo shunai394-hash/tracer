@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   deleteAllowlistedStaleBaseItem,
   fetchBaseItemsSnapshot,
+  getBaseOrderDetail,
   isBaseConfigured,
+  listBaseOrders,
   BASE_ITEMS_MAX_PAGES,
 } from "@/lib/channels/base";
 
@@ -58,6 +61,58 @@ function validatePair(items: BaseItem[], target: (typeof TARGETS)[number]) {
   return { stalePresent: Boolean(stale), canonicalPresent: true };
 }
 
+async function referencesToStaleItems(staleIds: string[]) {
+  const db = createSupabaseAdminClient();
+  const { data: listings, error: listingError } = await db
+    .from("channel_listings")
+    .select("id,external_product_id")
+    .eq("channel", "base")
+    .in("external_product_id", staleIds);
+  if (listingError) throw new Error("STALE_LISTING_REFERENCE_CHECK_FAILED");
+  const listingReferences = (listings ?? []).map((row) => String(row.external_product_id));
+  const { data: events, error: eventError } = await db
+    .from("commerce_events")
+    .select("id,detail")
+    .eq("event_type", "base_order_unmapped_item")
+    .limit(1000);
+  if (eventError) throw new Error("STALE_ORDER_EVENT_CHECK_FAILED");
+  const eventReferences = (events ?? []).flatMap((row) => {
+    const detail = row.detail && typeof row.detail === "object" ? row.detail as Record<string, unknown> : {};
+    const itemId = String(detail.baseItemId ?? "");
+    return staleIds.includes(itemId) ? [itemId] : [];
+  });
+  const wanted = new Set(staleIds);
+  const orderMatches: string[] = [];
+  let scanned = 0;
+  let offset = 0;
+  let complete = false;
+  const deadline = Date.now() + 25_000;
+  for (let page = 0; page < 8 && Date.now() < deadline; page += 1) {
+    const orders = await listBaseOrders({ limit: 100, offset });
+    if (orders.length === 0) {
+      complete = true;
+      break;
+    }
+    for (const order of orders) {
+      if (Date.now() >= deadline) break;
+      const detail = await getBaseOrderDetail(order.unique_key);
+      scanned += 1;
+      const hit = (detail.order_items ?? []).some((item) => wanted.has(String(item.item_id ?? "")));
+      if (hit) orderMatches.push(order.unique_key);
+    }
+    if (orders.length < 100) {
+      complete = true;
+      break;
+    }
+    offset += orders.length;
+  }
+  return {
+    listingReferences,
+    eventReferences,
+    orderScan: { scanned, complete, matches: orderMatches },
+  };
+}
+
 async function snapshot() {
   const result = await fetchBaseItemsSnapshot({
     itemPageLimit: 100,
@@ -91,17 +146,26 @@ export async function POST(request: Request) {
       ...target,
       ...validatePair(initialItems, target),
     }));
+    const references = await referencesToStaleItems(TARGETS.map((target) => target.staleId));
+    const deletionBlocked = references.listingReferences.length > 0
+      || references.eventReferences.length > 0
+      || references.orderScan.matches.length > 0
+      || references.orderScan.complete !== true;
 
-    if (!apply) {
+    if (!apply || deletionBlocked) {
       return NextResponse.json({
-        ok: true,
+        ok: !deletionBlocked,
         readOnly: true,
         snapshotComplete: true,
         itemCount: initialItems.length,
         expectedPrice: EXPECTED_PRICE,
         plan,
-        message: "Dry run only. No BASE items were deleted.",
-      });
+        ...references,
+        deletionBlocked,
+        message: deletionBlocked
+          ? "Deletion refused. A stale ID is still referenced, or the BASE order scan did not finish."
+          : "Dry run only. No BASE items were deleted.",
+      }, { status: deletionBlocked ? 409 : 200 });
     }
 
     const results: Array<{ staleId: string; outcome: string }> = [];
