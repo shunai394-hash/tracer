@@ -81,7 +81,7 @@ jobs:
           console.log(JSON.stringify({
             stage: "read-only preflight", httpStatus: preflightResponse.status,
             duplicateSkuGroups: preflight.duplicateSkuGroups, duplicateHideCandidates: preflight.duplicateHideCandidates,
-            diagnosticSummary: preflight.diagnosticSummary, diagnostics: preflight.diagnostics,
+            visibilityValueKinds: preflight.visibilityValueKinds, diagnosticSummary: preflight.diagnosticSummary, diagnostics: preflight.diagnostics,
           }, null, 2));
           const allowApply = process.env.ALLOW_APPLY === "true";
           let response = preflightResponse;
@@ -113,6 +113,6 @@ jobs:
           print()
           print("Only exact duplicate TRC SKUs were considered. A duplicate was hidden only when exactly one published canonical listing mapped to the canonical BASE item, the canonical item was visible, and the duplicate item ID had no commerce or legacy mapping. Stale duplicate title/price/stock do not block hiding. No BASE items were deleted.")
           print()
-          print(json.dumps({k:d.get(k) for k in ["ok","snapshotComplete","scannedBaseItems","duplicateSkuGroups","duplicateHideCandidates","duplicateHidden","duplicateHideFailed","deferredByLimit","diagnosticSummary","diagnostics","results"]}, ensure_ascii=False, indent=2))
+          print(json.dumps({k:d.get(k) for k in ["ok","snapshotComplete","scannedBaseItems","duplicateSkuGroups","duplicateHideCandidates","duplicateHidden","duplicateHideFailed","deferredByLimit","visibilityValueKinds","diagnosticSummary","diagnostics","results"]}, ensure_ascii=False, indent=2))
           PY
           gh issue create --repo shunai394-hash/tracer --title "[TRACER BASE duplicate SKU cleanup] Run $GITHUB_RUN_ID" --body-file base-duplicate-cleanup-summary.md
