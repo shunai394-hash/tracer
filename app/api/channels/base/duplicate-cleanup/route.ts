@@ -161,10 +161,15 @@ export async function POST(request: Request) {
       }
       try {
         const duplicate = itemsById.get(candidate.duplicateBaseItemId);
-        const detail = String(duplicate?.detail ?? duplicate?.description ?? candidate.title);
+        const duplicateTitle = String(duplicate?.title ?? "").trim();
+        const duplicatePrice = Number(duplicate?.price);
+        if (!duplicateTitle || !Number.isFinite(duplicatePrice) || duplicatePrice <= 0) {
+          throw new Error("duplicate_metadata_invalid");
+        }
+        const detail = String(duplicate?.detail ?? duplicate?.description ?? duplicateTitle);
         await editBaseItem({
-          itemId: candidate.duplicateBaseItemId, title: candidate.title, detail,
-          price: candidate.price, stock: 0, visible: false,
+          itemId: candidate.duplicateBaseItemId, title: duplicateTitle, detail,
+          price: duplicatePrice, stock: 0, visible: false,
         });
         hidden += 1;
         results.push({ sku: candidate.sku, canonicalBaseItemId: candidate.canonicalBaseItemId, duplicateBaseItemId: candidate.duplicateBaseItemId, outcome: "duplicate_hidden" });
