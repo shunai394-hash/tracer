@@ -70,7 +70,7 @@ function visibleValue(value: unknown): boolean | null {
 
 /** Known BASE visibility disagrees with the linked channel_listings status. */
 export function publicationAgrees(visible: boolean | null, status: string | null): boolean | null {
-  if (visible === null || !status) return null;
+  if (visible === null || (status !== "published" && status !== "hidden")) return null;
   if (visible) return status === "published";
   return status === "hidden";
 }
@@ -122,7 +122,11 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const skuMatches = listing && identifier
       ? identifier.toUpperCase() === String(listing.externalSku ?? "").toUpperCase()
       : null;
-    const publicationMatches = listing ? publicationAgrees(visible, listing.status) : null;
+    // A SKU candidate whose BASE ID conflicts is not the listing for this item.
+    // Likewise, statuses such as "error" do not prove whether the listing should be visible.
+    const publicationMatches = mappingStatus === "matched" && listing
+      ? publicationAgrees(visible, listing.status)
+      : null;
     const reasons = [
       ...(candidates.length === 0 ? ["no_db_mapping"] : []),
       ...(candidates.length > 1 ? ["ambiguous_db_mapping"] : []),
