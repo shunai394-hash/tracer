@@ -105,6 +105,10 @@ assert.match(route, /items: reconciled\.items/);
 assert.match(route, /Walking them/);
 assert.doesNotMatch(route, /for \(const row of batch\)/);
 assert.match(route, /range\(from, from \+ 999\)/);
+assert.match(route, /from\("shop_listings"\)/,
+  "BASE reconciliation must include legacy shop_listings exact-ID evidence");
+assert.match(route, /legacy-shop-listing:/,
+  "legacy candidates must be clearly namespaced and remain distinct from commerce-native rows");
 assert.doesNotMatch(route, /\.delete\(|editBaseItem\(|createBaseItem\(/);
 const grant = readFileSync(new URL("../supabase/migrations/20261018020000_channel_price_reconciliation_audit_grants.sql", import.meta.url), "utf8");
 assert.match(grant, /42501/);
