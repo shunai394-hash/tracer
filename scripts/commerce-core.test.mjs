@@ -852,8 +852,9 @@ test("BASE paid orders never procure a mapped subset when any non-cancelled line
 
 test("BASE order polling rotates through older pages while always rescanning the newest page", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
-  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: 0 \}\)/);
-  assert.match(route, /listBaseOrders\(\{ limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset \}\)/);
+  assert.match(route, /listBaseOrders\(\{ startOrdered, endOrdered, limit: BASE_ORDER_PAGE_SIZE, offset: 0 \}\)/);
+  assert.match(route, /listBaseOrders\(\{ startOrdered, endOrdered, limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset \}\)/);
+  assert.match(route, /orderWindow: \{ startOrdered, endOrdered \}/, "BASE polling must log its explicit order date window");
   assert.match(route, /from\("commerce_events"\)[\s\S]*?BASE_ORDER_SCAN_CURSOR_EVENT/);
   assert.match(route, /detail: \{ offset: nextOffset, pageSize: BASE_ORDER_PAGE_SIZE/);
   assert.match(route, /nextScanOffset: nextOffset/);
