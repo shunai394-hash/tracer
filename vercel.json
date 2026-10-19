@@ -12,7 +12,7 @@
     },
     {
       "path": "/api/cron/commerce-cj-import",
-      "schedule": "*/10 * * * *"
+      "schedule": "0,30 * * * *"
     },
     {
       "path": "/api/cron/commerce-procurement",
