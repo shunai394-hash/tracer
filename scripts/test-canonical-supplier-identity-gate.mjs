@@ -126,6 +126,7 @@ assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
 assert.match(route, /row\.orderable !== true \|\| row\.tracking_available !== true/, "unlinked-channel reconciliation must include supplier offers without an order path or tracking");
+assert.match(route, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(row\.supplier_listing_id\)\) === "native_cj_verified"/, "cleanup must not permanently block a listing after exact native CJ verification is fresh");
 assert.match(route, /fetchBaseItemsSnapshot/, "BASE reconciliation must inspect the complete external item catalog");
 assert.match(route, /eligibleIdentifiers\.has\(identifier\)/, "BASE must retain only exact TRC identifiers for currently publishable listings");
 assert.match(route, /editBaseItem\([\s\S]*?visible: false/, "unmatched BASE items must be hidden, not physically deleted");
