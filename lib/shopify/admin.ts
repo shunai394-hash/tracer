@@ -272,6 +272,7 @@ export async function probeShopifyAuth(): Promise<ShopifyAuthProbeResult> {
 export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
+  throttleRetryAttempt = 0,
 ): Promise<T> {
   // The configured auth mode is deterministic; auth failures never switch credentials.
   const { response, token } = await shopifyAdminRequest({ query, variables });
@@ -302,6 +303,14 @@ export async function shopifyGraphQL<T>(
     payload = JSON.parse(responseText) as GraphQLResponse<T>;
   } catch {
     throw new Error("Shopify Admin API returned invalid JSON");
+  }
+
+  if (payload.errors?.some((error) => /throttled|throttle\s+limit/i.test(error.message)) && throttleRetryAttempt < 3) {
+    // Shopify can return HTTP 200 with a GraphQL-level THROTTLED error.
+    // Back off and retry only that transient condition; do not retry permission,
+    // validation, or business-logic errors.
+    await new Promise((resolve) => setTimeout(resolve, 500 * (throttleRetryAttempt + 1)));
+    return shopifyGraphQL<T>(query, variables, throttleRetryAttempt + 1);
   }
 
   if (payload.errors?.length) {
