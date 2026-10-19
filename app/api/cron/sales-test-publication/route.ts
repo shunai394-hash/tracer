@@ -164,14 +164,17 @@ export async function GET(request: Request) {
           `cj:${productId}:${variantId}`,
         ];
       })));
-    let nativeProducts: Array<{ id: string; identity_key: string }> = [];
-    if (nativeSourceRefs.length > 0) {
+    const nativeProducts: Array<{ id: string; identity_key: string }> = [];
+    // Keep PostgREST URL/query payloads bounded. A thousand supplier rows can
+    // produce up to two thousand identity keys, which may exceed request limits.
+    for (let i = 0; i < nativeSourceRefs.length; i += 100) {
+      const identityBatch = nativeSourceRefs.slice(i, i + 100);
       const { data, error } = await supabase
         .from("products")
         .select("id,identity_key")
-        .in("identity_key", nativeSourceRefs);
-      if (error) throw new Error(error.message);
-      nativeProducts = (data ?? []) as Array<{ id: string; identity_key: string }>;
+        .in("identity_key", identityBatch);
+      if (error) throw new Error(`native_products_identity_batch_${Math.floor(i / 100) + 1}: ${error.message}`);
+      nativeProducts.push(...((data ?? []) as Array<{ id: string; identity_key: string }>));
     }
     const nativeProductBySupplierIdentity = new Map<string, string>();
     for (const row of nativeProducts) {
@@ -313,7 +316,12 @@ export async function GET(request: Request) {
     if (cronRunId) {
       try { await supabase.from("cron_runs").update({ status: "failed", finished_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) }).eq("id", cronRunId); } catch (recordError) { console.error("[TRACER CRON RUN RECORD ERROR]", recordError); }
     }
-    console.error("[TRACER SALES TEST PUBLICATION CRON ERROR]", error);
+    console.error("[TRACER SALES TEST PUBLICATION CRON ERROR]", {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : typeof error,
+      cronRunId,
+      elapsedMs: Date.now() - startedAt,
+    });
     return NextResponse.json({ ok: false, phase: "sales_test_publication", error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
