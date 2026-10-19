@@ -1,5 +1,9 @@
 name: TRACER CI
 
+concurrency:
+  group: tracer-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
