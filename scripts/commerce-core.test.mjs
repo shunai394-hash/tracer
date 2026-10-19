@@ -710,6 +710,8 @@ test("CJ import reports stale supplier-evidence retry queue progress", async () 
   assert.ok(importer.includes("stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;"));
   assert.ok(importer.includes("stats.evidenceRetryVariantsQueued = evidenceRetryCount;"));
   assert.ok(importer.includes("stats.finalCandidateCount = candidates.length;"));
+  assert.match(importer, /publishedShopSupplierIdentities/, "published CJ listings get priority for live evidence refresh");
+  assert.match(importer, /!publishedShopListing/, "published CJ listings bypass normal evidence retry backoff");
 });
 
 test("scheduled CJ discovery only retries errored variants missing Shopify publication", async () => {
