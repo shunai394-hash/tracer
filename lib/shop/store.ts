@@ -240,7 +240,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   if (error) throw new Error(error.message);
   if (!data) {
     if (!isListingId) return null;
-    const canonical = await loadCanonicalCommerceListings();
+    const canonical = await loadCanonicalCommerceListings({ variantIds: [slug] });
     return canonical.find((listing) => listing.id === slug) ?? null;
   }
 
@@ -257,22 +257,25 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 }
 
 export 
-async function loadCanonicalCommerceListings(): Promise<ShopListing[]> {
+async function loadCanonicalCommerceListings(options: { variantIds?: string[] } = {}): Promise<ShopListing[]> {
   // Catalog visibility is separate from TRACER's local CJ auto-procurement capability.
   // Canonical rows link to an already-published Shopify product; keep orderable=false
   // until live supplier ordering/payment readiness is verified.
+  // UUID product-page liveness checks must query one variant, not rebuild the full catalog.
   const supabase = createSupabaseAdminClient();
   const freshAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
-  const { data: channelRows, error: channelError } = await supabase
+  let channelQuery = supabase
     .from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,external_sku,published_url,status,channel,updated_at")
     .eq("channel", "shopify")
     .eq("status", "published")
     .not("external_product_id", "is", null)
     .not("external_variant_id", "is", null)
-    .not("published_url", "is", null)
+    .not("published_url", "is", null);
+  if (options.variantIds?.length) channelQuery = channelQuery.in("variant_id", options.variantIds);
+  const { data: channelRows, error: channelError } = await channelQuery
     .order("updated_at", { ascending: false })
-    .limit(1800);
+    .limit(options.variantIds?.length ? options.variantIds.length : 1800);
   if (channelError) throw new Error(channelError.message);
   const rows = (channelRows ?? []) as Record<string, unknown>[];
   if (rows.length === 0) return [];
