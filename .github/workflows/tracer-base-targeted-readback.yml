@@ -22,8 +22,40 @@ jobs:
   readback:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
+      - name: Checkout commit history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to include the endpoint commit
+        shell: bash
+        env:
+          BASE_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          for attempt in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" \
+              "$BASE_URL/api/intelligence/pipeline-audit" |
+              python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt: production commit=$sha expected-or-descendant=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null &&
+              git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production commit $sha contains the endpoint commit; proceeding."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production does not yet include the endpoint commit; refusing to query the endpoint."
+          exit 1
+
       - name: Read only the eight specified BASE IDs
         shell: bash
         env:
