@@ -156,7 +156,7 @@ export async function POST(request: Request) {
     const ev = evidence.get(item.variantId)!;
     const live = liveById.get(item.externalVariantId)!;
     try {
-      const result = await shopifyGraphQL<{ inventoryItemUpdate: { inventoryItem: { id: string; unitCost: { amount: string; currencyCode: string } | null } | null; userErrors: Array<{ message: string }> }>(
+      const result = await shopifyGraphQL<{ inventoryItemUpdate: { inventoryItem: { id: string; unitCost: { amount: string; currencyCode: string } | null } | null; userErrors: Array<{ message: string }> } }>(
         `mutation TracerSetVerifiedInventoryItemCost($id: ID!, $input: InventoryItemInput!) {
           inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id unitCost { amount currencyCode } } userErrors { message } }
         }`,
