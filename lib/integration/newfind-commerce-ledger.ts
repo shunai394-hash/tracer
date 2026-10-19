@@ -82,15 +82,18 @@ export function decideNewfindCommerceDelivery(variantId: string, row: NewfindCom
     return { action: "skip", reason: "in_progress" };
   }
   const last = detail.lastAttemptAt ? Date.parse(detail.lastAttemptAt) : Number.NaN;
-  // The NEWFIND receiver fix is deployed. Allow one final recovery delivery
-  // for a known duplicate-key failure even if the old receiver exhausted the
-  // normal cap; the next failure reaches MAX_ATTEMPTS + 1 and is terminal.
+  // A receiver fix is deployed. Permit one bounded recovery attempt for known
+  // duplicate-key failures from older senders that already reached attempt 9.
+  // Attempts beyond that remain terminal; unrelated failures keep the normal cap.
   const duplicateConflictRecovery = status === "failed"
     && detail.attempts >= 4
     && /discovery insert failed: duplicate key value violates unique constraint/i.test(detail.lastError ?? "");
+  const oneRecoveryBeyondCap = duplicateConflictRecovery
+    && detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS + 1;
   if (
     detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS
     && !(detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS && duplicateConflictRecovery)
+    && !oneRecoveryBeyondCap
   ) return { action: "skip", reason: "max_attempts" };
   if (status !== "pending" && !duplicateConflictRecovery && Number.isFinite(last) && nowMs - last < newfindCommerceBackoffMs(detail.attempts)) {
     return { action: "skip", reason: "backoff" };
