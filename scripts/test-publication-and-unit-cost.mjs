@@ -137,5 +137,8 @@ assert.doesNotMatch(costApplyRoute, /select\("id,supplier_product_id,supplier_va
 assert.match(costApplyRoute, /if \(!expectedSku \|\| !liveSku\) reasons\.push\("shopify_sku_missing"\)/, "missing or blank SKU on either side must block a cost write");
 assert.match(costApplyRoute, /else if \(liveSku !== expectedSku\) reasons\.push\("shopify_sku_mismatch"\)/, "non-empty SKUs must match exactly after trimming");
 assert.match(costApplyRoute, /amount === ev\.unitCost && currency === "JPY"/, "write is verified only after exact JPY readback");
+assert.match(costApplyRoute, /listing\.status !== "published"/, "unit-cost writes must block listings not marked published in TRACER");
+assert.match(costApplyRoute, /live\?\.product\?\.status !== "ACTIVE"/, "unit-cost writes must block non-active live Shopify products");
+assert.match(costApplyRoute, /numeric\(live\?\.price\) !== ev\.sellingPrice/, "unit-cost writes must block when live Shopify price differs from the verified TRACER price");
 
 console.log("publication repair and unit cost: ok");
