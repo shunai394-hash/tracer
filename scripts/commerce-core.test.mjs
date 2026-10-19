@@ -1116,12 +1116,12 @@ test("BASE and Shopify publish cron routes fail closed when stale listing cleanu
     "../app/api/cron/commerce-publish-shopify/route.ts",
   ]) {
     const route = await readFile(new URL(path, import.meta.url), "utf8");
-    assert.match(route, /result\\.failed === 0 && result\\.staleListings\\.failed === 0/,
+    assert.match(route, /result\.failed === 0 && result\.staleListings\.failed === 0/,
       "cleanup failures must be included in the route's ok telemetry");
-    assert.match(route, /const failed = result\\.failed > 0 \\|\\| result\\.staleListings\\.failed > 0/,
+    assert.match(route, /const failed = result\.failed > 0 \|\| result\.staleListings\.failed > 0/,
       "cleanup failures must produce a non-success HTTP response");
-    assert.match(route, /staleListingErrors: result\\.staleListings\\.errors\\.slice\\(0, 10\\)/,
+    assert.match(route, /staleListingErrors: result\.staleListings\.errors\.slice\(0, 10\)/,
       "cleanup failure details must be visible in bounded logs");
-    assert.match(route, /status: failed \\? 207 : 200/);
+    assert.match(route, /status: failed \? 207 : 200/);
   }
 });
