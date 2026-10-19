@@ -15,6 +15,7 @@ type Listing = {
   status: string | null;
 };
 type Offer = {
+  id?: unknown;
   unit_cost?: unknown;
   currency?: unknown;
   shipping_cost?: unknown;
@@ -26,6 +27,7 @@ type Offer = {
   last_checked_at?: unknown;
 };
 type Price = {
+  supplier_offer_id?: unknown;
   currency?: unknown;
   selling_price?: unknown;
   expected_profit?: unknown;
@@ -93,7 +95,7 @@ export async function POST(request: Request) {
   for (let offset = 0; offset < selected.length; offset += 100) {
     const batch = selected.slice(offset, offset + 100);
     const { data, error } = await db.from("commerce_variants")
-      .select("id,supplier_product_id,supplier_variant_id,supplier_offers(unit_cost,currency,shipping_cost,source_status,inventory,raw_data,last_checked_at),commerce_prices(currency,selling_price,expected_profit,calculated_at)")
+      .select("id,supplier_product_id,supplier_variant_id,supplier_offers(id,unit_cost,currency,shipping_cost,source_status,inventory,raw_data,last_checked_at),commerce_prices(supplier_offer_id,currency,selling_price,expected_profit,calculated_at)")
       .in("id", batch.map((row) => row.variant_id));
     if (error) return NextResponse.json({ ok: false, error: "SUPPLIER_EVIDENCE_READ_FAILED" }, { status: 502, headers });
     for (const row of data ?? []) {
@@ -101,7 +103,7 @@ export async function POST(request: Request) {
       const offer = offers.filter((candidate) => candidate.source_status === "verified")
         .sort((a, b) => Date.parse(String(b.last_checked_at ?? "")) - Date.parse(String(a.last_checked_at ?? "")))[0];
       const prices = asRows(row.commerce_prices as Price | Price[] | null).sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")));
-      const price = prices[0];
+      const price = prices.find((candidate) => candidate.supplier_offer_id === offer?.id);
       const raw = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data as Record<string, unknown> : {};
       const unitCost = numeric(offer?.unit_cost);
       const shippingCost = numeric(offer?.shipping_cost);
@@ -113,6 +115,8 @@ export async function POST(request: Request) {
       const sourceStatus = typeof offer?.source_status === "string" ? offer.source_status : null;
       const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
       const evidenceFresh = Number.isFinite(checkedAt) && Date.now() - checkedAt >= 0 && Date.now() - checkedAt <= 24 * 60 * 60 * 1000;
+      const priceCalculatedAt = typeof price?.calculated_at === "string" ? Date.parse(price.calculated_at) : Number.NaN;
+      const priceMatchesFreshOffer = Boolean(offer?.id) && Number.isFinite(priceCalculatedAt) && Number.isFinite(checkedAt) && priceCalculatedAt >= checkedAt;
       const supplierProductId = typeof row.supplier_product_id === "string" ? row.supplier_product_id : typeof offer?.supplier_product_id === "string" ? offer.supplier_product_id : null;
       const supplierVariantId = typeof row.supplier_variant_id === "string" ? row.supplier_variant_id : typeof offer?.supplier_variant_id === "string" ? offer.supplier_variant_id : null;
       const shippingKnown = raw.shippingKnown === true;
@@ -120,6 +124,7 @@ export async function POST(request: Request) {
       if (!supplierProductId || !supplierVariantId) reason.push("supplier_identity_missing");
       if (sourceStatus !== "verified") reason.push("supplier_offer_not_verified");
       if (!evidenceFresh) reason.push("supplier_evidence_stale_or_missing");
+      if (!priceMatchesFreshOffer) reason.push("price_not_calculated_for_current_supplier_offer");
       if (currency !== "JPY" || unitCost === null || unitCost <= 0) reason.push("supplier_unit_cost_not_verified_jpy");
       if (!shippingKnown || shippingCost === null || shippingCost < 0) reason.push("japan_shipping_unconfirmed");
       if (inventory === null || inventory <= 0) reason.push("supplier_inventory_not_positive");
