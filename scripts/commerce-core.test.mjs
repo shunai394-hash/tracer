@@ -177,6 +177,8 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
   assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%/);
   assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/, "only published rows or explicit supplier-safety errors enter external reconciliation");
+  assert.doesNotMatch(audit, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "confirmed stopped listings must not be selected on every publish cron");
+  assert.doesNotMatch(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "confirmed stopped listings must not enter external reconciliation again");
   assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
