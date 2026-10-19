@@ -68,6 +68,7 @@ jobs:
       - run: node scripts/test-base-snapshot-export.mjs
       - run: node scripts/test-cron-schedule-invariants.mjs
       - run: node scripts/test-commerce-status-readonly.mjs
+      - run: node scripts/test-archived-readback-pagination.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node scripts/test-shopify-copy-quota-fallback.mjs
