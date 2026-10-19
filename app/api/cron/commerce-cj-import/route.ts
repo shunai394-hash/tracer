@@ -300,7 +300,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "usd_jpy_rate_unavailable", imported: 0 }, { status: 503 });
   }
 
-  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceCreated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, verifiedOffersStaleEligible: 0, publicationBlockedVariantsSeen: 0, evidenceRetryVariantsQueued: 0, evidenceRetryDeferredByBackoff: 0, staleLegacyListingVariantsQueued: 0, finalEvidenceParentCount: 0, missingPublicationRetriesQueued: 0, newDiscoveryCandidatesQueued: 0, finalCandidateCount: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
+  const stats = { searched: 0, products: 0, variantsAvailable: 0, variants: 0, offers: 0, priced: 0, supplierListingEvidenceUpdated: 0, supplierListingEvidenceCreated: 0, supplierListingEvidenceUnmatched: 0, complianceBlocked: 0, skipped: 0, verifiedOffersStaleEligible: 0, publicationBlockedVariantsSeen: 0, evidenceRetryVariantsQueued: 0, evidenceRetryDeferredByBackoff: 0, staleLegacyListingVariantsQueued: 0, finalEvidenceParentCount: 0, missingPublicationRetriesQueued: 0, newDiscoveryCandidatesQueued: 0, discoverySearchPagesScanned: 0, finalCandidateCount: 0, skipReasons: {} as Record<string, number>, errors: [] as string[] };
   const recordSkip = (reason: string) => { stats.skipped++; stats.skipReasons[reason] = (stats.skipReasons[reason] ?? 0) + 1; };
   try {
     type ImportCandidate = { id: string; title: string; productType?: string | null; imageUrl?: string | null; retryVariantIds?: string[] };
@@ -378,6 +378,7 @@ export async function GET(request: Request) {
         const key = String(row.source_key ?? "");
         return key.startsWith("cj:") ? key.slice(3) : "";
       }).filter(Boolean));
+      stats.discoverySearchPagesScanned = 1;
       const uniqueSearchProducts = new Map<string, ImportCandidate>();
       for (const item of results.products) {
         const id = String(item.id ?? "").trim();
@@ -543,8 +544,12 @@ export async function GET(request: Request) {
       // containing existing products cannot consume the entire discovery batch.
       const newCandidates = [...uniqueSearchProducts.values()].filter((item) => !knownParentIds.has(item.id));
       let scanPage = page + 1;
-      while (newCandidates.length < Math.max(1, limit - retryCandidates.length - evidenceRetryCandidates.length - staleListingRetryCandidates.length) && scanPage <= page + 2) {
+      // Keep a bounded discovery budget even when recovery queues are full.
+      // Search up to five additional pages so dense pages of known products do
+      // not starve new parents; record actual scan count for runtime diagnosis.
+      while (newCandidates.length < 1 && scanPage <= page + 5) {
         const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
+        stats.discoverySearchPagesScanned += 1;
         stats.searched += extra.products.length;
         for (const item of extra.products) {
           const id = String(item.id ?? "").trim();
@@ -564,12 +569,15 @@ export async function GET(request: Request) {
         }
         evidenceVariantsByParent.set(candidate.id, variantIds);
       }
+      // Reserve one slot for discovery on every normal run, even when early pages
+      // contain no new parent. If discovery finds nothing, leave the slot unused
+      // instead of allowing recovery retries to monopolize the entire batch.
       const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
-        .slice(0, Math.max(0, limit - (newCandidates.length > 0 ? 1 : 0)))
+        .slice(0, Math.max(0, limit - 1))
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
-        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - (newCandidates.length > 0 ? 1 : 0)));
+        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - 1));
       const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
       const queuedDiscoveryCandidates = newCandidates.slice(0, discoverySlots);
       stats.finalEvidenceParentCount = dedupedEvidenceCandidates.length;
