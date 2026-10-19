@@ -68,6 +68,40 @@ export async function GET(request: Request) {
       const externalSku = String(item.identifier ?? "").trim() || null;
       const externalPrice = Number.isFinite(rawPrice) ? rawPrice : null;
       const externalStock = Number.isFinite(rawStock) ? rawStock : null;
+
+      // Look up TRACER listings by the actual BASE identifier, even when their
+      // stored external_product_id points at the other ID in a conflict pair.
+      let skuListings: typeof listings = [];
+      let skuLookupError: string | null = null;
+      if (externalSku) {
+        const { data: skuRows, error: skuError } = await db
+          .from("channel_listings")
+          .select("id,external_product_id,external_variant_id,external_sku,selling_price,status")
+          .eq("channel", "base")
+          .eq("external_sku", externalSku);
+        if (skuError) {
+          skuLookupError = "base_sku_mapping_lookup_failed";
+        } else {
+          skuListings = skuRows ?? [];
+        }
+      }
+
+      const compareListing = (listing: NonNullable<typeof listings>[number]) => ({
+        listingId: String(listing.id),
+        storedBaseItemId: listing.external_product_id == null ? null : String(listing.external_product_id),
+        expectedSku: String(listing.external_sku ?? "").trim() || null,
+        expectedPrice: Number.isFinite(Number(listing.selling_price)) ? Number(listing.selling_price) : null,
+        status: listing.status,
+        externalVariantId: listing.external_variant_id == null ? null : String(listing.external_variant_id),
+        skuMatches: Boolean(String(listing.external_sku ?? "").trim() && externalSku &&
+          String(listing.external_sku).trim() === externalSku),
+        priceDifference: Number.isFinite(Number(listing.selling_price)) && externalPrice !== null
+          ? externalPrice - Number(listing.selling_price)
+          : null,
+        visibilityMatches: listing.status === "published" ? externalVisible === true
+          : listing.status ? externalVisible === false : null,
+      });
+
       return {
         baseItemId,
         exists: true,
@@ -78,15 +112,9 @@ export async function GET(request: Request) {
           visible: externalVisible,
           stock: externalStock,
         },
-        mappedListings: mappedListings.map((listing) => ({
-          ...listing,
-          skuMatches: Boolean(listing.expectedSku && externalSku && listing.expectedSku === externalSku),
-          priceDifference: listing.expectedPrice !== null && externalPrice !== null
-            ? externalPrice - listing.expectedPrice
-            : null,
-          visibilityMatches: listing.status === "published" ? externalVisible === true
-            : listing.status ? externalVisible === false : null,
-        })),
+        mappedListings: mappedListings.map(compareListing),
+        listingsByActualSku: skuListings.map(compareListing),
+        skuLookupError,
         readError: null,
       };
     } catch (cause) {
