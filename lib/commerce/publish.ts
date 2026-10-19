@@ -101,28 +101,15 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        // Listing eligibility uses exact supplier identity and a positive JPY landed-cost price.
-        // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
-        // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
-        const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
-        const shippingKnown = offer.raw_data?.shippingKnown === true ||
-          (offer.raw_data?.shippingKnown === undefined && offer.raw_data?.shippingEstimated !== true &&
-            offer.source_status === "verified" && Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
-        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
-          Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
-          ? offer.raw_data as Record<string, unknown> : {};
-        const stockKnown = rawData.stockKnown === true ||
-          (rawData.stockKnown === undefined && offer.source_status === "verified");
+        // Only supplier identity failures trigger automatic unpublishing.
+        // Stock, freight, tracking, freshness and profit are checked before procurement,
+        // not used to hide a correctly identified catalog product.
         return Boolean(
-          offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
-          offer.source_status === "verified" && fresh &&
-          unitCostKnown && shippingKnown && stockKnown &&
-          offer.ship_to === "JP" && offer.tracking_supported === true &&
-          Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0 &&
-          price && price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5
+          offer.supplier_product_id &&
+          offer.supplier_variant_id &&
+          nativeIdsValid &&
+          price &&
+          price.supplier_offer_id === offer.id
         );
       });
       if (hasPublishableLinkedOffer) {
