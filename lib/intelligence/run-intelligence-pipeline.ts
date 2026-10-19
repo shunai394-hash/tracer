@@ -328,7 +328,7 @@ export async function runIntelligencePipeline(options: {
   const db = createSupabaseAdminClient();
 
   // Live CJ catalog discovery is owned by /api/cron/commerce-cj-import,
-  // scheduled every 10 minutes. Do not duplicate live CJ requests from this
+  // scheduled every 30 minutes. Do not duplicate live CJ requests from this
   // five-minute patrol: it consumes persisted supplier offers, recalculates
   // economics, and continues the BASE/Shopify/NEWFIND delivery work below.
   const supplyFirstStep: PipelineStepResult = {
