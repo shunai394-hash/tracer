@@ -199,6 +199,35 @@ export async function GET(request: Request) {
   if (listingReadError) {
     result.storefrontSyncErrors.push({ channel: "lookup", reason: listingReadError.message.slice(0, 180) });
   } else {
+    // Published listings without any supplier offer must enter this queue too.
+    // Otherwise no offer means no canonical price, so the old eligibility filter
+    // skipped them forever and the global 5-item safety cleanup never got triggered.
+    const publishedVariantIds = [...new Set((listings ?? [])
+      .filter((row) => row.status === "published")
+      .map((row) => String(row.variant_id))
+      .filter(Boolean))];
+    const supplierOfferVariantIds = new Set<string>();
+    let supplierOfferLookupFailed = false;
+    for (let offset = 0; offset < publishedVariantIds.length; offset += 100) {
+      const ids = publishedVariantIds.slice(offset, offset + 100);
+      const { data: offerVariants, error: offerVariantsError } = await db.from("supplier_offers")
+        .select("variant_id")
+        .in("variant_id", ids)
+        .limit(1000);
+      if (offerVariantsError) {
+        supplierOfferLookupFailed = true;
+        result.storefrontSyncErrors.push({
+          channel: "lookup",
+          reason: ("published_supplier_offer_lookup_failed:" + offerVariantsError.message).slice(0, 180),
+        });
+        break;
+      }
+      for (const offer of offerVariants ?? []) supplierOfferVariantIds.add(String(offer.variant_id));
+    }
+    // Fail closed on lookup errors: do not infer a missing offer from an incomplete read.
+    const publishedMissingOfferVariantIds = new Set(
+      supplierOfferLookupFailed ? [] : publishedVariantIds.filter((id) => !supplierOfferVariantIds.has(id)),
+    );
     // Select only rows that are still stale. Including every repriced variant here
     // re-synced already-correct listings and starved the real backlog on each cron run.
     for (const channel of ["base", "shopify"] as const) {
@@ -210,6 +239,9 @@ export async function GET(request: Request) {
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
+        // Safety cleanup must also run for published variants with no offer at all.
+        // A missing offer has no canonical price, but must not remain purchasable.
+        if (row.status === "published" && publishedMissingOfferVariantIds.has(variantId)) return true;
         // Disable unverified supplier listings once, then stop re-queueing the safety state.
         if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) {
           return row.status === "published" &&
@@ -220,7 +252,8 @@ export async function GET(request: Request) {
       });
       const priority = (row: (typeof eligibleRows)[number]) => {
         const variantId = String(row.variant_id);
-        if (row.status === "published" && unverifiedVariantIds.has(variantId)) return 0;
+        if (row.status === "published" &&
+          (unverifiedVariantIds.has(variantId) || publishedMissingOfferVariantIds.has(variantId))) return 0;
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
