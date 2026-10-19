@@ -359,7 +359,7 @@ test("BASE order ingestion requires the true order_item_id for tracking reflecti
 });
 test("BASE tracking reflection is scheduled after procurement and idempotent per order line", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(config.crons.find((job) => job.path === "/api/cron/commerce-base-fulfillment")?.schedule, "14,44 * * * *");
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/commerce-base-fulfillment")?.schedule, "14,29,44,59 * * * *");
   const route = await readFile(new URL("../app/api/cron/commerce-base-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("commerce_orders"\)/);
   assert.match(route, /procurement_orders\(id,status,tracking_number/);
@@ -368,7 +368,7 @@ test("BASE tracking reflection is scheduled after procurement and idempotent per
 });
 test("Shopify fulfillment tracking sync runs automatically after procurement", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-fulfillment")?.schedule, "7,37 * * * *");
+  assert.equal(config.crons.find((job) => job.path === "/api/cron/shopify-fulfillment")?.schedule, "7,22,37,52 * * * *");
   const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /syncShopifyFulfillments\(25\)/);
 });
@@ -376,11 +376,11 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
   assert.equal(schedules.get("/api/cron/commerce-cj-import"), "0,30 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-publish-base"), "*/30 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/30 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,31 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,43 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "10,40 * * * *", "the patrol-ai cron must run twice hourly");
+  assert.equal(schedules.get("/api/cron/commerce-publish-base"), "*/5 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/5 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the patrol-ai cron must run every five minutes");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native pipeline must not schedule marketplace sourcing observation");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
