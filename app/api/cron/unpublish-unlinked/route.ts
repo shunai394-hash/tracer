@@ -5,7 +5,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-listings";
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
-import { BASE_ITEMS_MAX_PAGES, editBaseItem, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+import { BASE_ITEMS_MAX_PAGES, editBaseItem, getBaseItemDetail, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -171,6 +171,73 @@ export async function GET(request: Request) {
     }
   }
 
+  // Directly reconcile BASE channel_listings that have a known supplier-fulfillment
+  // failure but no matching shop_listings row. Hide them on BASE and verify the
+  // result through the BASE item-detail API; never delete historical records.
+  const baseUnfulfillable = {
+    candidates: 0,
+    attempted: 0,
+    hiddenVerified: 0,
+    failed: 0,
+    skipped: 0,
+    results: [] as Array<{ itemId: string; ok: boolean; reason?: string }>,
+  };
+  if (isBaseConfigured()) {
+    const { data: failedBaseRows, error: failedBaseReadError } = await db
+      .from("channel_listings")
+      .select("external_product_id,external_sku,status,last_error")
+      .eq("channel", "base")
+      .like("last_error", "supplier_offer_not_fulfillable%")
+      .limit(100);
+    if (failedBaseReadError) {
+      errors.push(`base_unfulfillable_read_failed:${failedBaseReadError.message}`);
+    } else {
+      baseUnfulfillable.candidates = (failedBaseRows ?? []).length;
+      for (const row of (failedBaseRows ?? []).slice(0, 15)) {
+        const itemId = String(row.external_product_id ?? "").trim();
+        if (!/^\\d+$/.test(itemId)) {
+          baseUnfulfillable.failed += 1;
+          baseUnfulfillable.results.push({ itemId: itemId || "unknown", ok: false, reason: "invalid_base_item_id" });
+          continue;
+        }
+        baseUnfulfillable.attempted += 1;
+        try {
+          const current = await getBaseItemDetail(itemId);
+          const title = String(current.title ?? current.name ?? "").trim();
+          const detail = String(current.detail ?? current.description ?? "").trim();
+          const price = Number(current.price);
+          if (!title || !Number.isFinite(price) || price <= 0) {
+            throw new Error("base_item_detail_missing_title_or_price");
+          }
+          await editBaseItem({ itemId, title, detail, price, stock: 0, visible: false });
+          const verified = await getBaseItemDetail(itemId);
+          const visible = verified.visible === true || verified.visible === 1 || verified.visible === "1";
+          if (visible) throw new Error("base_item_still_visible_after_hide");
+          const { error: markError } = await db.from("channel_listings")
+            .update({ status: "hidden_unfulfillable", last_error: "supplier_offer_not_fulfillable_hidden_verified", last_synced_at: new Date().toISOString() })
+            .eq("channel", "base")
+            .eq("external_product_id", itemId)
+            .like("last_error", "supplier_offer_not_fulfillable%");
+          if (markError) throw new Error(`base_hide_verified_but_db_marker_failed:${markError.message}`);
+          baseUnfulfillable.hiddenVerified += 1;
+          baseUnfulfillable.results.push({ itemId, ok: true });
+        } catch (cause) {
+          baseUnfulfillable.failed += 1;
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          baseUnfulfillable.results.push({ itemId, ok: false, reason });
+          errors.push(`base_unfulfillable_hide_failed:${itemId}:${reason}`);
+          if (isBaseAuthenticationFailure(reason)) {
+            baseAuthReauthorizationRequired = true;
+            break;
+          }
+        }
+      }
+      baseUnfulfillable.skipped = Math.max(0, baseUnfulfillable.candidates - baseUnfulfillable.attempted);
+    }
+  } else {
+    baseUnfulfillable.skipped = 1;
+  }
+
   if (errors.length > 0) {
     console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
       candidatesChecked: (data ?? []).length,
@@ -194,6 +261,7 @@ export async function GET(request: Request) {
     shopifyAttempted: shopifyPending.length,
     baseAttempted: basePending.length,
     baseOrphans,
+    baseUnfulfillable,
     baseAuthReauthorizationRequired,
     shopifyHidden: shopifyResult.hidden ?? null,
     shopifyFailed: shopifyResult.failed ?? null,
