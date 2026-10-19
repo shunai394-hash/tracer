@@ -292,6 +292,12 @@ export const cjSupplierAdapter: TracerSupplierAdapter = {
         valid: true,
         responseCode: "CJ_PREFLIGHT_OK",
         responseMessage: `Verified variant, stock, and ${freight.logisticName} from ${freight.countryCode}`,
+        verifiedUnitCost: Number(variant.sellPrice),
+        verifiedShippingCost: freight.shippingCost,
+        verifiedCurrency: "USD",
+        verifiedInventory: variant.inventory,
+        shippingMethod: freight.logisticName,
+        evidenceObservedAt: OBSERVED_AT(),
       };
     } catch (error) {
       return { valid: false, responseCode: "CJ_PREFLIGHT_FAILED", responseMessage: safeMessage(error) };

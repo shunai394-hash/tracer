@@ -40,6 +40,15 @@ assert.doesNotMatch(commerceImporter, /if \(shipping !== null && shipping >= 0\)
 assert.match(adapter, /isCanonicalCjNativeId/);
 assert.match(adapter, /CJ_NATIVE_ID_INVALID/);
 assert.match(procurement, /isCanonicalCjNativeId/);
+assert.match(procurement, /verifiedUnitCost/);
+assert.match(procurement, /verifiedShippingCost/);
+assert.match(procurement, /LIVE_USD_JPY_RATE_UNAVAILABLE/);
+assert.match(procurement, /LIVE_CJ_COST_BREAKS_PROFIT_OR_MARGIN_FLOOR/);
+assert.match(procurement, /price\.margin_rate/);
+assert.match(procurement, /shippingKnown/);
+assert.match(adapter, /verifiedUnitCost: Number\(variant\.sellPrice\)/);
+assert.match(adapter, /verifiedShippingCost: freight\.shippingCost/);
+
 assert.match(adapter, /inventoryByCountry/);
 assert.match(adapter, /Number\.isSafeInteger\(input\.quantity\)/);
 assert.match(adapter, /fromCountryCode: freight\.countryCode/);

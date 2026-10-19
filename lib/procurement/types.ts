@@ -114,6 +114,13 @@ export type SupplierOrderValidation = {
   valid: boolean;
   responseCode: string;
   responseMessage: string | null;
+  /** Live supplier evidence returned by preflight; absent means the order gate must fail closed. */
+  verifiedUnitCost?: number | null;
+  verifiedShippingCost?: number | null;
+  verifiedCurrency?: string | null;
+  verifiedInventory?: number | null;
+  shippingMethod?: string | null;
+  evidenceObservedAt?: string | null;
 };
 
 export type SupplierOrderResult = {
