@@ -121,13 +121,17 @@ async function handleCheckoutCompleted(
     .from("shop_order_items")
     .select("listing_id, qty")
     .eq("order_id", shopOrderId);
-  for (const item of items ?? []) {
-    if (!item.listing_id) continue;
-    await recordShopFunnelEvent({
-      listingId: String(item.listing_id),
-      eventType: "purchase",
-      qty: Number(item.qty ?? 1),
-    }).catch((error) => console.error("[TRACER FUNNEL EVENT ERROR]", error));
+  // Record the purchase conversion only on the first payment confirmation.
+  // Webhook retries may re-run fulfillment, but must not inflate conversion counts.
+  if (!alreadyPaid) {
+    for (const item of items ?? []) {
+      if (!item.listing_id) continue;
+      await recordShopFunnelEvent({
+        listingId: String(item.listing_id),
+        eventType: "purchase",
+        qty: Number(item.qty ?? 1),
+      }).catch((error) => console.error("[TRACER FUNNEL EVENT ERROR]", error));
+    }
   }
 
   try {
