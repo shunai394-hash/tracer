@@ -824,7 +824,7 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "4,34 * * * *"));
-  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "10,40 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
 });
 
 test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
