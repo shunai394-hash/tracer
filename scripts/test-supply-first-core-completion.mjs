@@ -38,9 +38,9 @@ assert.doesNotMatch(recoveryWorkflow, /SUPPLIER_LISTING_ID="83eb3a0e-eced-4041-a
   "sandbox recovery must not depend on a supplier listing ID from the pre-reset database");
 assert.match(recoveryWorkflow, /sandbox_failed/);
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-assert.match(cronRoute, /const DISCOVERY_BUDGET_MS = 105_000/,
+assert.match(cronRoute, /const DISCOVERY_BUDGET_MS = 75_000/,
   "supplier discovery must be bounded so opportunity intelligence and channel publication have remaining route time");
-assert.match(cronRoute, /const DISCOVERY_BATCH_SIZE = 10/,
+assert.match(cronRoute, /const DISCOVERY_BATCH_SIZE = 4/,
   "supplier discovery must use a small bounded batch that can finish before the route deadline");
 const discovery = await readFile(new URL("../lib/suppliers/discover-cj-supply.ts", import.meta.url), "utf8");
 assert.match(discovery, /MAX_CATALOG_SEARCH_PAGES_PER_RUN = 5/,
@@ -49,7 +49,7 @@ assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
 assert.ok(cronRoute.includes("supply_first_already_running"));
-assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["0,30 * * * *"]);
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [],
   "legacy supply-first must not be scheduled beside the canonical commerce importer");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule), ["*/5 * * * *"],
