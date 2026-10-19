@@ -17,6 +17,9 @@ assert.ok(route.includes("priceDifference:"), "report must show price difference
 assert.ok(route.includes("skuMatches:"), "report must compare stored and actual identifiers");
 assert.ok(route.includes("externalVisible"), "report must include actual visibility");
 assert.ok(route.includes("externalStock"), "report must include actual stock");
+assert.ok(route.includes("const finiteNumberOrNull"), "missing prices and stock must remain null, not become zero");
+assert.ok(route.includes("finiteNumberOrNull(item.price)") && route.includes("finiteNumberOrNull(item.stock)"), "actual missing price and stock must be preserved as unknown");
+assert.ok(route.includes("finiteNumberOrNull(row.selling_price)"), "missing stored price must not be interpreted as zero");
 
 const targets = ["163159664", "163159665", "163159668", "163159669", "163159671", "163159672", "163159673", "163159674"];
 assert.equal(targets.length, 8);
@@ -24,4 +27,4 @@ assert.equal([...new Set(targets)].length, 8);
 assert.ok(targets.every((id) => /^\d+$/.test(id)));
 assert.equal(/^\d+$/.test("163159664x"), false);
 
-console.log("BASE targeted readback static safety checks: 16 assertions passed");
+console.log("BASE targeted readback static safety checks: 19 assertions passed");
