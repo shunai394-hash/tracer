@@ -49,10 +49,10 @@ assert.match(cronRoute, /const discoveryIncomplete/);
 assert.match(cronRoute, /status: runStatus/);
 assert.match(cronRoute, /status: discoveryIncomplete \? 503 : 200/);
 assert.ok(cronRoute.includes("supply_first_already_running"));
-assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"]);
+assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["0,30 * * * *"]);
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [],
   "legacy supply-first must not be scheduled beside the canonical commerce importer");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule), ["*/5 * * * *"],
-  "the existing five-minute patrol must remain enabled");
+  "the patrol-ai cron must run every five minutes");
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");

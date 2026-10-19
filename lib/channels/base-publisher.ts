@@ -123,7 +123,30 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // Only publish rows whose exact supplier listing is currently eligible for publication.
   // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
-  const identityUnlinkedIds = new Set<string>((listings ?? [])
+  const nativeCjRepairIds = (listings ?? [])
+    .filter((listing) => listing.supplier_listing_id
+      && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified"
+      && (listing.orderable !== true || listing.tracking_available !== true))
+    .map((listing) => String(listing.id));
+  if (nativeCjRepairIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: repairError } = await supabase.from("shop_listings").update({
+      orderable: true,
+      tracking_available: true,
+      pipeline_stage: "SUPPLIER_REVERIFIED",
+      pipeline_status: "pending",
+      pipeline_reason: "native_cj_supplier_variant_verified",
+      pipeline_error: null,
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).in("id", nativeCjRepairIds);
+    if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
+  }
+  const publishableListings = (listings ?? []).map((listing) =>
+    listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified"
+      ? { ...listing, orderable: true, tracking_available: true }
+      : listing);
+  const identityUnlinkedIds = new Set<string>(publishableListings
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
@@ -146,8 +169,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }
 
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
-  for (const listing of listings ?? []) {
+  for (const listing of publishableListings) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
+    if (listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified" && !isIdentityUnlinked) continue;
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
@@ -187,7 +211,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = (listings ?? []).filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
+  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -208,7 +232,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }));
   const copyByListingId = new Map(copyResults.map((item) => [item.listingId, item]));
 
-  for (const listing of listings ?? []) {
+  for (const listing of publishableListings) {
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.

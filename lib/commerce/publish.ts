@@ -45,7 +45,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel)
-    .or("status.eq.published,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%,last_error.like.supplier_offer_disable_failed%")
+    .or("status.eq.published,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_disable_failed%")
     .not("external_product_id", "is", null)
     .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(5);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
@@ -56,8 +56,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const checkableListings = (listings ?? []).filter((listing) =>
     listing.status === "published" ||
     String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
-    String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
-    String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_disable_failed:")
   );
   result.checked = checkableListings.length;
@@ -255,7 +253,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const { data: priorityListings, error: priorityListingsError } = await db.from("channel_listings")
       .select("variant_id,last_synced_at")
       .eq("channel", channel)
-      .or("status.eq.pending,status.eq.error,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%")
+      .or("status.eq.pending,status.eq.error,last_error.like.supplier_offer_not_fulfillable%")
       .order("last_synced_at", { ascending: true, nullsFirst: true })
       .limit(100);
     if (priorityListingsError) throw new Error("commerce_recovery_queue_read_failed:" + priorityListingsError.message);
