@@ -44,7 +44,10 @@ assert.match(workflow, /existingBaseItemEvidence/);
 assert.match(workflow, /base_items_by_id/);
 assert.match(workflow, /body: JSON\.stringify\(\{ snapshot \}\)/);
 assert.match(workflow, /tracer-base-reconciliation-/);
-assert.doesNotMatch(workflow, /actions\/upload-artifact@/);
+assert.match(workflow, /actions\\/upload-artifact@v4/);
+assert.match(workflow, /tracer-base-products-\\*\\.json/);
+assert.match(workflow, /tracer-base-reconciliation-\\*\\.json/);
+assert.match(workflow, /retention-days: 14/);
 assert.match(workflow, /BASE_RECONCILIATION_INCOMPLETE_OR_COUNT_MISMATCH/);
 console.log("BASE/TRACER reconciliation report contract: 17 assertions passed");
 
