@@ -95,7 +95,7 @@ export async function POST(request: Request) {
   for (let offset = 0; offset < selected.length; offset += 100) {
     const batch = selected.slice(offset, offset + 100);
     const { data, error } = await db.from("commerce_variants")
-      .select("id,supplier_product_id,supplier_variant_id,supplier_offers(id,unit_cost,currency,shipping_cost,source_status,inventory,raw_data,last_checked_at),commerce_prices(supplier_offer_id,currency,selling_price,expected_profit,calculated_at)")
+      .select("id,supplier_offers(id,supplier_product_id,supplier_variant_id,unit_cost,currency,shipping_cost,source_status,inventory,raw_data,last_checked_at),commerce_prices(supplier_offer_id,currency,selling_price,expected_profit,calculated_at)")
       .in("id", batch.map((row) => row.variant_id));
     if (error) return NextResponse.json({ ok: false, error: "SUPPLIER_EVIDENCE_READ_FAILED" }, { status: 502, headers });
     for (const row of data ?? []) {
@@ -117,8 +117,8 @@ export async function POST(request: Request) {
       const evidenceFresh = Number.isFinite(checkedAt) && Date.now() - checkedAt >= 0 && Date.now() - checkedAt <= 24 * 60 * 60 * 1000;
       const priceCalculatedAt = typeof price?.calculated_at === "string" ? Date.parse(price.calculated_at) : Number.NaN;
       const priceMatchesFreshOffer = Boolean(offer?.id) && Number.isFinite(priceCalculatedAt) && Number.isFinite(checkedAt) && priceCalculatedAt >= checkedAt;
-      const supplierProductId = typeof row.supplier_product_id === "string" ? row.supplier_product_id : typeof offer?.supplier_product_id === "string" ? offer.supplier_product_id : null;
-      const supplierVariantId = typeof row.supplier_variant_id === "string" ? row.supplier_variant_id : typeof offer?.supplier_variant_id === "string" ? offer.supplier_variant_id : null;
+      const supplierProductId = typeof offer?.supplier_product_id === "string" ? offer.supplier_product_id : null;
+      const supplierVariantId = typeof offer?.supplier_variant_id === "string" ? offer.supplier_variant_id : null;
       const shippingKnown = raw.shippingKnown === true;
       const reason: string[] = [];
       if (!supplierProductId || !supplierVariantId) reason.push("supplier_identity_missing");
