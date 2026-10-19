@@ -179,11 +179,17 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
-test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
+test("published listings require fresh fulfillment evidence and verified external unpublish", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /const identityCleanup = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Only supplier identity failures trigger automatic unpublishing/);
-  assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
+  assert.match(publish, /offer.source_status === "verified" && fresh && priceFresh && stockKnown/);
+  assert.match(publish, /Number\(offer.inventory\) > 0 && offer.ship_to === "JP" && offer.tracking_supported === true/);
+  assert.match(publish, /Number\(price.expected_profit\) > 0 && Number\(price.margin_rate\) >= 0\.5/);
+  assert.match(publish, /supplier_shipping_not_verified/);
+  assert.match(publish, /price_verification_stale/);
+  assert.match(publish, /base_unpublish_readback_mismatch/);
+  assert.match(publish, /shopify_unpublish_readback_mismatch/);
+  assert.match(publish, /shopify_inventory_zero_failed/);
   assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
