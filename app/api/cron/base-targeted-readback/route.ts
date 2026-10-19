@@ -134,7 +134,7 @@ export async function GET(request: Request) {
     }
   }));
 
-  const readErrors = results.filter((row) => row.readError !== null).length;
+  const readErrors = results.filter((row) => row.readError !== null || ("skuLookupError" in row && row.skuLookupError !== null)).length;
   return NextResponse.json({
     ok: readErrors === 0,
     readOnly: true,
