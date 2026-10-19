@@ -7,16 +7,16 @@ const patrol = crons.find((entry) => entry.path === "/api/cron/patrol-ai");
 assert.ok(patrol, "patrol-ai cron must remain configured");
 assert.equal(patrol.schedule, "*/5 * * * *", "patrol-ai must run every five minutes");
 
-for (const path of ["/api/cron/commerce-base-orders", "/api/cron/commerce-base-fulfillment", "/api/cron/commerce-cj-import", "/api/cron/commerce-procurement", "/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-orders", "/api/cron/shopify-fulfillment"]) {
+for (const path of ["/api/cron/commerce-base-orders", "/api/cron/commerce-base-fulfillment", "/api/cron/commerce-cj-import", "/api/cron/commerce-procurement", "/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-publish", "/api/cron/shopify-orders", "/api/cron/shopify-fulfillment"]) {
   assert.ok(crons.some((entry) => entry.path === path), `missing commerce cron: ${path}`);
 }
 
 const cjImport = crons.find((entry) => entry.path === "/api/cron/commerce-cj-import");
 assert.equal(cjImport.schedule, "0,30 * * * *", "CJ import must remain every 30 minutes");
 
-for (const path of ["/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify"]) {
+for (const path of ["/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-publish"]) {
   const publish = crons.find((entry) => entry.path === path);
-  assert.equal(publish.schedule, "*/5 * * * *", `${path} must run every five minutes`);
+  assert.equal(publish.schedule, "*/30 * * * *", `${path} must run every thirty minutes`);
 }
 
 const shopifyFulfillment = crons.find((entry) => entry.path === "/api/cron/shopify-fulfillment");
