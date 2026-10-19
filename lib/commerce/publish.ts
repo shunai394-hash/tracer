@@ -68,8 +68,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,unit_cost,shipping_cost,raw_data,inventory,source_status,tracking_supported,ship_to,last_checked_at")
       .in("variant_id", variantIds)
       .order("last_checked_at", { ascending: false }),
-    db.from("commerce_variants")
-      .select("id,title_ja,commerce_products!inner(title_ja,description_ja)")
+      db.from("commerce_variants")
+      .select("id,sku,title_ja,commerce_products!inner(title_ja,description_ja)")
       .in("id", variantIds),
   ]);
   if (pricesRead.error) throw new Error("stale_price_batch_read_failed:" + pricesRead.error.message);
@@ -78,7 +78,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
   type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
   type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
-  type StaleVariant = { id: string; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
+  type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
   for (const price of (pricesRead.data ?? []) as StalePrice[]) {
     const rows = pricesByVariant.get(price.variant_id) ?? [];
@@ -97,45 +97,53 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     try {
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
-      const hasPublishableLinkedOffer = offers.some((offer) => {
-        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
+      const variantForEvidence = variantsById.get(String(listing.variant_id));
+      const evaluated = offers.map((offer) => {
+        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id) ?? null;
+        const raw = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data : {};
+        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+        const stockKnown = raw.stockKnown === true || (raw.stockKnown === undefined && offer.source_status === "verified");
+        const shippingKnown = raw.shippingKnown === true ||
+          (raw.shippingKnown === undefined && raw.shippingEstimated !== true && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        // Only supplier identity failures trigger automatic unpublishing.
-        // Stock, freight, tracking, freshness, price and profit are rechecked before procurement.
-        return Boolean(
-          typeof offer.supplier_product_id === "string" && offer.supplier_product_id.trim() &&
-          typeof offer.supplier_variant_id === "string" && offer.supplier_variant_id.trim() &&
-          nativeIdsValid
-        );
-      });
-      if (hasPublishableLinkedOffer) {
-        // Only exact supplier product/variant identity and profitable JPY pricing gate a listing.
-        // Live stock, freshness, destination, tracking and orderability belong to procurement.
+        const missing = missingSaleEvidence({
+          supplierCode: offer.supplier_code,
+          supplierProductId: nativeIdsValid ? offer.supplier_product_id : null,
+          supplierVariantId: nativeIdsValid ? offer.supplier_variant_id : null,
+          variantSku: variantForEvidence?.sku,
+          sourceStatus: offer.source_status,
+          stockKnown,
+          inventory: Number(offer.inventory),
+          unitCost: Number(offer.unit_cost),
+          shippingKnown,
+          shipTo: offer.ship_to,
+          trackingSupported: offer.tracking_supported === true,
+          evidenceFresh: fresh,
+          currency: price?.currency,
+          sellingPrice: Number(price?.selling_price),
+          expectedProfit: Number(price?.expected_profit),
+        });
+        return { offer, price, missing, nativeIdsValid };
+      }).sort((a, b) => a.missing.length - b.missing.length);
+      const best = evaluated[0] ?? null;
+      if (best && best.missing.length === 0) {
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
           last_synced_at: checkedAt,
           updated_at: checkedAt,
-          ...(hasPublishableLinkedOffer ? { last_error: null } : {}),
+          last_error: null,
         }).eq("id", listing.id);
         if (markCheckedError) throw new Error("stale_listing_check_timestamp_failed:" + markCheckedError.message);
         continue;
       }
 
-      const offer = offers[0] ?? null;
-      const price = (offer ? prices.find((candidate) => candidate.supplier_offer_id === offer.id) : null) ?? prices[0] ?? null;
-      const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-      const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
-      const nativeIdsValid = offer?.supplier_code !== "cj" ||
-        (isCanonicalCjNativeId(offer?.supplier_product_id) && isCanonicalCjNativeId(offer?.supplier_variant_id));
-      const reason = !offer ? "supplier_offer_missing" :
-        !nativeIdsValid ? "supplier_native_ids_invalid" :
-        offer.source_status !== "verified" ? "supplier_offer_not_verified" :
-        offer.tracking_supported !== true ? "tracking_not_verified" :
-        offer.ship_to !== "JP" ? "supplier_not_shipping_to_japan" :
-        !fresh ? "supplier_verification_stale" :
-        Number(offer.inventory) <= 0 ? "supplier_out_of_stock" :
-        !price || price.currency !== "JPY" || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0 ? "price_not_profitable" : "supplier_offer_invalid";
+      const offer = best?.offer ?? null;
+      const price = best?.price ?? null;
+      const reason = best
+        ? [...best.missing, ...(best.nativeIdsValid ? [] : ["supplier_native_ids_invalid"])].join(",")
+        : "supplier,identity,variant,stock,cost,domestic_shipping,profit,verification";
 
       const variant = variantsById.get(String(listing.variant_id));
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
@@ -203,7 +211,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       });
     }
   }
-  // Keep profitable items in the catalog, but disable external purchase until the exact priced offer has verified stock and Japan-bound freight.
+  // A published listing stays purchasable only when supplier identity, stock, Japan shipping, tracking and profit are all present. Anything missing is removed from sale without deleting the product.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   // Hide listings with missing/invalid supplier identity before publishing the next batch.
   const identityCleanup = await unpublishUnfulfillableListings(channel, db);
