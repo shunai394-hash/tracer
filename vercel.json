@@ -4,7 +4,7 @@
   "crons": [
     {
       "path": "/api/cron/commerce-base-fulfillment",
-      "schedule": "14,44 * * * *"
+      "schedule": "14,29,44,59 * * * *"
     },
     {
       "path": "/api/cron/commerce-base-orders",
@@ -24,11 +24,11 @@
     },
     {
       "path": "/api/cron/commerce-publish-base",
-      "schedule": "5,35 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/commerce-publish-shopify",
-      "schedule": "6,36 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/patrol-ai",
@@ -40,7 +40,7 @@
     },
     {
       "path": "/api/cron/shopify-orders",
-      "schedule": "2,32 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/base-legacy-price-reconcile",
