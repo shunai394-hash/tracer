@@ -65,7 +65,7 @@ test("storefront publication requires exact supplier identity and evidenced land
   const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(publish, /supplier_live_ordering_disabled_until_sandbox_payment_flow_proof/);
   assert.doesNotMatch(publish, /commerce_prices\.expected_profit", 0/);
-  assert.match(publish, /const hasPublishableLinkedOffer = offers\.some/);
+  assert.match(publish, /missingSaleEvidence\(/);
   assert.match(publish, /x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid/);
   assert.match(publish, /unitCostKnown/);
   assert.match(publish, /x\.raw_data\?\.shippingKnown === true/);
@@ -178,12 +178,18 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
-test("supplier readiness failures do not automatically unpublish profitable catalog listings", async () => {
+test("published listings without stock, shipping, or profit are removed from sale", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const start = publish.indexOf("async function unpublishUnfulfillableListings");
+  const end = publish.indexOf("export async function syncCommerceListings", start);
+  const audit = publish.slice(start, end);
   assert.match(publish, /const identityCleanup = await unpublishUnfulfillableListings\(channel, db\)/);
-  assert.match(publish, /Only supplier identity failures trigger automatic unpublishing/);
-  assert.match(publish, /disable external purchase until the exact priced offer has verified stock and Japan-bound freight/);
-  assert.match(publish, /supplier_offer_no_longer_fulfillable:/);
+  assert.match(audit, /missingSaleEvidence\(/);
+  assert.match(audit, /best\.missing\.length === 0/);
+  assert.match(audit, /stock: 0, visible: false/);
+  assert.match(audit, /status: "DRAFT"/);
+  assert.match(audit, /supplier_offer_no_longer_fulfillable:/);
+  assert.doesNotMatch(audit, /\.delete\(/);
 });
 test("patrol readiness and snapshots include canonical commerce tables after legacy reset", async () => {
   const pipeline = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
