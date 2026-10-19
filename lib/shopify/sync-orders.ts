@@ -86,7 +86,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       };
     }>(
       `query PaidOrders($first: Int!, $after: String) {
-        orders(first: $first, after: $after, query: "financial_status:paid status:open fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
+        orders(first: $first, after: $after, query: "financial_status:paid fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
           nodes {
             id name email phone displayFinancialStatus displayFulfillmentStatus createdAt cancelledAt
             totalPriceSet { shopMoney { amount currencyCode } }
