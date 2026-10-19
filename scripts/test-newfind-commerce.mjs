@@ -61,8 +61,14 @@ check("failures back off and stop after the attempt cap", () => {
     lastError: 'discovery insert failed: duplicate key value violates unique constraint "discovery_products_duplicate_key_uidx"',
   });
   assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: cappedDuplicateConflict }, now).action, "send");
-  const recoveryFailedAgain = detail({
+  const cappedDuplicateConflictAtNine = detail({
     attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS + 1,
+    lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(),
+    lastError: 'discovery insert failed: duplicate key value violates unique constraint "discovery_products_duplicate_key_uidx"',
+  });
+  assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: cappedDuplicateConflictAtNine }, now).action, "send");
+  const recoveryFailedAgain = detail({
+    attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS + 2,
     lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(),
     lastError: 'discovery insert failed: duplicate key value violates unique constraint "discovery_products_duplicate_key_uidx"',
   });
