@@ -404,7 +404,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const variantResolution = resolveShopifyVariantIdentity(
     product.variants?.nodes ?? [],
     input.sku,
-    input.variantId,
+    toShopifyGid("ProductVariant", input.variantId),
   );
   if (!variantResolution.ok) throw new Error(`shopify_${variantResolution.reason}`);
   const variantId = variantResolution.variant.id;
