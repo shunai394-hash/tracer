@@ -119,6 +119,22 @@ export async function POST(request: Request) {
       const sellingPrice = numeric(price?.selling_price);
       const expectedProfit = numeric(price?.expected_profit);
       const priceCurrency = typeof price?.currency === "string" ? price.currency.toUpperCase() : null;
+      // Recompute the expected profit using the same recorded FX rate as the
+      // Shopify unit cost. A timestamp ordering alone does not prove FX parity.
+      const shippingCostJpyAtRecordedFx = shippingCost !== null && (
+        sourceCurrency === "JPY" ? shippingCost :
+        sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(shippingCost * fxRate) : null
+      );
+      const costJpyAtRecordedFx = sourceUnitCost !== null && (
+        sourceCurrency === "JPY" ? Math.ceil(sourceUnitCost) :
+        sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(sourceUnitCost * fxRate) : null
+      );
+      const expectedProfitAtRecordedFx = sellingPrice !== null && sellingPrice > 0 &&
+        shippingCostJpyAtRecordedFx !== null && costJpyAtRecordedFx !== null
+        ? sellingPrice - costJpyAtRecordedFx - shippingCostJpyAtRecordedFx - Math.ceil(sellingPrice * 0.1)
+        : null;
+      const profitMatchesRecordedFx = expectedProfit !== null && expectedProfitAtRecordedFx !== null &&
+        Math.abs(expectedProfit - expectedProfitAtRecordedFx) <= 1;
       const sourceStatus = typeof offer?.source_status === "string" ? offer.source_status : null;
       const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
       const evidenceFresh = Number.isFinite(checkedAt) && Date.now() - checkedAt >= 0 && Date.now() - checkedAt <= 24 * 60 * 60 * 1000;
@@ -137,6 +153,7 @@ export async function POST(request: Request) {
       if (inventory === null || inventory <= 0) reason.push("supplier_inventory_not_positive");
       if (priceCurrency !== "JPY" || sellingPrice === null || sellingPrice <= 0) reason.push("selling_price_not_verified_jpy");
       if (expectedProfit === null || expectedProfit <= 0) reason.push("expected_profit_not_positive");
+      if (!profitMatchesRecordedFx) reason.push("price_fx_does_not_match_supplier_cost_fx");
       evidence.set(String(row.id), { supplierProductId, supplierVariantId, unitCost, currency, sourceUnitCost, sourceCurrency, fxRate, shippingKnown, inventory, sourceStatus, sellingPrice, priceCurrency, expectedProfit, reason });
     }
   }
