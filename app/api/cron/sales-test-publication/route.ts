@@ -209,7 +209,7 @@ export async function GET(request: Request) {
       ...(demandSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
       ...(verifiedSupply ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean),
     ])).slice(0, dryRunLimit);
-    const candidateProductIds = dryRun ? dryRunProductIds : verifiedSupplyIds;
+    const candidateProductIds = dryRun ? dryRunProductIds : verifiedSupplyIds.slice(0, 400);
     // Repair only the missing-intelligence subset for canonical supply. Do not
     // rebuild already-enriched products: this keeps the publication path bounded
     // while preventing verified supply from being permanently rejected merely
