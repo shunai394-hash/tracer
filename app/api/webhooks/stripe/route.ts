@@ -79,29 +79,42 @@ async function handleCheckoutCompleted(
     .maybeSingle();
   if (!order) return shopOrderId;
 
-  // Idempotent payment confirmation, but do not skip fulfillment recovery.
-  // A previous webhook can have recorded payment successfully and then failed
-  // while creating supplier POs. If the order is still exactly "paid", retry
-  // the fulfillment stage instead of treating the event as fully complete.
-  if (order.payment_status === "paid" && order.order_status !== "paid") {
+  // Payment confirmation is idempotent, but fulfillment must remain retryable.
+  // A prior delivery may have confirmed payment and then failed during PO creation
+  // or supplier execution. Re-run the idempotent fulfillment path for paid orders
+  // that are still pending; never re-open terminal/cancelled orders.
+  const alreadyPaid = order.payment_status === "paid";
+  const terminalStatuses = new Set([
+    "cancellation_requested",
+    "refund_pending",
+    "cancelled",
+    "refunded",
+    "partially_refunded",
+    "completed",
+    "shipped",
+    "delivered",
+  ]);
+  if (alreadyPaid && terminalStatuses.has(String(order.order_status))) {
     return shopOrderId;
   }
 
-  const paymentIntentId =
-    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+  if (!alreadyPaid) {
+    const paymentIntentId =
+      typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
-  const { error: paymentUpdateError } = await supabase
-    .from("shop_orders")
-    .update({
-      payment_status: "paid",
-      order_status: "paid",
-      paid_at: new Date().toISOString(),
-      stripe_payment_intent_id: paymentIntentId,
-    })
-    .eq("id", shopOrderId);
+    const { error: paymentUpdateError } = await supabase
+      .from("shop_orders")
+      .update({
+        payment_status: "paid",
+        order_status: "paid",
+        paid_at: new Date().toISOString(),
+        stripe_payment_intent_id: paymentIntentId,
+      })
+      .eq("id", shopOrderId);
 
-  if (paymentUpdateError) {
-    throw new Error(paymentUpdateError.message);
+    if (paymentUpdateError) {
+      throw new Error(paymentUpdateError.message);
+    }
   }
 
   const { data: items } = await supabase
