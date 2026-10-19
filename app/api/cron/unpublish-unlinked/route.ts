@@ -24,7 +24,37 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
 
   const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
-  const unlinked = (data ?? []).filter((row) => !row.supplier_listing_id || !supplierStatuses.has(String(row.supplier_listing_id)) || row.orderable !== true || row.tracking_available !== true);
+  // The legacy shop_listings flags can be stale after a previous fail-closed pass.
+  // A fresh native-CJ status is only returned when the exact product+variant has
+  // verified JP shipping, stock, price, API ordering and tracking evidence.
+  const nativeCjRepairIds = (data ?? [])
+    .filter((row) => row.supplier_listing_id
+      && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified"
+      && (row.orderable !== true || row.tracking_available !== true))
+    .map((row) => String(row.id));
+  if (nativeCjRepairIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: repairError } = await db.from("shop_listings").update({
+      orderable: true,
+      tracking_available: true,
+      pipeline_stage: "SUPPLIER_REVERIFIED",
+      pipeline_status: "pending",
+      pipeline_reason: "native_cj_supplier_variant_verified",
+      pipeline_error: null,
+      pipeline_updated_at: now,
+      updated_at: now,
+    }).in("id", nativeCjRepairIds);
+    if (repairError) return NextResponse.json({ ok: false, stage: "native_cj_repair", error: repairError.message }, { status: 500 });
+  }
+  const unlinked = (data ?? []).filter((row) => {
+    if (!row.supplier_listing_id) return true;
+    const supplierStatus = supplierStatuses.get(String(row.supplier_listing_id));
+    if (!supplierStatus) return true;
+    // Do not relabel a freshly verified native CJ variant as "unlinked" merely
+    // because a stale denormalized shop_listings flag was previously forced false.
+    if (supplierStatus === "native_cj_verified") return false;
+    return row.orderable !== true || row.tracking_available !== true;
+  });
   const needsBlock = unlinked.filter((row) => row.published === true || row.orderable !== false || row.pipeline_reason !== "supplier_identity_unlinked");
   if (needsBlock.length > 0) {
     const now = new Date().toISOString();
