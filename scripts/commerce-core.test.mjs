@@ -1108,3 +1108,20 @@ test("invalid generic Japanese titles rotate retry priority without inventing a 
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /if \(!isJapaneseProductTitle\(title\)\) \{[\s\S]*?status: "error",[\s\S]*?last_error: "japanese_product_title_invalid",[\s\S]*?last_synced_at: retryAt,[\s\S]*?continue;/);
 });
+
+
+test("BASE and Shopify publish cron routes fail closed when stale listing cleanup fails", async () => {
+  for (const path of [
+    "../app/api/cron/commerce-publish-base/route.ts",
+    "../app/api/cron/commerce-publish-shopify/route.ts",
+  ]) {
+    const route = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.match(route, /result\.failed === 0 && result\.staleListings\.failed === 0/,
+      "cleanup failures must be included in the route's ok telemetry");
+    assert.match(route, /const failed = result\.failed > 0 \|\| result\.staleListings\.failed > 0/,
+      "cleanup failures must produce a non-success HTTP response");
+    assert.match(route, /staleListingErrors: result\.staleListings\.errors\.slice\(0, 10\)/,
+      "cleanup failure details must be visible in bounded logs");
+    assert.match(route, /status: failed \? 207 : 200/);
+  }
+});
