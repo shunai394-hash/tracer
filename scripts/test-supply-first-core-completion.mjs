@@ -53,6 +53,6 @@ assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/commerce-c
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/supply-first"), [],
   "legacy supply-first must not be scheduled beside the canonical commerce importer");
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/patrol-ai").map((job) => job.schedule), ["10,40 * * * *"],
-  "the existing five-minute patrol must remain enabled");
+  "the patrol-ai cron must run twice hourly to reduce scheduled invocations");
 
 console.log("Supply-first core completion: optional discovery cooldowns do not block the core cycle; empty deadline runs are deferred");
