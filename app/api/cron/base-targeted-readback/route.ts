@@ -95,9 +95,10 @@ export async function GET(request: Request) {
       const readError = match
         ? [match[1], match[2] ? `HTTP_${match[2]}` : null].filter(Boolean).join(":")
         : "BASE_ITEM_DETAIL_FAILED";
+      const notFound = /HTTP_404$/.test(readError);
       return {
         baseItemId,
-        exists: null,
+        exists: notFound ? false : null,
         actual: null,
         mappedListings,
         readError,
