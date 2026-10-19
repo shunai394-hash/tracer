@@ -184,6 +184,9 @@ assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Ha
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
+assert.match(supplySelector, /if \(!isPublishableCatalogTitle\(title\)\)/, "final listing write must reject generic fallback titles");
+assert.match(supplySelector, /if \(!isPublishableCatalogDescription\(item\.description\)\)/, "final listing write must reject unusable descriptions");
+assert.doesNotMatch(supplySelector, /\?\? String\(item\.base\.normalized_title \?\? \("TRACER product "/, "generic generated title fallback must not bypass title validation");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
  
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
