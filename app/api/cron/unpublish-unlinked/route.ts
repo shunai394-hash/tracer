@@ -24,7 +24,20 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
 
   const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
-  const unlinked = (data ?? []).filter((row) => !row.supplier_listing_id || !supplierStatuses.has(String(row.supplier_listing_id)) || row.orderable !== true || row.tracking_available !== true);
+  // Repair stale denormalized flags only when the supplier helper has freshly verified the exact native CJ variant.
+  const nativeCjRepairIds = (data ?? []).filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
+  if (nativeCjRepairIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: repairError } = await db.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
+    if (repairError) return NextResponse.json({ ok: false, stage: "native_cj_repair", error: repairError.message }, { status: 500 });
+  }
+  const unlinked = (data ?? []).filter((row) => {
+    if (!row.supplier_listing_id) return true;
+    const status = supplierStatuses.get(String(row.supplier_listing_id));
+    if (!status) return true;
+    if (status === "native_cj_verified") return false;
+    return row.orderable !== true || row.tracking_available !== true;
+  });
   const needsBlock = unlinked.filter((row) => row.published === true || row.orderable !== false || row.pipeline_reason !== "supplier_identity_unlinked");
   if (needsBlock.length > 0) {
     const now = new Date().toISOString();
