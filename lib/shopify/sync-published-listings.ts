@@ -253,9 +253,16 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   }
 
   const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
+  const nativeCjRepairIds = rows.filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
+  if (nativeCjRepairIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
+    if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
+  }
+  const eligibleRows = rows.map((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" ? { ...row, orderable: true, tracking_available: true } : row);
   const actionable = listingIds?.length
-    ? rows.slice(0, safeLimit)
-    : rows.filter((row) => {
+    ? eligibleRows.slice(0, safeLimit)
+    : eligibleRows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
         const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)));
