@@ -168,11 +168,18 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const title = String(variant?.title_ja || product?.title_ja || "TRACER商品");
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
+        const itemId = String(listing.external_product_id);
         await editBaseItem({
-          itemId: String(listing.external_product_id), title, detail,
+          itemId, title, detail,
           price: Math.max(1, Math.round(Number(price?.selling_price) || 1)),
           stock: 0, visible: false,
         });
+        const readback = await getBaseItemDetail(itemId);
+        const visible = readback.visible === true || readback.visible === 1 || readback.visible === "1";
+        const stock = Number(readback.stock);
+        if (visible || !Number.isFinite(stock) || stock !== 0) {
+          throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+        }
       } else {
         const productId = toShopifyGid("Product", String(listing.external_product_id));
         if (!productId) throw new Error("shopify_product_id_missing");
@@ -185,6 +192,9 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
           throw new Error("shopify_unpublish_failed:" + (updated.productUpdate.userErrors.map((x) => x.message).join("; ") || "product_missing"));
         }
+        if (updated.productUpdate.product.status !== "DRAFT") {
+          throw new Error("shopify_unpublish_readback_mismatch:status=" + String(updated.productUpdate.product.status));
+        }
         if (listing.external_variant_id) {
           try {
             await setShopifyVariantInventory({
@@ -192,7 +202,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
               reference: "stale-supplier-offer:" + String(listing.variant_id),
             });
           } catch (inventoryError) {
-            result.errors.push(String(listing.id) + ":inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
+            throw new Error("shopify_inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
           }
         }
       }
