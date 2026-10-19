@@ -366,7 +366,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/5 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "10,40 * * * *", "patrol runs twice hourly to reduce scheduled invocations");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native pipeline must not schedule marketplace sourcing observation");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
@@ -810,7 +810,7 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "4,34 * * * *"));
-  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "10,40 * * * *"));
 });
 
 test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
