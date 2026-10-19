@@ -202,7 +202,20 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       result.unpublished++;
     } catch (error) {
       result.failed++;
-      result.errors.push(String(listing.id) + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 180));
+      const failureMessage = (error instanceof Error ? error.message : String(error)).slice(0, 180);
+      result.errors.push(String(listing.id) + ":" + failureMessage);
+      // Keep the listing published because external hiding was not confirmed, but
+      // persist the failure and move it behind other stale listings for retry.
+      // This prevents one repeatedly failing API call from starving the bounded queue.
+      const retryAt = new Date().toISOString();
+      const { error: retryStateError } = await db.from("channel_listings").update({
+        last_error: "stale_unpublish_failed:" + failureMessage,
+        last_synced_at: retryAt,
+        updated_at: retryAt,
+      }).eq("id", listing.id);
+      if (retryStateError) {
+        result.errors.push(String(listing.id) + ":retry_state_save_failed:" + retryStateError.message.slice(0, 120));
+      }
     }
   }
   return result;
