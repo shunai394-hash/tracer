@@ -267,7 +267,7 @@ test("supplier importer never substitutes a search-result product ID for unresol
   assert.doesNotMatch(importer, /if \(!supplierProductId\)\s*\{\s*const exactVariant/, "a non-empty parent ID from product search is not proof of the live canonical parent");
   assert.match(importer, /supplierProductId === candidate\.id \? detail : await getCJProductDetail\(supplierProductId\)/);
   assert.match(importer, /supplierVariantId: exactVariant\.vid/);
-  assert.match(importer, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize women's bags, beauty tools and hair accessories");
+  assert.match(importer, /"women handbag", "crossbody bag women", "tote bag women", "shoulder bag women", "mini bag women",\s*"beauty tools", "makeup brush cleaner", "makeup organizer",\s*"hair accessories women", "claw clips hair", "satin hair scrunchies", "heatless curling rod",/, "CJ discovery must rotate focused searches across bags, beauty tools and hair accessories");
 });
 
 test("CJ supplier source titles produce specific Japanese names and descriptions", async () => {
