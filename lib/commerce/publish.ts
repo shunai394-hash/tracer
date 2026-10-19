@@ -546,6 +546,22 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       getStorefrontStockCap(),
     );
     if (!isJapaneseProductTitle(title)) {
+      // Log exact title inputs so recurring storefront validation failures can be diagnosed.
+      console.error("[commerce-publish] japanese_product_title_invalid", {
+        channel,
+        variantId: candidate.id,
+        variantTitle: candidate.title_ja ?? null,
+        productTitle: product?.title_ja ?? null,
+        sourceTitle: sourceTitle ?? null,
+        localizedSourceTitle: localizedSourceTitle ?? null,
+        selectedTitle: title,
+        variantTitlePublishable: isPublishableCatalogTitle(candidate.title_ja),
+        variantTitleJapanese: isJapaneseProductTitle(candidate.title_ja),
+        productTitlePublishable: isPublishableCatalogTitle(product?.title_ja),
+        productTitleJapanese: isJapaneseProductTitle(product?.title_ja),
+        sourceTitlePublishable: isPublishableCatalogTitle(localizedSourceTitle),
+        deploySha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      });
       // Do not let a known-invalid generic title pin the oldest candidate at
       // the front of every scheduled batch. Keep the listing unpublished/error
       // and rotate its retry timestamp; never invent a product title.
