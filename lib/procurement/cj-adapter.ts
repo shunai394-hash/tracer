@@ -510,6 +510,23 @@ export async function runCJSandboxOrderLifecycle(
   // payType=3 creates only; confirmOrder advances CREATED(100) to UNPAID(200).
   // simulatePay is sandbox-only and does not debit the real CJ balance.
   await confirmCJSandboxOrder(orderId);
+  // CJ may acknowledge confirmOrder before getOrderDetail reflects UNPAID(200).
+  // Poll the authoritative status before simulatePay to avoid the known CREATED(100) race.
+  let confirmedUnpaid = false;
+  let lastObservedStatus: string | null = null;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const current = await getCJOrderStatus(orderId);
+    lastObservedStatus = current.status;
+    const normalized = (current.status ?? "").trim().toUpperCase();
+    if (normalized === "200" || normalized === "UNPAID") {
+      confirmedUnpaid = true;
+      break;
+    }
+    if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  if (!confirmedUnpaid) {
+    throw new Error(`CJ_SANDBOX_CONFIRM_NOT_REFLECTED:status=${lastObservedStatus ?? "unknown"}`);
+  }
   await simulateCJSandboxPayment(orderId);
   const trackingNumber = `SBXTRACER${Date.now()}`;
   await updateCJSandboxTrackingNumber(orderId, trackingNumber);
