@@ -159,8 +159,10 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("supplier_offers"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
-  assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%/);
-  assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/, "only published rows or explicit supplier-safety errors enter external reconciliation");
+  assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/);
+  assert.doesNotMatch(audit, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "confirmed stopped listings must not be selected on every publish cron");
+  assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_disable_failed:"\)/, "only published rows or failed safety-stop attempts enter external reconciliation");
+  assert.doesNotMatch(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "confirmed stops are terminal until a separate publish retry is requested");
   assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
