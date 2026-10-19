@@ -187,8 +187,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 }
 
 export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnpublished = true, variantIds?: string[]) {
-  // Hide listings with missing/invalid supplier identity before publishing the next batch.
-  const staleListings = await unpublishUnfulfillableListings(channel, db);
   // Storefront publication is independent of supplier purchasing. Only the paid-order
   // procurement path is gated by liveOrdering; a sandbox proof must not block listings.
   if (channel === "base" && !isBaseConfigured()) throw new Error("base_oauth_not_configured");
@@ -207,6 +205,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   }
   // Keep profitable items in the catalog, but disable external purchase until the exact priced offer has verified stock and Japan-bound freight.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  // Hide listings with missing/invalid supplier identity before publishing the next batch.
+  const identityCleanup = await unpublishUnfulfillableListings(channel, db);
+  staleListings.checked += identityCleanup.checked;
+  staleListings.unpublished += identityCleanup.unpublished;
+  staleListings.failed += identityCleanup.failed;
+  staleListings.errors.push(...identityCleanup.errors);
   let candidateQuery = db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true);
