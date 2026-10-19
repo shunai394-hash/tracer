@@ -1135,3 +1135,10 @@ test("BASE and Shopify publish cron routes fail closed when stale listing cleanu
     assert.match(route, /status: failed \? 207 : 200/);
   }
 });
+
+test("Shopify inventory sync retries stale changeFromQuantity conflicts with a fresh read", async () => {
+  const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
+  assert.match(admin, /async function setShopifyVariantInventoryAttempt\([\s\S]*?attempt = 0/);
+  assert.match(admin, /changeFromQuantity argument no longer matches the persisted quantity[\s\S]*?attempt < 2[\s\S]*?setShopifyVariantInventoryAttempt\(input, attempt \+ 1\)/);
+  assert.match(admin, /export async function setShopifyVariantInventory\(input:[\s\S]*?return setShopifyVariantInventoryAttempt\(input\)/);
+});
