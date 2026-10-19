@@ -15,3 +15,6 @@ assert.match(selector, /reasons: \["supplier_inventory_reverification_required"\
 assert.ok(selector.indexOf("heldProductIds.has(productId)") < selector.indexOf("eligible.push("),
   "the hold must be enforced before a product enters the eligible publication queue");
 console.log("Supply sales-test stale-inventory hold: 4 assertions passed");
+
+assert.match(await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8"), /verifiedSupplyIds\.slice\(0, 400\)/,
+  "live candidate IDs must be bounded before downstream PostgREST IN queries");
