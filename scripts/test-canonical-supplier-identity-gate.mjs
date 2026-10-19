@@ -175,6 +175,14 @@ assert.match(patrolRoute, /orderLifecycleEvidence: \{/,
   "patrol must report order lifecycle evidence separately from intelligence-pipeline completion");
 assert.match(patrolRoute, /endToEndOrderFlowObservedThisRun: progress\.newCommerceOrders > 0 && progress\.newSupplierProcurementOrders > 0/,
   "end-to-end order flow must only be reported when this run records both a commerce order and supplier procurement order");
+assert.match(patrolRoute, /tracerBaseFulfillmentGroups/);
+assert.match(patrolRoute, /tracerShopifyFulfillmentGroups/);
+assert.match(patrolRoute, /trackingWritebackOrdersRecorded: after\.trackingWritebackOrders/,
+  "the completion status must include persisted supplier-tracking writeback evidence");
+assert.match(patrolRoute, /endToEndPipelineComplete: after\.commerceOrders > 0 && after\.supplierProcurementOrders > 0 && after\.trackingWritebackOrders > 0/,
+  "end-to-end completion must remain false until an order, supplier procurement and channel tracking writeback are all recorded");
+assert.doesNotMatch(patrolRoute, /pipelineComplete: pipeline\.complete/,
+  "an intelligence cycle must not be reported as the entire commerce lifecycle");
 assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
 assert.doesNotMatch(patrolRoute, /console\.log\("\[TRACER PATROL AI REPORT\]", JSON\.stringify\(report\)\)/, "raw full patrol reports must not be emitted to runtime logs");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
