@@ -121,14 +121,14 @@ export async function POST(request: Request) {
       const priceCurrency = typeof price?.currency === "string" ? price.currency.toUpperCase() : null;
       // Recompute the expected profit using the same recorded FX rate as the
       // Shopify unit cost. A timestamp ordering alone does not prove FX parity.
-      const shippingCostJpyAtRecordedFx = shippingCost !== null && (
-        sourceCurrency === "JPY" ? shippingCost :
-        sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(shippingCost * fxRate) : null
-      );
-      const costJpyAtRecordedFx = sourceUnitCost !== null && (
-        sourceCurrency === "JPY" ? Math.ceil(sourceUnitCost) :
-        sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(sourceUnitCost * fxRate) : null
-      );
+      const shippingCostJpyAtRecordedFx = shippingCost !== null
+        ? sourceCurrency === "JPY" ? shippingCost
+          : sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(shippingCost * fxRate) : null
+        : null;
+      const costJpyAtRecordedFx = sourceUnitCost !== null
+        ? sourceCurrency === "JPY" ? Math.ceil(sourceUnitCost)
+          : sourceCurrency === "USD" && fxRate !== null && fxRate > 0 ? Math.ceil(sourceUnitCost * fxRate) : null
+        : null;
       const expectedProfitAtRecordedFx = sellingPrice !== null && sellingPrice > 0 &&
         shippingCostJpyAtRecordedFx !== null && costJpyAtRecordedFx !== null
         ? sellingPrice - costJpyAtRecordedFx - shippingCostJpyAtRecordedFx - Math.ceil(sellingPrice * 0.1)
