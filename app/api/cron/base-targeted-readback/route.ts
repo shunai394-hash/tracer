@@ -8,6 +8,12 @@ export const maxDuration = 60;
 
 const MAX_TARGETS = 8;
 
+const finiteNumberOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
 /**
  * Read-only BASE item audit for a small, explicitly supplied set of item IDs.
  * This endpoint never updates BASE items or TRACER records.
@@ -52,22 +58,22 @@ export async function GET(request: Request) {
         listingId: String(row.id),
         storedBaseItemId: row.external_product_id == null ? null : String(row.external_product_id),
         expectedSku: String(row.external_sku ?? "").trim() || null,
-        expectedPrice: Number.isFinite(Number(row.selling_price)) ? Number(row.selling_price) : null,
+        expectedPrice: finiteNumberOrNull(row.selling_price),
         status: row.status,
         externalVariantId: row.external_variant_id == null ? null : String(row.external_variant_id),
       }));
 
     try {
       const item = await getBaseItemDetail(baseItemId);
-      const rawPrice = Number(item.price);
-      const rawStock = Number(item.stock);
+      const rawPrice = finiteNumberOrNull(item.price);
+      const rawStock = finiteNumberOrNull(item.stock);
       const rawVisible = item.visible;
       const externalVisible = rawVisible === true || rawVisible === 1 || rawVisible === "1"
         ? true
         : rawVisible === false || rawVisible === 0 || rawVisible === "0" ? false : null;
       const externalSku = String(item.identifier ?? "").trim() || null;
-      const externalPrice = Number.isFinite(rawPrice) ? rawPrice : null;
-      const externalStock = Number.isFinite(rawStock) ? rawStock : null;
+      const externalPrice = rawPrice;
+      const externalStock = rawStock;
 
       // Look up TRACER listings by the actual BASE identifier, even when their
       // stored external_product_id points at the other ID in a conflict pair.
@@ -90,13 +96,13 @@ export async function GET(request: Request) {
         listingId: String(listing.id),
         storedBaseItemId: listing.external_product_id == null ? null : String(listing.external_product_id),
         expectedSku: String(listing.external_sku ?? "").trim() || null,
-        expectedPrice: Number.isFinite(Number(listing.selling_price)) ? Number(listing.selling_price) : null,
+        expectedPrice: finiteNumberOrNull(listing.selling_price),
         status: listing.status,
         externalVariantId: listing.external_variant_id == null ? null : String(listing.external_variant_id),
         skuMatches: Boolean(String(listing.external_sku ?? "").trim() && externalSku &&
           String(listing.external_sku).trim() === externalSku),
-        priceDifference: Number.isFinite(Number(listing.selling_price)) && externalPrice !== null
-          ? externalPrice - Number(listing.selling_price)
+        priceDifference: finiteNumberOrNull(listing.selling_price) !== null && externalPrice !== null
+          ? externalPrice - finiteNumberOrNull(listing.selling_price)!
           : null,
         visibilityMatches: listing.status === "published" ? externalVisible === true
           : listing.status ? externalVisible === false : null,
