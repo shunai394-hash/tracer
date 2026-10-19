@@ -78,17 +78,10 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     .in("product_id", uniqueProductIds)
     .eq("verification_error", "storefront_stock_cap_deploy_pending");
   if (heldRowsError) throw new Error(heldRowsError.message);
-  const { data: heldDetachedRows, error: heldDetachedError } = sourceRefs.length
-    ? await supabase.from("supplier_listings").select("metadata").in("metadata->>source_ref", sourceRefs).eq("verification_error", "storefront_stock_cap_deploy_pending")
-    : { data: [], error: null };
-  if (heldDetachedError) throw new Error(heldDetachedError.message);
+  // Avoid a potentially oversized PostgREST JSON-path IN query. Detached rows
+  // are fetched below by indexed supplier_product_id; apply the same hold from
+  // those bounded scalar-query results after reconstructing their exact identity.
   const heldProductIds = new Set((heldRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
-  for (const row of heldDetachedRows ?? []) {
-    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
-    const sourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
-    const productId = sourceRefToProductId.get(sourceRef);
-    if (productId) heldProductIds.add(productId);
-  }
 
   const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
@@ -124,6 +117,16 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
         .order("fetched_at", { ascending: false, nullsFirst: false })
     : { data: [], error: null };
   if (detachedListingError) throw new Error(detachedListingError.message);
+  for (const row of detachedListings ?? []) {
+    if (row.verification_error !== "storefront_stock_cap_deploy_pending") continue;
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    const metadataSourceRef = typeof metadata.source_ref === "string" ? metadata.source_ref : "";
+    const sourceRef = metadataSourceRef || `cj:${String(row.supplier_product_id ?? "")}:${String(row.supplier_variant_id ?? "")}`;
+    const productId = sourceRefToProductId.get(sourceRef)
+      ?? sourceIdentityPairs.find((item) => item.sourceRef === sourceRef)?.productId
+      ?? sourceIdentityPairs.find((item) => item.supplierProductId === String(row.supplier_product_id ?? "") && item.supplierVariantId === String(row.supplier_variant_id ?? ""))?.productId;
+    if (productId) heldProductIds.add(productId);
+  }
   const sourceRefBySupplierIdentity = new Map(
     sourceIdentityPairs.map((item) => [`${item.supplierProductId}:${item.supplierVariantId}`, item]),
   );
