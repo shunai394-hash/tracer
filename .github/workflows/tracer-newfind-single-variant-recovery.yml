@@ -47,7 +47,7 @@ jobs:
           token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           code="$(curl -sS -o cj-refresh.json -w "%{http_code}" --max-time 300 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import?variantIds=$SUPPLIER_VARIANT_ID&limit=1&variantLimit=1")"
           echo "CJ evidence refresh HTTP $code"
-          python3 - "$code" cj-refresh.json <<'PY'
+          python3 - "$code" cj-refresh.json "$SUPPLIER_VARIANT_ID" <<'PY'
           import json,sys
           code=int(sys.argv[1])
           d=json.load(open(sys.argv[2],encoding="utf-8"))
@@ -59,6 +59,9 @@ jobs:
               raise SystemExit("CJ refresh was skipped (for example, API quota cooldown); delivery was not attempted.")
           if stats.get("errors"):
               raise SystemExit("CJ refresh reported errors; delivery was not attempted.")
+          verified_ids=stats.get("verifiedVariantIds") if isinstance(stats.get("verifiedVariantIds"),list) else []
+          if sys.argv[3] not in [str(value) for value in verified_ids]:
+              raise SystemExit("CJ refresh did not verify the exact requested supplier variant ID; delivery was not attempted.")
           if stats.get("variants", 0) < 1 or stats.get("offers", 0) < 1 or stats.get("priced", 0) < 1:
               raise SystemExit("CJ refresh did not confirm a target variant, offer and price; delivery was not attempted.")
           PY
