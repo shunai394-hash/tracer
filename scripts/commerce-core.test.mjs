@@ -1084,3 +1084,13 @@ test("legacy BASE reconciliation repairs margin-only mismatches without editing 
   assert.match(route, /contribution_margin: Math\.round\(canonicalMarginRate \* 10000\) \/ 100/);
   assert.match(route, /const batch = mismatches\.slice\(0, limit\)/);
 });
+
+
+test("published listings with no supplier offer enter the safety reconciliation queue", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /Published listings without any supplier offer must enter this queue too/);
+  assert.match(route, /publishedMissingOfferVariantIds/);
+  assert.match(route, /row\.status === "published" && publishedMissingOfferVariantIds\.has\(variantId\)/);
+  assert.match(route, /published_supplier_offer_lookup_failed/);
+  assert.match(route, /Fail closed on lookup errors/);
+});
