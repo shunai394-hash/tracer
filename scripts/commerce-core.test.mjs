@@ -359,7 +359,7 @@ test("Shopify fulfillment tracking sync runs automatically after procurement", a
 test("clean commerce cron schedule preserves canonical routes and the required five-minute patrol", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
-  assert.equal(schedules.get("/api/cron/commerce-cj-import"), "*/10 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-cj-import"), "0,30 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-base"), "*/5 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/5 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
