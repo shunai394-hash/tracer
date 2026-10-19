@@ -705,7 +705,8 @@ test("CJ import reports stale supplier-evidence retry queue progress", async () 
   }
   assert.match(importer, /discoverySearchPagesScanned/);
   assert.match(importer, /while \(newCandidates\.length < 1 && scanPage <= page \+ 5\)/);
-  assert.match(importer, /\.slice\(0, Math\.max\(0, limit - 1\)\)/, "recovery retries must always leave one slot for new-product discovery");
+  assert.match(importer, /const reserveDiscoverySlot = newCandidates\.length > 0 \? 1 : 0;/, "reserve a discovery slot only when discovery found a new parent");
+  assert.match(importer, /\.slice\(0, Math\.max\(0, limit - reserveDiscoverySlot\)\)/, "recovery retries must use the full bounded capacity when discovery is idle");
   assert.ok(importer.includes("stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;"));
   assert.ok(importer.includes("stats.evidenceRetryVariantsQueued = evidenceRetryCount;"));
   assert.ok(importer.includes("stats.finalCandidateCount = candidates.length;"));
