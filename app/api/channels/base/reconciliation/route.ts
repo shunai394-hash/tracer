@@ -72,7 +72,7 @@ async function readBaseListings(db: ReturnType<typeof createSupabaseAdminClient>
       variantId: null,
       externalProductId: externalId,
       externalVariantId: null,
-      externalSku: null,
+      externalSku: "TRC-" + String(row.id),
       sellingPrice: row.selling_price == null ? null : Number(row.selling_price),
       status: row.base_publication_status == null
         ? row.published === true ? "published" : row.published === false ? "hidden" : null
