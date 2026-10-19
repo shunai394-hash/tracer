@@ -35,7 +35,7 @@ assert.match(newfindReconcile, /published, archived_at[\s\S]*?\.is\("archived_at
 
 assert.ok(supplySelector.includes('.select("id, archived_at").eq("slug", slug).maybeSingle()'));
 assert.ok(supplySelector.includes("if (existing.data?.archived_at) continue;"));
-assert.ok(supplySelector.includes('.select("id, archived_at").eq("product_id", item.productId)'));
+assert.ok(supplySelector.includes('.select("id, archived_at").eq("product_id", item.productId).is("archived_at", null)'));
 assert.ok(supplySelector.includes("if (byProduct.data?.archived_at) continue;"));
 assert.ok(marketSelector.includes('.select("id, archived_at").eq("slug", slug).maybeSingle()'));
 assert.ok(marketSelector.includes("if (existing.data?.archived_at) continue;"));
