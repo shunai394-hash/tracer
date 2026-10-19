@@ -104,6 +104,8 @@ assert.match(demandSupplier, /Missing stable supplier name or product ID; canoni
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /getPublishableSupplierListingStatuses/, "Shopify publication must require a linked or freshly verified native supplier listing");
 assert.match(shopify, /supplierStatuses\.has\(String\(row\.supplier_listing_id\)\)/, "Shopify must reject supplier listings without eligible identity evidence");
+assert.match(shopify, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(row\.supplier_listing_id\)\) === "native_cj_verified"/, "Shopify may repair stale local flags only from fresh exact native CJ evidence");
+assert.match(shopify, /orderable: true,[\s\S]*?tracking_available: true/, "Shopify recovery must restore both flags only after supplier verification");
 assert.doesNotMatch(shopify, /supplier_not_cj/, "profitable linked products from any supplier may be listed");
 assert.match(shopify, /supplier_variant_missing/, "exact supplier product and variant IDs remain required");
 assert.match(shopify, /inventory_not_positive/, "storefront inventory must be positive");
