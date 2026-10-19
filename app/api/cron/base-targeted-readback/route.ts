@@ -133,7 +133,7 @@ export async function GET(request: Request) {
       };
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      const match = message.match(/^([A-Z0-9_]+)(?::HTTP_(\d{3}))?/);
+      const match = message.match(/^([A-Z0-9_]+?)(?::HTTP_(\\d{3}))?(?::|$)/);
       const readError = match
         ? [match[1], match[2] ? `HTTP_${match[2]}` : null].filter(Boolean).join(":")
         : "BASE_ITEM_DETAIL_FAILED";
