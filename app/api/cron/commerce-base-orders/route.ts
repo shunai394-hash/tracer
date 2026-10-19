@@ -59,9 +59,12 @@ export async function GET(request: Request) {
     const scanOffset = Number.isSafeInteger(storedOffset) && storedOffset >= BASE_ORDER_PAGE_SIZE && storedOffset <= BASE_ORDER_SCAN_MAX_OFFSET
       ? storedOffset
       : BASE_ORDER_PAGE_SIZE;
+    // Bound BASE polling to the most recent 365 days and use the same window for both pages.
+    const endOrdered = new Date().toISOString().slice(0, 10);
+    const startOrdered = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const [recentSummaries, rotatingSummaries] = await Promise.all([
-      listBaseOrders({ limit: BASE_ORDER_PAGE_SIZE, offset: 0 }),
-      listBaseOrders({ limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset }),
+      listBaseOrders({ startOrdered, endOrdered, limit: BASE_ORDER_PAGE_SIZE, offset: 0 }),
+      listBaseOrders({ startOrdered, endOrdered, limit: BASE_ORDER_PAGE_SIZE, offset: scanOffset }),
     ]);
     result.scanOffsets = [0, scanOffset];
     const summaries = [...new Map([...recentSummaries, ...rotatingSummaries]
@@ -181,6 +184,8 @@ export async function GET(request: Request) {
       ok: healthy, checked: result.checked, paid: result.paid, imported: result.imported,
       duplicate: result.duplicate, ignored: result.ignored, failed: result.failed,
       unmappedItems: result.unmappedItems, scanOffsets: result.scanOffsets, nextScanOffset: nextOffset,
+      orderWindow: { startOrdered, endOrdered },
+      summaryCounts: { recent: recentSummaries.length, rotating: rotatingSummaries.length },
     });
     return NextResponse.json({ ok: healthy, channel: "base", nextScanOffset: nextOffset, ...result }, { status: healthy ? 200 : 207 });
   } catch (error) {
