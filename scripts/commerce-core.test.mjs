@@ -169,8 +169,10 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("supplier_offers"\)[\s\S]*?\.in\("variant_id", variantIds\)/);
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
-  assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%/);
-  assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/, "only published rows or explicit supplier-safety errors enter external reconciliation");
+  assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/);
+  assert.doesNotMatch(audit, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "confirmed stopped listings must not be selected on every publish cron");
+  assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_disable_failed:"\)/, "only published rows or failed safety-stop attempts enter external reconciliation");
+  assert.doesNotMatch(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "confirmed stops are terminal until a separate publish retry is requested");
   assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
@@ -374,7 +376,7 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/5 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "10,40 * * * *", "patrol runs twice hourly to reduce scheduled invocations");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native pipeline must not schedule marketplace sourcing observation");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
@@ -818,7 +820,7 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "4,34 * * * *"));
-  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "10,40 * * * *"));
 });
 
 test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
@@ -1106,10 +1108,12 @@ test("published listings with no supplier offer enter the safety reconciliation 
 });
 
 
-test("supplier safety errors remain in external unpublish reconciliation after DB status leaves published", async () => {
+test("confirmed stopped supplier offers are terminal while failed safety stops remain retryable", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_no_longer_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/);
-  assert.match(publish, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/);
+  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/);
+  assert.doesNotMatch(publish, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "confirmed stopped listings must not be selected repeatedly");
+  assert.match(publish, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_disable_failed:"\)/);
+  assert.doesNotMatch(publish, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/);
   assert.match(publish, /base_unpublish_readback_mismatch/);
 });
 
