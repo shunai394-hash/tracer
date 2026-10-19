@@ -4,6 +4,10 @@ import { readFile } from "node:fs/promises";
 const selector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(selector, /\.eq\("verification_error", "storefront_stock_cap_deploy_pending"\)/,
   "the selector must load supplier rows held for fresh inventory verification");
+assert.doesNotMatch(selector, /metadata->>source_ref/,
+  "detached hold detection must not issue an oversized JSON-path IN query");
+assert.match(selector, /detachedListings[\s\S]*?row\.verification_error !== "storefront_stock_cap_deploy_pending"/,
+  "detached supplier holds must be reconstructed from the scalar supplier-product lookup");
 assert.match(selector, /heldProductIds\.has\(productId\)/,
   "a held canonical product must be excluded before it can be republished");
 assert.match(selector, /reasons: \["supplier_inventory_reverification_required"\]/,
