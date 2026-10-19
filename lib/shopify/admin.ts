@@ -527,31 +527,46 @@ async function setShopifyVariantInventoryAttempt(input: { variantId: string; qua
   // with different changeFromQuantity values on the next sync and triggers a conflict.
   const idempotencyKey = crypto.createHash("sha256").update(`${referenceDocumentUri}:${level.location.id}:${quantity}:${currentAvailable}`).digest("hex").slice(0, 64);
 
-  const result = await shopifyGraphQL<{
+  let result: {
     inventorySetQuantities: {
       userErrors: Array<{ field?: string[]; message: string }>;
     };
-  }>(
-    `mutation InventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
-      inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
-        userErrors { field message }
-      }
-    }`,
-    {
-      input: {
-        name: "available",
-        reason: "correction",
-        referenceDocumentUri,
-        quantities: [{
-          inventoryItemId: variant.inventoryItem.id,
-          locationId: level.location.id,
-          quantity,
-          changeFromQuantity: currentAvailable,
-        }],
+  };
+  try {
+    result = await shopifyGraphQL<{
+      inventorySetQuantities: {
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation InventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+        inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+          userErrors { field message }
+        }
+      }`,
+      {
+        input: {
+          name: "available",
+          reason: "correction",
+          referenceDocumentUri,
+          quantities: [{
+            inventoryItemId: variant.inventoryItem.id,
+            locationId: level.location.id,
+            quantity,
+            changeFromQuantity: currentAvailable,
+          }],
+        },
+        idempotencyKey,
       },
-      idempotencyKey,
-    },
-  );
+    );
+  } catch (error) {
+    // Shopify can return this optimistic-concurrency conflict as a top-level
+    // GraphQL error rather than a mutation userError. Re-read before retrying.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/changeFromQuantity argument no longer matches the persisted quantity/i.test(message) && attempt < 2) {
+      return setShopifyVariantInventoryAttempt(input, attempt + 1);
+    }
+    throw error;
+  }
 
   if (result.inventorySetQuantities.userErrors.length) {
     const message = result.inventorySetQuantities.userErrors.map((error) => error.message).join("; ");
