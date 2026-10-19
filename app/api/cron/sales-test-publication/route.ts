@@ -230,7 +230,7 @@ export async function GET(request: Request) {
     const missingOpportunityIds = candidateProductIds.filter(
       (id) => canonicalProductIds.has(id) && !opportunityProductIds.has(id),
     );
-    let opportunityEnrichment: { attempted: number; processed: number; failed: boolean; error?: string } = {
+    const opportunityEnrichment: { attempted: number; processed: number; failed: boolean; error?: string } = {
       attempted: 0,
       processed: 0,
       failed: false,
@@ -318,7 +318,19 @@ export async function GET(request: Request) {
     if (readyError) throw new Error(readyError.message);
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
+    if (marketProductIds.length > 0) {
+      try {
+        await buildOpportunityInBatches(marketProductIds, 10);
+      } catch (error) {
+        // The legacy discovery fallback must not abort publication for unrelated
+        // candidates when optional AI enrichment fails; downstream selectors still
+        // reject products without the required evidence.
+        console.error("[TRACER LEGACY OPPORTUNITY ENRICHMENT DEFERRED]", {
+          attempted: marketProductIds.length,
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 240),
+        });
+      }
+    }
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
