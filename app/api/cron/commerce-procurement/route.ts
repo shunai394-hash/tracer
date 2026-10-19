@@ -12,6 +12,7 @@ import {
   procurementApprovalEventKey,
 } from "@/lib/commerce/procurement-approval";
 import { legacyPurchaseConflictForCommerceOrder } from "@/lib/commerce/cross-pipeline-guard";
+import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -176,27 +177,43 @@ export async function GET(request: Request) {
       continue;
     }
     const { data: offer, error: offerError } = await db.from("supplier_offers")
-      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+      .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at")
       .eq("id", offerId).eq("variant_id", variantId).maybeSingle();
     const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
+    const rawOffer = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+      ? offer.raw_data as Record<string, unknown> : {};
+    const stockKnown = rawOffer.stockKnown === true ||
+      (rawOffer.stockKnown === undefined && offer?.source_status === "verified");
+    const shippingCostKnown = offer?.shipping_cost !== null && offer?.shipping_cost !== undefined &&
+      Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) >= 0;
+    const shippingKnown = rawOffer.shippingKnown === true ||
+      (rawOffer.shippingKnown === undefined && rawOffer.shippingEstimated !== true &&
+        offer?.source_status === "verified" && shippingCostKnown && Number(offer?.shipping_cost) > 0);
     if (offerError || !offer ||
-      offer.supplier_code !== "cj" ||
+      offer.supplier_code !== "cj" || offer.currency !== "USD" ||
       !isCanonicalCjNativeId(offer.supplier_product_id) ||
       !isCanonicalCjNativeId(offer.supplier_variant_id) ||
       offer.supplier_product_id !== row.supplier_product_id ||
       offer.supplier_variant_id !== row.supplier_variant_id ||
       offer.source_status !== "verified" || offer.tracking_supported !== true ||
-      offer.ship_to !== "JP" || Number(offer.inventory) < input.quantity ||
+      offer.ship_to !== "JP" || !stockKnown || Number(offer.inventory) < input.quantity ||
+      !Number.isFinite(Number(offer.unit_cost)) || Number(offer.unit_cost) <= 0 ||
+      !shippingCostKnown || !shippingKnown ||
       !Number.isFinite(checkedAt) || checkedAt > Date.now() + 5 * 60_000 || Date.now() - checkedAt > 24 * 60 * 60_000) {
       result.blocked++;
       result.errors.push(String(row.id) + ":supplier_offer_not_fresh_and_fulfillable");
       continue;
     }
     const { data: price, error: priceError } = await db.from("commerce_prices")
-      .select("supplier_offer_id,expected_profit").eq("variant_id", variantId).maybeSingle();
-    if (priceError || !price || price.supplier_offer_id !== offerId || Number(price.expected_profit) <= 0) {
+      .select("supplier_offer_id,currency,selling_price,fee_amount,expected_profit,margin_rate,calculated_at")
+      .eq("variant_id", variantId).maybeSingle();
+    const priceAt = typeof price?.calculated_at === "string" ? Date.parse(price.calculated_at) : Number.NaN;
+    if (priceError || !price || price.supplier_offer_id !== offerId || price.currency !== "JPY" ||
+      Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0 || Number(price.margin_rate) < 0.5 ||
+      !Number.isFinite(Number(price.fee_amount)) || Number(price.fee_amount) < 0 ||
+      !Number.isFinite(priceAt) || priceAt > Date.now() + 5 * 60_000 || Date.now() - priceAt > 7 * 24 * 60 * 60_000) {
       result.blocked++;
-      result.errors.push(String(row.id) + ":exact_supplier_offer_price_missing_or_unprofitable");
+      result.errors.push(String(row.id) + ":exact_supplier_offer_price_missing_stale_or_unprofitable");
       continue;
     }
 
@@ -250,6 +267,23 @@ export async function GET(request: Request) {
     try {
       const validation = await cjSupplierAdapter.validateOrderInput?.(input);
       if (!validation?.valid) throw new Error(validation?.responseCode + ":" + (validation?.responseMessage ?? "supplier_preflight_missing"));
+      if (validation.verifiedCurrency !== "USD" ||
+        !Number.isFinite(Number(validation.verifiedUnitCost)) || Number(validation.verifiedUnitCost) <= 0 ||
+        !Number.isFinite(Number(validation.verifiedShippingCost)) || Number(validation.verifiedShippingCost) < 0 ||
+        !Number.isFinite(Number(validation.verifiedInventory)) || Number(validation.verifiedInventory) < input.quantity ||
+        !validation.shippingMethod || !validation.evidenceObservedAt) {
+        throw new Error("CJ_PREFLIGHT_LIVE_COST_OR_FREIGHT_EVIDENCE_MISSING");
+      }
+      const fx = await getObservedUsdToJpyRate();
+      if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) throw new Error("LIVE_USD_JPY_RATE_UNAVAILABLE");
+      const liveLandedCostJpy = Math.ceil(Number(validation.verifiedUnitCost) * fx.rate) +
+        Math.ceil(Number(validation.verifiedShippingCost) * fx.rate);
+      const liveExpectedProfitJpy = Number(price.selling_price) - liveLandedCostJpy - Number(price.fee_amount);
+      const liveMarginRate = liveExpectedProfitJpy / Number(price.selling_price);
+      if (!Number.isFinite(liveExpectedProfitJpy) || liveExpectedProfitJpy <= 0 ||
+        !Number.isFinite(liveMarginRate) || liveMarginRate < 0.5) {
+        throw new Error("LIVE_CJ_COST_BREAKS_PROFIT_OR_MARGIN_FLOOR");
+      }
       const created = await cjSupplierAdapter.createOrder(input);
       if (!created.succeeded || !created.supplierOrderId) throw new Error(created.responseCode + ":" + (created.responseMessage ?? "supplier_order_not_confirmed"));
       createdSupplierOrderId = created.supplierOrderId;
