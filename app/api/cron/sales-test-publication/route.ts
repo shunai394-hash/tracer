@@ -164,7 +164,7 @@ export async function GET(request: Request) {
           `cj:${productId}:${variantId}`,
         ];
       })));
-    let nativeProducts: Array<{ id: string; identity_key: string }> = [];
+    const nativeProducts: Array<{ id: string; identity_key: string }> = [];
     // Keep PostgREST URL/query payloads bounded. A thousand supplier rows can
     // produce up to two thousand identity keys, which may exceed request limits.
     for (let i = 0; i < nativeSourceRefs.length; i += 100) {
