@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (authError) return authError;
   try {
     const searchParams = new URL(request.url).searchParams;
-    const requested = Number(searchParams.get("limit") || 5);
+    const requested = Number(searchParams.get("limit") || 20);
     const onlyUnpublished = searchParams.get("onlyUnpublished") !== "false";
     const rawVariantIds = searchParams.get("variantIds");
     let variantIds: string[] | undefined;
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     }
     // Scheduled publication handles new/pending/error rows only. Explicit variantIds
     // enables a bounded, authenticated recovery for a known set of eligible products.
-    const limit = Number.isFinite(requested) ? Math.min(5, Math.max(1, Math.floor(requested))) : 5;
+    const limit = Number.isFinite(requested) ? Math.min(20, Math.max(1, Math.floor(requested))) : 20;
     const result = await syncCommerceListings("base", limit, onlyUnpublished, variantIds);
     console.info("[TRACER COMMERCE PUBLISH]", JSON.stringify({ channel: "base", ok: result.failed === 0 && result.staleListings.failed === 0, staleListings: result.staleListings, considered: result.considered, published: result.published, processed: result.processed, failed: result.failed, errors: result.results.filter((item) => !item.ok).slice(0, 10).map((item) => ({ variantId: item.variantId, error: item.error })), staleListingErrors: result.staleListings.errors.slice(0, 10), generatedAt: new Date().toISOString() }));
     const failed = result.failed > 0 || result.staleListings.failed > 0;
