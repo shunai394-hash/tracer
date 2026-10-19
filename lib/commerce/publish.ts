@@ -240,13 +240,45 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   staleListings.unpublished += identityCleanup.unpublished;
   staleListings.failed += identityCleanup.failed;
   staleListings.errors.push(...identityCleanup.errors);
+  const candidateSelect = "id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
   let candidateQuery = db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select(candidateSelect)
     .eq("commerce_products.active", true);
   if (variantIds?.length) candidateQuery = candidateQuery.in("id", [...new Set(variantIds)]);
+
+  // Do not let the newest 1,000 catalog updates starve older storefront recovery
+  // rows. Read a small, bounded queue of pending/safety-error listings first, then
+  // merge it ahead of the broad discovery batch. Explicit variantIds remain exact.
+  let priorityCandidates: Candidate[] = [];
+  if (!variantIds?.length) {
+    const { data: priorityListings, error: priorityListingsError } = await db.from("channel_listings")
+      .select("variant_id,last_synced_at")
+      .eq("channel", channel)
+      .or("status.eq.pending,status.eq.error,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%")
+      .order("last_synced_at", { ascending: true, nullsFirst: true })
+      .limit(100);
+    if (priorityListingsError) throw new Error("commerce_recovery_queue_read_failed:" + priorityListingsError.message);
+    const priorityIds = [...new Set((priorityListings ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+    if (priorityIds.length) {
+      const { data: priorityData, error: priorityError } = await db.from("commerce_variants")
+        .select(candidateSelect)
+        .eq("commerce_products.active", true)
+        .in("id", priorityIds)
+        .order("updated_at", { ascending: true })
+        .limit(100);
+      if (priorityError) throw new Error("commerce_recovery_candidates_read_failed:" + priorityError.message);
+      priorityCandidates = (priorityData ?? []) as unknown as Candidate[];
+    }
+  }
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
   if (error) throw new Error("commerce_candidates_read_failed:" + error.message);
-  const allCandidates = (data ?? []) as unknown as Candidate[];
+  const seenCandidateIds = new Set<string>();
+  const allCandidates = [...priorityCandidates, ...((data ?? []) as unknown as Candidate[])]
+    .filter((candidate) => {
+      if (seenCandidateIds.has(candidate.id)) return false;
+      seenCandidateIds.add(candidate.id);
+      return true;
+    });
   // PostgREST GET URLs can exceed gateway limits when .in() contains the
   // entire 1,000-row candidate batch. Read listing state in small bounded chunks.
   const candidateVariantIds = [...new Set(allCandidates.map((row) => row.id))];
