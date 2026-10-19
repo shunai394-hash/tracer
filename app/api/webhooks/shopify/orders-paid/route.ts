@@ -6,6 +6,11 @@ import { ingestPaidOrder } from "@/lib/commerce/core";
 export const runtime = "nodejs";
 
 type ShopifyLine = { id?: string | number; sku?: string | null; quantity?: number; price?: string | number; title?: string };
+function isTracerManagedSku(value: unknown): boolean {
+  const sku = String(value ?? "").trim().toUpperCase();
+  return sku.startsWith("TRC-") || sku.startsWith("CJ-");
+}
+
 type ShopifyPayload = Record<string, unknown> & {
   id?: string | number; name?: string; total_price?: string | number;
   customer?: { first_name?: string; last_name?: string } | null;
@@ -54,22 +59,23 @@ export async function POST(request: Request) {
     const canonicalLines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
     for (const line of lines) {
       const sku = String(line.sku ?? "").trim();
-      if (!sku.startsWith("TRC-")) continue; // Ignore unrelated items in a mixed cart.
+      if (!isTracerManagedSku(sku)) continue; // Ignore unrelated items in a mixed cart.
       const quantity = Number(line.quantity);
       const unitPrice = Number(line.price);
       if (!line.id || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
         throw new Error("invalid_tracer_line_item");
       }
       // Prefer the exact SKU saved by the publisher. Older Shopify listings may
-      // still carry TRC-<supplier_variant_id>; resolve that only through an exact,
+      // still carry TRC-<supplier_variant_id> or CJ-<supplier_variant_id>; resolve only through an exact,
       // verified supplier-offer identity, never by title or partial SKU.
       const exact = await db.from("channel_listings")
         .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
       if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
       let listingRows = exact.data ?? [];
       let legacyOfferId: string | null = null;
-      if (listingRows.length === 0 && sku.startsWith("TRC-")) {
-        const legacySupplierVariantId = sku.slice(4).trim();
+      if (listingRows.length === 0 && isTracerManagedSku(sku)) {
+        const normalizedSku = sku.toUpperCase();
+        const legacySupplierVariantId = sku.slice(normalizedSku.startsWith("CJ-") ? 3 : 4).trim();
         if (legacySupplierVariantId) {
           const legacyOffers = await db.from("supplier_offers")
             .select("id,variant_id")

@@ -54,6 +54,11 @@ function canonicalShopifyId(value: string, resource: "Order" | "LineItem"): stri
   return id;
 }
 
+function isTracerManagedSku(value: unknown): boolean {
+  const sku = String(value ?? "").trim().toUpperCase();
+  return sku.startsWith("TRC-") || sku.startsWith("CJ-");
+}
+
 function finitePositiveNumber(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -177,7 +182,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   const tracerItemsByOrder = new Map<string, ShopifyOrder["lineItems"]["nodes"]>();
   const variantIds = Array.from(new Set(
     orders.flatMap((order) => {
-      const tracerItems = order.lineItems.nodes.filter((item) => String(item.variant?.sku ?? "").startsWith("TRC-"));
+      const tracerItems = order.lineItems.nodes.filter((item) => isTracerManagedSku(item.variant?.sku));
       tracerItemsByOrder.set(order.id, tracerItems);
       return tracerItems.map((item) => item.variant?.id).filter((id): id is string => Boolean(id));
     }),
@@ -257,7 +262,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
       if (total === null) throw new Error("shopify_total_invalid");
 
       const canonicalLines = tracerItems.map((item) => {
-        if (!item.variant?.id || !String(item.variant.sku ?? "").startsWith("TRC-")) {
+        if (!item.variant?.id || !isTracerManagedSku(item.variant.sku)) {
           throw new Error("shopify_tracer_variant_id_or_sku_missing:" + item.id);
         }
         const listing = listingByExternalVariant.get(item.variant.id)

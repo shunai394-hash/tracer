@@ -342,6 +342,8 @@ test("Shopify paid-order polling uses the canonical commerce order and procureme
   assert.match(sync, /from\("channel_listings"\)/);
   assert.match(sync, /from\("commerce_prices"\)/);
   assert.match(sync, /listingBySku/);
+  assert.match(sync, /function isTracerManagedSku/);
+  assert.match(sync, /sku\.startsWith\("TRC-"\) \|\| sku\.startsWith\("CJ-"\)/);
   assert.match(sync, /shopify_sku_mapping_ambiguous/);
   assert.match(sync, /shopify_canonical_sku_lookup_failed/);
   assert.match(sync, /knownStatus === "procurement_pending"/);
@@ -507,6 +509,8 @@ test("Shopify paid webhook is signature-verified, idempotent, and writes canonic
   assert.match(webhook, /insertError\?\.code === "23505"/);
   assert.match(webhook, /ingestPaidOrder\(/);
   assert.match(webhook, /\.eq\("status", "published"\)/);
+  assert.match(webhook, /function isTracerManagedSku/);
+  assert.match(webhook, /normalizedSku\.startsWith\("CJ-"\) \? 3 : 4/);
   assert.match(core, /procurement_orders/);
   assert.match(core, /payment_status/);
 });
