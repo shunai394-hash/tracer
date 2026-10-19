@@ -127,6 +127,8 @@ assert.match(costApplyRoute, /price_not_calculated_for_current_supplier_offer/, 
 assert.match(costApplyRoute, /expectedProfit === null \|\| expectedProfit <= 0/, "non-positive profit must block a cost write");
 assert.match(costApplyRoute, /APPLY_BLOCKED_BY_PREFLIGHT/, "any blocked selected variant must abort the entire apply");
 assert.match(costApplyRoute, /inventoryItemUpdate\(id: \$id, input: \$input\)/, "cost write must use Shopify inventoryItemUpdate");
+assert.match(costApplyRoute, /if \(!expectedSku \|\| !liveSku\) reasons\.push\("shopify_sku_missing"\)/, "missing or blank SKU on either side must block a cost write");
+assert.match(costApplyRoute, /else if \(liveSku !== expectedSku\) reasons\.push\("shopify_sku_mismatch"\)/, "non-empty SKUs must match exactly after trimming");
 assert.match(costApplyRoute, /amount === ev\.unitCost && currency === "JPY"/, "write is verified only after exact JPY readback");
 
 console.log("publication repair and unit cost: ok");
