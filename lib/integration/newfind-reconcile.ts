@@ -37,10 +37,10 @@ export async function rescueUndeliveredGatePassedListings(options: { limit?: num
   const supabase = (await import("@/lib/supabase/admin")).createSupabaseAdminClient();
   const limit = Math.max(1, Math.min(options.limit ?? 5, 50));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
-  const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at";
+  const columns = "id, title, base_item_id, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at";
   const [byReason, byMarker] = await Promise.all([
-    supabase.from("shop_listings").select(columns).eq("published", true).eq("pipeline_reason", SALES_TEST_GATE_PASSED).limit(500),
-    supabase.from("shop_listings").select(columns).eq("published", true).filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED])).limit(500),
+    supabase.from("shop_listings").select(columns).is("archived_at", null).eq("published", true).eq("pipeline_reason", SALES_TEST_GATE_PASSED).limit(500),
+    supabase.from("shop_listings").select(columns).is("archived_at", null).eq("published", true).filter("selection_reasons", "cs", JSON.stringify([SALES_TEST_GATE_PASSED])).limit(500),
   ]);
   if (byReason.error) throw new Error(byReason.error.message);
   if (byMarker.error) throw new Error(byMarker.error.message);
@@ -156,7 +156,7 @@ export async function withdrawUnpublishedNewfindPromotions(options: { limit?: nu
   result.examined = deliveries?.length ?? 0;
   if (!deliveries || deliveries.length === 0) return result;
 
-  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").in("id", deliveries.map((row) => String(row.listing_id)));
+  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, title, slug, bestseller_id, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").is("archived_at", null).in("id", deliveries.map((row) => String(row.listing_id)));
   if (listingError) throw new Error(listingError.message);
   const listingById = new Map((listings ?? []).map((row) => [String(row.id), row]));
   const stale = deliveries.filter((row) => {

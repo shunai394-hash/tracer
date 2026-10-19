@@ -403,9 +403,11 @@ export async function selectAndPublishSalesTests(
       published_at: fetchedAt,
       updated_at: fetchedAt,
     };
-    const existing = await supabase.from("shop_listings").select("id").eq("slug", slug).maybeSingle();
+    const existing = await supabase.from("shop_listings").select("id, archived_at").eq("slug", slug).maybeSingle();
     let upsert: { data: { id: string } | null; error: { message: string } | null };
     if (existing.error) throw new Error(existing.error.message);
+    // Keep archived rows and their delivery/view history untouched; never republish them in place.
+    if (existing.data?.archived_at) continue;
     if (existing.data?.id) {
       const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
       upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };

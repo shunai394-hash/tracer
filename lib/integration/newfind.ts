@@ -151,8 +151,9 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     const chunk = listingIds.slice(i, i + 100);
     const { data: listings, error: listingError } = await supabase
       .from("shop_listings")
-      .select("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
+      .select("id, title, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
       .in("id", chunk)
+      .is("archived_at", null)
       .eq("published", true);
     if (listingError) throw new Error(listingError.message);
     for (const row of listings ?? []) {
@@ -210,8 +211,9 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
     .eq("id", listingId)
+    .is("archived_at", null)
     .eq("published", true)
     .maybeSingle();
 
