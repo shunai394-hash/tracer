@@ -171,6 +171,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of publishableListings) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
+    if (listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified" && !isIdentityUnlinked) continue;
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
@@ -231,7 +232,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }));
   const copyByListingId = new Map(copyResults.map((item) => [item.listingId, item]));
 
-  for (const listing of listings ?? []) {
+  for (const listing of publishableListings) {
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
