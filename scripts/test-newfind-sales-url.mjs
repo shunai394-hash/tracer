@@ -59,6 +59,8 @@ assert.match(reconcile, /schemaBlocked: number/,
 assert.match(source, /resolveLiveTracerUrl\(typeof listing\.id === "string" \? listing\.id : null\)/,
   "NEWFIND must use a stable UUID product URL rather than an encoded Japanese slug");
 assert.match(source, /tracer_sales_url_http_\$\{response\.status\}/, "record the actual HTTP status when a product page is not live");
+assert.match(source, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/, "TRACER public sales URL liveness checks retry one transient timeout or 5xx");
+assert.match(source, /response\.status >= 500 \|\| response\.status === 408 \|\| response\.status === 429/, "only transient HTTP failures are retried; 4xx liveness failures remain terminal");
 assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
 assert.match(store, /loadCanonicalCommerceListings\(\{ variantIds: \[slug\] \}\)/,

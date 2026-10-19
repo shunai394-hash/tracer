@@ -31,23 +31,33 @@ export async function resolveLiveTracerUrl(slug: string | null): Promise<{ url: 
   if (!origin) return { url: null, reason: "tracer_sales_url_origin_missing" };
   if (!slug) return { url: null, reason: "tracer_sales_url_slug_missing" };
   const url = `${origin}/shop/${encodeURIComponent(slug)}`;
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "x-tracer-liveness-check": "1" },
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(10_000),
-    });
-    return response.ok
-      ? { url, reason: null }
-      : { url: null, reason: `tracer_sales_url_http_${response.status}` };
-  } catch (error) {
-    const reason = error instanceof Error && error.name === "TimeoutError"
-      ? "tracer_sales_url_timeout"
-      : "tracer_sales_url_fetch_failed";
-    return { url: null, reason };
+  let lastReason = "tracer_sales_url_fetch_failed";
+
+  // Retry transient storefront warm-up/network failures once, but never retry a definitive 4xx.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "x-tracer-liveness-check": "1" },
+        cache: "no-store",
+        redirect: "follow",
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (response.ok) return { url, reason: null };
+      if (response.status >= 500 || response.status === 408 || response.status === 429) {
+        lastReason = `tracer_sales_url_http_${response.status}`;
+        if (attempt < 2) continue;
+      } else {
+        return { url: null, reason: `tracer_sales_url_http_${response.status}` };
+      }
+    } catch (error) {
+      lastReason = error instanceof Error && error.name === "TimeoutError"
+        ? "tracer_sales_url_timeout"
+        : "tracer_sales_url_fetch_failed";
+      if (attempt < 2) continue;
+    }
   }
+  return { url: null, reason: lastReason };
 }
 
 
