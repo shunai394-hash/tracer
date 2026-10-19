@@ -61,7 +61,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   // before it could publish new products.
   const [pricesRead, offersRead, variantsRead] = await Promise.all([
     db.from("commerce_prices")
-      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,calculated_at")
+      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate,calculated_at")
       .in("variant_id", variantIds)
       .order("calculated_at", { ascending: false }),
     db.from("supplier_offers")
@@ -76,7 +76,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   if (offersRead.error) throw new Error("stale_supplier_offer_batch_read_failed:" + offersRead.error.message);
   if (variantsRead.error) throw new Error("stale_variant_batch_read_failed:" + variantsRead.error.message);
 
-  type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
+  type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; margin_rate: number; calculated_at: string | null };
   type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
   type StaleVariant = { id: string; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
@@ -111,8 +111,10 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
         const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
           Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const stockKnown = data.stockKnown === true ||
-          (data.stockKnown === undefined && offer.source_status === "verified");
+        const rawData = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
+          ? offer.raw_data as Record<string, unknown> : {};
+        const stockKnown = rawData.stockKnown === true ||
+          (rawData.stockKnown === undefined && offer.source_status === "verified");
         return Boolean(
           offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
           offer.source_status === "verified" && fresh &&
