@@ -9,6 +9,8 @@ const checks = [
   ["reverification reuses the fresh barcode returned by the identity lookup", /const \{ identity, variantBarcode, variantDetails: freshVariantDetails \} = await resolveMarketplaceIdentityWithFreshBarcode/],
   ["reverification does not perform a duplicate CJ product-variant barcode lookup", /resolveMarketplaceIdentityWithFreshBarcode/],
   ["matched shop-listing suppliers are selected before supplier-only candidates", /const prioritizedRegularRows = \[\.\.\.matchedWomens, \.\.\.matchedOther, \.\.\.unmatchedWomens, \.\.\.unmatchedOther\]/],
+  ["linked-first reverify selection stays inside the ascending cursor-safe batch", /const boundedRows = allRows[\s\\S]{0,180}\.slice\(0, limit\);[\s\\S]{0,400}prioritizedRegularRows\.filter\(\(row\) => boundedIds\.has/],
+  ["cursor advances from the last ID in the complete bounded window, not processing order", /result\.nextCursor = String\(boundedRows\[boundedRows\.length - 1\]\.id\)/],
   ["reverification telemetry records exact shop-listing coverage", /exactShopListingCandidates: partition\.matched\.length[\s\S]{0,120}supplierOnlyCandidates: partition\.unmatched\.length/],
   ["exact CJ variant price is refreshed by variant ID", /fetchCJVariantByVid\(String\(row\.supplier_variant_id\)\)/],
   ["recovered price requires an exact live variant ID and valid returned parent ID", /const exactVariant = variantDetails\?\.vid === String\(row\.supplier_variant_id\)[\s\S]{0,180}variantDetails\?\.productId/],
