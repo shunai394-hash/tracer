@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const route = readFileSync(new URL("../app/api/cron/base-targeted-readback/route.ts", import.meta.url), "utf8");
+
+assert.ok(route.includes("requireAutomationAuth"), "targeted readback must require automation auth");
+assert.ok(route.includes("MAX_TARGETS = 8"), "targeted readback must cap the request at eight IDs");
+assert.ok(route.includes('target_base_item_ids_required'), "missing target IDs must be rejected");
+assert.ok(route.includes('target_base_item_ids_must_be_numeric'), "non-numeric IDs must be rejected");
+assert.ok(route.includes('target_base_item_ids_limit_exceeded'), "too many distinct IDs must be rejected");
+assert.ok(route.includes('.in("external_product_id", targetIds)'), "TRACER mapping lookup must be limited to target IDs");
+assert.ok(route.includes("getBaseItemDetail(baseItemId)"), "each target must be read from the actual BASE API");
+assert.ok(route.includes("writesPerformed: false"), "response must explicitly report read-only behavior");
+assert.ok(!route.includes(".update("), "route must not update TRACER records");
+assert.ok(!route.includes("fetch("), "route must not call a BASE write endpoint directly");
+assert.ok(route.includes("priceDifference:"), "report must show price differences separately from identity");
+assert.ok(route.includes("skuMatches:"), "report must compare stored and actual identifiers");
+assert.ok(route.includes("externalVisible"), "report must include actual visibility");
+assert.ok(route.includes("externalStock"), "report must include actual stock");
+
+const targets = ["163159664", "163159665", "163159668", "163159669", "163159671", "163159672", "163159673", "163159674"];
+assert.equal(targets.length, 8);
+assert.equal([...new Set(targets)].length, 8);
+assert.ok(targets.every((id) => /^\d+$/.test(id)));
+assert.equal(/^\d+$/.test("163159664x"), false);
+
+console.log("BASE targeted readback static safety checks: 16 assertions passed");
