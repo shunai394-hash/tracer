@@ -9,6 +9,12 @@ import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 
+test("localizes the known Maruki side-clip hair accessory from its source title", async () => {
+  const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
+  assert.match(japaneseProduct, /maruki hair accessories with side clips/i);
+  assert.match(japaneseProduct, /Maruki サイドクリップ付き ヘアアクセサリー/);
+});
+
 test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
