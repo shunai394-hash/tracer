@@ -165,9 +165,12 @@ export async function POST(request: Request) {
       if (result.inventoryItemUpdate.userErrors.length || !result.inventoryItemUpdate.inventoryItem) {
         throw new Error(result.inventoryItemUpdate.userErrors.map((e) => e.message).join("; ") || "SHOPIFY_COST_UPDATE_RETURNED_NO_ITEM");
       }
-      const readback = await shopifyGraphQL<{ node: { ... } | null }>("query { node(id: \"" + live.inventoryItem.id + "\") { id } }").catch(() => null);
-      const amount = numeric(result.inventoryItemUpdate.inventoryItem.unitCost?.amount);
-      const currency = result.inventoryItemUpdate.inventoryItem.unitCost?.currencyCode ?? null;
+      const readback = await shopifyGraphQL<{ node: { id: string; unitCost?: { amount: string; currencyCode: string } | null } | null }>(
+        `query TracerVerifyInventoryItemCost($id: ID!) { node(id: $id) { id ... on InventoryItem { unitCost { amount currencyCode } } } }`,
+        { id: live.inventoryItem.id },
+      );
+      const amount = numeric(readback.node?.unitCost?.amount);
+      const currency = readback.node?.unitCost?.currencyCode ?? null;
       applied.push({ variantId: item.variantId, externalVariantId: item.externalVariantId, expectedCost: ev.unitCost!, readBackCost: amount, verified: amount === ev.unitCost && currency === "JPY" });
     } catch (error) {
       applied.push({ variantId: item.variantId, externalVariantId: item.externalVariantId, expectedCost: ev.unitCost!, readBackCost: null, verified: false, error: error instanceof Error ? error.message.slice(0, 200) : "SHOPIFY_COST_UPDATE_FAILED" });
