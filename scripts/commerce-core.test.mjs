@@ -242,7 +242,7 @@ test("catalog publication is independent of live fulfillment evidence while proc
   assert.match(worker, /offer\.source_status !== "verified"/);
   assert.match(worker, /offer\.tracking_supported !== true/);
   assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
-  assert.match(worker, /exact_supplier_offer_price_missing_or_unprofitable/);
+  assert.match(worker, /exact_supplier_offer_price_missing_stale_or_unprofitable/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.source_status", "verified"\)/);
   assert.doesNotMatch(publish, /\.eq\("supplier_offers\.tracking_supported", true\)/);
   assert.match(publish, /supplier_offer_missing_or_cost_unknown/);
@@ -305,7 +305,7 @@ test("CJ supplier source titles produce specific Japanese names and descriptions
 test("procurement revalidates the exact fresh profitable offer and preserves a created supplier order ID", async () => {
   const worker = await readFile(new URL("../app/api/cron/commerce-procurement/route.ts", import.meta.url), "utf8");
   assert.match(worker, /supplier_offer_not_fresh_and_fulfillable/);
-  assert.match(worker, /exact_supplier_offer_price_missing_or_unprofitable/);
+  assert.match(worker, /exact_supplier_offer_price_missing_stale_or_unprofitable/);
   assert.match(worker, /createdSupplierOrderId/);
   assert.match(worker, /supplier_order_created_but_state_repair_failed_leave_processing/);
   assert.doesNotMatch(worker, /country_code_v2"\)\.toUpperCase\(\) \|\| "JP"/);
