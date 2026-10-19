@@ -149,7 +149,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   for (const listing of listings ?? []) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
-    if (listing.published !== true && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
+    if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       unpublishFailed += 1;
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
