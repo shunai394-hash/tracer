@@ -10,13 +10,13 @@ const expected = new Map([
   ["/api/cron/commerce-cj-import", "0,30 * * * *"],
   ["/api/cron/commerce-procurement", "13,28,43,58 * * * *"],
   ["/api/cron/commerce-reprice-existing", "4,34 * * * *"],
-  ["/api/cron/commerce-publish-base", "*/5 * * * *"],
-  ["/api/cron/commerce-publish-shopify", "*/5 * * * *"],
+  ["/api/cron/commerce-publish-base", "*/30 * * * *"],
+  ["/api/cron/commerce-publish-shopify", "*/30 * * * *"],
   ["/api/cron/patrol-ai", "*/5 * * * *"],
   ["/api/cron/shopify-fulfillment", "7,22,37,52 * * * *"],
   ["/api/cron/shopify-orders", "*/5 * * * *"],
   ["/api/cron/base-legacy-price-reconcile", "2,17,32,47 * * * *"],
-  ["/api/cron/shopify-publish", "*/5 * * * *"],
+  ["/api/cron/shopify-publish", "*/30 * * * *"],
 ]);
 assert.equal(new Set(crons.map((entry) => entry.path)).size, crons.length, "cron paths must be unique");
 assert.deepEqual(new Set(crons.map((entry) => entry.path)), new Set(expected.keys()), "expected cron paths must remain configured");
@@ -29,6 +29,7 @@ for (const path of [
   "/api/cron/commerce-publish-shopify",
   "/api/cron/shopify-publish",
 ]) {
-  assert.equal(expected.get(path), "*/5 * * * *", `${path} must publish every five minutes`);
+  assert.equal(expected.get(path), "*/30 * * * *", `${path} must publish every thirty minutes to reduce execution frequency`);
 }
-console.log("TRACER cron schedule invariants: storefront publishing every 5 minutes; CJ import every 30 minutes; other schedules preserved");
+assert.equal(expected.get("/api/cron/patrol-ai"), "*/5 * * * *", "existing patrol-ai cron must remain every five minutes");
+console.log("TRACER cron schedule invariants: storefront publishing every 30 minutes; CJ import every 30 minutes; patrol-ai preserved every 5 minutes; other schedules preserved");
