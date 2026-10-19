@@ -47,7 +47,7 @@ jobs:
           token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           code="$(curl -sS -o cj-refresh.json -w "%{http_code}" --max-time 300 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import?variantIds=$SUPPLIER_VARIANT_ID&limit=1&variantLimit=1")"
           echo "CJ evidence refresh HTTP $code"
-          python3 - "$code" cj-refresh.json <<'PY'
+          python3 - "$code" cj-refresh.json "$SUPPLIER_VARIANT_ID" <<'PY'
           import json,sys
           code=int(sys.argv[1])
           d=json.load(open(sys.argv[2],encoding="utf-8"))
@@ -55,30 +55,42 @@ jobs:
           print(json.dumps({"ok":d.get("ok"),"error":d.get("error"),"variantId":d.get("variantId"),"stats":stats},ensure_ascii=False)[:4000])
           if not 200 <= code < 300 or d.get("ok") is not True:
               raise SystemExit("Targeted CJ refresh did not explicitly succeed; delivery was not attempted.")
+          if d.get("skipped") is True:
+              raise SystemExit("CJ refresh was skipped (for example, API quota cooldown); delivery was not attempted.")
           if stats.get("errors"):
               raise SystemExit("CJ refresh reported errors; delivery was not attempted.")
+          verified_ids=stats.get("verifiedVariantIds") if isinstance(stats.get("verifiedVariantIds"),list) else []
+          if sys.argv[3] not in [str(value) for value in verified_ids]:
+              raise SystemExit("CJ refresh did not verify the exact requested supplier variant ID; delivery was not attempted.")
+          if stats.get("variants", 0) < 1 or stats.get("offers", 0) < 1 or stats.get("priced", 0) < 1:
+              raise SystemExit("CJ refresh did not confirm a target variant, offer and price; delivery was not attempted.")
           PY
 
       - name: Deliver only the specified commerce variant to NEWFIND
         env:
           COMMERCE_VARIANT_ID: ${{ inputs.commerce_variant_id }}
+          SUPPLIER_VARIANT_ID: ${{ inputs.supplier_variant_id }}
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          code="$(curl -sS -o newfind-retry.json -w "%{http_code}" --max-time 65 -H "Authorization: Bearer $token" "$BASE/api/cron/newfind-retry?variantId=$COMMERCE_VARIANT_ID")"
+          code="$(curl -sS -o newfind-retry.json -w "%{http_code}" --max-time 65 -H "Authorization: Bearer $token" "$BASE/api/cron/newfind-retry?variantId=$COMMERCE_VARIANT_ID&supplierVariantId=$SUPPLIER_VARIANT_ID")"
           echo "Scoped NEWFIND retry HTTP $code"
           python3 - "$code" newfind-retry.json <<'PY'
           import json,sys
           code=int(sys.argv[1])
           d=json.load(open(sys.argv[2],encoding="utf-8"))
           result=d.get("result") if isinstance(d.get("result"),dict) else {}
-          print(json.dumps({"ok":d.get("ok"),"variantId":d.get("variantId"),"candidates":result.get("candidates"),"attempted":result.get("attempted"),"processed":result.get("processed"),"alreadyProcessed":result.get("alreadyProcessed"),"failed":result.get("failed"),"skipped":result.get("skipped")},ensure_ascii=False)[:4000])
+          print(json.dumps({"ok":d.get("ok"),"variantId":d.get("variantId"),"candidates":result.get("candidates"),"supplierVariantMatch":result.get("supplierVariantMatch"),"attempted":result.get("attempted"),"processed":result.get("processed"),"alreadyProcessed":result.get("alreadyProcessed"),"failed":result.get("failed"),"skipped":result.get("skipped")},ensure_ascii=False)[:4000])
           if not 200 <= code < 300 or d.get("ok") is not True:
               raise SystemExit("NEWFIND scoped retry did not explicitly succeed.")
+          if result.get("receiverReady") is not True or result.get("configured") is not True:
+              raise SystemExit("NEWFIND receiver is not configured and ready.")
           if result.get("candidates") != 1:
               raise SystemExit("Target variant is not currently eligible in the canonical live commerce listing; no success claimed.")
+          if result.get("supplierVariantMatch") is not True:
+              raise SystemExit("CJ supplier variant does not exactly match the canonical TRACER offer; no delivery confirmed.")
           if result.get("processed") != 1 and result.get("alreadyProcessed") != 1:
               raise SystemExit("No successful receiver ACK or prior processed state was confirmed.")
           if result.get("failed"):

@@ -27,6 +27,7 @@ export type NewfindCommerceResult = {
   receiverReady: boolean;
   configured: boolean;
   candidates: number;
+  supplierVariantMatch: boolean | null;
   alreadyProcessed: number;
   skipped: Record<string, number>;
   attempted: number;
@@ -40,11 +41,11 @@ export type NewfindCommerceResult = {
  * Same signing, receiver URL and liveness check as the legacy shop_listings
  * delivery. Only `limit` variants are sent per run; failures back off.
  */
-export async function promoteCommerceListingsToNewfind(options: { limit?: number; deadlineAt?: number; variantIds?: string[] } = {}): Promise<NewfindCommerceResult> {
+export async function promoteCommerceListingsToNewfind(options: { limit?: number; deadlineAt?: number; variantIds?: string[]; expectedSupplierVariantId?: string } = {}): Promise<NewfindCommerceResult> {
   const cfg = getNewfindConfig();
   const receiverReady = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
   const configured = Boolean(cfg.apiUrl && cfg.webhookSecret);
-  const result: NewfindCommerceResult = { receiverReady, configured, candidates: 0, alreadyProcessed: 0, skipped: {}, attempted: 0, processed: 0, failed: [] };
+  const result: NewfindCommerceResult = { receiverReady, configured, candidates: 0, supplierVariantMatch: null, alreadyProcessed: 0, skipped: {}, attempted: 0, processed: 0, failed: [] };
   if (!receiverReady || !configured) return result;
   const limit = Math.max(1, Math.min(options.limit ?? 2, 10));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
@@ -54,6 +55,17 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
     listing.canonicalCommerce && (!requestedVariantIds || requestedVariantIds.has(listing.id))
   );
   result.candidates = listings.length;
+  if (options.expectedSupplierVariantId) {
+    if (listings.length !== 1) {
+      result.skipped.supplier_variant_mapping_not_unique = 1;
+      return result;
+    }
+    result.supplierVariantMatch = listings[0].supplierVariantId === options.expectedSupplierVariantId;
+    if (!result.supplierVariantMatch) {
+      result.skipped.supplier_variant_mismatch = 1;
+      return result;
+    }
+  }
   if (listings.length === 0) return result;
 
   const db = createSupabaseAdminClient();

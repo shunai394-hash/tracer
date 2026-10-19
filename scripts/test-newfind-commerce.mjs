@@ -65,11 +65,13 @@ check("only a processed or duplicate ACK completes delivery", () => {
   assert.equal(newfindCommerceOutcome({ ok: true, status: 200, ackStatus: null }), "sent");
 });
 
-const [source, patrol, status, reconcile] = await Promise.all([
+const [source, patrol, status, reconcile, retryRoute, recoveryWorkflow] = await Promise.all([
   readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/admin/shopify/reconcile/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/cron/newfind-retry/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../.github/workflows/tracer-newfind-single-variant-recovery.yml", import.meta.url), "utf8"),
 ]);
 check("delivery is gated on the receiver flag, claims by compare-and-set and checks the live TRACER URL first", () => {
   assert.match(source, /NEWFIND_TRACER_PROMOTION_RECEIVER_READY\?\.trim\(\) === "1"/);
@@ -100,6 +102,23 @@ check("status reports both NEWFIND ledgers without writing", () => {
 
 console.log(`newfind commerce delivery: ${cases} cases passed`);
 
+check("scoped retry requires an exact CJ variant mapping and rejects non-confirmed outcomes", () => {
+  assert.match(source, /expectedSupplierVariantId\?: string/);
+  assert.match(source, /supplier_variant_mapping_not_unique/);
+  assert.match(source, /supplier_variant_mismatch/);
+  assert.match(retryRoute, /exact_supplier_variant_id_required/);
+  assert.match(retryRoute, /result\.receiverReady \|\| !result\.configured/);
+  assert.match(retryRoute, /result\.supplierVariantMatch !== true/);
+  assert.match(retryRoute, /result\.processed !== 1 && result\.alreadyProcessed !== 1/);
+});
+check("single-variant recovery stops on CJ cooldown, empty refresh results, or supplier ID mismatch", () => {
+  assert.match(recoveryWorkflow, /d\.get\("skipped"\) is True/);
+  assert.match(recoveryWorkflow, /stats\.get\("variants", 0\) < 1/);
+  assert.match(recoveryWorkflow, /stats\.get\("offers", 0\) < 1/);
+  assert.match(recoveryWorkflow, /stats\.get\("priced", 0\) < 1/);
+  assert.match(recoveryWorkflow, /supplierVariantId=\$SUPPLIER_VARIANT_ID/);
+  assert.match(recoveryWorkflow, /result\.get\("supplierVariantMatch"\) is not True/);
+});
 check("known duplicate-key receiver failures are prioritized for recovery before never-sent variants", () => {
   assert.match(source, /duplicate key value violates unique constraint\|discovery insert failed/);
   assert.match(source, /const deliveryPriority = \(item: typeof sendable\[number\]\)/);
