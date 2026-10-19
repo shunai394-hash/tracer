@@ -415,7 +415,7 @@ export async function GET(request: Request) {
         db.from("channel_listings").select("variant_id").eq("channel", "shopify").limit(5000),
         // Prioritize recovery for variants blocked from either storefront.
         db.from("channel_listings").select("variant_id,channel,last_error")
-          .or("last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%").limit(5000),
+          .or("last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%,last_error.eq.japanese_product_title_invalid").limit(5000),
         // Procurement freshness gates read supplier_listings, not only commerce offers.
         // Refresh stale/missing timestamps from the exact native CJ IDs so verified
         // legacy listings don't remain permanently unorderable.
