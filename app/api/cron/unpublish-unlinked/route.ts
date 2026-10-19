@@ -215,7 +215,7 @@ export async function GET(request: Request) {
           const hiddenVerified = visibleValue === false || visibleValue === 0 || visibleValue === "0";
           if (!hiddenVerified) throw new Error("base_item_visibility_not_confirmed_hidden_after_hide");
           const { error: markError } = await db.from("channel_listings")
-            .update({ status: "hidden_unfulfillable", last_error: "supplier_offer_not_fulfillable_hidden_verified", last_synced_at: new Date().toISOString() })
+            .update({ status: "hidden", last_error: "supplier_offer_not_fulfillable_hidden_verified", last_synced_at: new Date().toISOString() })
             .eq("channel", "base")
             .eq("external_product_id", itemId)
             .like("last_error", "supplier_offer_not_fulfillable%");
