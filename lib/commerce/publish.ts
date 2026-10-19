@@ -101,17 +101,12 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        // Listing eligibility uses exact supplier identity and a positive JPY landed-cost price.
-        // Cached stock, verification age, JP destination and tracking are rechecked at procurement,
-        // so temporary supplier evidence gaps do not silently hide otherwise linked catalog items.
-        const unitCostKnown = Number.isFinite(Number(offer.unit_cost)) && Number(offer.unit_cost) > 0;
-        const shippingKnown = offer.raw_data?.shippingKnown === true ||
-          (offer.raw_data?.shippingKnown === undefined && offer.raw_data?.shippingEstimated !== true &&
-            offer.source_status === "verified" && Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0);
+        // Only supplier identity failures trigger automatic unpublishing.
+        // Stock, freight, tracking, freshness, price and profit are rechecked before procurement.
         return Boolean(
-          offer.supplier_product_id && offer.supplier_variant_id && nativeIdsValid &&
-          unitCostKnown && shippingKnown &&
-          price && price.currency === "JPY" && Number(price.selling_price) > 0 && Number(price.expected_profit) > 0
+          typeof offer.supplier_product_id === "string" && offer.supplier_product_id.trim() &&
+          typeof offer.supplier_variant_id === "string" && offer.supplier_variant_id.trim() &&
+          nativeIdsValid
         );
       });
       if (hasPublishableLinkedOffer) {
@@ -210,6 +205,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   }
   // Keep profitable items in the catalog, but disable external purchase until the exact priced offer has verified stock and Japan-bound freight.
   const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  // Hide listings with missing/invalid supplier identity before publishing the next batch.
+  const identityCleanup = await unpublishUnfulfillableListings(channel, db);
+  staleListings.checked += identityCleanup.checked;
+  staleListings.unpublished += identityCleanup.unpublished;
+  staleListings.failed += identityCleanup.failed;
+  staleListings.errors.push(...identityCleanup.errors);
   let candidateQuery = db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true);
