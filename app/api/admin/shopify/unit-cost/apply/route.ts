@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       const sourceStatus = typeof offer?.source_status === "string" ? offer.source_status : null;
       const supplierProductId = typeof row.supplier_product_id === "string" ? row.supplier_product_id : typeof offer?.supplier_product_id === "string" ? offer.supplier_product_id : null;
       const supplierVariantId = typeof row.supplier_variant_id === "string" ? row.supplier_variant_id : typeof offer?.supplier_variant_id === "string" ? offer.supplier_variant_id : null;
-      const shippingKnown = raw.shippingKnown === true || (raw.shippingKnown === undefined && raw.shippingEstimated !== true && sourceStatus === "verified" && (shippingCost ?? 0) > 0);
+      const shippingKnown = raw.shippingKnown === true;
       const reason: string[] = [];
       if (!supplierProductId || !supplierVariantId) reason.push("supplier_identity_missing");
       if (sourceStatus !== "verified") reason.push("supplier_offer_not_verified");
@@ -153,27 +153,33 @@ export async function POST(request: Request) {
 
   const applied: Array<{ variantId: string; externalVariantId: string; expectedCost: number; readBackCost: number | null; verified: boolean; error?: string }> = [];
   for (const item of eligible) {
-    const ev = evidence.get(item.variantId)!;
-    const live = liveById.get(item.externalVariantId)!;
+    const ev = evidence.get(item.variantId);
+    const externalVariantId = item.externalVariantId;
+    const live = externalVariantId ? liveById.get(externalVariantId) : undefined;
+    const inventoryItemId = live?.inventoryItem?.id;
+    if (!ev || ev.unitCost === null || !externalVariantId || !live || !inventoryItemId) {
+      applied.push({ variantId: item.variantId, externalVariantId: externalVariantId ?? "", expectedCost: ev?.unitCost ?? 0, readBackCost: null, verified: false, error: "ELIGIBILITY_EVIDENCE_CHANGED_OR_MISSING" });
+      continue;
+    }
     try {
       const result = await shopifyGraphQL<{ inventoryItemUpdate: { inventoryItem: { id: string; unitCost: { amount: string; currencyCode: string } | null } | null; userErrors: Array<{ message: string }> } }>(
         `mutation TracerSetVerifiedInventoryItemCost($id: ID!, $input: InventoryItemInput!) {
           inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id unitCost { amount currencyCode } } userErrors { message } }
         }`,
-        { id: live.inventoryItem.id, input: { cost: ev.unitCost } },
+        { id: inventoryItemId, input: { cost: ev.unitCost } },
       );
       if (result.inventoryItemUpdate.userErrors.length || !result.inventoryItemUpdate.inventoryItem) {
         throw new Error(result.inventoryItemUpdate.userErrors.map((e) => e.message).join("; ") || "SHOPIFY_COST_UPDATE_RETURNED_NO_ITEM");
       }
       const readback = await shopifyGraphQL<{ node: { id: string; unitCost?: { amount: string; currencyCode: string } | null } | null }>(
         `query TracerVerifyInventoryItemCost($id: ID!) { node(id: $id) { id ... on InventoryItem { unitCost { amount currencyCode } } } }`,
-        { id: live.inventoryItem.id },
+        { id: inventoryItemId },
       );
       const amount = numeric(readback.node?.unitCost?.amount);
       const currency = readback.node?.unitCost?.currencyCode ?? null;
-      applied.push({ variantId: item.variantId, externalVariantId: item.externalVariantId, expectedCost: ev.unitCost!, readBackCost: amount, verified: amount === ev.unitCost && currency === "JPY" });
+      applied.push({ variantId: item.variantId, externalVariantId, expectedCost: ev.unitCost, readBackCost: amount, verified: amount === ev.unitCost && currency === "JPY" });
     } catch (error) {
-      applied.push({ variantId: item.variantId, externalVariantId: item.externalVariantId, expectedCost: ev.unitCost!, readBackCost: null, verified: false, error: error instanceof Error ? error.message.slice(0, 200) : "SHOPIFY_COST_UPDATE_FAILED" });
+      applied.push({ variantId: item.variantId, externalVariantId, expectedCost: ev.unitCost, readBackCost: null, verified: false, error: error instanceof Error ? error.message.slice(0, 200) : "SHOPIFY_COST_UPDATE_FAILED" });
     }
   }
   return NextResponse.json({ ok: applied.every((item) => item.verified), readOnly: false, applied: applied.length, verified: applied.filter((item) => item.verified).length, failed: applied.filter((item) => !item.verified).length, storeCurrency: store.shop.currencyCode, items: applied }, { status: applied.every((item) => item.verified) ? 200 : 207, headers });
