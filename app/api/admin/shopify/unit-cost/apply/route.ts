@@ -36,6 +36,8 @@ type Price = {
 type LiveVariant = {
   id: string;
   sku: string | null;
+  price: string;
+  product: { status: string } | null;
   inventoryItem: { id: string; unitCost: { amount: string; currencyCode: string } | null } | null;
 };
 const numeric = (value: unknown): number | null => {
@@ -164,7 +166,7 @@ export async function POST(request: Request) {
     const ids = readable.slice(offset, offset + 50).map((row) => toShopifyGid("ProductVariant", row.external_variant_id)).filter((id): id is string => Boolean(id));
     const data = await shopifyGraphQL<{ nodes: Array<LiveVariant | null> }>(
       `query TracerUnitCostApplyPreflight($ids: [ID!]!) {
-        nodes(ids: $ids) { ... on ProductVariant { id sku inventoryItem { id unitCost { amount currencyCode } } } }
+        nodes(ids: $ids) { ... on ProductVariant { id sku price product { status } inventoryItem { id unitCost { amount currencyCode } } } }
       }`,
       { ids },
     );
@@ -176,7 +178,10 @@ export async function POST(request: Request) {
     const live = gid ? liveById.get(gid) : null;
     const ev = evidence.get(listing.variant_id);
     const reasons = [...(ev?.reason ?? ["supplier_evidence_missing"])];
+    if (listing.status !== "published") reasons.push("tracer_listing_not_published");
     if (!gid || !live?.inventoryItem?.id) reasons.push("shopify_variant_or_inventory_item_missing");
+    if (live?.product?.status !== "ACTIVE") reasons.push("shopify_product_not_active");
+    if (ev?.sellingPrice === null || ev?.sellingPrice === undefined || numeric(live?.price) !== ev.sellingPrice) reasons.push("shopify_price_mismatch");
     const expectedSku = typeof listing.external_sku === "string" ? listing.external_sku.trim() : "";
     const liveSku = typeof live?.sku === "string" ? live.sku.trim() : "";
     if (!expectedSku || !liveSku) reasons.push("shopify_sku_missing");
