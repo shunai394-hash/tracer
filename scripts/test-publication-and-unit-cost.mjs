@@ -140,5 +140,6 @@ assert.match(costApplyRoute, /amount === ev\.unitCost && currency === "JPY"/, "w
 assert.match(costApplyRoute, /listing\.status !== "published"/, "unit-cost writes must block listings not marked published in TRACER");
 assert.match(costApplyRoute, /live\?\.product\?\.status !== "ACTIVE"/, "unit-cost writes must block non-active live Shopify products");
 assert.match(costApplyRoute, /numeric\(live\?\.price\) !== ev\.sellingPrice/, "unit-cost writes must block when live Shopify price differs from the verified TRACER price");
+assert.match(costApplyRoute, /shopify_unit_cost_conflict/, "unit-cost writes must block overwriting an existing different or non-JPY Shopify unit cost");
 
 console.log("publication repair and unit cost: ok");
