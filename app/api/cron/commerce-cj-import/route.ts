@@ -278,10 +278,12 @@ export async function GET(request: Request) {
     }, { status: 202 });
   }
   const url = new URL(request.url);
-  // Keep discovery aligned with the user's catalog priorities:
-  // women's bags first, then beauty tools, then hair accessories.
+  // Rotate focused CJ searches across the catalog priorities instead of
+  // repeatedly sampling broad queries whose first pages are already known.
   const queryOptions = [
-    "women handbag", "beauty tools", "hair accessories women",
+    "women handbag", "crossbody bag women", "tote bag women", "shoulder bag women", "mini bag women",
+    "beauty tools", "makeup brush cleaner", "makeup organizer",
+    "hair accessories women", "claw clips hair", "satin hair scrunchies", "heatless curling rod",
   ];
   const explicitQuery = url.searchParams.get("q");
   const discoveryBucket = Math.floor(Date.now() / 600_000);
