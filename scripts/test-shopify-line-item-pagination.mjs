@@ -12,7 +12,7 @@ assert.match(source, /existingById\.get\(canonicalShopifyId\(order\.id, "Order"\
 assert.match(source, /if \(\(!knownStatus \|\| knownStatus === "procurement_pending"\) && orders\.length < maxNewOrders\) orders\.push\(order\)/,
   "new orders and procurement-pending retries must be queued; completed orders must be skipped");
 // Shopify Admin GraphQL uses the paid + unfulfilled query filter; status is checked again from returned fields.
-assert.match(source, /financial_status:paid fulfillment_status:unfulfilled/);
+assert.match(source, /financial_status:paid status:open fulfillment_status:unfulfilled/);
 assert.match(source, /displayFinancialStatus displayFulfillmentStatus/);
 assert.match(source, /cancelledAt: string \| null/);
 assert.match(source, /if \(order\.cancelledAt \|\| order\.displayFinancialStatus !== "PAID" \|\| order\.displayFulfillmentStatus !== "UNFULFILLED"\)/);
