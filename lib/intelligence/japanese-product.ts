@@ -11,6 +11,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/women'?s fashion hairpin hairpin hair accessories women/i, "レディース ファッションヘアピン"],
   [/vintage hair accessories headband for women/i, "ヴィンテージデザイン ヘッドバンド"],
   [/qiyue cross border amazon fish scales sequins sponge hair band ball show fashion wide edge headband hair accessories for women/i, "スパンコール装飾 幅広ヘアバンド レディース"],
+  [/foot bag care self-help auxiliary tool/i, "フットケア用補助ツール"],
   [/self-care journal gift set/i, "セルフケアノート ギフトセット"],
   [/creative trend linen plan new self-care notebook/i, "リネン調 セルフケアノート"],
   [/comma facial brush soft hair face cleaning facial cleansing massage brush/i, "竹炭突起付き フェイス洗顔ブラシ"],
