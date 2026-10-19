@@ -40,7 +40,7 @@ export type NewfindCommerceResult = {
  * Same signing, receiver URL and liveness check as the legacy shop_listings
  * delivery. Only `limit` variants are sent per run; failures back off.
  */
-export async function promoteCommerceListingsToNewfind(options: { limit?: number; deadlineAt?: number } = {}): Promise<NewfindCommerceResult> {
+export async function promoteCommerceListingsToNewfind(options: { limit?: number; deadlineAt?: number; variantIds?: string[] } = {}): Promise<NewfindCommerceResult> {
   const cfg = getNewfindConfig();
   const receiverReady = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
   const configured = Boolean(cfg.apiUrl && cfg.webhookSecret);
@@ -49,7 +49,10 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
   const limit = Math.max(1, Math.min(options.limit ?? 2, 10));
   const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
 
-  const listings = (await loadCanonicalCommerceListings()).filter((listing) => listing.canonicalCommerce);
+  const requestedVariantIds = options.variantIds?.length ? new Set(options.variantIds.map((id) => id.trim()).filter(Boolean)) : null;
+  const listings = (await loadCanonicalCommerceListings()).filter((listing) =>
+    listing.canonicalCommerce && (!requestedVariantIds || requestedVariantIds.has(listing.id))
+  );
   result.candidates = listings.length;
   if (listings.length === 0) return result;
 
