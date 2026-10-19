@@ -186,7 +186,7 @@ assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /cj-sandbox-order-test/,
 assert.doesNotMatch(JSON.stringify(vercelConfig.crons), /commerce-cj-sandbox-test/, "temporary clean-core sandbox cron must be removed after one-shot proof");
 const sandboxOnceWorkflow = read(".github/workflows/tracer-cj-sandbox-once.yml");
 assert.ok(sandboxOnceWorkflow.includes('cron: "1 0 16 10 *"'), "one-time CJ sandbox lifecycle proof must run in the reserved quota window");
-assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["*/10 * * * *"], "clean supplier discovery must run every 10 minutes");
+assert.deepEqual(vercelConfig.crons.filter((job) => job.path === "/api/cron/commerce-cj-import").map((job) => job.schedule), ["0,30 * * * *"], "clean supplier discovery runs every 30 minutes to reduce scheduled invocations");
 assert.match(commerceImporter, /const dedupedEvidenceCandidates: ImportCandidate\[\] =/, "stale supplier evidence retries and publication retries must be deduplicated before broad discovery");
 assert.match(commerceImporter, /eq\("source_status", "error"\)/, "failed supplier offers remain eligible for targeted recovery");
 assert.match(commerceImporter, /eq\("source_status", "verified"\)/, "stale verified supplier offers must also be selected for evidence refresh");
