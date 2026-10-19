@@ -123,6 +123,9 @@ assert.match(costApplyRoute, /confirmApply\?: boolean/, "unit-cost writes must r
 assert.match(costApplyRoute, /APPLY_REQUIRES_EXPLICIT_VARIANT_IDS/, "writes must require an exact explicit variant selection");
 assert.match(costApplyRoute, /requestedIds\.length > 100/, "writes must be bounded to 100 variants");
 assert.match(costApplyRoute, /raw\.shippingKnown === true/, "shipping evidence must be explicit, not inferred");
+assert.match(costApplyRoute, /sourceCurrency === "USD" && sourceUnitCost !== null && fxRate !== null && fxRate > 0/, "USD supplier cost must be converted only with a positive recorded FX rate");
+assert.match(costApplyRoute, /Math\.round\(sourceUnitCost \* fxRate \* 100\) \/ 100/, "Shopify unit cost must be converted to JPY cents before write");
+assert.match(costApplyRoute, /supplier_unit_cost_or_fx_rate_unverified/, "unsupported supplier currency or missing FX rate must block a cost write");
 assert.match(costApplyRoute, /price_not_calculated_for_current_supplier_offer/, "profit must be calculated for the current supplier offer");
 assert.match(costApplyRoute, /expectedProfit === null \|\| expectedProfit <= 0/, "non-positive profit must block a cost write");
 assert.match(costApplyRoute, /APPLY_BLOCKED_BY_PREFLIGHT/, "any blocked selected variant must abort the entire apply");
