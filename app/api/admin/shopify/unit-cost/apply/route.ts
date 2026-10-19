@@ -92,7 +92,7 @@ export async function POST(request: Request) {
   for (let offset = 0; offset < selected.length; offset += 100) {
     const batch = selected.slice(offset, offset + 100);
     const { data, error } = await db.from("commerce_variants")
-      .select("id,supplier_product_id,supplier_variant_id,supplier_offers(unit_cost,currency,shipping_cost,source_status,inventory,supplier_product_id,supplier_variant_id,raw_data),commerce_prices(currency,selling_price,expected_profit,calculated_at)")
+      .select("id,supplier_product_id,supplier_variant_id,supplier_offers(unit_cost,currency,shipping_cost,source_status,inventory,raw_data),commerce_prices(currency,selling_price,expected_profit,calculated_at)")
       .in("id", batch.map((row) => row.variant_id));
     if (error) return NextResponse.json({ ok: false, error: "SUPPLIER_EVIDENCE_READ_FAILED" }, { status: 502, headers });
     for (const row of data ?? []) {
