@@ -7,6 +7,7 @@ import {
   VISIBLE_NONCANONICAL_HIDES,
   assessErrorHidden,
   assessHiddenDelete,
+  classifyBaseDetailReadFailure,
   assessVisibleErrorHide,
   assessVisibleHide,
 } from "../lib/channels/base-publication-repair.ts";
@@ -112,8 +113,16 @@ assert.match(route, /const requestedDeletes = scoped/);
 assert.match(route, /invalid_stale_ids/);
 assert.match(route, /orderReferences\(actionIds\)/, "order scan must cover only the requested repair scope");
 assert.match(route, /deleteAllowlistedStaleBaseItem/);
-assert.match(route, /見つかりません/);
-assert.match(route, /already_absent_verified/);
+assert.doesNotMatch(route, /見つかりません/);
+assert.doesNotMatch(route, /already_absent_verified/);
+assert.match(route, /STALE_DETAIL_CONFLICT_WITH_SNAPSHOT/);
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_404:unknown_error"), "absent");
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_400:見つかりません"), "indeterminate");
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_400:invalid_request"), "indeterminate");
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_401:unauthorized"), "indeterminate");
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_403:forbidden"), "indeterminate");
+assert.equal(classifyBaseDetailReadFailure("BASE_ITEM_DETAIL_FAILED:HTTP_500:internal_error"), "indeterminate");
+assert.equal(classifyBaseDetailReadFailure("network timeout"), "indeterminate");
 assert.match(route, /visible: false/);
 assert.doesNotMatch(route, /visible:\s*true/);
 assert.match(costRoute, /unitCost \{ amount currencyCode \}/);

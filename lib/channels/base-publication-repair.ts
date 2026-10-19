@@ -45,6 +45,12 @@ export const ERROR_HIDDEN_LEAVE: Array<{ itemId: string; sku: string; price: num
   { itemId: "163182796", sku: "TRC-FC41A1D350304A6899D60549", price: 12566 },
 ];
 
+/** Only an authoritative HTTP 404 is treated as absent. HTTP 400 and all other
+ * statuses remain unknown because error text is not a reliable existence signal. */
+export function classifyBaseDetailReadFailure(message: string): "absent" | "indeterminate" {
+  return /(?:^|:)HTTP_404(?::|$)/.test(message) ? "absent" : "indeterminate";
+}
+
 function same(item: PublicationRepairItem | undefined, id: string, sku: string, price: number, visible: boolean) {
   if (!item || item.itemId !== id) return "item_missing";
   if (item.sku !== sku) return "sku_mismatch";
