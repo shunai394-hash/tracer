@@ -119,6 +119,7 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_variant_link_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-canonical-supplier-variant-links.sql
+      - run: npm run test:base-targeted-readback
       - run: npm run test:base-stale-item-deletion-contract
       - run: npm run test:archive-listing-republication
       - run: npm run test:archived-listing-republication-guards
