@@ -220,9 +220,13 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       image_url: validHttpUrl(listingImage) ? listingImage : null,
       metadata: listingMetadata,
     } as Record<string, unknown> : undefined);
-    const sourceTitle = (typeof listing?.title === "string" && listing.title.trim()
-      ? listing.title
-      : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
+    const sourceTitle = (typeof listingMetadata.source_title === "string" && listingMetadata.source_title.trim()
+      ? listingMetadata.source_title
+      : typeof listingMetadata.sourceTitle === "string" && listingMetadata.sourceTitle.trim()
+        ? listingMetadata.sourceTitle
+        : typeof listing?.title === "string" && listing.title.trim()
+          ? listing.title
+          : typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
     // A concrete supplier title must not mask a generic or workflow-derived
     // product-master title (for example "トレンド・seeded_dueアイテム").
     const masterTitle = (typeof base?.normalized_title === "string" ? base.normalized_title : "").normalize("NFKC").trim();
