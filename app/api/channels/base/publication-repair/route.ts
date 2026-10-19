@@ -12,6 +12,7 @@ import {
   listBaseOrders,
 } from "@/lib/channels/base";
 import {
+  classifyBaseDetailReadFailure,
   ERROR_HIDDEN_LEAVE,
   HIDDEN_DUPLICATE_DELETES,
   VISIBLE_ERROR_HIDES,
@@ -48,8 +49,8 @@ async function readDetail(itemId: string): Promise<PublicationRepairItem | "abse
     return asItem(await getBaseItemDetail(itemId));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("HTTP_404") || (message.includes("HTTP_400") && message.includes("見つかりません"))) return "absent";
-    throw error;
+    if (classifyBaseDetailReadFailure(message) === "absent") return "absent";
+    throw new Error("BASE_ITEM_DETAIL_READ_INDETERMINATE");
   }
 }
 
@@ -195,11 +196,9 @@ export async function POST(request: Request) {
       const canonicalDetail = await readDetail(pair.canonicalId);
       if (canonicalDetail === "absent") throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
       if (staleDetail === "absent") {
-        if (canonicalDetail.sku !== pair.sku || canonicalDetail.price !== pair.price || canonicalDetail.visible !== true) {
-          throw new Error(`CANONICAL_READBACK_FAILED:${pair.canonicalId}`);
-        }
-        results.push({ itemId: pair.staleId, outcome: "already_absent_verified" });
-        continue;
+        // The complete preflight snapshot contained this item. A later 404 conflicts
+        // with that evidence, so stop rather than interpreting the discrepancy as success.
+        throw new Error(`STALE_DETAIL_CONFLICT_WITH_SNAPSHOT:${pair.staleId}`);
       }
       const before = new Map<string, PublicationRepairItem>([
         [staleDetail.itemId, staleDetail],
