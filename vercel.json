@@ -4,11 +4,11 @@
   "crons": [
     {
       "path": "/api/cron/commerce-base-fulfillment",
-      "schedule": "14,44 * * * *"
+      "schedule": "14,29,44,59 * * * *"
     },
     {
       "path": "/api/cron/commerce-base-orders",
-      "schedule": "1,31 * * * *"
+      "schedule": "1,16,31,46 * * * *"
     },
     {
       "path": "/api/cron/commerce-cj-import",
@@ -16,7 +16,7 @@
     },
     {
       "path": "/api/cron/commerce-procurement",
-      "schedule": "13,43 * * * *"
+      "schedule": "13,28,43,58 * * * *"
     },
     {
       "path": "/api/cron/commerce-reprice-existing",
@@ -24,31 +24,31 @@
     },
     {
       "path": "/api/cron/commerce-publish-base",
-      "schedule": "5,35 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/commerce-publish-shopify",
-      "schedule": "6,36 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/patrol-ai",
-      "schedule": "10,40 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/shopify-fulfillment",
-      "schedule": "7,37 * * * *"
+      "schedule": "7,22,37,52 * * * *"
     },
     {
       "path": "/api/cron/shopify-orders",
-      "schedule": "2,32 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/base-legacy-price-reconcile",
-      "schedule": "17,47 * * * *"
+      "schedule": "2,17,32,47 * * * *"
     },
     {
       "path": "/api/cron/shopify-publish",
-      "schedule": "19,49 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }
