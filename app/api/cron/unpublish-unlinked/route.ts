@@ -187,6 +187,7 @@ export async function GET(request: Request) {
       .from("channel_listings")
       .select("external_product_id,external_sku,status,last_error")
       .eq("channel", "base")
+      .eq("status", "error")
       .like("last_error", "supplier_offer_not_fulfillable%")
       .limit(100);
     if (failedBaseReadError) {
