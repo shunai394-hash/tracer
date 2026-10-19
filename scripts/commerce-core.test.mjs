@@ -378,11 +378,11 @@ test("clean commerce cron schedule preserves canonical routes and the required f
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
   assert.equal(schedules.get("/api/cron/commerce-cj-import"), "0,30 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-publish-base"), "*/30 * * * *");
-  assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/30 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-publish-base"), "*/5 * * * *");
+  assert.equal(schedules.get("/api/cron/commerce-publish-shopify"), "*/5 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,16,31,46 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,28,43,58 * * * *");
-  assert.equal(schedules.get("/api/cron/shopify-publish"), "*/30 * * * *", "Shopify published-listing reconciliation must run every thirty minutes");
+  assert.equal(schedules.get("/api/cron/shopify-publish"), "*/5 * * * *", "Shopify published-listing reconciliation must run every five minutes");
   assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native pipeline must not schedule marketplace sourcing observation");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
