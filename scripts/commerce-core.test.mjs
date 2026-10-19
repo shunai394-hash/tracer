@@ -179,7 +179,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /validOffers\.find\(\(candidateOffer\) => String\(candidateOffer\.id\) === currentPriceOfferId\)/);
   assert.doesNotMatch(publish, /candidate\.commerce_prices\.supplier_offer_id/);
 });
-test("published listings without stock, shipping, or profit are removed from sale", async () => {
+test("published listings without stock, shipping, or profit are removed and externally verified", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const start = publish.indexOf("async function unpublishUnfulfillableListings");
   const end = publish.indexOf("export async function syncCommerceListings", start);
@@ -187,8 +187,13 @@ test("published listings without stock, shipping, or profit are removed from sal
   assert.match(publish, /const identityCleanup = await unpublishUnfulfillableListings\(channel, db\)/);
   assert.match(audit, /missingSaleEvidence\(/);
   assert.match(audit, /best\.missing\.length === 0/);
+  assert.match(audit, /priceFresh/);
+  assert.match(audit, /Number\(price\.margin_rate\) < 0\.5/);
   assert.match(audit, /stock: 0, visible: false/);
+  assert.match(audit, /base_unpublish_readback_mismatch/);
   assert.match(audit, /status: "DRAFT"/);
+  assert.match(audit, /shopify_unpublish_readback_mismatch/);
+  assert.match(audit, /shopify_inventory_zero_failed/);
   assert.match(audit, /supplier_offer_no_longer_fulfillable:/);
   assert.doesNotMatch(audit, /\.delete\(/);
 });
