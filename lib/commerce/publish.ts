@@ -546,6 +546,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       getStorefrontStockCap(),
     );
     if (!isJapaneseProductTitle(title)) {
+      // Do not let a known-invalid generic title pin the oldest candidate at
+      // the front of every scheduled batch. Keep the listing unpublished/error
+      // and rotate its retry timestamp; never invent a product title.
+      const retryAt = new Date().toISOString();
+      const { error: invalidTitleStateError } = await db.from("channel_listings").update({
+        status: "error",
+        last_error: "japanese_product_title_invalid",
+        last_synced_at: retryAt,
+        updated_at: retryAt,
+      }).eq("channel", channel).eq("variant_id", candidate.id);
+      if (invalidTitleStateError) {
+        results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_state_save_failed:" + invalidTitleStateError.message });
+        continue;
+      }
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
