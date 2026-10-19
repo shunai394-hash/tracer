@@ -537,7 +537,8 @@ async function syncListingRows(
             descriptionHtml: productInput.descriptionHtml,
             handle: productInput.handle,
             price: productInput.price,
-            variantId: existing.variants.nodes[0]?.id || null,
+            // Prefer the persisted Shopify variant ID; admin.ts corroborates it with the TRACER SKU and fails closed on conflict.
+            variantId: row.shopify_variant_id || null,
             sku: productInput.sku,
             imageUrl: existing.media?.nodes?.length ? null : row.image_url,
           })
