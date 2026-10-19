@@ -2,6 +2,7 @@ import "server-only";
 
 import crypto from "node:crypto";
 import { getShopifyConfig } from "@/lib/config/env";
+import { resolveShopifyVariantIdentity } from "@/lib/shopify/variant-identity";
 
 export type ShopifyProduct = {
   id: string;
@@ -400,8 +401,13 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
-  const variantId = input.variantId ?? product.variants?.nodes?.[0]?.id;
-  if (!variantId) throw new Error("Shopify product has no variant");
+  const variantResolution = resolveShopifyVariantIdentity(
+    product.variants?.nodes ?? [],
+    input.sku,
+    input.variantId,
+  );
+  if (!variantResolution.ok) throw new Error(`shopify_${variantResolution.reason}`);
+  const variantId = variantResolution.variant.id;
 
   const variantData = await shopifyGraphQL<{
     productVariantsBulkUpdate: { productVariants: Array<{ id: string; sku: string | null; price: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
