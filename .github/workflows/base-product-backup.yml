@@ -278,3 +278,13 @@ jobs:
             --title "[TRACER BASE mapping audit] Run $GITHUB_RUN_ID" \
             --body-file base-reconciliation-summary.md
 
+      - name: Preserve read-only BASE audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-base-audit-${{ github.run_id }}
+          path: |
+            tracer-base-products-*.json
+            tracer-base-reconciliation-*.json
+            tracer-base-identity-repair-dry-run-*.json
+          if-no-files-found: error
+          retention-days: 14
