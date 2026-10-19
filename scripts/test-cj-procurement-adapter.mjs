@@ -33,7 +33,7 @@ assert.match(commerceImporter, /木製ハンドルのフェイスケアブラシ
 assert.match(commerceImporter, /折りたたみ式シリコン製メイクブラシ洗浄パッド/, "specific accessory titles must be available to the importer");
 assert.match(commerceImporter, /スタイル/);
 assert.match(commerceImporter, /japan_compliance_unverified_disinfection_cabinet/);
-assert.match(commerceImporter, /const queryOptions = \[\s*"women handbag", "beauty tools", "hair accessories women",\s*\]/, "CJ discovery must prioritize bags, beauty tools and hair accessories");
+assert.match(commerceImporter, /"women handbag", "crossbody bag women", "tote bag women", "shoulder bag women", "mini bag women",\s*"beauty tools", "makeup brush cleaner", "makeup organizer",\s*"hair accessories women", "claw clips hair", "satin hair scrunchies", "heatless curling rod",/, "CJ discovery must rotate focused searches across bags, beauty tools and hair accessories");
 assert.match(commerceImporter, /complianceBlocked/);
 assert.match(commerceImporter, /if \(Number\.isFinite\(shippingCostForPricing\) && shippingCostForPricing >= 0\)/, "mapped variants must receive a profit calculation using live freight or the documented reserve, even if cached stock is unknown");
 assert.doesNotMatch(commerceImporter, /if \(shipping !== null && shipping >= 0\)\s*\{\s*await recalculatePrice/, "missing live freight must not skip repricing when a reserve is available");
