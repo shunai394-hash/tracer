@@ -5,25 +5,30 @@ const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.u
 const crons = config.crons ?? [];
 assert.equal(crons.length, 12, "all configured cron jobs must remain present");
 const expected = new Map([
-  ["/api/cron/commerce-base-fulfillment", "14,44 * * * *"],
-  ["/api/cron/commerce-base-orders", "1,31 * * * *"],
+  ["/api/cron/commerce-base-fulfillment", "14,29,44,59 * * * *"],
+  ["/api/cron/commerce-base-orders", "1,16,31,46 * * * *"],
   ["/api/cron/commerce-cj-import", "0,30 * * * *"],
-  ["/api/cron/commerce-procurement", "13,43 * * * *"],
+  ["/api/cron/commerce-procurement", "13,28,43,58 * * * *"],
   ["/api/cron/commerce-reprice-existing", "4,34 * * * *"],
-  ["/api/cron/commerce-publish-base", "5,35 * * * *"],
-  ["/api/cron/commerce-publish-shopify", "6,36 * * * *"],
-  ["/api/cron/patrol-ai", "10,40 * * * *"],
-  ["/api/cron/shopify-fulfillment", "7,37 * * * *"],
-  ["/api/cron/shopify-orders", "2,32 * * * *"],
-  ["/api/cron/base-legacy-price-reconcile", "17,47 * * * *"],
-  ["/api/cron/shopify-publish", "19,49 * * * *"],
+  ["/api/cron/commerce-publish-base", "*/5 * * * *"],
+  ["/api/cron/commerce-publish-shopify", "*/5 * * * *"],
+  ["/api/cron/patrol-ai", "*/5 * * * *"],
+  ["/api/cron/shopify-fulfillment", "7,22,37,52 * * * *"],
+  ["/api/cron/shopify-orders", "*/5 * * * *"],
+  ["/api/cron/base-legacy-price-reconcile", "2,17,32,47 * * * *"],
+  ["/api/cron/shopify-publish", "*/5 * * * *"],
 ]);
 assert.equal(new Set(crons.map((entry) => entry.path)).size, crons.length, "cron paths must be unique");
+assert.deepEqual(new Set(crons.map((entry) => entry.path)), new Set(expected.keys()), "expected cron paths must remain configured");
 for (const entry of crons) {
-  assert.equal(expected.get(entry.path), entry.schedule, `${entry.path} must use its staggered thirty-minute cadence`);
-  const minuteValues = entry.schedule.split(" ")[0].split(",").map(Number);
-  assert.equal(minuteValues.length, 2, `${entry.path} must run exactly twice per hour`);
-  assert.ok(minuteValues.every((minute) => Number.isInteger(minute) && minute >= 0 && minute <= 59), `${entry.path} must use explicit minute values`);
-  assert.equal((minuteValues[1] - minuteValues[0] + 60) % 60, 30, `${entry.path} executions must be thirty minutes apart`);
+  assert.equal(expected.get(entry.path), entry.schedule, `${entry.path} must use its approved cadence`);
 }
-console.log("TRACER cron schedule invariants: all 12 cron jobs run twice hourly, thirty minutes apart");
+assert.equal(expected.get("/api/cron/commerce-cj-import"), "0,30 * * * *", "CJ import must run every thirty minutes");
+for (const path of [
+  "/api/cron/commerce-publish-base",
+  "/api/cron/commerce-publish-shopify",
+  "/api/cron/shopify-publish",
+]) {
+  assert.equal(expected.get(path), "*/5 * * * *", `${path} must publish every five minutes`);
+}
+console.log("TRACER cron schedule invariants: storefront publishing every 5 minutes; CJ import every 30 minutes; other schedules preserved");
