@@ -22,7 +22,7 @@ assert.ok(route.includes("finiteNumberOrNull(item.price)") && route.includes("fi
 assert.ok(route.includes("finiteNumberOrNull(row.selling_price)"), "missing stored price must not be interpreted as zero");
 assert.ok(route.includes("([A-Z0-9_]+?)"), "BASE detail error code parsing must not greedily consume the HTTP status suffix");
 
-const parsed404 = "BASE_ITEM_DETAIL_FAILED:HTTP_404:not found".match(/^([A-Z0-9_]+?)(?::HTTP_(\\d{3}))?(?::|$)/);
+const parsed404 = "BASE_ITEM_DETAIL_FAILED:HTTP_404:not found".match(/^([A-Z0-9_]+?)(?::HTTP_(\d{3}))?(?::|$)/);
 assert.equal(parsed404?.[1], "BASE_ITEM_DETAIL_FAILED");
 assert.equal(parsed404?.[2], "404", "a real BASE 404 must be recognized as not found");
 
