@@ -104,6 +104,8 @@ assert.match(demandSupplier, /Missing stable supplier name or product ID; canoni
 assert.match(helper, /offset \+= 100/, "identity lookups must batch large supplier ID sets");
 assert.match(shopify, /getPublishableSupplierListingStatuses/, "Shopify publication must require a linked or freshly verified native supplier listing");
 assert.match(shopify, /supplierStatuses\.has\(String\(row\.supplier_listing_id\)\)/, "Shopify must reject supplier listings without eligible identity evidence");
+assert.match(shopify, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(row\.supplier_listing_id\)\) === "native_cj_verified"/, "Shopify may repair stale local flags only from fresh exact native CJ evidence");
+assert.match(shopify, /orderable: true,[\s\S]*?tracking_available: true/, "Shopify recovery must restore both flags only after supplier verification");
 assert.doesNotMatch(shopify, /supplier_not_cj/, "profitable linked products from any supplier may be listed");
 assert.match(shopify, /supplier_variant_missing/, "exact supplier product and variant IDs remain required");
 assert.match(shopify, /inventory_not_positive/, "storefront inventory must be positive");
@@ -113,6 +115,7 @@ assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.n
 assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
 assert.match(base, /listing\.orderable !== true/, "BASE publication requires supplier orderability");
 assert.match(base, /listing\.tracking_available !== true/, "BASE publication requires tracking capability");
+assert.match(base, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(listing\.supplier_listing_id\)\) === "native_cj_verified"/, "BASE may repair stale flags only from fresh exact native CJ evidence");
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
@@ -123,6 +126,7 @@ assert.match(route, /requireAutomationAuth/);
 assert.match(route, /TRACER UNLINKED RECONCILIATION/, "production cleanup progress must be observable with count-only telemetry");
 assert.match(route, /published: false/);
 assert.match(route, /row\.orderable !== true \|\| row\.tracking_available !== true/, "unlinked-channel reconciliation must include supplier offers without an order path or tracking");
+assert.match(route, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(row\.supplier_listing_id\)\) === "native_cj_verified"/, "cleanup must not permanently block a listing after exact native CJ verification is fresh");
 assert.match(route, /fetchBaseItemsSnapshot/, "BASE reconciliation must inspect the complete external item catalog");
 assert.match(route, /eligibleIdentifiers\.has\(identifier\)/, "BASE must retain only exact TRC identifiers for currently publishable listings");
 assert.match(route, /editBaseItem\([\s\S]*?visible: false/, "unmatched BASE items must be hidden, not physically deleted");
