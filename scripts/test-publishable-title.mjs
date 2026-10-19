@@ -184,6 +184,9 @@ assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Ha
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
 assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
+assert.match(supplySelector, /if \(!isPublishableCatalogTitle\(title\)\)/, "final listing write must reject generic fallback titles");
+assert.match(supplySelector, /if \(!isPublishableCatalogDescription\(item\.description\)\)/, "final listing write must reject unusable descriptions");
+assert.doesNotMatch(supplySelector, /\?\? String\(item\.base\.normalized_title \?\? \("TRACER product "/, "generic generated title fallback must not bypass title validation");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
  
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
@@ -204,6 +207,7 @@ assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failu
 assert.doesNotMatch(base, /title: "販売停止中の商品"/, "BASE reconciliation must never replace the buyer-facing product title with a workflow status");
 assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "商品情報確認中"/, "BASE reconciliation must preserve the existing title when a listing is hidden");
 assert.match(base, /const activeListings = \(listings \?\? \[\]\)\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry supplier-linked hidden rows instead of permanently excluding them");
+assert.match(base, /const activeListings = publishableListings\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry freshly verified native CJ rows using corrected current supplier flags");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
