@@ -428,7 +428,7 @@ export async function GET(request: Request) {
           .eq("published", true).ilike("supplier_name", "cj").limit(1000),
       ]);
       if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || publicationErrorRowsError || cjListingRowsError || publishedShopRowsError) {
-        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? publicationErrorRowsError?.message ?? cjListingRowsError?.message));
+        throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? publicationErrorRowsError?.message ?? cjListingRowsError?.message ?? publishedShopRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
       const publicationErrorVariantIds = new Set((publicationErrorRows ?? []).map((row) => String(row.variant_id)));
