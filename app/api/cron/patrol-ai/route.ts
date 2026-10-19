@@ -439,6 +439,13 @@ export async function GET(request: Request) {
         newSupplierProcurementOrdersThisRun: progress.newSupplierProcurementOrders,
         endToEndOrderFlowObservedThisRun: progress.newCommerceOrders > 0 && progress.newSupplierProcurementOrders > 0,
       },
+      // Keep the intelligence job result separate from real commerce readiness.
+      // A green patrol is not an end-to-end commerce success until both order and
+      // supplier-procurement records exist; do not infer completion from HTTP 200.
+      commerceEndToEndComplete: pipeline.complete
+        && errors.length === 0
+        && after.commerceOrders > 0
+        && after.supplierProcurementOrders > 0,
       actions,
       errors,
       message: errors.length
