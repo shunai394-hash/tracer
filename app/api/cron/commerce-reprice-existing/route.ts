@@ -239,10 +239,8 @@ export async function GET(request: Request) {
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
-        // Safety cleanup must also run for published variants with no offer at all.
-        // A missing offer has no canonical price, but must not remain purchasable.
-        if (row.status === "published" && publishedMissingOfferVariantIds.has(variantId)) return true;
         // Disable unverified supplier listings once, then stop re-queueing the safety state.
+        if (row.status === "published" && publishedMissingOfferVariantIds.has(variantId)) return true;
         if (canonicalPrice !== undefined && unverifiedVariantIds.has(variantId)) {
           return row.status === "published" &&
             !String(row.last_error ?? "").startsWith("supplier_offer_not_fulfillable:");
