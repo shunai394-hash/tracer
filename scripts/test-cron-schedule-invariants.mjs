@@ -17,7 +17,11 @@ for (const entry of crons) {
   assert.notEqual(minutes, "*/5", `${entry.path} must not run every five minutes`);
   assert.notEqual(minutes, "*/15", `${entry.path} must not run every fifteen minutes`);
   const minuteValues = minutes.split(",").map(Number);
+  if (entry.path === "/api/cron/shopify-fulfillment") {
+    assert.equal(minutes, "7,22,37,52", "Shopify tracking sync must run every fifteen minutes");
+    continue;
+  }
   assert.equal(minuteValues.length, 2, `${entry.path} must run exactly twice per hour`);
   assert.equal((minuteValues[1] - minuteValues[0] + 60) % 60, 30, `${entry.path} executions must be thirty minutes apart`);
 }
-console.log("TRACER cron schedule invariants: all cron jobs are staggered to twice hourly");
+console.log("TRACER cron schedule invariants: cost-heavy cron jobs are staggered to twice hourly; Shopify tracking sync remains every fifteen minutes");
