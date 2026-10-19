@@ -82,9 +82,11 @@ export async function GET(request: Request) {
           const live = await shopifyGraphQL<{
             productsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
             activeProductsCount: { count: number; precision: "EXACT" | "AT_LEAST" };
+            ordersCount: { count: number; precision: "EXACT" | "AT_LEAST" };
           }>(`query TracerReadOnlyCommerceStatus {
             productsCount(limit: 10000) { count precision }
             activeProductsCount: productsCount(query: "status:active", limit: 10000) { count precision }
+            ordersCount(limit: 10000) { count precision }
           }`);
           return {
             ok: live.productsCount.precision === "EXACT" && live.activeProductsCount.precision === "EXACT",
@@ -94,6 +96,9 @@ export async function GET(request: Request) {
             countSource: "shopify_products_count_api",
             countPrecision: live.productsCount.precision,
             activeCountPrecision: live.activeProductsCount.precision,
+            ordersCount: live.ordersCount.count,
+            ordersCountPrecision: live.ordersCount.precision,
+            ordersCountSource: "shopify_orders_count_api",
           };
         } catch (error) {
           return { ok: false, configured: true, error: error instanceof Error ? error.message.split("\n")[0].slice(0, 160) : "shopify_probe_failed" };

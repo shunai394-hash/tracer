@@ -15,4 +15,7 @@ assert.match(route, /cron_runs/);
 assert.match(route, /last24Hours/);
 assert.match(route, /Cache-Control.*no-store/);
 assert.doesNotMatch(route, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
-console.log("Read-only commerce status endpoint contract: 13 assertions passed");
+assert.match(route, /ordersCount\(limit: 10000\) \{ count precision \}/);
+assert.match(route, /ordersCountSource: "shopify_orders_count_api"/);
+assert.doesNotMatch(route, /syncPaidShopifyOrders/);
+console.log("Read-only commerce status endpoint contract: 16 assertions passed");
