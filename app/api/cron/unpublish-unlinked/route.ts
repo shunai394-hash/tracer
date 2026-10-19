@@ -239,6 +239,50 @@ export async function GET(request: Request) {
     baseUnfulfillable.skipped = 1;
   }
 
+  // Read back the explicitly tracked 15 BASE listings that were previously hidden
+  // for unverified supplier identity. This is read-only: report actual visibility
+  // and stock from BASE, without changing the item or assuming a prior write worked.
+  const targetedBaseReadbackIds = [
+    "163179909", "163179921", "163179923", "163196446", "163197189",
+    "163197190", "163197185", "163196460", "163196454", "163197179",
+    "163196468", "163197182", "163179913", "163179920", "163159140",
+  ];
+  const targetedBaseReadback: Array<{
+    itemId: string; ok: boolean; visible: boolean | null; stock: number | null; reason?: string;
+  }> = [];
+  if (isBaseConfigured()) {
+    for (const itemId of targetedBaseReadbackIds) {
+      try {
+        const item = await getBaseItemDetail(itemId);
+        const visibleValue = item.visible;
+        const visible = visibleValue === true || visibleValue === 1 || visibleValue === "1"
+          ? true
+          : visibleValue === false || visibleValue === 0 || visibleValue === "0" ? false : null;
+        const rawStock = Number(item.stock);
+        const stock = Number.isFinite(rawStock) ? rawStock : null;
+        const ok = visible === false && stock === 0;
+        targetedBaseReadback.push({ itemId, ok, visible, stock, ...(ok ? {} : { reason: "visibility_or_stock_not_confirmed" }) });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        const match = message.match(/^([A-Z0-9_]+?)(?::HTTP_(\\d{3}))?(?::|$)/);
+        targetedBaseReadback.push({
+          itemId, ok: false, visible: null, stock: null,
+          reason: match ? [match[1], match[2] ? `HTTP_${match[2]}` : null].filter(Boolean).join(":") : "BASE_ITEM_DETAIL_FAILED",
+        });
+      }
+    }
+  } else {
+    for (const itemId of targetedBaseReadbackIds) {
+      targetedBaseReadback.push({ itemId, ok: false, visible: null, stock: null, reason: "base_oauth_not_configured" });
+    }
+  }
+  const targetedBaseReadbackSummary = {
+    checked: targetedBaseReadback.length,
+    confirmedHiddenStockZero: targetedBaseReadback.filter((row) => row.ok).length,
+    notConfirmed: targetedBaseReadback.filter((row) => !row.ok).length,
+  };
+  console.info("[TRACER TARGETED BASE READBACK]", { ...targetedBaseReadbackSummary, results: targetedBaseReadback });
+
   if (errors.length > 0) {
     console.error("[unpublish-unlinked] external channel reconciliation incomplete", {
       candidatesChecked: (data ?? []).length,
