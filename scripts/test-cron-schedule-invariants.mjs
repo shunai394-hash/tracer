@@ -14,22 +14,11 @@ assert.ok(priceReconcile, "existing storefront price reconciliation must be sche
 assert.equal(priceReconcile.schedule, "4,34 * * * *", "price reconciliation must run twice hourly, staggered after CJ import to reduce execution cost");
 for (const entry of crons) {
   const minutes = entry.schedule.split(" ")[0];
-  if (["/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-orders"].includes(entry.path)) {
-    assert.equal(entry.schedule, "*/5 * * * *", `${entry.path} must remain on the five-minute storefront/order cadence`);
-    continue;
-  }
   assert.notEqual(minutes, "*/5", `${entry.path} must not run every five minutes`);
   assert.notEqual(minutes, "*/15", `${entry.path} must not run every fifteen minutes`);
   const minuteValues = minutes.split(",").map(Number);
-  if (entry.path === "/api/cron/shopify-fulfillment") {
-    assert.equal(minutes, "7,22,37,52", "Shopify tracking sync must run every fifteen minutes");
-    continue;
-  }
-  if (entry.path === "/api/cron/commerce-base-fulfillment") {
-    assert.equal(minutes, "14,29,44,59", "BASE tracking sync must run every fifteen minutes");
-    continue;
-  }
   assert.equal(minuteValues.length, 2, `${entry.path} must run exactly twice per hour`);
+  assert.ok(minuteValues.every((minute) => Number.isInteger(minute) && minute >= 0 && minute <= 59), `${entry.path} must use explicit minute values`);
   assert.equal((minuteValues[1] - minuteValues[0] + 60) % 60, 30, `${entry.path} executions must be thirty minutes apart`);
 }
-console.log("TRACER cron schedule invariants: cost-heavy cron jobs are staggered to twice hourly; Shopify tracking sync remains every fifteen minutes");
+console.log("TRACER cron schedule invariants: every configured cron runs twice hourly, thirty minutes apart");
