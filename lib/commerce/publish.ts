@@ -98,18 +98,15 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
       const hasPublishableLinkedOffer = offers.some((offer) => {
-        const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
         // Only supplier identity failures trigger automatic unpublishing.
-        // Stock, freight, tracking, freshness and profit are checked before procurement,
+        // Stock, freight, tracking, freshness, price and profit are checked before procurement,
         // not used to hide a correctly identified catalog product.
         return Boolean(
-          offer.supplier_product_id &&
-          offer.supplier_variant_id &&
-          nativeIdsValid &&
-          price &&
-          price.supplier_offer_id === offer.id
+          typeof offer.supplier_product_id === "string" && offer.supplier_product_id.trim() &&
+          typeof offer.supplier_variant_id === "string" && offer.supplier_variant_id.trim() &&
+          nativeIdsValid
         );
       });
       if (hasPublishableLinkedOffer) {
