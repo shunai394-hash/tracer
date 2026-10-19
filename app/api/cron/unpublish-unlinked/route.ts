@@ -211,8 +211,9 @@ export async function GET(request: Request) {
           }
           await editBaseItem({ itemId, title, detail, price, stock: 0, visible: false });
           const verified = await getBaseItemDetail(itemId);
-          const visible = verified.visible === true || verified.visible === 1 || verified.visible === "1";
-          if (visible) throw new Error("base_item_still_visible_after_hide");
+          const visibleValue = verified.visible;
+          const hiddenVerified = visibleValue === false || visibleValue === 0 || visibleValue === "0";
+          if (!hiddenVerified) throw new Error("base_item_visibility_not_confirmed_hidden_after_hide");
           const { error: markError } = await db.from("channel_listings")
             .update({ status: "hidden_unfulfillable", last_error: "supplier_offer_not_fulfillable_hidden_verified", last_synced_at: new Date().toISOString() })
             .eq("channel", "base")
