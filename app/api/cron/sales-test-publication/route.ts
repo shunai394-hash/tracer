@@ -230,8 +230,28 @@ export async function GET(request: Request) {
     const missingOpportunityIds = candidateProductIds.filter(
       (id) => canonicalProductIds.has(id) && !opportunityProductIds.has(id),
     );
+    const opportunityEnrichment: { attempted: number; processed: number; failed: boolean; error?: string } = {
+      attempted: 0,
+      processed: 0,
+      failed: false,
+    };
     if (missingOpportunityIds.length > 0 && !dryRun) {
-      await buildOpportunityInBatches(missingOpportunityIds.slice(0, 30), 10);
+      const enrichmentIds = missingOpportunityIds.slice(0, 30);
+      opportunityEnrichment.attempted = enrichmentIds.length;
+      try {
+        const result = await buildOpportunityInBatches(enrichmentIds, 10);
+        opportunityEnrichment.processed = result.processed;
+      } catch (error) {
+        // Intelligence enrichment is a recoverable side-stage. A provider 400 or
+        // transient AI outage must not abort the canonical supplier eligibility
+        // evaluation for products whose evidence is already complete.
+        opportunityEnrichment.failed = true;
+        opportunityEnrichment.error = error instanceof Error ? error.message : String(error);
+        console.error("[TRACER OPPORTUNITY ENRICHMENT DEFERRED]", {
+          attempted: opportunityEnrichment.attempted,
+          error: opportunityEnrichment.error.slice(0, 240),
+        });
+      }
     }
     // CJ-native catalog products are valid first-party supplier identities when the exact
     // supplier product + variant, stock, price, JP delivery, tracking, orderability and
@@ -298,7 +318,19 @@ export async function GET(request: Request) {
     if (readyError) throw new Error(readyError.message);
     const candidateIds = (readyRows ?? []).map((row) => String(row.id));
     const marketProductIds = Array.from(new Set((readyRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean)));
-    if (marketProductIds.length > 0) await buildOpportunityInBatches(marketProductIds, 10);
+    if (marketProductIds.length > 0) {
+      try {
+        await buildOpportunityInBatches(marketProductIds, 10);
+      } catch (error) {
+        // The legacy discovery fallback must not abort publication for unrelated
+        // candidates when optional AI enrichment fails; downstream selectors still
+        // reject products without the required evidence.
+        console.error("[TRACER LEGACY OPPORTUNITY ENRICHMENT DEFERRED]", {
+          attempted: marketProductIds.length,
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 240),
+        });
+      }
+    }
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
