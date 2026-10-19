@@ -112,7 +112,15 @@ export async function GET(request: Request) {
           visible: externalVisible,
           stock: externalStock,
         },
-        mappedListings: mappedListings.map(compareListing),
+        mappedListings: mappedListings.map((listing) => ({
+          ...listing,
+          skuMatches: Boolean(listing.expectedSku && externalSku && listing.expectedSku === externalSku),
+          priceDifference: listing.expectedPrice !== null && externalPrice !== null
+            ? externalPrice - listing.expectedPrice
+            : null,
+          visibilityMatches: listing.status === "published" ? externalVisible === true
+            : listing.status ? externalVisible === false : null,
+        })),
         listingsByActualSku: skuListings.map(compareListing),
         skuLookupError,
         readError: null,
