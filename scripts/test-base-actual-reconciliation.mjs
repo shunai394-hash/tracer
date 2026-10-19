@@ -109,6 +109,17 @@ assert.match(route, /from\("shop_listings"\)/,
   "BASE reconciliation must include legacy shop_listings exact-ID evidence");
 assert.match(route, /legacy-shop-listing:/,
   "legacy candidates must be clearly namespaced and remain distinct from commerce-native rows");
+assert.match(route, /externalSku: "TRC-" \+ String\(row\.id\)/);
+const legacyId = "7a10656f-5907-47a9-a636-a174f3ebad63";
+const legacy = reconcileBaseItems([
+  { item_id: "163159140", identifier: `TRC-${legacyId}`, title: "Legacy", price: 1936, visible: 1 },
+  { item_id: "163159141", identifier: "TRC-not-the-row-id", title: "Legacy SKU differs", price: 1936, visible: 1 },
+], [
+  { id: `legacy-shop-listing:${legacyId}`, variantId: null, externalProductId: "163159140", externalVariantId: null, externalSku: `TRC-${legacyId}`, sellingPrice: 1936, status: "published" },
+  { id: "legacy-shop-listing:other", variantId: null, externalProductId: "163159141", externalVariantId: null, externalSku: "TRC-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", sellingPrice: 1936, status: "published" },
+]);
+assert.equal(legacy.items.find((item) => item.baseItemId === "163159140").skuMatches, true);
+assert.equal(legacy.items.find((item) => item.baseItemId === "163159141").skuMatches, false);
 assert.doesNotMatch(route, /\.delete\(|editBaseItem\(|createBaseItem\(/);
 const grant = readFileSync(new URL("../supabase/migrations/20261018020000_channel_price_reconciliation_audit_grants.sql", import.meta.url), "utf8");
 assert.match(grant, /42501/);
