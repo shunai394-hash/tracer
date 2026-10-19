@@ -1159,3 +1159,13 @@ test("CJ evidence recovery retries up to four exact child variants per parent", 
   assert.match(importer, /group\.variantIds\.slice\(0, 4\)/);
   assert.match(importer, /variantIds\.slice\(0, 4\)/);
 });
+
+
+test("BASE and Shopify publication cron routes process up to 20 candidates per run", async () => {
+  const base = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  assert.match(base, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(base, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
+  assert.match(shopify, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(shopify, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
+});
