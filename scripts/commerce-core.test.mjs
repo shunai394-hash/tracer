@@ -1084,3 +1084,11 @@ test("legacy BASE reconciliation repairs margin-only mismatches without editing 
   assert.match(route, /contribution_margin: Math\.round\(canonicalMarginRate \* 10000\) \/ 100/);
   assert.match(route, /const batch = mismatches\.slice\(0, limit\)/);
 });
+
+test("failed stale unpublishes persist retry diagnostics and yield the bounded queue", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /stale_unpublish_failed:/);
+  assert.match(publish, /retry_state_save_failed:/);
+  assert.match(publish, /last_synced_at: retryAt/);
+  assert.match(publish, /Keep the listing published because external hiding was not confirmed/);
+});
