@@ -115,6 +115,7 @@ assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.n
 assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
 assert.match(base, /listing\.orderable !== true/, "BASE publication requires supplier orderability");
 assert.match(base, /listing\.tracking_available !== true/, "BASE publication requires tracking capability");
+assert.match(base, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(listing\.supplier_listing_id\)\) === "native_cj_verified"/, "BASE may repair stale flags only from fresh exact native CJ evidence");
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
