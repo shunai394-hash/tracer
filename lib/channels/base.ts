@@ -253,6 +253,7 @@ export async function getBaseItemDetail(itemId: string): Promise<Record<string, 
 const BASE_STALE_ITEM_DELETE_ALLOWLIST = new Set([
   "163159366", "163159368", "163159369",
   "163125132", "163125145", "163130238", "163159274", "163159329",
+  "163159664", "163159668", "163159671", "163159673",
 ]);
 
 export async function deleteAllowlistedStaleBaseItem(itemId: string) {
