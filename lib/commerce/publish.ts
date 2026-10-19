@@ -56,8 +56,6 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const checkableListings = (listings ?? []).filter((listing) =>
     listing.status === "published" ||
     String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
-    String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
-    String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_disable_failed:")
   );
   result.checked = checkableListings.length;
