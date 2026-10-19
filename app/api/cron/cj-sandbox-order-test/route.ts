@@ -188,6 +188,21 @@ export async function POST(request: Request) {
           shippingPhone: "00000000000",
           shippingCustomerName: "TRACER SANDBOX TEST",
           email: "sandbox-test@example.invalid",
+        }, async (supplierOrderId) => {
+          // Persist the external CJ sandbox order ID before later lifecycle steps.
+          // This makes failures reconcilable and prevents blind duplicate retries.
+          const { error: externalOrderIdWriteError } = await db.from("cron_runs").update({
+            metadata: {
+              phase: "cj_sandbox_order_lifecycle",
+              supplierListingId: activeListing.id,
+              attemptedListingIds,
+              supplierOrderId,
+              sandbox: true,
+              charged: false,
+              realFulfillment: false,
+            },
+          }).eq("id", runId);
+          if (externalOrderIdWriteError) throw new Error("CJ_SANDBOX_EXTERNAL_ORDER_ID_AUDIT_FAILED");
         });
         break;
       } catch (error) {
