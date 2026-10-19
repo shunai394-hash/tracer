@@ -41,6 +41,7 @@ export function initialNewfindCommerceDetail(variantId: string): NewfindCommerce
   return { eventId: newfindCommerceEventId(variantId), attempts: 0, leaseUntil: null, lastAttemptAt: null, httpStatus: null, ackStatus: null, lastError: null, processedAt: null };
 }
 
+/** Normalize persisted detail from old ledger rows without trusting its shape. */
 export function readNewfindCommerceDetail(variantId: string, value: unknown): NewfindCommerceDetail {
   const base = initialNewfindCommerceDetail(variantId);
   if (!value || typeof value !== "object" || Array.isArray(value)) return base;
@@ -82,16 +83,19 @@ export function decideNewfindCommerceDelivery(variantId: string, row: NewfindCom
     return { action: "skip", reason: "in_progress" };
   }
   const last = detail.lastAttemptAt ? Date.parse(detail.lastAttemptAt) : Number.NaN;
-  // The NEWFIND receiver fix is deployed. Allow one final recovery delivery
-  // for a known duplicate-key failure even if the old receiver exhausted the
-  // normal cap; the next failure reaches MAX_ATTEMPTS + 1 and is terminal.
+  // The NEWFIND receiver has a duplicate-key race recovery fix. Old rows may
+  // already be at MAX_ATTEMPTS + 1 because they were retried before that fix
+  // deployed. Permit exactly one additional recovery attempt at that count;
+  // if it fails, the resulting MAX_ATTEMPTS + 2 row is terminal.
   const duplicateConflictRecovery = status === "failed"
     && detail.attempts >= 4
     && /discovery insert failed: duplicate key value violates unique constraint/i.test(detail.lastError ?? "");
-  if (
-    detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS
-    && !(detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS && duplicateConflictRecovery)
-  ) return { action: "skip", reason: "max_attempts" };
+  const recoveryAttempt = duplicateConflictRecovery
+    && (detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS
+      || detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS + 1);
+  if (detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS && !recoveryAttempt) {
+    return { action: "skip", reason: "max_attempts" };
+  }
   if (status !== "pending" && !duplicateConflictRecovery && Number.isFinite(last) && nowMs - last < newfindCommerceBackoffMs(detail.attempts)) {
     return { action: "skip", reason: "backoff" };
   }
