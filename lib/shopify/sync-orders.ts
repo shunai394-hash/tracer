@@ -72,6 +72,7 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
   let hasNextOrdersPage = true;
 
   // Polling must use the same canonical order ledger as the paid webhook.
+  // Limit the search to open, paid, unfulfilled orders; cancelled/closed orders are not procurement candidates.
   // Do not create a second legacy order that can trigger a duplicate purchase.
   while (hasNextOrdersPage && orders.length < maxNewOrders) {
     const data: {
