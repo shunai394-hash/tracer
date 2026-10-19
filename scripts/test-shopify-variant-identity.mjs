@@ -17,6 +17,21 @@ test("refuses to update a saved variant whose SKU identifies another color", () 
   });
 });
 
+test("refuses to trust a saved variant ID when its SKU is missing", () => {
+  assert.deepEqual(resolveShopifyVariantIdentity([{ id: red.id, sku: null }], "TRC-red", red.id), {
+    ok: false, reason: "saved_variant_sku_missing",
+  });
+  assert.deepEqual(resolveShopifyVariantIdentity([{ id: red.id, sku: "  " }], "TRC-red", red.id), {
+    ok: false, reason: "saved_variant_sku_missing",
+  });
+});
+
+test("refuses to resolve a variant without an expected SKU", () => {
+  assert.deepEqual(resolveShopifyVariantIdentity([red], "  ", red.id), {
+    ok: false, reason: "expected_sku_missing",
+  });
+});
+
 test("uses only a unique exact SKU when the saved variant ID is absent", () => {
   assert.deepEqual(resolveShopifyVariantIdentity([red, blue], "TRC-blue"), {
     ok: true, variant: blue, matchedBy: "exact_sku",
