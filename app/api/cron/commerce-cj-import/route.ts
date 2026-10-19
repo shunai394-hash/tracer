@@ -371,7 +371,19 @@ export async function GET(request: Request) {
       }
       stats.searched = candidates.length;
     } else {
-      const results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
+      let results: Awaited<ReturnType<typeof searchCJProducts>>;
+      try {
+        results = await searchCJProducts(query, { page, size: Math.min(20, limit * 2) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // A transient timeout on the rotating discovery query must not discard
+        // recovery work for known supplier variants. Leave discovery for the next
+        // cron slot, but continue with persisted retry queues.
+        if (!/abort|timeout|timed out|fetch failed|network/i.test(message)) throw error;
+        stats.errors.push("cj_search_retryable_timeout:" + page + ":" + message.slice(0, 120));
+        console.warn("[TRACER CJ DISCOVERY DEFERRED]", { query, page, reason: message.slice(0, 160) });
+        results = { query, totalRecords: 0, totalPages: 0, products: [] };
+      }
       stats.searched = results.products.length;
       const { data: knownProducts, error: knownProductsError } = await db
         .from("commerce_products").select("source_key").like("source_key", "cj:%").limit(5000);
@@ -550,7 +562,16 @@ export async function GET(request: Request) {
       // Search up to five additional pages so dense pages of known products do
       // not starve new parents; record actual scan count for runtime diagnosis.
       while (newCandidates.length < 1 && scanPage <= page + 5) {
-        const extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
+        let extra: Awaited<ReturnType<typeof searchCJProducts>>;
+        try {
+          extra = await searchCJProducts(query, { page: scanPage, size: Math.min(20, limit * 2) });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/abort|timeout|timed out|fetch failed|network/i.test(message)) throw error;
+          stats.errors.push("cj_discovery_scan_deferred:" + scanPage + ":" + message.slice(0, 120));
+          console.warn("[TRACER CJ DISCOVERY SCAN DEFERRED]", { query, page: scanPage, reason: message.slice(0, 160) });
+          break;
+        }
         stats.discoverySearchPagesScanned += 1;
         stats.searched += extra.products.length;
         for (const item of extra.products) {
