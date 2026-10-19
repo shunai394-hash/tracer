@@ -11,5 +11,5 @@ for (const path of ["/api/cron/commerce-base-orders", "/api/cron/commerce-base-f
 }
 const priceReconcile = crons.find((entry) => entry.path === "/api/cron/commerce-reprice-existing");
 assert.ok(priceReconcile, "existing storefront price reconciliation must be scheduled");
-assert.equal(priceReconcile.schedule, "3,8,13,18,23,28,33,38,43,48,53,58 * * * *", "price reconciliation must run every five minutes offset from publication and order polling");
+assert.equal(priceReconcile.schedule, "4,34 * * * *", "price reconciliation must run twice hourly, staggered after CJ import to reduce execution cost");
 console.log("TRACER cron schedule invariants: 12 assertions passed");
