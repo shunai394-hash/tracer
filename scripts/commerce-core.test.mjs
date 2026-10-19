@@ -176,6 +176,9 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /from\("commerce_variants"\)[\s\S]*?\.in\("id", variantIds\)/);
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
   assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%/);
+  assert.doesNotMatch(audit, /\.or\([^\n]*supplier_offer_no_longer_fulfillable%/, "successfully hidden listings must not be selected again on the next reconciliation run");
+  assert.match(audit, /startsWith\("supplier_offer_disable_failed:"\)/, "failed hide attempts remain eligible for retry");
+  assert.doesNotMatch(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "verified hidden listings must not be reprocessed");
   assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/, "only published rows or explicit supplier-safety errors enter external reconciliation");
   assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
