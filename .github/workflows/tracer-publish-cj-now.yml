@@ -1,7 +1,7 @@
 name: TRACER Publish CJ Products Now
 
 # Manual recovery only. Scheduled discovery is owned by the canonical
-# /api/cron/commerce-cj-import route every 10 minutes; patrol-ai remains on
+# /api/cron/commerce-cj-import route every 30 minutes; patrol-ai remains on
 # its five-minute schedule. Avoid a second legacy discovery schedule.
 on:
   workflow_dispatch:

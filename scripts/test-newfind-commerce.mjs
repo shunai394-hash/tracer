@@ -36,7 +36,7 @@ check("a live lease blocks a second sender; an expired one is reclaimed with the
   assert.equal(decision.action, "send");
   assert.equal(decision.detail.eventId, newfindCommerceEventId(variant));
 });
-check("failures back off and stop after the attempt cap, with a bounded duplicate recovery", () => {
+check("failures back off and allow only bounded recovery for known receiver fixes", () => {
   const recent = detail({ attempts: 2, lastAttemptAt: new Date(now - 60_000).toISOString() });
   assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: recent }, now), { action: "skip", reason: "backoff" });
   const old = detail({ attempts: 2, lastAttemptAt: new Date(now - newfindCommerceBackoffMs(2) - 1).toISOString() });
@@ -50,6 +50,11 @@ check("failures back off and stop after the attempt cap, with a bounded duplicat
   assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: capped }, now), { action: "skip", reason: "max_attempts" });
   const cappedDuplicateConflict = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS, lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(), lastError: duplicateError });
   assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: cappedDuplicateConflict }, now).action, "send");
+  const confidenceError = 'discovery insert failed without matching identity or URL: null value in column "confidence_score" of relation "discovery_products" violates not-null constraint';
+  const cappedConfidenceFailure = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS, lastAttemptAt: new Date(now - 60_000).toISOString(), lastError: confidenceError });
+  assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: cappedConfidenceFailure }, now).action, "send", "a deployed receiver fix permits one immediate replay of this exact schema failure");
+  const confidenceRecoveryFailedAgain = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS + 1, lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(), lastError: confidenceError });
+  assert.deepEqual(decideNewfindCommerceDelivery(variant, { status: "failed", detail: confidenceRecoveryFailedAgain }, now), { action: "skip", reason: "max_attempts" }, "do not loop if the bounded confidence recovery fails again");
   const legacyAttemptNine = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS + 1, lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(), lastError: duplicateError });
   assert.equal(decideNewfindCommerceDelivery(variant, { status: "failed", detail: legacyAttemptNine }, now).action, "send");
   const recoveryFailedAgain = detail({ attempts: NEWFIND_COMMERCE_MAX_ATTEMPTS + 2, lastAttemptAt: new Date(now - 24 * 60 * 60_000).toISOString(), lastError: duplicateError });
