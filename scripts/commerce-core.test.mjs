@@ -1116,7 +1116,7 @@ test("published listings with no supplier offer enter the safety reconciliation 
 
 test("supplier safety errors remain in external unpublish reconciliation after DB status leaves published", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_no_longer_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/);
+  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/, "confirmed stopped listings must not be selected again");
   assert.match(publish, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(publish, /base_unpublish_readback_mismatch/);
 });
