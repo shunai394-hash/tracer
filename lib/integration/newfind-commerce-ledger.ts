@@ -89,16 +89,18 @@ export function decideNewfindCommerceDelivery(variantId: string, row: NewfindCom
     && detail.attempts >= 4
     && /discovery insert failed: duplicate key value violates unique constraint/i.test(detail.lastError ?? "");
   // NEWFIND fixed its required confidence_score normalization in production.
-  // Give maxed-out events with that exact historical schema error one replay
-  // using the same idempotency key; unrelated failures keep the normal cap.
+  // Permit at most two bounded sends at the attempt cap and one beyond it, so
+  // a replay that races the receiver deployment can be retried once after it
+  // lands. The same event ID remains idempotent; attempt 10 is terminal.
   const confidenceScoreRecovery = status === "failed"
-    && detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS
+    && detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS
+    && detail.attempts <= NEWFIND_COMMERCE_MAX_ATTEMPTS + 1
     && /confidence_score.*violates not-null constraint/i.test(detail.lastError ?? "");
   const oneRecoveryBeyondCap = duplicateConflictRecovery
     && detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS + 1;
   if (
     detail.attempts >= NEWFIND_COMMERCE_MAX_ATTEMPTS
-    && !(detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS && (duplicateConflictRecovery || confidenceScoreRecovery))
+    && !(detail.attempts === NEWFIND_COMMERCE_MAX_ATTEMPTS && duplicateConflictRecovery)\n    && !confidenceScoreRecovery
     && !oneRecoveryBeyondCap
   ) return { action: "skip", reason: "max_attempts" };
   if (status !== "pending" && !duplicateConflictRecovery && !confidenceScoreRecovery && Number.isFinite(last) && nowMs - last < newfindCommerceBackoffMs(detail.attempts)) {
