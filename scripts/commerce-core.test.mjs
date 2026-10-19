@@ -157,8 +157,8 @@ test("bounded recovery processes only unpublished channel listings", async () =>
   assert.match(publish, /supplier_offer_not_fulfillable/, "new items without fresh supplier stock are not published");
   assert.match(baseRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "BASE cron defaults to unpublished-only unless full refresh is explicitly requested");
   assert.match(shopifyRoute, /searchParams\.get\("onlyUnpublished"\) !== "false"/, "Shopify cron defaults to unpublished-only unless full refresh is explicitly requested");
-  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
-  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at ten listings");
+  assert.match(baseRoute, /Math\.min\(20, Math\.max\(1, Math\.floor\(requested\)\)\)/, "BASE cron caps each run at five listings");
+  assert.match(shopifyRoute, /Math\.min\(20, Math\.max\(1, Math\.floor\(requested\)\)\)/, "Shopify cron caps each run at ten listings");
   assert.match(workflow, /commerce-reprice-existing\?limit=25/, "recovery reprices in bounded batches before publication");
   assert.match(workflow, /storefrontSyncRemaining/, "recovery records remaining storefront backlog");
   assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
@@ -882,16 +882,16 @@ test("existing commerce prices below 50% margin are automatically repriced", asy
 });
 
  
-test("commerce publication cron defaults to small batches and caps explicit requests", async () => {
+test("commerce publication cron defaults to batches of twenty and caps explicit requests", async () => {
   const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   for (const route of [baseRoute, shopifyRoute]) {
-    assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
-    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 20/);
+    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 20/);
     assert.match(route, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
   }
-  assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/);
-  assert.match(shopifyRoute, /Math\.min\(10, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  assert.match(baseRoute, /Math\.min\(20, Math\.max\(1, Math\.floor\(requested\)\)\)/);
+  assert.match(shopifyRoute, /Math\.min\(20, Math\.max\(1, Math\.floor\(requested\)\)\)/);
 });
 
 
@@ -1158,4 +1158,14 @@ test("CJ evidence recovery retries up to four exact child variants per parent", 
   assert.match(importer, /const retryVariantLimit = Math\.min\(4, Math\.max\(1, limit\)\)/);
   assert.match(importer, /group\.variantIds\.slice\(0, 4\)/);
   assert.match(importer, /variantIds\.slice\(0, 4\)/);
+});
+
+
+test("BASE and Shopify publication cron routes process up to 20 candidates per run", async () => {
+  const base = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  assert.match(base, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(base, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
+  assert.match(shopify, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(shopify, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
 });
