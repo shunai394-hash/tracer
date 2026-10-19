@@ -16,7 +16,7 @@ assert.equal(cjImport.schedule, "0,30 * * * *", "CJ import must remain every 30 
 
 for (const path of ["/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-publish"]) {
   const publish = crons.find((entry) => entry.path === path);
-  assert.equal(publish.schedule, "*/5 * * * *", `${path} must run every five minutes`);
+  assert.equal(publish.schedule, "*/30 * * * *", `${path} must run every thirty minutes to control execution cost`);
 }
 
 const shopifyFulfillment = crons.find((entry) => entry.path === "/api/cron/shopify-fulfillment");
