@@ -183,7 +183,11 @@ for (const [name, source, expected] of candidateTitles) {
 assert.equal(womenProductPriority({ title: "Groin Electric Clippers Household Hair Clipper" }).isWomenFocused, false, "hair clipper must not match the hair-clip accessory category");
 assert.equal(womenProductPriority({ title: "Flower Hair Clip Accessory" }).isWomenFocused, true, "actual hair-clip accessories remain women-focused");
 const supplySelector = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
-assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply publication must enforce buyer-facing title quality");
+assert.match(supplySelector, /isPublishableCatalogTitle\(localizedTitle\)/, "supply selection must enforce buyer-facing title quality");
+assert.match(supplySelector, /if \(!isPublishableCatalogTitle\(title\)\)/, "final storefront write must reject titles that fail the catalog quality gate");
+assert.match(supplySelector, /catalog_title_not_publishable/, "failed titles must be reported as rejected, not left in the publish candidates");
+assert.match(supplySelector, /if \(!isPublishableCatalogDescription\(item\.description\)\)/, "final storefront write must reject descriptions that fail the catalog quality gate");
+assert.doesNotMatch(supplySelector, /\?\? String\(item\.base\.normalized_title \?\? \("TRACER product "/, "a generated generic fallback must never bypass title quality");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
  
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
