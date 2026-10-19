@@ -5,7 +5,7 @@ export type ShopifyVariantIdentity = {
 
 export type ShopifyVariantResolution =
   | { ok: true; variant: ShopifyVariantIdentity; matchedBy: "saved_id" | "exact_sku" | "single_variant" }
-  | { ok: false; reason: "saved_variant_id_not_found" | "saved_variant_sku_mismatch" | "variant_sku_ambiguous" | "variant_identity_ambiguous" };
+  | { ok: false; reason: "expected_sku_missing" | "saved_variant_id_not_found" | "saved_variant_sku_missing" | "saved_variant_sku_mismatch" | "variant_sku_ambiguous" | "variant_identity_ambiguous" };
 
 export function resolveShopifyVariantIdentity(
   variants: ShopifyVariantIdentity[],
@@ -15,10 +15,13 @@ export function resolveShopifyVariantIdentity(
   const targetSku = expectedSku.trim();
   const preferredId = String(savedVariantId ?? "").trim();
 
+  if (!targetSku) return { ok: false, reason: "expected_sku_missing" };
+
   if (preferredId) {
     const saved = variants.find((variant) => variant.id === preferredId);
     if (!saved) return { ok: false, reason: "saved_variant_id_not_found" };
-    if (saved.sku && saved.sku.trim() !== targetSku) {
+    if (!saved.sku?.trim()) return { ok: false, reason: "saved_variant_sku_missing" };
+    if (saved.sku.trim() !== targetSku) {
       return { ok: false, reason: "saved_variant_sku_mismatch" };
     }
     return { ok: true, variant: saved, matchedBy: "saved_id" };
