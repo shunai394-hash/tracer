@@ -125,7 +125,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-        return { offer, price, missing };
+        return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
       if (best && best.missing.length === 0) {
@@ -141,7 +141,9 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
       const offer = best?.offer ?? null;
       const price = best?.price ?? null;
-      const reason = best ? best.missing.join(",") : "supplier,identity,variant,stock,cost,domestic_shipping,profit,verification";
+      const reason = best
+        ? [...best.missing, ...(best.nativeIdsValid ? [] : ["supplier_native_ids_invalid"])].join(",")
+        : "supplier,identity,variant,stock,cost,domestic_shipping,profit,verification";
 
       const variant = variantsById.get(String(listing.variant_id));
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
