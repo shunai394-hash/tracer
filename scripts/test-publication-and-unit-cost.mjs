@@ -127,6 +127,8 @@ assert.match(costApplyRoute, /sourceCurrency === "USD" && sourceUnitCost !== nul
 assert.match(costApplyRoute, /Math\.round\(sourceUnitCost \* fxRate \* 100\) \/ 100/, "Shopify unit cost must be converted to JPY cents before write");
 assert.match(costApplyRoute, /supplier_unit_cost_or_fx_rate_unverified/, "unsupported supplier currency or missing FX rate must block a cost write");
 assert.match(costApplyRoute, /price_not_calculated_for_current_supplier_offer/, "profit must be calculated for the current supplier offer");
+assert.match(costApplyRoute, /expectedProfitAtRecordedFx/, "unit-cost preflight must recalculate expected profit using the same recorded FX rate");
+assert.match(costApplyRoute, /price_fx_does_not_match_supplier_cost_fx/, "unit-cost preflight must block profit records calculated with a different FX rate");
 assert.match(costApplyRoute, /expectedProfit === null \|\| expectedProfit <= 0/, "non-positive profit must block a cost write");
 assert.match(costApplyRoute, /APPLY_BLOCKED_BY_PREFLIGHT/, "any blocked selected variant must abort the entire apply");
 assert.match(costApplyRoute, /inventoryItemUpdate\(id: \$id, input: \$input\)/, "cost write must use Shopify inventoryItemUpdate");
