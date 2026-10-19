@@ -44,6 +44,7 @@
     "test:commerce-core": "node --experimental-strip-types --no-warnings --test scripts/commerce-core.test.mjs",
     "test:newfind-commerce": "node --experimental-strip-types --no-warnings scripts/test-newfind-commerce.mjs",
     "test:cj-procurement-adapter": "node scripts/test-cj-procurement-adapter.mjs",
+    "test:base-targeted-readback": "node scripts/test-base-targeted-readback.mjs",
     "test:base-stale-item-deletion-contract": "node scripts/test-base-stale-item-deletion-contract.mjs",
     "test:archived-listing-republication-guards": "node scripts/test-archived-listing-republication-guards.mjs",
     "test:archive-listing-republication": "node scripts/test-archive-listing-republication.mjs"
