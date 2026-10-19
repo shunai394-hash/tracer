@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "UNKNOWN_VARIANT_IDS", unknownVariantIds: [...requestedSet].filter((id) => !selected.some((row) => row.variant_id === id)), readOnly: true }, { status: 404, headers });
   }
 
-  const evidence = new Map<string, { supplierProductId: string | null; supplierVariantId: string | null; unitCost: number | null; currency: string | null; shippingKnown: boolean; inventory: number | null; sourceStatus: string | null; sellingPrice: number | null; priceCurrency: string | null; expectedProfit: number | null; reason: string[] }>();
+  const evidence = new Map<string, { supplierProductId: string | null; supplierVariantId: string | null; unitCost: number | null; currency: string | null; sourceUnitCost: number | null; sourceCurrency: string | null; fxRate: number | null; shippingKnown: boolean; inventory: number | null; sourceStatus: string | null; sellingPrice: number | null; priceCurrency: string | null; expectedProfit: number | null; reason: string[] }>();
   for (let offset = 0; offset < selected.length; offset += 100) {
     const batch = selected.slice(offset, offset + 100);
     const { data, error } = await db.from("commerce_variants")
@@ -105,12 +105,19 @@ export async function POST(request: Request) {
       const prices = asRows(row.commerce_prices as Price | Price[] | null).sort((a, b) => Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")));
       const price = prices.find((candidate) => candidate.supplier_offer_id === offer?.id);
       const raw = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data as Record<string, unknown> : {};
-      const unitCost = numeric(offer?.unit_cost);
+      const sourceUnitCost = numeric(offer?.unit_cost);
+      const sourceCurrency = typeof offer?.currency === "string" ? offer.currency.toUpperCase() : null;
+      const fxRate = numeric(raw.fxRate);
+      const unitCost = sourceCurrency === "JPY"
+        ? sourceUnitCost
+        : sourceCurrency === "USD" && sourceUnitCost !== null && fxRate !== null && fxRate > 0
+          ? Math.round(sourceUnitCost * fxRate * 100) / 100
+          : null;
+      const currency = unitCost !== null ? "JPY" : sourceCurrency;
       const shippingCost = numeric(offer?.shipping_cost);
       const inventory = numeric(offer?.inventory);
       const sellingPrice = numeric(price?.selling_price);
       const expectedProfit = numeric(price?.expected_profit);
-      const currency = typeof offer?.currency === "string" ? offer.currency.toUpperCase() : null;
       const priceCurrency = typeof price?.currency === "string" ? price.currency.toUpperCase() : null;
       const sourceStatus = typeof offer?.source_status === "string" ? offer.source_status : null;
       const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
@@ -125,12 +132,12 @@ export async function POST(request: Request) {
       if (sourceStatus !== "verified") reason.push("supplier_offer_not_verified");
       if (!evidenceFresh) reason.push("supplier_evidence_stale_or_missing");
       if (!priceMatchesFreshOffer) reason.push("price_not_calculated_for_current_supplier_offer");
-      if (currency !== "JPY" || unitCost === null || unitCost <= 0) reason.push("supplier_unit_cost_not_verified_jpy");
+      if (unitCost === null || unitCost <= 0 || (sourceCurrency !== "JPY" && !(sourceCurrency === "USD" && fxRate !== null && fxRate > 0))) reason.push("supplier_unit_cost_or_fx_rate_unverified");
       if (!shippingKnown || shippingCost === null || shippingCost < 0) reason.push("japan_shipping_unconfirmed");
       if (inventory === null || inventory <= 0) reason.push("supplier_inventory_not_positive");
       if (priceCurrency !== "JPY" || sellingPrice === null || sellingPrice <= 0) reason.push("selling_price_not_verified_jpy");
       if (expectedProfit === null || expectedProfit <= 0) reason.push("expected_profit_not_positive");
-      evidence.set(String(row.id), { supplierProductId, supplierVariantId, unitCost, currency, shippingKnown, inventory, sourceStatus, sellingPrice, priceCurrency, expectedProfit, reason });
+      evidence.set(String(row.id), { supplierProductId, supplierVariantId, unitCost, currency, sourceUnitCost, sourceCurrency, fxRate, shippingKnown, inventory, sourceStatus, sellingPrice, priceCurrency, expectedProfit, reason });
     }
   }
 
@@ -157,7 +164,7 @@ export async function POST(request: Request) {
     const liveSku = typeof live?.sku === "string" ? live.sku.trim() : "";
     if (!expectedSku || !liveSku) reasons.push("shopify_sku_missing");
     else if (liveSku !== expectedSku) reasons.push("shopify_sku_mismatch");
-    return { variantId: listing.variant_id, externalVariantId: gid, sku: listing.external_sku, liveSku: live?.sku ?? null, currentCost: live?.inventoryItem?.unitCost?.amount ?? null, currentCurrency: live?.inventoryItem?.unitCost?.currencyCode ?? null, supplierUnitCost: ev?.unitCost ?? null, supplierCurrency: ev?.currency ?? null, expectedProfit: ev?.expectedProfit ?? null, eligible: reasons.length === 0, reasons };
+    return { variantId: listing.variant_id, externalVariantId: gid, sku: listing.external_sku, liveSku: live?.sku ?? null, currentCost: live?.inventoryItem?.unitCost?.amount ?? null, currentCurrency: live?.inventoryItem?.unitCost?.currencyCode ?? null, supplierUnitCostJpy: ev?.unitCost ?? null, supplierSourceCost: ev?.sourceUnitCost ?? null, supplierSourceCurrency: ev?.sourceCurrency ?? null, fxRateToJpy: ev?.fxRate ?? null, expectedProfit: ev?.expectedProfit ?? null, eligible: reasons.length === 0, reasons };
   });
   const eligible = items.filter((item) => item.eligible);
   if (!apply) {
