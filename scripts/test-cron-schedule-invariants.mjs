@@ -25,6 +25,10 @@ for (const entry of crons) {
     assert.equal(minutes, "7,22,37,52", "Shopify tracking sync must run every fifteen minutes");
     continue;
   }
+  if (entry.path === "/api/cron/commerce-base-fulfillment") {
+    assert.equal(minutes, "14,29,44,59", "BASE tracking sync must run every fifteen minutes");
+    continue;
+  }
   assert.equal(minuteValues.length, 2, `${entry.path} must run exactly twice per hour`);
   assert.equal((minuteValues[1] - minuteValues[0] + 60) % 60, 30, `${entry.path} executions must be thirty minutes apart`);
 }
