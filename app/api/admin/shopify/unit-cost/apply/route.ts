@@ -160,6 +160,20 @@ export async function POST(request: Request) {
   if (!apply) {
     return NextResponse.json({ ok: true, readOnly: true, applyRequired: true, storeCurrency: store.shop.currencyCode, selected: selected.length, eligible: eligible.length, blocked: items.length - eligible.length, items }, { headers });
   }
+  // Fail closed: never report a successful apply while silently skipping blocked IDs.
+  // Require a non-empty exact selection and all selected variants to pass preflight.
+  if (selected.length === 0 || eligible.length !== selected.length) {
+    return NextResponse.json({
+      ok: false,
+      readOnly: true,
+      applied: 0,
+      error: selected.length === 0 ? "APPLY_REQUIRES_NONEMPTY_VARIANT_IDS" : "APPLY_BLOCKED_BY_PREFLIGHT",
+      selected: selected.length,
+      eligible: eligible.length,
+      blocked: items.length - eligible.length,
+      items,
+    }, { status: 409, headers });
+  }
 
   const applied: Array<{ variantId: string; externalVariantId: string; expectedCost: number; readBackCost: number | null; verified: boolean; error?: string }> = [];
   for (const item of eligible) {
