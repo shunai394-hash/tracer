@@ -400,7 +400,7 @@ export async function GET(request: Request) {
       }
       // Keep missing-publication recovery narrow and separately recheck existing listings
       // whose saved supplier status, stock, or Japan-bound freight evidence is in error.
-      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }, { data: publicationErrorRows, error: publicationErrorRowsError }, { data: cjListingRows, error: cjListingRowsError }] = await Promise.all([
+      const [{ data: erroredOffers, error: erroredOffersError }, { data: staleVerifiedOffers, error: staleVerifiedOffersError }, { data: shopifyRows, error: shopifyRowsError }, { data: publicationErrorRows, error: publicationErrorRowsError }, { data: cjListingRows, error: cjListingRowsError }, { data: publishedShopRows, error: publishedShopRowsError }] = await Promise.all([
         db.from("supplier_offers")
           .select("id,variant_id,supplier_product_id,supplier_variant_id,source_status,raw_data,updated_at,last_checked_at")
           .eq("supplier_code", "cj").eq("source_status", "error")
@@ -423,12 +423,18 @@ export async function GET(request: Request) {
           .select("id,supplier_product_id,supplier_variant_id,shipping_checked_at,inventory_checked_at,next_verification_at")
           .eq("supplier", "cj")
           .order("updated_at", { ascending: true }).limit(2000),
+        // Published legacy commerce listings need live evidence refresh before their next sale.
+        db.from("shop_listings").select("supplier_product_id,supplier_variant_id")
+          .eq("published", true).ilike("supplier_name", "cj").limit(1000),
       ]);
-      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || publicationErrorRowsError || cjListingRowsError) {
+      if (erroredOffersError || staleVerifiedOffersError || shopifyRowsError || publicationErrorRowsError || cjListingRowsError || publishedShopRowsError) {
         throw new Error("missing_shopify_offer_recovery_read_failed:" + (erroredOffersError?.message ?? staleVerifiedOffersError?.message ?? shopifyRowsError?.message ?? publicationErrorRowsError?.message ?? cjListingRowsError?.message));
       }
       const shopifyVariantIds = new Set((shopifyRows ?? []).map((row) => String(row.variant_id)));
       const publicationErrorVariantIds = new Set((publicationErrorRows ?? []).map((row) => String(row.variant_id)));
+      const publishedShopSupplierIdentities = new Set((publishedShopRows ?? []).map((row) =>
+        String(row.supplier_product_id ?? "").trim() + ":" + String(row.supplier_variant_id ?? "").trim(),
+      ).filter((identity) => identity !== ":"));
       const eligibleErroredOffers = (erroredOffers ?? []).filter((offer) => {
         const parentId = String(offer.supplier_product_id ?? "").trim();
         const variantId = String(offer.supplier_variant_id ?? "").trim();
@@ -489,8 +495,10 @@ export async function GET(request: Request) {
       stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;
       stats.publicationBlockedVariantsSeen = publicationErrorVariantIds.size;
       const existingOffersNeedingEvidence = [...(erroredOffers ?? []), ...staleVerifiedForEvidence].sort((a, b) => {
-        const aBlocked = publicationErrorVariantIds.has(String(a.variant_id)) ? 0 : 1;
-        const bBlocked = publicationErrorVariantIds.has(String(b.variant_id)) ? 0 : 1;
+        const aIdentity = String(a.supplier_product_id ?? "").trim() + ":" + String(a.supplier_variant_id ?? "").trim();
+        const bIdentity = String(b.supplier_product_id ?? "").trim() + ":" + String(b.supplier_variant_id ?? "").trim();
+        const aBlocked = publishedShopSupplierIdentities.has(aIdentity) ? 0 : publicationErrorVariantIds.has(String(a.variant_id)) ? 1 : 2;
+        const bBlocked = publishedShopSupplierIdentities.has(bIdentity) ? 0 : publicationErrorVariantIds.has(String(b.variant_id)) ? 1 : 2;
         return aBlocked - bBlocked ||
           String(a.last_checked_at ?? a.updated_at ?? "").localeCompare(String(b.last_checked_at ?? b.updated_at ?? ""));
       });
@@ -508,7 +516,8 @@ export async function GET(request: Request) {
         // A storefront listing already blocked by stale supplier evidence must be retried
         // ahead of normal backoff. Otherwise a previously published product can stay
         // unpurchasable indefinitely even while the importer runs successfully.
-        if (!publicationErrorVariantIds.has(String(offer.variant_id)) && Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) {
+        const publishedShopListing = publishedShopSupplierIdentities.has(parentId + ":" + variantId);
+        if (!publicationErrorVariantIds.has(String(offer.variant_id)) && !publishedShopListing && Number.isFinite(nextReverifyAt) && nextReverifyAt > Date.now()) {
           stats.evidenceRetryDeferredByBackoff++;
           continue;
         }
