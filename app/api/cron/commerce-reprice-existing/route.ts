@@ -252,8 +252,8 @@ export async function GET(request: Request) {
       });
       const priority = (row: (typeof eligibleRows)[number]) => {
         const variantId = String(row.variant_id);
-        if (row.status === "published" &&
-          (unverifiedVariantIds.has(variantId) || publishedMissingOfferVariantIds.has(variantId))) return 0;
+        if (row.status === "published" && unverifiedVariantIds.has(variantId)) return 0;
+        if (row.status === "published" && publishedMissingOfferVariantIds.has(variantId)) return 0;
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
           (!row.last_synced_at || Date.parse(productUpdatedAt!) > Date.parse(String(row.last_synced_at)));
