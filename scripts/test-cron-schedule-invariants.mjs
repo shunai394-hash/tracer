@@ -16,6 +16,8 @@ for (const entry of crons) {
   const minutes = entry.schedule.split(" ")[0];
   assert.notEqual(minutes, "*/5", `${entry.path} must not run every five minutes`);
   assert.notEqual(minutes, "*/15", `${entry.path} must not run every fifteen minutes`);
-  assert.match(minutes, /^\\d+(,\\d+)?$/, `${entry.path} must use two staggered half-hourly executions`);
+  const minuteValues = minutes.split(",").map(Number);
+  assert.equal(minuteValues.length, 2, `${entry.path} must run exactly twice per hour`);
+  assert.equal((minuteValues[1] - minuteValues[0] + 60) % 60, 30, `${entry.path} executions must be thirty minutes apart`);
 }
 console.log("TRACER cron schedule invariants: all cron jobs are staggered to twice hourly");
