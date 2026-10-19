@@ -1,0 +1,39 @@
+name: TRACER Sales Test Publication Dry Run
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-sales-test-publication-dry-run
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    if: contains(github.event.head_commit.message, '[sales-test-dry-run]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for production deployment
+        run: sleep 60
+      - name: Run read-only Sales Test publication check
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          TOKEN="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          HTTP_CODE="$(curl -sS --max-time 300 -o sales-test-dry-run.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/api/cron/sales-test-publication?dryRun=true&limit=10")"
+          cat sales-test-dry-run.json
+          test "$HTTP_CODE" = "200"
+          python3 - <<'PY'
+          import json
+          d=json.load(open("sales-test-dry-run.json"))
+          assert d.get("ok") is True, d
+          assert d.get("dryRun") is True, d
+          assert d.get("noWrites") is True, d
+          print("Verified: successful read-only dry run; no publication writes.")
+          PY
