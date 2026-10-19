@@ -1,0 +1,99 @@
+name: TRACER BASE Targeted Readback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-base-targeted-readback.yml"
+      - "app/api/cron/base-targeted-readback/route.ts"
+      - "lib/channels/base.ts"
+      - "lib/security/cron-auth.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-base-targeted-readback
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout commit history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for production to include the endpoint commit
+        shell: bash
+        env:
+          BASE_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          for attempt in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" \
+              "$BASE_URL/api/intelligence/pipeline-audit" |
+              python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt: production commit=$sha expected-or-descendant=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null &&
+              git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production commit $sha contains the endpoint commit; proceeding."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production does not yet include the endpoint commit; refusing to query the endpoint."
+          exit 1
+
+      - name: Read only the eight specified BASE IDs
+        shell: bash
+        env:
+          BASE_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          token() {
+            curl -sSf --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          url="$BASE_URL/api/cron/base-targeted-readback?targetBaseItemIds=163159664,163159665,163159668,163159669,163159671,163159672,163159673,163159674"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          status=000
+          for attempt in $(seq 1 8); do
+            bearer="$(token)"
+            status="$(curl -sS -o "$response_file" -w "%{http_code}" --max-time 60 \
+              -H "Authorization: Bearer $bearer" "$url" || true)"
+            if [ "$status" = "200" ] || [ "$status" = "207" ]; then break; fi
+            echo "Attempt $attempt: readback endpoint returned HTTP $status; retrying."
+            sleep 10
+          done
+          echo "Readback HTTP status: $status"
+          python3 - "$response_file" "$status" <<'PY'
+          import json, sys
+          path, status = sys.argv[1], sys.argv[2]
+          try:
+              data = json.load(open(path, encoding="utf-8"))
+          except Exception:
+              print("Endpoint returned non-JSON content.")
+              raise SystemExit(1)
+          if not data.get("readOnly") or data.get("writesPerformed") is not False:
+              raise SystemExit("Safety assertion failed: endpoint did not confirm read-only behavior.")
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          if status not in ("200", "207"):
+              raise SystemExit("Targeted readback endpoint was not available.")
+          if data.get("rowsReturned") != 8:
+              raise SystemExit("Expected exactly eight targeted rows.")
+          PY
