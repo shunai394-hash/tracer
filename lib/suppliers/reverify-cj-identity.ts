@@ -223,10 +223,18 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
   // while advancing the cursor to the end of the full scan and repeatedly retrying
   // the same first batch. Keep the bounded batch cursor-safe; prioritize on later
   // batches by continuing from the last completed ID.
-  const selectedRows = allRows
+  const boundedRows = allRows
     .slice()
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))
     .slice(0, limit);
+  const boundedIds = new Set(boundedRows.map((row) => String(row.id)));
+  // Keep the cursor-safe ID window intact, but process its exact shop-listing
+  // matches first. Every row in the window is still processed unless provider
+  // quota/circuit protection stops the batch (in which case the cursor is kept).
+  const selectedRows = [
+    ...stockCapHeld.filter((row) => boundedIds.has(String(row.id))),
+    ...prioritizedRegularRows.filter((row) => boundedIds.has(String(row.id))),
+  ];
   const womensRows = [...matchedWomens, ...unmatchedWomens];
   const result: CjIdentityReverifyResult = { checked: 0, promoted: 0, supplierVerified: 0, noUniqueBarcodeMatch: 0, missingEconomics: 0, remediationQueued: [], errors: [], promotedListings: [], nextCursor: priorCursor, quotaBlockedUntil: null, progress: { before: beforeCounts, after: beforeCounts } };
   const processRow = async (row: NonNullable<typeof rows>[number]) => {
@@ -508,7 +516,7 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
       result.checked += 1;
       // Advance only to an actually processed row. If the deadline interrupts a
       // batch, the next invocation resumes after the last completed supplier ID.
-      result.nextCursor = item.supplierListingId;
+      // Cursor is advanced once from the bounded ID window after processing.
       if (item.kind === "promoted") {
         result.promoted += 1;
         result.promotedListings.push({ supplierListingId: item.supplierListingId, bestsellerId: item.bestsellerId, method: item.method });
@@ -543,7 +551,11 @@ export async function reverifyCjSupplyIdentities(options: { limit?: number; dead
     }
     if (quotaExhausted || circuitBlocked) break;
   }
-  if (quotaExhausted || circuitBlocked || targetSupplierListingIds.length > 0) result.nextCursor = priorCursor;
+  if (quotaExhausted || circuitBlocked || targetSupplierListingIds.length > 0) {
+    result.nextCursor = priorCursor;
+  } else if (boundedRows.length > 0) {
+    result.nextCursor = String(boundedRows[boundedRows.length - 1].id);
+  }
   result.progress.after = await readCjIdentityProgressCounts(db);
   const now = new Date().toISOString();
   const { error: runInsertError } = await db.from("cron_runs").insert({ job_name: CURSOR_JOB, status: "succeeded", started_at: now, finished_at: now, processed: result.checked, failed: result.errors.length, metadata: { priorCursor, nextCursor: result.nextCursor, selectionStrategy: targetSupplierListingIds.length > 0 ? "explicit_supplier_listing_ids" : "ascending_supplier_id_cursor_safe", targetSupplierListingIds: targetSupplierListingIds.length > 0 ? targetSupplierListingIds : undefined, candidateCount: total, exactShopListingCandidates: partition.matched.length, supplierOnlyCandidates: partition.unmatched.length, womensCandidates: womensRows.length, womensSelected: selectedRows.filter((row) => isWomensProductTitle(row.title, row.metadata)).length, womenUnverifiedCandidates: womensRows.filter((row) => row.verification_status === "unverified").length, promoted: result.promoted, supplierVerified: result.supplierVerified, noUniqueBarcodeMatch: result.noUniqueBarcodeMatch, missingEconomics: result.missingEconomics, progress: result.progress, identifierFirst: true, orderableNotRequiredForIdentityRecovery: true } });
