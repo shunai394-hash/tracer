@@ -475,7 +475,7 @@ export async function GET(request: Request) {
         .sort((a, b) => a[1].lastAttemptedAt - b[1].lastAttemptedAt)
         .slice(0, limit)
         .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds }));
-      const retryVariantLimit = Math.min(3, Math.max(1, limit));
+      const retryVariantLimit = Math.min(4, Math.max(1, limit));
       const evidenceRetryByParent = new Map<string, string[]>();
       let evidenceRetryCount = 0;
       const evidenceCutoff = Date.now() - 24 * 60 * 60_000;
@@ -551,7 +551,7 @@ export async function GET(request: Request) {
       const staleListingRetryCandidates: ImportCandidate[] = [...staleListingGroups.entries()]
         .sort((a, b) => a[1].oldestAt - b[1].oldestAt)
         .slice(0, limit)
-        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 3) }));
+        .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds.slice(0, 4) }));
       stats.staleLegacyListingVariantsQueued = staleListingRetryCandidates.reduce((total, candidate) => total + (candidate.retryVariantIds?.length ?? 0), 0);
 
       // Prefer never-imported CJ parents for remaining slots so search pages
@@ -597,7 +597,7 @@ export async function GET(request: Request) {
       // instead of allowing recovery retries to monopolize the entire batch.
       const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
         .slice(0, Math.max(0, limit - 1))
-        .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 3) }));
+        .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 4) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
         .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - 1));
