@@ -595,12 +595,15 @@ export async function GET(request: Request) {
       // Reserve one slot for discovery on every normal run, even when early pages
       // contain no new parent. If discovery finds nothing, leave the slot unused
       // instead of allowing recovery retries to monopolize the entire batch.
+      // Reserve a discovery slot only when discovery actually found a new parent.
+      // If it found none, use all bounded candidate slots for supplier-evidence recovery.
+      const reserveDiscoverySlot = newCandidates.length > 0 ? 1 : 0;
       const dedupedEvidenceCandidates: ImportCandidate[] = [...evidenceVariantsByParent.entries()]
-        .slice(0, Math.max(0, limit - 1))
+        .slice(0, Math.max(0, limit - reserveDiscoverySlot))
         .map(([id, variantIds]) => ({ id, title: "", retryVariantIds: variantIds.slice(0, 4) }));
       const evidenceParentIds = new Set(dedupedEvidenceCandidates.map((candidate) => candidate.id));
       const missingPublicationRetries = retryCandidates.filter((candidate) => !evidenceParentIds.has(candidate.id))
-        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - 1));
+        .slice(0, Math.max(0, limit - dedupedEvidenceCandidates.length - reserveDiscoverySlot));
       const discoverySlots = Math.max(0, limit - dedupedEvidenceCandidates.length - missingPublicationRetries.length);
       const queuedDiscoveryCandidates = newCandidates.slice(0, discoverySlots);
       stats.finalEvidenceParentCount = dedupedEvidenceCandidates.length;
