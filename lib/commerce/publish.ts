@@ -61,7 +61,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   // before it could publish new products.
   const [pricesRead, offersRead, variantsRead] = await Promise.all([
     db.from("commerce_prices")
-      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,calculated_at")
+      .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate,calculated_at")
       .in("variant_id", variantIds)
       .order("calculated_at", { ascending: false }),
     db.from("supplier_offers")
@@ -76,7 +76,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   if (offersRead.error) throw new Error("stale_supplier_offer_batch_read_failed:" + offersRead.error.message);
   if (variantsRead.error) throw new Error("stale_variant_batch_read_failed:" + variantsRead.error.message);
 
-  type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; calculated_at: string | null };
+  type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; margin_rate: number; calculated_at: string | null };
   type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
   type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
@@ -108,6 +108,9 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           (raw.shippingKnown === undefined && raw.shippingEstimated !== true && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
+        const priceAt = price && typeof price.calculated_at === "string" ? Date.parse(price.calculated_at) : Number.NaN;
+        const priceFresh = Number.isFinite(priceAt) && priceAt <= Date.now() + 5 * 60_000 &&
+          Date.now() - priceAt <= 7 * 24 * 60 * 60_000;
         const missing = missingSaleEvidence({
           supplierCode: offer.supplier_code,
           supplierProductId: nativeIdsValid ? offer.supplier_product_id : null,
@@ -125,6 +128,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
+        if (!priceFresh) missing.push("verification");
+        if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -150,11 +155,18 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const title = String(variant?.title_ja || product?.title_ja || "TRACER商品");
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
+        const itemId = String(listing.external_product_id);
         await editBaseItem({
-          itemId: String(listing.external_product_id), title, detail,
+          itemId, title, detail,
           price: Math.max(1, Math.round(Number(price?.selling_price) || 1)),
           stock: 0, visible: false,
         });
+        const readback = await getBaseItemDetail(itemId);
+        const hidden = readback.visible === false || readback.visible === 0 || readback.visible === "0";
+        const stock = Number(readback.stock);
+        if (!hidden || !Number.isFinite(stock) || stock !== 0) {
+          throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+        }
       } else {
         const productId = toShopifyGid("Product", String(listing.external_product_id));
         if (!productId) throw new Error("shopify_product_id_missing");
@@ -167,15 +179,17 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
           throw new Error("shopify_unpublish_failed:" + (updated.productUpdate.userErrors.map((x) => x.message).join("; ") || "product_missing"));
         }
-        if (listing.external_variant_id) {
-          try {
-            await setShopifyVariantInventory({
-              variantId: String(listing.external_variant_id), quantity: 0,
-              reference: "stale-supplier-offer:" + String(listing.variant_id),
-            });
-          } catch (inventoryError) {
-            result.errors.push(String(listing.id) + ":inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
-          }
+        if (updated.productUpdate.product.status !== "DRAFT") {
+          throw new Error("shopify_unpublish_readback_mismatch:status=" + String(updated.productUpdate.product.status));
+        }
+        if (!listing.external_variant_id) throw new Error("shopify_variant_id_missing_for_zero_stock");
+        try {
+          await setShopifyVariantInventory({
+            variantId: String(listing.external_variant_id), quantity: 0,
+            reference: "stale-supplier-offer:" + String(listing.variant_id),
+          });
+        } catch (inventoryError) {
+          throw new Error("shopify_inventory_zero_failed:" + (inventoryError instanceof Error ? inventoryError.message : String(inventoryError)).slice(0, 120));
         }
       }
       const { error: saveError } = await db.from("channel_listings").update({
