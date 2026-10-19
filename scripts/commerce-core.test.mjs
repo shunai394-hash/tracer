@@ -882,12 +882,12 @@ test("existing commerce prices below 50% margin are automatically repriced", asy
 });
 
  
-test("commerce publication cron defaults to small batches and caps explicit requests", async () => {
+test("commerce publication cron defaults to batches of twenty and caps explicit requests", async () => {
   const baseRoute = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
   const shopifyRoute = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
   for (const route of [baseRoute, shopifyRoute]) {
-    assert.match(route, /searchParams\.get\("limit"\) \|\| 5/);
-    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 5/);
+    assert.match(route, /searchParams\.get\("limit"\) \|\| 20/);
+    assert.match(route, /Number\.isFinite\(requested\) \?[^\n]*: 20/);
     assert.match(route, /searchParams\.get\("onlyUnpublished"\) !== "false"/);
   }
   assert.match(baseRoute, /Math\.min\(5, Math\.max\(1, Math\.floor\(requested\)\)\)/);
