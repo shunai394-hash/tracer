@@ -106,6 +106,7 @@ assert.equal(resumed.items[0].price, 10);
 
 const route = readFileSync(new URL("../app/api/channels/base/publication-repair/route.ts", import.meta.url), "utf8");
 const costRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/route.ts", import.meta.url), "utf8");
+const costApplyRoute = readFileSync(new URL("../app/api/admin/shopify/unit-cost/apply/route.ts", import.meta.url), "utf8");
 assert.match(route, /REPAIR_TWO_REQUESTED_BASE_DUPLICATES/);
 assert.match(route, /if \(!apply \|\| blocked\)/, "apply must refuse the entire repair when any preflight guard blocks");
 assert.match(route, /const requestedDeletes = scoped/);
@@ -118,4 +119,14 @@ assert.match(route, /visible: false/);
 assert.doesNotMatch(route, /visible:\s*true/);
 assert.match(costRoute, /unitCost \{ amount currencyCode \}/);
 assert.match(costRoute, /profitConfirmed: accessDenied \? false/);
+assert.match(costApplyRoute, /confirmApply\?: boolean/, "unit-cost writes must require explicit confirmation");
+assert.match(costApplyRoute, /APPLY_REQUIRES_EXPLICIT_VARIANT_IDS/, "writes must require an exact explicit variant selection");
+assert.match(costApplyRoute, /requestedIds\.length > 100/, "writes must be bounded to 100 variants");
+assert.match(costApplyRoute, /raw\.shippingKnown === true/, "shipping evidence must be explicit, not inferred");
+assert.match(costApplyRoute, /price_not_calculated_for_current_supplier_offer/, "profit must be calculated for the current supplier offer");
+assert.match(costApplyRoute, /expectedProfit === null \|\| expectedProfit <= 0/, "non-positive profit must block a cost write");
+assert.match(costApplyRoute, /APPLY_BLOCKED_BY_PREFLIGHT/, "any blocked selected variant must abort the entire apply");
+assert.match(costApplyRoute, /inventoryItemUpdate\(id: \$id, input: \$input\)/, "cost write must use Shopify inventoryItemUpdate");
+assert.match(costApplyRoute, /amount === ev\.unitCost && currency === "JPY"/, "write is verified only after exact JPY readback");
+
 console.log("publication repair and unit cost: ok");
