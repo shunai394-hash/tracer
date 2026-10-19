@@ -195,7 +195,7 @@ export async function GET(request: Request) {
       baseUnfulfillable.candidates = (failedBaseRows ?? []).length;
       for (const row of (failedBaseRows ?? []).slice(0, 15)) {
         const itemId = String(row.external_product_id ?? "").trim();
-        if (!/^\\d+$/.test(itemId)) {
+        if (!/^\d+$/.test(itemId)) {
           baseUnfulfillable.failed += 1;
           baseUnfulfillable.results.push({ itemId: itemId || "unknown", ok: false, reason: "invalid_base_item_id" });
           continue;
