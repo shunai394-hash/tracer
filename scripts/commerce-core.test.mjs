@@ -1148,3 +1148,13 @@ test("Shopify inventory sync retries stale changeFromQuantity conflicts with a f
   assert.match(admin, /changeFromQuantity argument no longer matches the persisted quantity[\s\S]*?attempt < 2[\s\S]*?setShopifyVariantInventoryAttempt\(input, attempt \+ 1\)/);
   assert.match(admin, /export async function setShopifyVariantInventory\(input:[\s\S]*?return setShopifyVariantInventoryAttempt\(input\)/);
 });
+
+
+test("BASE and Shopify publication cron routes process up to 20 candidates per run", async () => {
+  const base = await readFile(new URL("../app/api/cron/commerce-publish-base/route.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../app/api/cron/commerce-publish-shopify/route.ts", import.meta.url), "utf8");
+  assert.match(base, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(base, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
+  assert.match(shopify, /searchParams.get\("limit"\) \|\| 20/);
+  assert.match(shopify, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
+});
