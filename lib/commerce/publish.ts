@@ -44,14 +44,21 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
-    .eq("channel", channel).eq("status", "published")
+    .eq("channel", channel)
+    .or("status.eq.published,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%,last_error.like.supplier_offer_disable_failed%")
     .not("external_product_id", "is", null)
     .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(5);
   if (error) throw new Error("stale_listing_read_failed:" + error.message);
 
-  // Only inspect currently published listings. Already-hidden error rows must not
-  // occupy the bounded batch and starve later products.
-  const checkableListings = listings ?? [];
+  // Reconcile previously published listings whose safety stop failed or whose
+  // DB state changed before external visibility was verified. Only explicit
+  // supplier-safety error prefixes are eligible outside the published state.
+  const checkableListings = (listings ?? []).filter((listing) =>
+    listing.status === "published" ||
+    String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
+    String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:") ||
+    String(listing.last_error ?? "").startsWith("supplier_offer_disable_failed:")
+  );
   result.checked = checkableListings.length;
   const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
   if (variantIds.length === 0) return result;
@@ -539,6 +546,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       getStorefrontStockCap(),
     );
     if (!isJapaneseProductTitle(title)) {
+      // Do not let a known-invalid generic title pin the oldest candidate at
+      // the front of every scheduled batch. Keep the listing unpublished/error
+      // and rotate its retry timestamp; never invent a product title.
+      const retryAt = new Date().toISOString();
+      const { error: invalidTitleStateError } = await db.from("channel_listings").update({
+        status: "error",
+        last_error: "japanese_product_title_invalid",
+        last_synced_at: retryAt,
+        updated_at: retryAt,
+      }).eq("channel", channel).eq("variant_id", candidate.id);
+      if (invalidTitleStateError) {
+        results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_state_save_failed:" + invalidTitleStateError.message });
+        continue;
+      }
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
