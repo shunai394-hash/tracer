@@ -184,9 +184,14 @@ export async function POST(request: Request) {
     if (ev?.sellingPrice === null || ev?.sellingPrice === undefined || numeric(live?.price) !== ev.sellingPrice) reasons.push("shopify_price_mismatch");
     const expectedSku = typeof listing.external_sku === "string" ? listing.external_sku.trim() : "";
     const liveSku = typeof live?.sku === "string" ? live.sku.trim() : "";
+    const currentCost = numeric(live?.inventoryItem?.unitCost?.amount);
+    const currentCurrency = live?.inventoryItem?.unitCost?.currencyCode ?? null;
     if (!expectedSku || !liveSku) reasons.push("shopify_sku_missing");
     else if (liveSku !== expectedSku) reasons.push("shopify_sku_mismatch");
-    return { variantId: listing.variant_id, externalVariantId: gid, sku: listing.external_sku, liveSku: live?.sku ?? null, currentCost: live?.inventoryItem?.unitCost?.amount ?? null, currentCurrency: live?.inventoryItem?.unitCost?.currencyCode ?? null, supplierUnitCostJpy: ev?.unitCost ?? null, supplierSourceCost: ev?.sourceUnitCost ?? null, supplierSourceCurrency: ev?.sourceCurrency ?? null, fxRateToJpy: ev?.fxRate ?? null, expectedProfit: ev?.expectedProfit ?? null, eligible: reasons.length === 0, reasons };
+    if (currentCost !== null && (currentCurrency !== "JPY" || ev?.unitCost === null || ev?.unitCost === undefined || currentCost !== ev.unitCost)) {
+      reasons.push("shopify_unit_cost_conflict");
+    }
+    return { variantId: listing.variant_id, externalVariantId: gid, sku: listing.external_sku, liveSku: live?.sku ?? null, currentCost: live?.inventoryItem?.unitCost?.amount ?? null, currentCurrency, supplierUnitCostJpy: ev?.unitCost ?? null, supplierSourceCost: ev?.sourceUnitCost ?? null, supplierSourceCurrency: ev?.sourceCurrency ?? null, fxRateToJpy: ev?.fxRate ?? null, expectedProfit: ev?.expectedProfit ?? null, eligible: reasons.length === 0, reasons };
   });
   const eligible = items.filter((item) => item.eligible);
   if (!apply) {
