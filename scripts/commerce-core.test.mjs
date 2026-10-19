@@ -1101,3 +1101,9 @@ test("supplier safety errors remain in external unpublish reconciliation after D
   assert.match(publish, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(publish, /base_unpublish_readback_mismatch/);
 });
+
+
+test("invalid generic Japanese titles rotate retry priority without inventing a title", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /if \(!isJapaneseProductTitle\(title\)\) \{[\s\S]*?status: "error",[\s\S]*?last_error: "japanese_product_title_invalid",[\s\S]*?last_synced_at: retryAt,[\s\S]*?continue;/);
+});
