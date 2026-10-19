@@ -90,7 +90,8 @@ test("storefront publication requires exact supplier identity and evidenced land
 
 test("new storefront candidates require evidenced landed costs and exact supplier identity", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /supplier_offers!inner\([^)]*raw_data/);
+  assert.match(publish, /supplier_offers\([^)]*raw_data/);
+  assert.doesNotMatch(publish, /supplier_offers!inner\(/);
   assert.match(publish, /const validOffers = asRelationRows\(candidate\.supplier_offers\)/);
   assert.match(publish, /const nativeIdsValid = x\.supplier_code !== "cj"/);
   assert.match(publish, /const unitCostKnown = Number\.isFinite\(Number\(x\.unit_cost\)\) && Number\(x\.unit_cost\) > 0/);
@@ -904,7 +905,8 @@ test("TRACER product detail copy stays generic to the actual product", async () 
 
 test("publisher selects the latest canonical price calculation before matching its supplier offer", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /commerce_prices!inner\(supplier_offer_id,calculated_at,currency/);
+  assert.match(publish, /commerce_prices\(supplier_offer_id,calculated_at,currency/, "left join must retain variants without canonical prices for reconciliation");
+  assert.doesNotMatch(publish, /commerce_prices!inner\(/, "missing canonical prices must not filter published variants out of reconciliation");
   assert.match(publish, /currentPriceRows = asRelationRows\(candidate\.commerce_prices\)\.sort/);
 });
 

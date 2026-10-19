@@ -212,7 +212,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   staleListings.failed += identityCleanup.failed;
   staleListings.errors.push(...identityCleanup.errors);
   let candidateQuery = db.from("commerce_variants")
-    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices!inner(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
+    .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true);
   if (variantIds?.length) candidateQuery = candidateQuery.in("id", [...new Set(variantIds)]);
   const { data, error } = await candidateQuery.order("updated_at", { ascending: false }).limit(1000);
