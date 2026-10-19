@@ -35,6 +35,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/sales-test-publication",
+      "schedule": "9,39 * * * *"
+    },
+    {
       "path": "/api/cron/shopify-fulfillment",
       "schedule": "7,22,37,52 * * * *"
     },
