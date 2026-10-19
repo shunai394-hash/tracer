@@ -417,7 +417,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // Archived listing history is immutable: do not reuse it for a new publish candidate.
     if (existing.data?.archived_at) continue;
     let existingId = existing.data?.id ? String(existing.data.id) : null; let keepSlug = false;
-    if (!existingId) { const byProduct = await supabase.from("shop_listings").select("id, archived_at").eq("product_id", item.productId).order("updated_at", { ascending: false }).limit(1).maybeSingle(); if (byProduct.error) throw new Error(byProduct.error.message); if (byProduct.data?.archived_at) continue; if (byProduct.data?.id) { existingId = String(byProduct.data.id); keepSlug = true; } }
+    if (!existingId) { const byProduct = await supabase.from("shop_listings").select("id, archived_at").eq("product_id", item.productId).is("archived_at", null).order("updated_at", { ascending: false }).limit(1).maybeSingle(); if (byProduct.error) throw new Error(byProduct.error.message); if (byProduct.data?.archived_at) continue; if (byProduct.data?.id) { existingId = String(byProduct.data.id); keepSlug = true; } }
     const { slug: _slug, ...payloadWithoutSlug } = payload; void _slug;
     const result = existingId ? await supabase.from("shop_listings").update(keepSlug ? payloadWithoutSlug : payload).eq("id", existingId).select("id").single() : await supabase.from("shop_listings").insert(payload).select("id").single();
     if (result.error) throw new Error(result.error.message);
