@@ -121,3 +121,5 @@ For a specific batch, use the sourcing decision endpoint with authenticated acce
 <!-- 1000-product patrol 2026-10-08T16:42:54.142Z [publish-cj-now] -->
 
 <!-- TRACER_CLEAN_COMMERCE_RECOVERY: trigger bounded verified listing recovery; no supplier orders -->
+
+<!-- TRACER_CLEAN_COMMERCE_RECOVERY: retry bounded verified listing recovery after observed partial queue progress; no supplier orders -->
