@@ -127,6 +127,8 @@ assert.match(costApplyRoute, /price_not_calculated_for_current_supplier_offer/, 
 assert.match(costApplyRoute, /expectedProfit === null \|\| expectedProfit <= 0/, "non-positive profit must block a cost write");
 assert.match(costApplyRoute, /APPLY_BLOCKED_BY_PREFLIGHT/, "any blocked selected variant must abort the entire apply");
 assert.match(costApplyRoute, /inventoryItemUpdate\(id: \$id, input: \$input\)/, "cost write must use Shopify inventoryItemUpdate");
+assert.match(costApplyRoute, /supplier_offers\(id,supplier_product_id,supplier_variant_id,unit_cost,currency,shipping_cost,source_status,inventory,raw_data,last_checked_at\)/, "supplier identity and verification fields must be read from the actual supplier_offers schema");
+assert.doesNotMatch(costApplyRoute, /select\("id,supplier_product_id,supplier_variant_id,supplier_offers\(/, "do not select supplier identity columns that are absent from commerce_variants");
 assert.match(costApplyRoute, /if \(!expectedSku \|\| !liveSku\) reasons\.push\("shopify_sku_missing"\)/, "missing or blank SKU on either side must block a cost write");
 assert.match(costApplyRoute, /else if \(liveSku !== expectedSku\) reasons\.push\("shopify_sku_mismatch"\)/, "non-empty SKUs must match exactly after trimming");
 assert.match(costApplyRoute, /amount === ev\.unitCost && currency === "JPY"/, "write is verified only after exact JPY readback");
