@@ -153,7 +153,10 @@ export async function POST(request: Request) {
     const ev = evidence.get(listing.variant_id);
     const reasons = [...(ev?.reason ?? ["supplier_evidence_missing"])];
     if (!gid || !live?.inventoryItem?.id) reasons.push("shopify_variant_or_inventory_item_missing");
-    if (live && live.sku !== listing.external_sku) reasons.push("shopify_sku_mismatch");
+    const expectedSku = typeof listing.external_sku === "string" ? listing.external_sku.trim() : "";
+    const liveSku = typeof live?.sku === "string" ? live.sku.trim() : "";
+    if (!expectedSku || !liveSku) reasons.push("shopify_sku_missing");
+    else if (liveSku !== expectedSku) reasons.push("shopify_sku_mismatch");
     return { variantId: listing.variant_id, externalVariantId: gid, sku: listing.external_sku, liveSku: live?.sku ?? null, currentCost: live?.inventoryItem?.unitCost?.amount ?? null, currentCurrency: live?.inventoryItem?.unitCost?.currencyCode ?? null, supplierUnitCost: ev?.unitCost ?? null, supplierCurrency: ev?.currency ?? null, expectedProfit: ev?.expectedProfit ?? null, eligible: reasons.length === 0, reasons };
   });
   const eligible = items.filter((item) => item.eligible);
