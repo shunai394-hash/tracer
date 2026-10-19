@@ -13,9 +13,12 @@ const NON_PRODUCT_TITLE_MARKERS = [
   "supplier_variant_identity_missing",
 ] as const;
 
-// Category-only labels are not sufficiently specific to identify a product.
-// Keep this exact-match list narrow so useful descriptive titles remain valid.
+// Category-only labels and generic fallback copy are not sufficiently specific
+// to identify a product. Keep exact matches narrow to avoid rejecting descriptive titles.
 const GENERIC_CATALOG_TITLES = new Set([
+  "商品",
+  "商品名未設定",
+  "暮らしの便利アイテム",
   "バスルームマット",
   "キッチン用品",
   "美容・メイクアイテム",
