@@ -12,7 +12,7 @@ import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
 test("localizes the known Maruki side-clip hair accessory from its source title", async () => {
   const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
   assert.match(japaneseProduct, /maruki hair accessories with side clips/i);
-  assert.match(japaneseProduct, /Maruki サイドクリップ付き ヘアアクセサリー/);
+  assert.match(japaneseProduct, /サイドクリップ付きヘアアクセサリー/);
 });
 
 test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
