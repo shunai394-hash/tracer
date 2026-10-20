@@ -1162,9 +1162,9 @@ test("Shopify inventory sync retries stale changeFromQuantity conflicts with a f
 });
 
 
-test("CJ evidence recovery retries up to four exact child variants per parent", async () => {
+test("CJ evidence recovery caps exact child variant retries at three per run", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /const retryVariantLimit = Math\.min\(8, Math\.max\(4, limit \* 2\)\)/);
+  assert.match(importer, /const retryVariantLimit = 3;/);
   assert.match(importer, /group\.variantIds\.slice\(0, 4\)/);
   assert.match(importer, /variantIds\.slice\(0, 4\)/);
 });
