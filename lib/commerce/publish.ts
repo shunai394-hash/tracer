@@ -399,12 +399,18 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
     // pass the language check but are rejected by the catalog title quality gate.
     // Prefer a source-grounded localized title when stored titles are generic.
-    const title = isPublishableCatalogTitle(candidate.title_ja) && isJapaneseProductTitle(candidate.title_ja)
-      ? candidate.title_ja.trim()
-      : isPublishableCatalogTitle(product.title_ja) && isJapaneseProductTitle(product.title_ja)
-        ? product.title_ja.trim()
-        : localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle)
-          ? localizedSourceTitle
+    // Storefront titles must be fully localized, not merely contain a few Japanese characters.
+    // If a stored title contains English words, require a source-grounded Japanese mapping;
+    // never republish mixed-language titles as customer-facing copy.
+    const containsEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value);
+    const localizedTitleIsPublishable = Boolean(localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle) &&
+      isJapaneseProductTitle(localizedSourceTitle) && !containsEnglishWords(localizedSourceTitle));
+    const title = localizedTitleIsPublishable
+      ? String(localizedSourceTitle).trim()
+      : !containsEnglishWords(candidate.title_ja) && isPublishableCatalogTitle(candidate.title_ja) && isJapaneseProductTitle(candidate.title_ja)
+        ? candidate.title_ja.trim()
+        : !containsEnglishWords(product.title_ja) && isPublishableCatalogTitle(product.title_ja) && isJapaneseProductTitle(product.title_ja)
+          ? product.title_ja.trim()
           : "";
     const rawOffer = currentPriceOfferId
       ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId) ?? null

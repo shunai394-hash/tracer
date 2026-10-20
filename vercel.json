@@ -57,6 +57,10 @@
     {
       "path": "/api/cron/sales-test-publication",
       "schedule": "9,39 * * * *"
+    },
+    {
+      "path": "/api/cron/commerce-japanese-title-repair",
+      "schedule": "12,42 * * * *"
     }
   ]
 }
