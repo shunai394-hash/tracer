@@ -1,0 +1,44 @@
+name: TRACER sales-test publication
+
+on:
+  schedule:
+    - cron: "9,39 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-sales-test-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invoke production publication gate using GitHub OIDC
+        shell: bash
+        env:
+          PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          token_json="$(curl --fail --silent --show-error --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+          id_token="$(printf '%s' "$token_json" | jq -er '.value')"
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 240 \
+            -o "$response_file" -w '%{http_code}' \
+            -H "Authorization: Bearer ${id_token}" \
+            "${PRODUCTION_URL}/api/cron/sales-test-publication")"
+          cat "$response_file"
+          echo
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "Production publication endpoint returned HTTP $status" >&2
+            exit 1
+          fi
+          jq -e '.ok == true' "$response_file" >/dev/null
