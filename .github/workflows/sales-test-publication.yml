@@ -21,16 +21,14 @@ jobs:
       - name: Invoke production publication gate using GitHub OIDC
         shell: bash
         env:
-          OIDC_REQUEST_URL: ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          OIDC_REQUEST_TOKEN: ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
           PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
         run: |
           set -euo pipefail
-          test -n "${OIDC_REQUEST_URL:-}"
-          test -n "${OIDC_REQUEST_TOKEN:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
           token_json="$(curl --fail --silent --show-error --max-time 20 \
             -H "Authorization: bearer ${OIDC_REQUEST_TOKEN}" \
-            "${OIDC_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
           id_token="$(printf '%s' "$token_json" | jq -er '.value')"
           response_file="$(mktemp)"
           status="$(curl --silent --show-error --max-time 240 \
