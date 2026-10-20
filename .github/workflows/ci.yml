@@ -1,9 +1,5 @@
 name: TRACER CI
 
-concurrency:
-  group: tracer-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 on:
   push:
     branches:
@@ -129,5 +125,7 @@ jobs:
       - run: npm run test:base-stale-item-deletion-contract
       - run: npm run test:archive-listing-republication
       - run: npm run test:archived-listing-republication-guards
+      - name: Test Shopify color-variant identity safety
+        run: node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs
       - run: npm run lint
       - run: npm run build
