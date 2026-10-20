@@ -872,7 +872,7 @@ export async function GET(request: Request) {
             if (stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated) {
               const { data: matchedListings, error: listingLookupError } = await db
                 .from("supplier_listings")
-                .select("id")
+                .select("id,metadata")
                 .eq("supplier", "cj")
                 .eq("supplier_product_id", supplierProductId)
                 .eq("supplier_variant_id", exactVariant.vid)
@@ -909,7 +909,18 @@ export async function GET(request: Request) {
                 };
                 const { error: evidenceWriteError } = await db
                   .from("supplier_listings")
-                  .update(evidencePatch)
+                  .update({
+                    ...evidencePatch,
+                    metadata: {
+                      ...((matchedListings![0].metadata && typeof matchedListings![0].metadata === "object" && !Array.isArray(matchedListings![0].metadata)) ? matchedListings![0].metadata as Record<string, unknown> : {}),
+                      source: "commerce_cj_import",
+                      source_title: canonicalDetail.title,
+                      source_product_type: canonicalDetail.productType ?? null,
+                      ...(internalImageUrl ? { image_url: internalImageUrl } : {}),
+                      stock_observed: true,
+                      japan_freight_observed: true,
+                    },
+                  })
                   .eq("id", String(matchedListings![0].id));
                 if (evidenceWriteError) {
                   stats.errors.push("supplier_listing_evidence_persist:" + evidenceWriteError.message.slice(0, 100));
@@ -975,6 +986,9 @@ export async function GET(request: Request) {
                       source: "commerce_cj_import",
                       query,
                       page,
+                      source_title: canonicalDetail.title,
+                      source_product_type: canonicalDetail.productType ?? null,
+                      ...(internalImageUrl ? { image_url: internalImageUrl } : {}),
                       stock_observed: true,
                       japan_freight_observed: true,
                       live_order_path_proven: !complianceBlockReason,
