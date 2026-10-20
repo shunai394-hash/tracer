@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^6 pack headbands for women, boho wide head bands hair accessories$/i, "ボヘミアン風 幅広ヘアバンド 6本セット"],
   [/^new large capacity laptop handbag$/i, "大容量 パソコン収納対応 レディースハンドバッグ"],
   [/^maruki hair accessories with side clips$/i, "マルキ サイドクリップ付きヘアアクセサリー"],
   [/^black bing portable 10 makeup brushes suit beauty tools$/i, "ブラック 携帯用メイクブラシ10本セット"],
