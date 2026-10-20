@@ -77,7 +77,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
           messages: [
             {
               role: "system",
-              content: "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\\"title\\": string, \\"detail\\": string} のみ返してください。",
+              content: "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\"title\": string, \"detail\": string} のみ返してください。",
             },
             { role: "user", content: JSON.stringify({ title, detail }) },
           ],
@@ -106,7 +106,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
     return validate(text(result?.title), text(result?.detail));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\\d\\d|timed out|timeout/i.test(message);
+    const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\d\d|timed out|timeout/i.test(message);
     if (!quotaOrProviderFailure || !process.env.GROQ_API_KEY?.trim()) throw error;
     return translateWithGroq();
   }
