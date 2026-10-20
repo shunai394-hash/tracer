@@ -22,6 +22,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/new folding cosmetic bag large capacity portable handbag waterproof travel storage washing bag for women/i, "大容量 防水トラベルコスメポーチ"],
   [/portable transparent shoulder crossbody bag tote satchel handbag for women/i, "クリア素材 レディースショルダーバッグ"],
   [/crossbody bag vegan leather women retro small saddle satchel shoulder bag/i, "レトロデザイン ヴィーガンレザーショルダーバッグ"],
+  [/new large capacity laptop handbag/i, "大容量 ノートPC収納対応 レディースハンドバッグ"],
   [/large capacity fashion handbag for women/i, "大容量 レディースファッションハンドバッグ"],
   [/net-red polyester handbag for women/i, "花柄 ポリエステルハンドバッグ"],
   [/summer woven hollowed handbag for women/i, "透かし編み サマーハンドバッグ"],
