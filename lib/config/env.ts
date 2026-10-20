@@ -109,13 +109,16 @@ export function getFoundationStatus(): FoundationStatus {
 
 export function getGeminiConfig() {
   const apiKey = readEnv("GEMINI_API_KEY");
+  // A second key can be supplied to rotate around per-key quota limits.
+  const apiKey2 = readEnv("GEMINI_API_KEY_2");
+  const apiKeys = [apiKey, apiKey2].filter((key, index, keys) => Boolean(key) && keys.indexOf(key) === index);
   const configuredModel = readEnv("GEMINI_MODEL");
   // Gemini 2.5 Flash is no longer available to some new API projects.
   // Migrate the legacy default and legacy explicit setting to the current stable model.
   const model = !configuredModel || configuredModel === "gemini-2.5-flash"
     ? "gemini-3.8-flash"
     : configuredModel;
-  return { apiKey, model };
+  return { apiKey, apiKey2, apiKeys, model };
 }
 
 export function getBrightDataConfig() {

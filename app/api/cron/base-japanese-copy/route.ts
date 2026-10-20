@@ -43,20 +43,73 @@ function needsJapaneseCopy(title: string, detail: string): boolean {
 }
 
 async function translate(title: string, detail: string): Promise<JapaneseCopy> {
-  const result = await generateStructuredJson<JapaneseCopy>({
-    systemInstruction: "あなたは日本のEC商品編集者兼SEO担当です。商品名は、商品種別・ブランド・型番など入力にある重要語を自然な日本語で前方に置き、検索結果で内容がすぐ伝わる簡潔な表現にしてください。説明文は日本語で、入力に明記された用途・特徴・素材・サイズ等だけを整理し、購入者が検索しそうな関連語を不自然にならない範囲で含めてください。キーワードの羅列、誇大表現、根拠のない最上級は禁止です。ブランド名・型番など必要な固有名詞のみ原文を残してください。入力にない素材、サイズ、機能、性能、認証、保証、配送条件を絶対に創作しないでください。商品名と説明の両方を日本語にし、JSONのみ返してください.",
-    prompt: JSON.stringify({ title, detail }),
-    timeoutMs: 25_000,
-  });
-  const translatedTitle = text(result?.title);
-  const translatedDetail = text(result?.detail);
-  if (!isJapaneseProductTitle(translatedTitle) || !hasUsableJapaneseCopy(translatedTitle, "title")) {
-    throw new Error("translated_title_not_japanese");
+  const validate = (translatedTitle: string, translatedDetail: string): JapaneseCopy => {
+    if (!isJapaneseProductTitle(translatedTitle) || !hasUsableJapaneseCopy(translatedTitle, "title")) {
+      throw new Error("translated_title_not_japanese");
+    }
+    if (!isJapaneseProductDescription(translatedDetail) || !hasUsableJapaneseCopy(translatedDetail, "detail")) {
+      throw new Error("translated_description_not_japanese");
+    }
+    return { title: translatedTitle, detail: translatedDetail };
+  };
+
+  // Groq is the independent fallback when Gemini is quota-limited. This uses
+  // the GROQ_API_KEY configured for the production project and validates the
+  // result before it can be written to BASE.
+  const translateWithGroq = async (): Promise<JapaneseCopy> => {
+    const apiKey = process.env.GROQ_API_KEY?.trim();
+    if (!apiKey) throw new Error("GROQ_FALLBACK_NOT_CONFIGURED");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-120b",
+          temperature: 0.1,
+          max_tokens: 2200,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\"title\": string, \"detail\": string} のみ返してください。",
+            },
+            { role: "user", content: JSON.stringify({ title, detail }) },
+          ],
+        }),
+      });
+      const payload = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message?: string };
+      };
+      if (!response.ok) throw new Error(`Groq request failed: HTTP ${response.status} ${payload.error?.message ?? ""}`.trim());
+      const raw = payload.choices?.[0]?.message?.content;
+      if (!raw) throw new Error("Groq returned empty translation");
+      const parsed = JSON.parse(raw) as { title?: unknown; detail?: unknown };
+      return validate(text(parsed.title), text(parsed.detail));
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  try {
+    const result = await generateStructuredJson<JapaneseCopy>({
+      systemInstruction: "あなたは日本のEC商品編集者兼SEO担当です。商品名は、商品種別・ブランド・型番など入力にある重要語を自然な日本語で前方に置き、検索結果で内容がすぐ伝わる簡潔な表現にしてください。説明文は日本語で、入力に明記された用途・特徴・素材・サイズ等だけを整理し、購入者が検索しそうな関連語を不自然にならない範囲で含めてください。キーワードの羅列、誇大表現、根拠のない最上級は禁止です。ブランド名・型番など必要な固有名詞のみ原文を残してください。入力にない素材、サイズ、機能、性能、認証、保証、配送条件を絶対に創作しないでください。商品名と説明の両方を日本語にし、JSONのみ返してください.",
+      prompt: JSON.stringify({ title, detail }),
+      timeoutMs: 25_000,
+    });
+    return validate(text(result?.title), text(result?.detail));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\d\d|timed out|timeout/i.test(message);
+    if (!quotaOrProviderFailure || !process.env.GROQ_API_KEY?.trim()) throw error;
+    return translateWithGroq();
   }
-  if (!isJapaneseProductDescription(translatedDetail) || !hasUsableJapaneseCopy(translatedDetail, "detail")) {
-    throw new Error("translated_description_not_japanese");
-  }
-  return { title: translatedTitle, detail: translatedDetail };
 }
 
 /**
