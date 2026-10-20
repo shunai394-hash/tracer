@@ -740,9 +740,9 @@ test("scheduled CJ discovery rechecks already-listed variants with missing suppl
   assert.match(importer, /rawData\.nextReverifyAt/);
   assert.match(importer, /reverifyAttempts/);
   assert.match(importer, /retryVariantLimit/);
-  assert.match(importer, /return !Number\\.isFinite\\(checkedAt\\) \\|\\| checkedAt <= evidenceCutoff;/,
+  assert.match(importer, /return !Number\.isFinite\(checkedAt\) \|\| checkedAt <= evidenceCutoff;/,
     "freshly verified offers must leave the CJ evidence queue until stale again");
-  assert.doesNotMatch(importer, /return publicationErrorVariantIds\\.has\\(String\\(offer\\.variant_id\\)\\) \\|\\|/,
+  assert.doesNotMatch(importer, /return publicationErrorVariantIds\.has\(String\(offer\.variant_id\)\) \|\|/,
     "publication errors must not force the same recently verified variants through every CJ run");
 });
 
