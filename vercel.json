@@ -7,6 +7,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/base-japanese-copy",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/commerce-publish-base",
       "schedule": "*/30 * * * *"
     },
