@@ -294,7 +294,7 @@ export async function GET(request: Request) {
   // Process multiple new parents and child variants per 10-minute slot by default.
   // The per-run caps remain bounded to respect CJ rate limits and the 300-second function timeout.
   const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 3)));
-  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 6)));
+  const variantBatchLimit = Math.min(3, Math.max(1, Number(url.searchParams.get("variantLimit") || 3)));
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
@@ -310,7 +310,7 @@ export async function GET(request: Request) {
       ? [...new Set((url.searchParams.get("productIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,22}$/.test(id)))].slice(0, limit)
       : [];
     const requestedVariantIds = url.searchParams.has("variantIds")
-      ? [...new Set((url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,25}$/.test(id)))].slice(0, 6)
+      ? [...new Set((url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter((id) => /^\d{10,25}$/.test(id)))].slice(0, 3)
       : [];
     if (url.searchParams.has("productIds") && requestedProductIds.length === 0) {
       return NextResponse.json({ ok: false, error: "invalid_product_ids", imported: 0 }, { status: 400 });
@@ -319,7 +319,7 @@ export async function GET(request: Request) {
         (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).length > 6 ||
         (url.searchParams.get("variantIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean).some((id) => !/^\d{10,25}$/.test(id)) ||
         (url.searchParams.has("productIds") && requestedProductIds.length === 0))) {
-      return NextResponse.json({ ok: false, error: "invalid_variant_ids", maxVariantIds: 6, imported: 0 }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "invalid_variant_ids", maxVariantIds: 3, imported: 0 }, { status: 400 });
     }
     const forcedDetails = new Map<string, Awaited<ReturnType<typeof getCJProductDetail>>>();
     let candidates: ImportCandidate[] = [];
