@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/run-base-japanese-copy-once.yml"
+      - "app/api/cron/base-japanese-copy/route.ts"
 
 permissions:
   contents: read
