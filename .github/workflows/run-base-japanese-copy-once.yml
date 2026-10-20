@@ -31,16 +31,17 @@ jobs:
           PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
         run: |
           set -euo pipefail
-          token_json="$(curl --fail --silent --show-error --max-time 20 \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
-          id_token="$(printf '%s' "$token_json" | jq -er '.value')"
           response_file="$(mktemp)"
           total_verified=0
           total_failed=0
           completed_batches=0
           after_item_id=0
           for batch in $(seq 1 50); do
+            # GitHub OIDC ID tokens expire; mint a fresh token for each batch.
+            token_json="$(curl --fail --silent --show-error --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+            id_token="$(printf '%s' "$token_json" | jq -er '.value')"
             status="$(curl --silent --show-error --max-time 300 \
               -o "$response_file" -w '%{http_code}' \
               -H "Authorization: Bearer ${id_token}" \
