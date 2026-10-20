@@ -3,7 +3,6 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { calculateCJFreight, fetchCJProductInventory, fetchCJVariantStock } from "@/lib/sources/cj/client";
 import { editBaseItem, isBaseConfigured } from "@/lib/channels/base";
-import { getAutoProcurementEligibility } from "@/lib/procurement/auto-eligibility";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,48 +25,10 @@ export async function GET(request: Request) {
     if (listingError) throw new Error(listingError.message);
     if (!listing) return NextResponse.json({ ok: false, error: "published_cj_listing_not_found" }, { status: 404 });
 
-    const autoProcurement = getAutoProcurementEligibility("cj");
-    if (!autoProcurement.eligible) {
-      let baseSyncError: string | null = null;
-      if (listing.base_item_id && isBaseConfigured()) {
-        try {
-          await editBaseItem({
-            itemId: String(listing.base_item_id),
-            title: String(listing.title ?? ""),
-            detail: String(listing.description ?? listing.title ?? ""),
-            price: Number(listing.selling_price ?? 0),
-            stock: 0,
-            visible: false,
-          });
-        } catch (error) {
-          baseSyncError = error instanceof Error ? error.message : String(error);
-        }
-      }
-      const now = new Date().toISOString();
-      const { error } = await db
-        .from("shop_listings")
-        .update({
-          published: false,
-          orderable: false,
-          pipeline_stage: "INVENTORY_REFRESH",
-          pipeline_status: "blocked",
-          pipeline_reason: "supplier_auto_procurement_capability_missing",
-          pipeline_error: baseSyncError ?? autoProcurement.missing.join("|"),
-          pipeline_updated_at: now,
-          updated_at: now,
-        })
-        .eq("id", String(listing.id));
-      if (error) throw new Error(error.message);
-      return NextResponse.json({
-        ok: true,
-        listingId: listing.id,
-        blocked: true,
-        reason: "supplier_auto_procurement_capability_missing",
-        missing: autoProcurement.missing,
-        baseSyncError,
-      });
-    }
-
+    // Do not unpublish or disable a valid listing because live supplier payment/order
+    // capability is gated. Before a customer order is paid, this endpoint only
+    // refreshes exact variant stock and Japan shipping; procurement has its own
+    // fail-closed live-order/payment checks.
     const productId = String(listing.supplier_product_id ?? "").trim();
     const variantId = String(listing.supplier_variant_id ?? "").trim();
     if (!productId || !variantId) {
