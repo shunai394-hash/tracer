@@ -57,6 +57,8 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     .eq("supplier_offers.tracking_supported", true)
     .gte("supplier_offers.last_checked_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
     .gt("supplier_offers.inventory", 0)
+    .gt("supplier_offers.unit_cost", 0)
+    .gt("supplier_offers.shipping_cost", 0)
     .eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.selling_price", 0)
     .gt("commerce_prices.expected_profit", 0);
@@ -141,7 +143,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
       const nativeIdsValid = offer.supplier_code !== "cj" ||
         (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
       return offer.source_status === "verified" && offer.ship_to === "JP" && offer.tracking_supported === true &&
-        Number(offer.inventory) > 0 && Number(offer.unit_cost) >= 0 && Number(offer.shipping_cost) >= 0 && fresh && nativeIdsValid;
+        Number(offer.inventory) > 0 && Number(offer.unit_cost) > 0 && Number(offer.shipping_cost) > 0 && fresh && nativeIdsValid;
     });
     if (!validOffer) continue;
     if (!prices.some((price) => price.supplier_offer_id === validOffer.id && price.currency === "JPY" &&
