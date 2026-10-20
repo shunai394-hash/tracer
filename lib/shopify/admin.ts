@@ -365,7 +365,7 @@ const TRACER_TAGS = ["TRACER"];
 
 function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTitle?: string | null; seoDescription?: string | null }): { title: string; description: string } {
   const plainDescription = input.descriptionHtml
-    .replace(/<\\/(p|div|li|h[1-6])\\s*>/gi, " ")
+    .replace(/<\/(p|div|li|h[1-6])\s*>/gi, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -373,7 +373,7 @@ function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTit
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
   const title = (input.seoTitle?.trim() || input.title.trim()).slice(0, 70).trim();
   const description = (input.seoDescription?.trim() || plainDescription || input.title.trim()).slice(0, 320).trim();
