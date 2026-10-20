@@ -1217,3 +1217,10 @@ test("read-only commerce status reads all channel listing errors instead of trun
   assert.match(route, /readAll\(db, "channel_listings", "channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)", "variant_id", q => q\.eq\("status", "error"\)\)/);
   assert.doesNotMatch(route, /from\("channel_listings"\)\.select\("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)"\)\.eq\("status", "error"\)\.order\("variant_id"\)\.limit\(500\)/);
 });
+
+
+test("no-longer-fulfillable supplier listings are included in recovery reconciliation", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /last_error\.like\.supplier_offer_no_longer_fulfillable%/);
+  assert.match(publish, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/);
+});
