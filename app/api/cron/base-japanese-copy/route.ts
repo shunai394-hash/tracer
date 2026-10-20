@@ -85,17 +85,30 @@ export async function GET(request: Request) {
 
   // Always scan the complete snapshot, then rotate the bounded batch. Without
   // rotation, the same first 50 failed translations can starve every later item.
+  const requestedItemId = text(url.searchParams.get("itemId"));
   const candidatePool = snapshot.items
     .filter((item) => /^\d+$/.test(text(item.item_id)))
-    .filter((item) => needsJapaneseCopy(text(item.title), text(item.detail)))
+    .filter((item) => requestedItemId
+      ? text(item.item_id) === requestedItemId
+      : needsJapaneseCopy(text(item.title), text(item.detail)))
     .sort((a, b) => Number(text(a.item_id)) - Number(text(b.item_id)));
+  if (requestedItemId && candidatePool.length === 0) {
+    return NextResponse.json({
+      ok: false,
+      error: "BASE_ITEM_ID_NOT_FOUND_IN_COMPLETE_SNAPSHOT",
+      itemId: requestedItemId,
+      snapshotItems: snapshot.items.length,
+    }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
   const requestedOffset = url.searchParams.get("offset");
   const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
     ? Number(requestedOffset) % Math.max(1, candidatePool.length)
     : (Math.floor(Date.now() / (15 * 60 * 1000)) * limit) % Math.max(1, candidatePool.length);
-  const candidates = candidatePool.length <= limit
-    ? candidatePool
-    : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
+  const candidates = requestedItemId
+    ? candidatePool.slice(0, 1)
+    : candidatePool.length <= limit
+      ? candidatePool
+      : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
