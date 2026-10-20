@@ -31,10 +31,10 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
   return { processed, upserted, testReady, rejected };
 }
 
-async function promoteGatePassedListings(selectedListingIds: string[]) {
+async function promoteGatePassedListings() {
   // Delivery channels are independent: a Shopify/BASE outage must not suppress
   // NEWFIND promotion or change the canonical TRACER publication result.
-  const shopify = await syncPublishedListingsToShopify(selectedListingIds).catch((error) => ({
+  const shopify = await syncPublishedListingsToShopify().catch((error) => ({
     ok: false,
     listingIds: [] as string[],
     error: error instanceof Error ? error.message : String(error),
@@ -52,7 +52,7 @@ async function promoteGatePassedListings(selectedListingIds: string[]) {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
-  const base = await publishPublishedListingsToBase(400, selectedListingIds).catch((error) => ({
+  const base = await publishPublishedListingsToBase(15).catch((error) => ({
     ok: false,
     results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
     error: error instanceof Error ? error.message : String(error),
@@ -345,8 +345,8 @@ export async function GET(request: Request) {
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    if (supplySelected.published > 0) {
-      const downstream = await promoteGatePassedListings(supplySelected.selectedListingIds);
+    if (supplySelected.published > 0 || !dryRun) {
+      const downstream = await promoteGatePassedListings();
       if (cronRunId) await supabase.from("cron_runs").update({
         status: "succeeded",
         finished_at: new Date().toISOString(),
