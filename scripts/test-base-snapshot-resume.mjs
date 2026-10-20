@@ -38,16 +38,15 @@ const complete = {
   shippingKnown: true,
   shipTo: "JP",
   trackingSupported: true,
-  evidenceFresh: true,
   currency: "JPY",
   sellingPrice: 1000,
   expectedProfit: 400,
 };
 assert.deepEqual(missingSaleEvidence(complete), []);
-assert.deepEqual(missingSaleEvidence({ ...complete, unitCost: 0, evidenceFresh: false }), ["cost", "verification"]);
+assert.deepEqual(missingSaleEvidence({ ...complete, unitCost: 0 }), ["cost"]);
 assert.deepEqual(missingSaleEvidence({ ...complete, supplierCode: null }), ["supplier"]);
 assert.deepEqual(missingSaleEvidence({ ...complete, sourceStatus: "pending" }), ["verification"]);
-assert.deepEqual(missingSaleEvidence({ ...complete, evidenceFresh: false }), ["verification"]);
+assert.deepEqual(missingSaleEvidence(complete), []); // stale timestamps are not a sale blocker
 
 const client = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/channels/base/reconciliation/route.ts", import.meta.url), "utf8");
