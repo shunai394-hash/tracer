@@ -9,6 +9,7 @@ name: TRACER clean-commerce bounded recovery
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY verify saleability and hide unfulfillable existing listings.
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY rerun after fresh-offer repricing fix #1328 is deployed.
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY retry for two fresh verified bag listings.
+# 2026-10-20: retry recovery after stale hidden BASE identity markers became re-queueable.
 
 on:
   push:
