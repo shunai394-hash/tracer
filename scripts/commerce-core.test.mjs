@@ -760,6 +760,13 @@ test("BASE publication retries recover exact created IDs and refuse ambiguous st
 });
 
 
+test("native CJ product bridge inserts exact identities without a partial-index upsert", async () => {
+  const route = await readFile(new URL("../app/api/cron/sales-test-publication/route.ts", import.meta.url), "utf8");
+  assert.match(route, /error\?\.code === "23505"/);
+  assert.match(route, /native_product_identity_bridge:/);
+  assert.doesNotMatch(route, /onConflict: "identity_key"/);
+});
+
 test("patrol counts canonical commerce eligibility independently from the legacy listing table", async () => {
   const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
   assert.match(patrol, /commerce_variants/);
