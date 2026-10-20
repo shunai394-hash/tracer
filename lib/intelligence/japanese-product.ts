@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^sofa fabric thick plain thick linen pillow fabric(?:\s*\(.*\))?$/i, "ソファ・クッション用 厚手生地（ホワイト）"],
   [/^fashion metal love heart hair clip elegant star round barrette for women girls sweet hairpins barrettes hair accessories$/i, "ハート・星モチーフ メタルヘアクリップ"],
   [/^handmade wool crochet candy hair clips$/i, "手編み風 キャンディモチーフ ヘアクリップ"],
   [/^high end satin bow hair clip$/i, "サテンリボン ヘアクリップ"],
@@ -329,6 +330,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/^sofa fabric thick plain thick linen pillow fabric(?:\s*\(.*\))?$/i, "ソファやクッションの張地・カバー用途を想定した厚手の生地です。原文ではリネンと記載されていますが、素材組成は商品仕様をご確認ください。幅・長さ・販売単位・素材構成は販売元の仕様をご確認ください。"],
     [/ceramic ashtray home bedroom dormitory office/i, "卓上で使うセラミック製の灰皿です。寸法・重量・お手入れ方法は販売元の仕様をご確認ください。"],
     [/bathroommobile phone box waterproofstand|bathroom.*mobile phone box.*waterproof.*stand/i, "浴室やキッチンでスマートフォンを置くためのホルダーです。対応機種・固定方法・防水性能は販売元の仕様をご確認ください。"],
     [/suitable for creative new envelopes.*huawei.*mobile phone shell.*acrylic|huawei.*acrylic.*protective sleeve/i, "Huawei各機種向けのアクリル製スマートフォンケースです。対応モデル・寸法・素材は購入前に商品バリエーションと販売元の仕様をご確認ください。"],
