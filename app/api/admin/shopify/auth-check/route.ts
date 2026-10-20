@@ -14,7 +14,7 @@ export const maxDuration = 30;
 const REQUIRED_SCOPES: Array<{ scope: string; satisfiedBy: string[]; usedBy: string }> = [
   { scope: "write_products", satisfiedBy: ["write_products"], usedBy: "productCreate/productUpdate/productVariantsBulkUpdate" },
   { scope: "read_products", satisfiedBy: ["read_products", "write_products"], usedBy: "products/product/nodes(ProductVariant)" },
-  { scope: "write_inventory", satisfiedBy: ["write_inventory"], usedBy: "inventorySetQuantities" },
+  { scope: "write_inventory", satisfiedBy: ["write_inventory"], usedBy: "inventorySetQuantities/inventoryItemUpdate(unitCost)" },
   { scope: "read_inventory", satisfiedBy: ["read_inventory", "write_inventory"], usedBy: "inventoryLevels/inventoryQuantity" },
   { scope: "read_locations", satisfiedBy: ["read_locations"], usedBy: "inventoryLevels.location" },
   { scope: "write_publications", satisfiedBy: ["write_publications"], usedBy: "publishablePublish/publishableUnpublish" },
