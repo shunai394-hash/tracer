@@ -258,7 +258,7 @@ export async function GET(request: Request) {
           stockPreserved: numberValue(after.stock) === stock,
           visibilityPreserved: visibleOf(after.visible) === visible,
           identifierPreserved: text(after.identifier) === identifier,
-          titleJapanese: hasUsableJapaneseCopy(text(after.title)),
+          titleJapanese: hasUsableJapaneseCopy(text(after.title), "title"),
           descriptionJapanese: hasUsableJapaneseCopy(text(after.detail)),
         });
       } catch (error) {
