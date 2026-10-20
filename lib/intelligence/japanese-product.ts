@@ -1,4 +1,17 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^fashion metal love heart hair clip elegant star round barrette for women girls sweet hairpins barrettes hair accessories$/i, "ハート・星モチーフ メタルヘアクリップ"],
+  [/^handmade wool crochet candy hair clips$/i, "手編み風 キャンディモチーフ ヘアクリップ"],
+  [/^high end satin bow hair clip$/i, "サテンリボン ヘアクリップ"],
+  [/^creative versatile santa claus themed hair clips$/i, "サンタクロースモチーフ ヘアクリップ"],
+  [/^glitter mini butterfly hair claw clips.*set of 50 glitter$/i, "ラメ入り ミニ蝶モチーフ ヘアクリップ 50個セット"],
+  [/^wavy checkerboard hair clips sweet versatile bangs clips$/i, "波型 チェッカー柄 前髪クリップ"],
+  [/^multi-piece party gift sets.*6-piece set of matte hair clips.*$/i, "マットカラー ヘアクリップ 6本セット"],
+  [/^cute cartoon frog hair clip creative accessories for women$/i, "カエルモチーフ ヘアクリップ"],
+  [/^yellow geometric stars handmade hair clips side$/i, "イエロー 幾何学スター ヘアクリップ"],
+  [/^gold alloy hair clips, geometric openwork clips, cute headband.*$/i, "ゴールドカラー 幾何学透かし模様 メタルヘアクリップ"],
+  [/^korean style cellulose acetate sheet hair accessories trumpet simplicity temperament hair claw women$/i, "韓国風 セルロースアセテート製 ヘアクリップ"],
+  [/^new large capacity laptop handbag$/i, "大容量 ノートPC収納対応 レディースハンドバッグ"],
+
   [/^6 pack headbands for women, boho wide head bands hair accessories$/i, "ボヘミアン風 幅広ヘアバンド 6本セット"],
   [/^new large capacity laptop handbag$/i, "大容量 パソコン収納対応 レディースハンドバッグ"],
   [/^maruki hair accessories with side clips$/i, "マルキ サイドクリップ付きヘアアクセサリー"],
