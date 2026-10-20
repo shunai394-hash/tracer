@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
-import { isJapaneseProductDescription, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -70,10 +70,6 @@ export async function GET(request: Request) {
   if (!isBaseConfigured()) {
     return NextResponse.json({ ok: false, error: "BASE_OAUTH_CONFIG_INCOMPLETE" }, { status: 503 });
   }
-  if (!isGeminiConfigured()) {
-    return NextResponse.json({ ok: false, error: "GEMINI_API_KEY_REQUIRED" }, { status: 503 });
-  }
-
   const url = new URL(request.url);
   const limit = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || 1))));
   let snapshot;
@@ -194,12 +190,21 @@ export async function GET(request: Request) {
         // Use deterministic, source-grounded Japanese copy for the explicitly
         // reported legacy item. This avoids repeated Gemini failures for the
         // same listing; all other catalog items continue through translation.
+        const deterministicTitle = localizeProductTitle(originalTitle);
+        const deterministicDetail = localizeProductDescription(originalTitle);
+        const deterministicCopyIsSafe =
+          isSpecificJapaneseProductTitle(deterministicTitle) &&
+          Boolean(deterministicDetail) &&
+          isJapaneseProductDescription(deterministicDetail) &&
+          hasUsableJapaneseCopy(deterministicDetail, "detail");
         const copy: JapaneseCopy = itemId === "160447301"
           ? {
               title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
               detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
             }
-          : await translate(originalTitle, originalDetail);
+          : deterministicCopyIsSafe
+            ? { title: deterministicTitle!, detail: deterministicDetail! }
+            : await translate(originalTitle, originalDetail);
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
