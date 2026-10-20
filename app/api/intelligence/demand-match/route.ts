@@ -5,9 +5,9 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Writes demand_product_matches / demand_product_candidates, so it requires
-// the same automation auth as the cron routes (it was previously open).
-export async function POST(request: Request) {
+// Both Vercel Cron (GET) and authenticated manual/automation calls (POST)
+// use the same guarded handler. This route writes demand matches/candidates.
+async function runDemandMatch(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
 
@@ -29,4 +29,13 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+// Vercel Cron invokes scheduled routes with GET and CRON_SECRET authorization.
+export async function GET(request: Request) {
+  return runDemandMatch(request);
+}
+
+export async function POST(request: Request) {
+  return runDemandMatch(request);
 }
