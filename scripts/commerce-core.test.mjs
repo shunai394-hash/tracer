@@ -1103,12 +1103,14 @@ test("CJ freight quote misses use labeled estimate only with confirmed stock and
   assert.ok(importer.includes("targetMarginRate: 0.5"));
 });
 
-test("bounded recovery refuses publication unless final price reconciliation is drained and error-free", async () => {
+test("bounded recovery runs one safe repricing batch before dedicated publication", async () => {
   const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
-  assert.match(workflow, /Final price reconciliation is incomplete; refusing publication/);
-  assert.match(workflow, /remaining\.get\("base"\) != 0/);
-  assert.match(workflow, /remaining\.get\("shopify"\) != 0/);
-  assert.match(workflow, /if \(data\.get\("ok"\) is not True/);
+  assert.match(workflow, /commerce-reprice-existing\?limit=25/);
+  assert.match(workflow, /Price calculation did not complete cleanly; refusing publication/);
+  assert.match(workflow, /if data\.get\("ok"\) is not True or errors/);
+  assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
+  assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
+  assert.doesNotMatch(workflow, /for pass in \$\(seq 1 10\)/);
   assert.match(workflow, /sys\.exit\(1\)/);
 });
 

@@ -87,59 +87,35 @@ jobs:
           PY
             [[ "$code" == "200" || "$code" == "207" ]]
           }
-          failed=0
-          for pass in $(seq 1 10); do
-            call_api "api/cron/commerce-reprice-existing?limit=25" "commerce-reprice-${pass}.json" || failed=1
-          done
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json,pathlib
-          print("## TRACER price reconciliation")
-          print("| Pass | ok | repriced | BASE remaining | Shopify remaining | errors |")
-          print("|---:|---:|---:|---:|---:|---:|")
-          for i in range(1,11):
-              p=pathlib.Path(f"commerce-reprice-{i}.json")
-              try: d=json.loads(p.read_text())
-              except Exception:
-                  print(f"| {i} | invalid response | — | — | — | — |"); continue
-              rem=d.get("storefrontSyncRemaining") or {}
-              errors=len(d.get("errors",[]))+len(d.get("storefrontSyncErrors",[]))
-              print(f"| {i} | {d.get('ok')} | {d.get('repriced')} | {rem.get('base')} | {rem.get('shopify')} | {errors} |")
-          PY
-          [[ "$failed" == "0" ]] || { echo "One or more price reconciliation passes failed; stopping before publication."; exit 1; }
+          # Reprice one bounded batch only. This endpoint also reconciles both storefronts,
+          # so looping it until the entire storefront backlog drains can consume the full
+          # workflow timeout before the dedicated publication step ever starts.
+          call_api "api/cron/commerce-reprice-existing?limit=25" "commerce-reprice-1.json" || {
+            echo "Price reconciliation request failed; refusing publication."
+            exit 1
+          }
           python3 - <<'PY'
           import json,pathlib,sys
-          path=pathlib.Path("commerce-reprice-10.json")
+          path=pathlib.Path("commerce-reprice-1.json")
           try:
               data=json.loads(path.read_text())
           except Exception as exc:
-              print(f"Final price reconciliation response is invalid: {exc}")
+              print(f"Price reconciliation response is invalid: {exc}")
               sys.exit(1)
-          remaining=data.get("storefrontSyncRemaining") or {}
           errors=data.get("errors") or []
-          sync_errors=data.get("storefrontSyncErrors") or []
-          failures=data.get("storefrontSyncFailureDetails") or []
-          title_only = (
-              len(failures) > 0 and
-              all(item.get("reason") == "japanese_product_title_invalid" for item in failures) and
-              remaining.get("base") == 3 and remaining.get("shopify") == 3 and
-              not errors and len(sync_errors) == 2
-          )
-          if (data.get("ok") is not True and not title_only) or (
-              not title_only and (remaining.get("base") != 0 or remaining.get("shopify") != 0 or errors or sync_errors)
-          ):
-              print("Final price reconciliation is incomplete; refusing publication.")
-              print(json.dumps({
-                  "ok": data.get("ok"),
-                  "remaining": remaining,
-                  "repriceErrors": len(errors),
-                  "storefrontSyncErrors": len(sync_errors),
-                  "titleOnlyFailures": title_only,
-              }, ensure_ascii=False))
+          if data.get("ok") is not True or errors:
+              print("Price calculation did not complete cleanly; refusing publication.")
+              print(json.dumps({"ok":data.get("ok"),"repriced":data.get("repriced"),"errors":len(errors)},ensure_ascii=False))
               sys.exit(1)
-          if title_only:
-              print("Continuing bounded publication: only invalid-title legacy rows remain; publisher independently rejects those rows.")
-          else:
-              print("Final price reconciliation drained with no errors.")
+          print(json.dumps({
+              "ok":data.get("ok"),
+              "considered":data.get("considered"),
+              "repriced":data.get("repriced"),
+              "storefrontSync":data.get("storefrontSync"),
+              "storefrontSyncRemaining":data.get("storefrontSyncRemaining"),
+              "storefrontSyncErrors":len(data.get("storefrontSyncErrors") or []),
+          },ensure_ascii=False))
+          print("Price batch completed. Remaining storefront backlog is handled by the dedicated bounded publication step and recurring cron.")
           PY
 
       - name: Publish verified commerce backlog in bounded batches
