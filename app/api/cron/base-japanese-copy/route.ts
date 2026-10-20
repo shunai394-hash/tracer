@@ -71,7 +71,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "BASE_OAUTH_CONFIG_INCOMPLETE" }, { status: 503 });
   }
   const url = new URL(request.url);
-  const limit = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || 3))));
+  const limit = Math.min(10, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || 10))));
   let snapshot;
   try {
     snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 50 });
