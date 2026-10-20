@@ -489,8 +489,11 @@ export async function GET(request: Request) {
         const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
         // A publication failure is itself a retry signal. Do not let a recent
         // last_checked_at suppress live supplier revalidation for a blocked listing.
-        return publicationErrorVariantIds.has(String(offer.variant_id)) ||
-          !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
+        // A publication error triggers the publisher's retry queue, but must not
+        // bypass evidence freshness forever. Otherwise the same recently refreshed
+        // variants are rechecked every cron run and starve the remaining stale queue.
+        // The publish cron retries retryable supplier_offer_not_fulfillable rows.
+        return !Number.isFinite(checkedAt) || checkedAt <= evidenceCutoff;
       });
       stats.verifiedOffersStaleEligible = staleVerifiedForEvidence.length;
       stats.publicationBlockedVariantsSeen = publicationErrorVariantIds.size;
