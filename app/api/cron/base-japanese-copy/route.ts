@@ -150,19 +150,17 @@ export async function GET(request: Request) {
   // Prioritize the two explicitly reported English BASE listings so a
   // provider quota outage cannot keep postponing these known deterministic fixes.
   const knownCopyPriorityIds = new Set(["160447301", "160447305"]);
-  const prioritizedCandidates = [
-    ...candidatePool.filter((item) => knownCopyPriorityIds.has(text(item.item_id))),
-    ...candidatePool.filter((item) => !knownCopyPriorityIds.has(text(item.item_id))),
-  ];
+  const priorityCandidates = candidatePool.filter((item) => knownCopyPriorityIds.has(text(item.item_id)));
+  const remainingCandidates = candidatePool.filter((item) => !knownCopyPriorityIds.has(text(item.item_id)));
   const candidates = requestedItemId
     ? candidatePool.slice(0, 1)
-    : candidatePool.length <= limit
-      ? prioritizedCandidates
-      : [
-          ...prioritizedCandidates.filter((item) => knownCopyPriorityIds.has(text(item.item_id))).slice(0, limit),
-          ...Array.from({ length: Math.max(0, limit - prioritizedCandidates.filter((item) => knownCopyPriorityIds.has(text(item.item_id)).length) }, (_, index) =>
-            prioritizedCandidates.filter((item) => !knownCopyPriorityIds.has(text(item.item_id)))[(rotationOffset + index) % Math.max(1, prioritizedCandidates.filter((item) => !knownCopyPriorityIds.has(text(item.item_id))).length)]),
-        ];
+    : [
+        ...priorityCandidates.slice(0, limit),
+        ...Array.from(
+          { length: Math.max(0, limit - Math.min(limit, priorityCandidates.length)) },
+          (_, index) => remainingCandidates[(rotationOffset + index) % Math.max(1, remainingCandidates.length)],
+        ),
+      ].slice(0, limit);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
