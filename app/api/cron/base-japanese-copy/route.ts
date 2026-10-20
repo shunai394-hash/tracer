@@ -162,7 +162,7 @@ export async function GET(request: Request) {
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
         const itemId = text(item.item_id);
-        if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(itemId)) return 0;
+        if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(itemId)) return 0;
         const title = localizeProductTitle(text(item.title));
         const detail = localizeProductDescription(text(item.title));
         if (
@@ -232,7 +232,7 @@ export async function GET(request: Request) {
   // offline-safe repairs and immediately hit Gemini's exhausted quota again.
   const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
     const itemId = text(item.item_id);
-    if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(itemId)) return true;
+    if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(itemId)) return true;
     const localizedTitle = localizeProductTitle(text(item.title));
     const localizedDetail = localizeProductDescription(text(item.title));
     return isSpecificJapaneseProductTitle(localizedTitle) &&
@@ -295,7 +295,7 @@ export async function GET(request: Request) {
           typeof candidateDetail === "string" &&
           isJapaneseProductDescription(candidateDetail) &&
           hasUsableJapaneseCopy(candidateDetail, "detail");
-        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(candidateId)) {
+        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(candidateId)) {
           results.push({ itemId, outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
           continue;
         }
@@ -351,6 +351,10 @@ export async function GET(request: Request) {
           "160454016": {
             title: "日本式窯焼き抹茶茶器セット（青釉）",
             detail: "日本式の窯焼き仕上げをうたう、青釉カラーの抹茶用茶器セットです。セット内容、寸法、素材、食器としての使用可否などは、商品画像および仕入先の仕様を確認してからご注文ください。",
+          },
+          "160454198": {
+            title: "紫砂風の長方形植木鉢（紫泥色・35×22.8×8.5cm）",
+            detail: "紫泥色の長方形タイプの植木鉢です。商品名には「Purple Clay」と35×22.8×8.5cmのサイズ表記があります。素材の正確な組成、排水穴の有無、屋内外での使用可否は商品名だけでは確認できないため、購入前に商品画像と仕入先の仕様をご確認ください。",
           },
         };
         const copy: JapaneseCopy = fixedCopyByItemId[itemId] ??
