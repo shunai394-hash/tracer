@@ -53,40 +53,45 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
     return { title: translatedTitle, detail: translatedDetail };
   };
 
-  // DeepL is an independent fallback for Gemini quota exhaustion. It is enabled
-  // only when DEEPL_AUTH_KEY is configured; never silently replace English with
-  // a generic guessed title or description.
-  const translateWithDeepL = async (): Promise<JapaneseCopy> => {
-    const authKey = process.env.DEEPL_AUTH_KEY?.trim();
-    if (!authKey) throw new Error("DEEPL_FALLBACK_NOT_CONFIGURED");
-    const endpoint = authKey.endsWith(":fx")
-      ? "https://api-free.deepl.com/v2/translate"
-      : "https://api.deepl.com/v2/translate";
+  // Groq is the independent fallback when Gemini is quota-limited. This uses
+  // the GROQ_API_KEY configured for the production project and validates the
+  // result before it can be written to BASE.
+  const translateWithGroq = async (): Promise<JapaneseCopy> => {
+    const apiKey = process.env.GROQ_API_KEY?.trim();
+    if (!apiKey) throw new Error("GROQ_FALLBACK_NOT_CONFIGURED");
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const timeout = setTimeout(() => controller.abort(), 25_000);
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         signal: controller.signal,
         headers: {
-          Authorization: `DeepL-Auth-Key ${authKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: [title, detail],
-          target_lang: "JA",
-          preserve_formatting: true,
+          model: "openai/gpt-oss-120b",
+          temperature: 0.1,
+          max_tokens: 2200,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\\"title\\": string, \\"detail\\": string} のみ返してください。",
+            },
+            { role: "user", content: JSON.stringify({ title, detail }) },
+          ],
         }),
       });
       const payload = await response.json() as {
-        translations?: Array<{ text?: string }>;
-        message?: string;
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message?: string };
       };
-      if (!response.ok) throw new Error(`DeepL request failed: HTTP ${response.status} ${payload.message ?? ""}`.trim());
-      const translations = payload.translations ?? [];
-      const translatedTitle = text(translations[0]?.text);
-      const translatedDetail = text(translations[1]?.text);
-      return validate(translatedTitle, translatedDetail);
+      if (!response.ok) throw new Error(`Groq request failed: HTTP ${response.status} ${payload.error?.message ?? ""}`.trim());
+      const raw = payload.choices?.[0]?.message?.content;
+      if (!raw) throw new Error("Groq returned empty translation");
+      const parsed = JSON.parse(raw) as { title?: unknown; detail?: unknown };
+      return validate(text(parsed.title), text(parsed.detail));
     } finally {
       clearTimeout(timeout);
     }
@@ -102,8 +107,8 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\\d\\d|timed out|timeout/i.test(message);
-    if (!quotaOrProviderFailure || !process.env.DEEPL_AUTH_KEY?.trim()) throw error;
-    return translateWithDeepL();
+    if (!quotaOrProviderFailure || !process.env.GROQ_API_KEY?.trim()) throw error;
+    return translateWithGroq();
   }
 }
 
