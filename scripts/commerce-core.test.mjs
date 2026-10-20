@@ -83,8 +83,10 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.source_status === "verified"/);
   assert.match(publish, /offer\.ship_to === "JP"/);
   assert.match(publish, /offer\.tracking_supported === true/);
-  assert.match(publish, /supplierEvidenceFresh/);
-  assert.match(publish, /Date\.now\(\) - supplierCheckedAt <= 24 \* 60 \* 60_000/);
+  assert.doesNotMatch(publish, /supplierEvidenceFresh|preflightFresh|priceFresh/);
+  assert.doesNotMatch(publish, /Date\.now\(\) - (?:supplierCheckedAt|preflightCheckedAt|checkedAt|priceAt) <= (?:24|7) \* 60 \* 60_000/);
+  assert.match(publish, /shippingKnown && stockKnown && offer\.ship_to === "JP"/);
+  assert.match(publish, /Number\(price\.expected_profit\) > 0/);
   assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.match(publish, /shippingInclusiveDescription/);
   assert.match(publish, /日本向け送料は商品価格に含まれています/);
