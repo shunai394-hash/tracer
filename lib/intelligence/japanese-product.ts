@@ -42,7 +42,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/crossbody bag vegan leather women retro small saddle satchel shoulder bag/i, "レトロデザイン ヴィーガンレザーショルダーバッグ"],
   [/new large capacity laptop handbag/i, "大容量 ノートパソコン収納対応 レディースハンドバッグ"],
   [/6 pack headbands for women, boho wide head bands hair accessories/i, "ボヘミアン風 ワイドヘッドバンド 6本セット"],
-  [/pu leather.*ponytail clip.*hair accessories/i, "合成皮革調 ヘッドバンド付きポニーテールクリップ"],
+  [/pu leather headband gel women ponytail clip decoration hair accessories|pu leather.*ponytail clip|ponytail clip.*pu leather/i, "合成皮革調 ヘッドバンド付きポニーテールクリップ"],
   [/large capacity fashion handbag for women/i, "大容量 レディースファッションハンドバッグ"],
   [/net-red polyester handbag for women/i, "花柄 ポリエステルハンドバッグ"],
   [/summer woven hollowed handbag for women/i, "透かし編み サマーハンドバッグ"],
