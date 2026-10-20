@@ -179,8 +179,9 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.doesNotMatch(audit, /for \(const listing of checkableListings\)[\s\S]*?db\.from\("commerce_prices"\)/);
   assert.match(audit, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%/);
   assert.match(audit, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/, "only published rows or explicit supplier-safety errors enter external reconciliation");
-  assert.doesNotMatch(audit, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "confirmed stopped listings must not be selected on every publish cron");
-  assert.doesNotMatch(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "confirmed stopped listings must not enter external reconciliation again");
+  assert.match(audit, /last_error\.like\.supplier_offer_no_longer_fulfillable%/, "previously stopped listings must be reconsidered for recovery");
+  assert.match(audit, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/, "previously stopped listings must enter evidence reconciliation again");
+  assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/, "recovery work must remain bounded and rotate by last check");
   assert.match(audit, /\.order\("last_synced_at", \{ ascending: true, nullsFirst: true \}\)\.limit\(5\)/);
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
@@ -1148,7 +1149,7 @@ test("published listings with no supplier offer enter the safety reconciliation 
 
 test("supplier safety errors remain in external unpublish reconciliation after DB status leaves published", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/, "confirmed stopped listings must not be selected again");
+  assert.match(publish, /\.or\("status\.eq\.published,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_no_longer_fulfillable%,last_error\.like\.supplier_offer_disable_failed%"/, "previously stopped listings must be reconsidered for recovery");
   assert.match(publish, /listing\.status === "published" \|\|[\s\S]*?startsWith\("supplier_offer_not_fulfillable:"\)/);
   assert.match(publish, /base_unpublish_readback_mismatch/);
 });
@@ -1216,4 +1217,13 @@ test("read-only commerce status reads all channel listing errors instead of trun
   const route = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
   assert.match(route, /readAll\(db, "channel_listings", "channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)", "variant_id", q => q\.eq\("status", "error"\)\)/);
   assert.doesNotMatch(route, /from\("channel_listings"\)\.select\("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)"\)\.eq\("status", "error"\)\.order\("variant_id"\)\.limit\(500\)/);
+});
+
+
+test("no-longer-fulfillable supplier listings are included in recovery reconciliation", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /last_error\.like\.supplier_offer_no_longer_fulfillable%/);
+  assert.match(publish, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/);
+  assert.match(publish, /status: "pending",[\s\S]*?last_error: null/,
+    "a recovered listing must re-enter the publication queue");
 });
