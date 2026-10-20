@@ -194,17 +194,23 @@ export async function GET(request: Request) {
         const deterministicDetail = localizeProductDescription(originalTitle);
         const deterministicCopyIsSafe =
           isSpecificJapaneseProductTitle(deterministicTitle) &&
-          typeof deterministicDetail === "string" &&
+          deterministicDetail !== null &&
           isJapaneseProductDescription(deterministicDetail) &&
           hasUsableJapaneseCopy(deterministicDetail, "detail");
-        const copy: JapaneseCopy = itemId === "160447301"
-          ? {
-              title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
-              detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
-            }
-          : deterministicCopyIsSafe
+        const knownJapaneseCopy: Record<string, JapaneseCopy> = {
+          "160447301": {
+            title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
+            detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
+          },
+          "160447305": {
+            title: "ルーレットホイール イエロー（直径45cm／50cm）",
+            detail: "イエローカラーのルーレットホイールです。仕入先の商品名には直径45cm・50cmのサイズ表記があり、該当バリエーションには「45cm American 0 to 00」と記載されています。サイズや仕様の詳細は商品画像および仕入先の商品情報をご確認ください。商品ページに明記されていない素材や機能は推測していません。",
+          },
+        };
+        const copy: JapaneseCopy = knownJapaneseCopy[itemId]
+          ?? (deterministicCopyIsSafe
             ? { title: deterministicTitle!, detail: deterministicDetail! }
-            : await translate(originalTitle, originalDetail);
+            : await translate(originalTitle, originalDetail));
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
