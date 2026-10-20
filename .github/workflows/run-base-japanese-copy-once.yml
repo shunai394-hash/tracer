@@ -1,6 +1,7 @@
 name: TRACER repair BASE products in Japanese and verify live readback
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
