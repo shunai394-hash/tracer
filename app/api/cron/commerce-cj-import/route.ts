@@ -45,6 +45,7 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     if (/silver/.test(variant)) return "シルバーカラーのレディースハンドバッグ";
   }
   const rules: Array<[RegExp, string]> = [
+    [/6 pack headbands for women.*boho wide head bands hair accessories|boho wide head bands hair accessories.*6 pack headbands/, "レディース用ボヘミアン風ワイドヘッドバンド6本セット"],
     [/happybirth(?:day)?.*flash diamond letter headband|flash diamond letter headband.*happybirth/, "誕生日パーティー用ラインストーン文字カチューシャ"],
     [/hair accessories headband women.*golden ring.*cross stitching.*fabric.*wide|golden ring.*cross stitching.*fabric.*wide.*headband/, "ゴールドリング装飾の幅広クロスステッチヘアバンド"],
     [/cartoon cute girl side clip.*sweet bang hairpin|sweet bang hairpin.*side clip/, "キャラクター風サイドヘアクリップ"],
