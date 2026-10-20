@@ -481,7 +481,7 @@ export async function GET(request: Request) {
         .sort((a, b) => a[1].lastAttemptedAt - b[1].lastAttemptedAt)
         .slice(0, limit)
         .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds }));
-      const retryVariantLimit = Math.min(8, Math.max(4, limit * 2));
+      const retryVariantLimit = 3;
       const evidenceRetryByParent = new Map<string, string[]>();
       let evidenceRetryCount = 0;
       const evidenceCutoff = Date.now() - 24 * 60 * 60_000;
