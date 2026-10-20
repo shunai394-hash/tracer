@@ -18,11 +18,17 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(result) ? result : null;
 }
 
-function hasUsableJapaneseCopy(value: string): boolean {
-  if (!/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(value)) return false;
-  const japanese = (value.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
-  const latin = (value.match(/[A-Za-z]/g) ?? []).length;
-  return latin <= Math.max(12, japanese * 1.5);
+function hasUsableJapaneseCopy(value: string, kind: "title" | "detail" = "detail"): boolean {
+  const normalized = value.normalize("NFKC").trim();
+  if (!normalized || !/[ぁ-んァ-ヶ一-龯々〆ヵー]/.test(normalized)) return false;
+  const japanese = (normalized.match(/[ぁ-んァ-ヶ一-龯々〆ヵー]/g) ?? []).length;
+  const latin = (normalized.match(/[A-Za-z]/g) ?? []).length;
+  const latinWords = (normalized.match(/[A-Za-z]{3,}/g) ?? []).length;
+  if (kind === "title") {
+    return japanese >= 2 && latinWords <= 3 && latin <= Math.max(8, japanese * 0.6);
+  }
+  return japanese >= 12 && latinWords <= Math.max(4, Math.floor(japanese / 18)) &&
+    latin <= Math.max(10, japanese * 0.35);
 }
 
 function visibleOf(value: unknown): boolean | null {
@@ -32,8 +38,8 @@ function visibleOf(value: unknown): boolean | null {
 }
 
 function needsJapaneseCopy(title: string, detail: string): boolean {
-  return !isJapaneseProductTitle(title) || !hasUsableJapaneseCopy(title) ||
-    !isJapaneseProductDescription(detail) || !hasUsableJapaneseCopy(detail);
+  return !isJapaneseProductTitle(title) || !hasUsableJapaneseCopy(title, "title") ||
+    !isJapaneseProductDescription(detail) || !hasUsableJapaneseCopy(detail, "detail");
 }
 
 async function translate(title: string, detail: string): Promise<JapaneseCopy> {
@@ -44,10 +50,10 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   });
   const translatedTitle = text(result?.title);
   const translatedDetail = text(result?.detail);
-  if (!isJapaneseProductTitle(translatedTitle) || !hasUsableJapaneseCopy(translatedTitle)) {
+  if (!isJapaneseProductTitle(translatedTitle) || !hasUsableJapaneseCopy(translatedTitle, "title")) {
     throw new Error("translated_title_not_japanese");
   }
-  if (!isJapaneseProductDescription(translatedDetail) || !hasUsableJapaneseCopy(translatedDetail)) {
+  if (!isJapaneseProductDescription(translatedDetail) || !hasUsableJapaneseCopy(translatedDetail, "detail")) {
     throw new Error("translated_description_not_japanese");
   }
   return { title: translatedTitle, detail: translatedDetail };
