@@ -872,7 +872,7 @@ export async function GET(request: Request) {
             if (stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated) {
               const { data: matchedListings, error: listingLookupError } = await db
                 .from("supplier_listings")
-                .select("id")
+                .select("id,metadata")
                 .eq("supplier", "cj")
                 .eq("supplier_product_id", supplierProductId)
                 .eq("supplier_variant_id", exactVariant.vid)
@@ -905,6 +905,22 @@ export async function GET(request: Request) {
                   tracking_available: !complianceBlockReason,
                   orderable: !complianceBlockReason,
                   verification_error: complianceBlockReason,
+                  metadata: {
+                    ...(matchedListings![0].metadata && typeof matchedListings![0].metadata === "object" && !Array.isArray(matchedListings![0].metadata)
+                      ? matchedListings![0].metadata as Record<string, unknown>
+                      : {}),
+                    source: "commerce_cj_import",
+                    query,
+                    page,
+                    source_title: canonicalDetail.title,
+                    source_product_type: canonicalDetail.productType ?? null,
+                    ...(internalImageUrl ? { image_url: internalImageUrl } : {}),
+                    stock_observed: true,
+                    japan_freight_observed: true,
+                    live_order_path_proven: !complianceBlockReason,
+                    live_order_path_proof: "cj_sandbox_lifecycle",
+                    tracking_capability_proven: !complianceBlockReason,
+                  },
                   ...(!complianceBlockReason ? { last_verified_at: checkedAt } : {}),
                 };
                 const { error: evidenceWriteError } = await db
@@ -975,6 +991,9 @@ export async function GET(request: Request) {
                       source: "commerce_cj_import",
                       query,
                       page,
+                      source_title: canonicalDetail.title,
+                      source_product_type: canonicalDetail.productType ?? null,
+                      ...(internalImageUrl ? { image_url: internalImageUrl } : {}),
                       stock_observed: true,
                       japan_freight_observed: true,
                       live_order_path_proven: !complianceBlockReason,
