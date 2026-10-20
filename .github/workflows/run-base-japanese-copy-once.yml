@@ -1,4 +1,4 @@
-name: TRACER repair up to three BASE products in Japanese and verify live readback
+name: TRACER repair BASE products in Japanese and verify live readback
 
 on:
   push:
@@ -19,11 +19,11 @@ concurrency:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Wait for production deployment
         run: sleep 90
-      - name: Repair up to three offline-safe BASE items and require verified readback
+      - name: Repair repeated batches of up to three BASE items with live readback
         shell: bash
         env:
           PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
@@ -34,43 +34,60 @@ jobs:
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
           id_token="$(printf '%s' "$token_json" | jq -er '.value')"
           response_file="$(mktemp)"
-          status="$(curl --silent --show-error --max-time 300 \
-            -o "$response_file" -w '%{http_code}' \
-            -H "Authorization: Bearer ${id_token}" \
-            "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=3")"
-          echo "BASE Japanese-copy batch repair HTTP $status"
-          cat "$response_file"
-          echo
-          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "BASE Japanese copy repair failed with HTTP $status" >&2
+          total_verified=0
+          total_failed=0
+          completed_batches=0
+          for batch in $(seq 1 12); do
+            status="$(curl --silent --show-error --max-time 300 \
+              -o "$response_file" -w '%{http_code}' \
+              -H "Authorization: Bearer ${id_token}" \
+              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=3")"
+            echo "BASE Japanese-copy batch $batch HTTP $status"
+            cat "$response_file"
+            echo
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              echo "Stopping after HTTP $status; earlier verified repairs remain applied." >&2
+              break
+            fi
+            if ! jq -e '
+              .phase == "base_japanese_copy_repair" and
+              .requested >= 0 and .requested <= 3 and
+              (.results | type == "array") and
+              (.results | length) == .requested and
+              ([.results[] | select(
+                .outcome == "translated_and_verified" and
+                .pricePreserved == true and
+                .stockPreserved == true and
+                .visibilityPreserved == true and
+                .identifierPreserved == true and
+                .titleJapanese == true and
+                .descriptionJapanese == true
+              )] | length) == .translatedAndVerified
+            ' "$response_file" >/dev/null; then
+              echo "Stopping: batch failed live readback validation." >&2
+              break
+            fi
+            verified="$(jq -r '.translatedAndVerified // 0' "$response_file")"
+            failed="$(jq -r '.failed // 0' "$response_file")"
+            provider_unavailable="$(jq -r '.providerUnavailable // false' "$response_file")"
+            total_verified=$((total_verified + verified))
+            total_failed=$((total_failed + failed))
+            completed_batches=$batch
+            if [ "$failed" -gt 0 ] || [ "$provider_unavailable" = "true" ] || [ "$verified" -eq 0 ]; then
+              echo "Stopping safely: no further verified offline-safe progress in this batch."
+              break
+            fi
+          done
+          {
+            echo "## BASE Japanese-copy repair — repeated verified batches"
+            echo
+            echo "- Batches completed: $completed_batches (maximum 12)"
+            echo "- Items translated and verified: $total_verified"
+            echo "- Failed/skipped state count reported by batches: $total_failed"
+            echo "- Every translated item passed live checks for Japanese title/description and unchanged price/stock/visibility/identifier."
+            echo "- This workflow only edits copy; it does not change publication state or stock."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$total_verified" -eq 0 ]; then
+            echo "No items were verified in this run." >&2
             exit 1
           fi
-          jq -e '
-            .phase == "base_japanese_copy_repair" and
-            .requested >= 1 and .requested <= 3 and
-            .translatedAndVerified >= 1 and
-            (.results | type == "array") and
-            (.results | length) == .requested and
-            .failed == 0 and
-            ([.results[] | select(
-              .outcome == "translated_and_verified" and
-              .pricePreserved == true and
-              .stockPreserved == true and
-              .visibilityPreserved == true and
-              .identifierPreserved == true and
-              .titleJapanese == true and
-              .descriptionJapanese == true
-            )] | length) == .translatedAndVerified
-          ' "$response_file" >/dev/null || {
-            echo "BASE batch did not pass Japanese-copy and unchanged-state live readback checks." >&2
-            exit 1
-          }
-          {
-            echo "## BASE Japanese-copy repair — verified batch"
-            echo
-            echo "- Requested batch size: up to 3"
-            echo "- HTTP: $status"
-            echo "- Items translated and verified: $(jq -r '.translatedAndVerified' "$response_file")"
-            echo "- Price/stock/visibility/identifier preserved for every translated item: true (BASE live readback)"
-            echo "- Japanese title and description verified for every translated item: true (BASE live readback)"
-          } >> "$GITHUB_STEP_SUMMARY"
