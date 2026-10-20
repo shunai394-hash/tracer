@@ -139,7 +139,7 @@ test("Supabase nested relations normalize object, array, and null shapes", () =>
 test("storefront recovery queue is selected before the broad newest-updated catalog batch", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /commerce_recovery_queue_read_failed/);
-  assert.match(publish, /\.eq\("channel", channel\)[\s\S]*?\.or\("status\.eq\.pending,status\.eq\.error,last_error\.like\.supplier_offer_not_fulfillable%/);
+  assert.match(publish, /\.eq\("channel", channel\)[\s\S]*?\.or\("status\.eq\.pending,last_error\.like\.supplier_offer_not_fulfillable%/);
   assert.match(publish, /priorityCandidates, \.\.\.\(\(data \?\? \[\]\) as unknown as Candidate\[\]\)/);
   assert.match(publish, /seenCandidateIds\.has\(candidate\.id\)/);
   assert.match(publish, /candidateQuery\.order\("updated_at", \{ ascending: false \}\)\.limit\(1000\)/);

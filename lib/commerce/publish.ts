@@ -253,7 +253,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const { data: priorityListings, error: priorityListingsError } = await db.from("channel_listings")
       .select("variant_id,last_synced_at")
       .eq("channel", channel)
-      .or("status.eq.pending,status.eq.error,last_error.like.supplier_offer_not_fulfillable%")
+      .or("status.eq.pending,last_error.like.supplier_offer_not_fulfillable%")
       .order("last_synced_at", { ascending: true, nullsFirst: true })
       .limit(100);
     if (priorityListingsError) throw new Error("commerce_recovery_queue_read_failed:" + priorityListingsError.message);

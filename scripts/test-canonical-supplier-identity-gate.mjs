@@ -173,6 +173,14 @@ assert.match(patrolRoute, /businessReadinessMissing/, "business readiness gaps m
 assert.match(patrolRoute, /errorCategories: Array\.from\(new Set\(errors\.map/);
 assert.match(patrolRoute, /orderLifecycleEvidence: \{/,
   "patrol must report order lifecycle evidence separately from intelligence-pipeline completion");
+assert.match(patrolRoute, /tracerBaseFulfillmentGroups/);
+assert.match(patrolRoute, /tracerShopifyFulfillmentGroups/);
+assert.match(patrolRoute, /trackingWritebackOrdersRecorded: after\.trackingWritebackOrders/,
+  "completion status must include persisted channel tracking writeback evidence");
+assert.match(patrolRoute, /endToEndPipelineComplete: after\.commerceOrders > 0 && after\.supplierProcurementOrders > 0 && after\.trackingWritebackOrders > 0/,
+  "end-to-end completion requires an order, supplier procurement and tracking writeback");
+assert.doesNotMatch(patrolRoute, /pipelineComplete: pipeline\.complete/,
+  "intelligence completion must not be reported as the whole commerce lifecycle");
 assert.match(patrolRoute, /endToEndOrderFlowObservedThisRun: progress\.newCommerceOrders > 0 && progress\.newSupplierProcurementOrders > 0/,
   "end-to-end order flow must only be reported when this run records both a commerce order and supplier procurement order");
 assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
@@ -230,3 +238,11 @@ assert.match(sixListingPublishWorkflow, /ids\[i:i\+3\]/, "Shopify product sync m
 assert.match(sixListingPublishWorkflow, /-d "@publish-batch-\$index\.json"/);
 assert.doesNotMatch(sixListingPublishWorkflow, /api\/cron\/commerce-procurement|api\/cron\/shopify-orders/);
 assert.match(sixListingPublishWorkflow, /Block(ed|ed) listings were not sent/);
+
+
+// Terminal supplier offers must not be pulled back into the recurring publish retry queue.
+const commercePublishRecovery = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+assert.match(commercePublishRecovery, /\.or\("status\.eq\.pending,last_error\.like\.supplier_offer_not_fulfillable%"\)/,
+  "only pending rows and explicitly retryable supplier-offer errors may enter the bounded recovery queue");
+assert.doesNotMatch(commercePublishRecovery, /\.or\("status\.eq\.pending,status\.eq\.error,last_error\.like\.supplier_offer_not_fulfillable%"\)/,
+  "terminal supplier_offer_no_longer_fulfillable errors must not be retried on every publish pass");

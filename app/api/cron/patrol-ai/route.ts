@@ -36,6 +36,7 @@ type Snapshot = {
   unpublishedCommerceListings: number;
   commerceOrders: number;
   supplierProcurementOrders: number;
+  trackingWritebackOrders: number;
 };
 
 async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promise<Snapshot> {
@@ -78,9 +79,16 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
   const unpublishedCommerceListingsQuery = db.from("channel_listings").select("*", { count: "exact", head: true }).neq("status", "published");
   const commerceOrdersQuery = db.from("commerce_orders").select("*", { count: "exact", head: true });
   const supplierProcurementOrdersQuery = db.from("procurement_orders").select("*", { count: "exact", head: true });
+  // Count only paid orders whose successful channel fulfillment writeback marker was persisted.
+  const baseTrackingWritebackQuery = db.from("commerce_orders").select("*", { count: "exact", head: true })
+    .eq("channel", "base").eq("payment_status", "paid")
+    .not("raw_payload->tracerBaseFulfillmentGroups", "is", null);
+  const shopifyTrackingWritebackQuery = db.from("commerce_orders").select("*", { count: "exact", head: true })
+    .eq("channel", "shopify").eq("payment_status", "paid")
+    .not("raw_payload->tracerShopifyFulfillmentGroups", "is", null);
 
-  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, commerceEligibilityResult, publishedBaseVariantIdsResult, publishedShopifyVariantIdsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, publishedBaseCommerceListingsResult, publishedShopifyCommerceListingsResult, unpublishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult] =
-    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, commerceEligibilityQuery, publishedBaseVariantIdsQuery, publishedShopifyVariantIdsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, publishedBaseCommerceListingsQuery, publishedShopifyCommerceListingsQuery, unpublishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery]);
+  const [productsResult, supplierListingsResult, orderableSuppliersResult, shopListingsResult, publishedListingsResult, eligibilityListingsResult, commerceEligibilityResult, publishedBaseVariantIdsResult, publishedShopifyVariantIdsResult, onBaseResult, basePublishedResult, ordersResult, commerceProductsResult, commerceVariantsResult, verifiedCommerceOffersResult, publishedCommerceListingsResult, publishedBaseCommerceListingsResult, publishedShopifyCommerceListingsResult, unpublishedCommerceListingsResult, commerceOrdersResult, supplierProcurementOrdersResult, baseTrackingWritebackResult, shopifyTrackingWritebackResult] =
+    await Promise.all([productsQuery, supplierListingsQuery, orderableSuppliersQuery, shopListingsQuery, publishedListingsQuery, eligibilityListingsQuery, commerceEligibilityQuery, publishedBaseVariantIdsQuery, publishedShopifyVariantIdsQuery, onBaseQuery, basePublishedQuery, ordersQuery, commerceProductsQuery, commerceVariantsQuery, verifiedCommerceOffersQuery, publishedCommerceListingsQuery, publishedBaseCommerceListingsQuery, publishedShopifyCommerceListingsQuery, unpublishedCommerceListingsQuery, commerceOrdersQuery, supplierProcurementOrdersQuery, baseTrackingWritebackQuery, shopifyTrackingWritebackQuery]);
 
   const results = [
     ["products", productsResult], ["supplier_listings", supplierListingsResult], ["supplier_listings(orderable)", orderableSuppliersResult],
@@ -94,6 +102,8 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     ["channel_listings(base_published)", publishedBaseCommerceListingsResult], ["channel_listings(shopify_published)", publishedShopifyCommerceListingsResult],
     ["channel_listings(unpublished)", unpublishedCommerceListingsResult],
     ["commerce_orders", commerceOrdersResult], ["procurement_orders", supplierProcurementOrdersResult],
+    ["commerce_orders(base_tracking_writeback)", baseTrackingWritebackResult],
+    ["commerce_orders(shopify_tracking_writeback)", shopifyTrackingWritebackResult],
   ] as const;
 
   for (const [label, result] of results) {
@@ -171,6 +181,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     unpublishedCommerceListings: unpublishedCommerceListingsResult.count ?? 0,
     commerceOrders: commerceOrdersResult.count ?? 0,
     supplierProcurementOrders: supplierProcurementOrdersResult.count ?? 0,
+    trackingWritebackOrders: (baseTrackingWritebackResult.count ?? 0) + (shopifyTrackingWritebackResult.count ?? 0),
   };
 }
 
@@ -431,13 +442,17 @@ export async function GET(request: Request) {
       before,
       after,
       progress,
-      // A completed intelligence pass is not proof that a customer order reached supplier procurement.
+      // A completed intelligence pass is not proof of the paid-order → supplier → tracking-writeback chain.
+      intelligencePipelineComplete: pipeline.complete,
+      endToEndPipelineComplete: after.commerceOrders > 0 && after.supplierProcurementOrders > 0 && after.trackingWritebackOrders > 0,
       orderLifecycleEvidence: {
         commerceOrdersRecorded: after.commerceOrders,
         supplierProcurementOrdersRecorded: after.supplierProcurementOrders,
+        trackingWritebackOrdersRecorded: after.trackingWritebackOrders,
         newCommerceOrdersThisRun: progress.newCommerceOrders,
         newSupplierProcurementOrdersThisRun: progress.newSupplierProcurementOrders,
         endToEndOrderFlowObservedThisRun: progress.newCommerceOrders > 0 && progress.newSupplierProcurementOrders > 0,
+        endToEndOrderFlowRecorded: after.commerceOrders > 0 && after.supplierProcurementOrders > 0 && after.trackingWritebackOrders > 0,
       },
       actions,
       errors,
@@ -482,9 +497,10 @@ export async function GET(request: Request) {
       before: report.before,
       after: report.after,
       progress: report.progress,
-      // Keep order-flow evidence distinct from intelligence-pipeline completion.
+      // Never label the whole sales lifecycle complete from an intelligence pass alone.
+      intelligencePipelineComplete: report.intelligencePipelineComplete,
+      endToEndPipelineComplete: report.endToEndPipelineComplete,
       orderLifecycleEvidence: report.orderLifecycleEvidence,
-      pipelineComplete: pipeline.complete,
       errorCount: errors.length,
       errorCategories: Array.from(new Set(errors.map((error) => error.split(":")[0]))),
       steps: safeSteps,
