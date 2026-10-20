@@ -1198,3 +1198,12 @@ test("BASE and Shopify publication cron routes process up to 20 candidates per r
   assert.match(shopify, /searchParams.get\("limit"\) \|\| 20/);
   assert.match(shopify, /Math.min\(20, Math.max\(1, Math.floor\(requested\)\)\) : 20/);
 });
+
+
+test("read-only commerce status exposes legacy products and exact CJ product-variant identity counts", async () => {
+  const route = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
+  assert.match(route, /count\(db, "products"\)/);
+  assert.match(route, /count\(db, "products", q => q\.like\("identity_key", "cj:product:%:variant:%"\)\)/);
+  assert.match(route, /legacyCatalog: \{ products: legacyProducts, nativeCjProductVariantIdentities: legacyCjIdentityProducts \}/);
+  assert.match(route, /readOnly: true/);
+});

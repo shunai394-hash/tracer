@@ -168,7 +168,7 @@ export async function GET(request: Request) {
       });
     }
     const [
-      products, activeProducts, variants,
+      products, activeProducts, variants, legacyProducts, legacyCjIdentityProducts,
       offersDiscovered, offersVerified, offersUnavailable, offersError, cjFreshOrderable,
       prices, profitablePrices,
       baseTotal, basePublished, basePending, baseHidden, baseError, baseWithoutExternalId, baseLastSynced,
@@ -181,6 +181,7 @@ export async function GET(request: Request) {
       legacyListings, legacyPublished,
     ] = await Promise.all([
       count(db, "commerce_products"), count(db, "commerce_products", q => q.eq("active", true)), count(db, "commerce_variants"),
+      count(db, "products"), count(db, "products", q => q.like("identity_key", "cj:product:%:variant:%")),
       count(db, "supplier_offers", q => q.eq("source_status", "discovered")),
       count(db, "supplier_offers", q => q.eq("source_status", "verified")),
       count(db, "supplier_offers", q => q.eq("source_status", "unavailable")),
@@ -230,6 +231,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: baseLive.ok && shopifyLive.ok, readOnly: true, generatedAt: new Date().toISOString(),
       catalog: { products, activeProducts, variants },
+      legacyCatalog: { products: legacyProducts, nativeCjProductVariantIdentities: legacyCjIdentityProducts },
       supplierOffers: { discovered: offersDiscovered, verified: offersVerified, unavailable: offersUnavailable, error: offersError, cjFreshOrderable, lastCheckedAt: lastOfferCheck },
       prices: { total: prices, profitableJpy: profitablePrices, lastCalculatedAt: lastPriceCalculation },
       channels: {
