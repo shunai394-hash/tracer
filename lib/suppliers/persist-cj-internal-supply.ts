@@ -194,10 +194,10 @@ export async function persistCjInternalSupplyCandidate(args: CandidateArgs): Pro
     shipping_cost: args.shippingUsd,
     currency: "USD",
     inventory: Math.floor(args.inventory),
-    orderable: isCJLiveOrderPathReady()
-      && Number.isFinite(args.costUsd) && args.costUsd > 0
-      && Number.isFinite(args.shippingUsd) && args.shippingUsd > 0
-      && Number.isFinite(args.inventory) && args.inventory > 0,
+    // Do not equate live API readiness with proven supplier order creation.
+    // Keep this internal variant non-orderable until a separate verified lifecycle
+    // proves supplier order creation; the commerce procurement path has its own gates.
+    orderable: false,
     tracking_available: true,
     active: true,
     metadata: {
