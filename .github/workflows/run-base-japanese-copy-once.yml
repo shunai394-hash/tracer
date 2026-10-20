@@ -43,7 +43,7 @@ jobs:
             status="$(curl --silent --show-error --max-time 300 \
               -o "$response_file" -w '%{http_code}' \
               -H "Authorization: Bearer ${id_token}" \
-              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=10")"
+              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=10&offset=$(((batch - 1) * 10))")"
             echo "BASE Japanese-copy batch $batch HTTP $status"
             cat "$response_file"
             echo
@@ -75,9 +75,17 @@ jobs:
             total_verified=$((total_verified + verified))
             total_failed=$((total_failed + failed))
             completed_batches=$batch
-            if [ "$failed" -gt 0 ] || [ "$provider_unavailable" = "true" ] || [ "$verified" -eq 0 ]; then
-              echo "Stopping safely: no further verified offline-safe progress in this batch."
+            deferred="$(jq -r '.deferred // 0' "$response_file")"
+            if [ "$failed" -gt 0 ]; then
+              echo "Stopping safely after a live readback or item-state failure; later candidates remain queued."
               break
+            fi
+            if [ "$verified" -eq 0 ] && [ "$deferred" -eq 0 ]; then
+              echo "Stopping: no verified repairs or deferred AI-only items were returned."
+              break
+            fi
+            if [ "$provider_unavailable" = "true" ]; then
+              echo "Gemini unavailable: continue scanning later offsets; AI-only items will be recorded as deferred, not retried in this run."
             fi
           done
           {
