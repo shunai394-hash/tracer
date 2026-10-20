@@ -191,11 +191,22 @@ export async function GET(request: Request) {
         ...offlineCandidates,
         ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id))),
       ];
+  const aiCandidates = candidatePool.filter((item) => !deterministicIds.has(text(item.item_id)));
+  const aiOffset = aiCandidates.length > 0 ? rotationOffset % aiCandidates.length : 0;
+  const rotatedAiCandidates = [
+    ...aiCandidates.slice(aiOffset),
+    ...aiCandidates.slice(0, aiOffset),
+  ];
+  // Keep cursor-based runs stable. For ordinary scheduled batches, never let
+  // the rotation offset skip offline-safe translations; rotate only AI items.
   const candidates = requestedItemId
     ? orderedCandidates.slice(0, 1)
     : afterItemId
       ? orderedCandidates.slice(0, limit)
-      : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
+      : [
+          ...offlineCandidates.slice(0, limit),
+          ...rotatedAiCandidates.slice(0, Math.max(0, limit - Math.min(limit, offlineCandidates.length))),
+        ];
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
