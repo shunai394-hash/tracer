@@ -202,10 +202,25 @@ export async function GET(request: Request) {
   const results: Array<Record<string, unknown>> = [];
   async function worker() {
     while (true) {
-      if (providerUnavailable) return;
       const index = nextIndex++;
       if (index >= candidates.length) return;
       const itemId = text(candidates[index].item_id);
+      // After Gemini quota failure, do not call Gemini for later AI-only items.
+      // Keep processing offline-safe candidates and record the rest as deferred.
+      if (providerUnavailable && !requestedItemId) {
+        const candidate = candidates[index];
+        const candidateId = text(candidate.item_id);
+        const candidateTitle = localizeProductTitle(text(candidate.title));
+        const candidateDetail = localizeProductDescription(text(candidate.title));
+        const offlineSafe = isSpecificJapaneseProductTitle(candidateTitle) &&
+          typeof candidateDetail === "string" &&
+          isJapaneseProductDescription(candidateDetail) &&
+          hasUsableJapaneseCopy(candidateDetail, "detail");
+        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160454016"].includes(candidateId)) {
+          results.push({ itemId, outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
+          continue;
+        }
+      }
       try {
         const before = await getBaseItemDetail(itemId);
         const originalTitle = text(before.title);
@@ -296,9 +311,11 @@ export async function GET(request: Request) {
   // every item in a batch to fail. Small batches avoid amplifying 429/timeouts.
   await worker();
   const translated = results.filter((item) => item.outcome === "translated_and_verified").length;
-  const failed = results.filter((item) => !["translated_and_verified", "already_japanese_on_readback"].includes(String(item.outcome))).length;
+  const failed = results.filter((item) => !["translated_and_verified", "already_japanese_on_readback", "deferred_ai_provider_unavailable"].includes(String(item.outcome))).length;
+  const deferred = results.filter((item) => item.outcome === "deferred_ai_provider_unavailable").length;
   const response = {
     ok: failed === 0,
+    complete: candidatePool.length === 0 || (translated === candidates.length && deferred === 0),
     phase: "base_japanese_copy_repair",
     snapshotItems: snapshot.items.length,
     pages: snapshot.pages,
@@ -308,6 +325,7 @@ export async function GET(request: Request) {
     requested: candidates.length,
     translatedAndVerified: translated,
     failed,
+    deferred,
     providerUnavailable,
     remainingEnglishEstimate: Math.max(0, snapshot.items.filter((item) => /^\d+$/.test(text(item.item_id)) && needsJapaneseCopy(text(item.title), text(item.detail))).length - translated),
     results,
