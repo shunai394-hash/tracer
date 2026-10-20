@@ -10,7 +10,7 @@ export const maxDuration = 300;
 type JapaneseCopy = { title: string; detail: string };
 
 function text(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
 function numberValue(value: unknown): number | null {
