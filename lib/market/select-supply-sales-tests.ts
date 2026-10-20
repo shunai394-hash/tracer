@@ -247,12 +247,24 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // solely because the enrichment job has not populated product_intelligence.
     const listingMetadata = listing?.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {};
     const listingImage = firstImageUrl(listingMetadata);
-    const base = observedBase ?? (typeof listing?.title === "string" && listing.title.trim() ? {
-      product_id: productId,
-      normalized_title: listing.title,
-      image_url: validHttpUrl(listingImage) ? listingImage : null,
-      metadata: listingMetadata,
-    } as Record<string, unknown> : undefined);
+    // Keep the canonical intelligence title/metadata, but recover a missing or
+    // invalid catalog image from the exact verified supplier variant. The
+    // supplier image is persisted from CJ's product detail response and must not
+    // be discarded just because an older product_intelligence row exists.
+    const base = observedBase
+      ? {
+          ...observedBase,
+          image_url: validHttpUrl(observedBase.image_url)
+            ? observedBase.image_url
+            : (validHttpUrl(listingImage) ? listingImage : null),
+          metadata: observedBase.metadata ?? listingMetadata,
+        } as Record<string, unknown>
+      : (typeof listing?.title === "string" && listing.title.trim() ? {
+          product_id: productId,
+          normalized_title: listing.title,
+          image_url: validHttpUrl(listingImage) ? listingImage : null,
+          metadata: listingMetadata,
+        } as Record<string, unknown> : undefined);
     const sourceTitle = (typeof listingMetadata.source_title === "string" && listingMetadata.source_title.trim()
       ? listingMetadata.source_title
       : typeof listingMetadata.sourceTitle === "string" && listingMetadata.sourceTitle.trim()
