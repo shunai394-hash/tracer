@@ -161,14 +161,28 @@ export async function GET(request: Request) {
   }
 
   const requestedOffset = url.searchParams.get("offset");
-  const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
+  const rotationOffset = requestedOffset !== null && /^\\d+$/.test(requestedOffset)
     ? Number(requestedOffset) % Math.max(1, candidatePool.length)
     : (Math.floor(Date.now() / (15 * 60 * 1000)) * limit) % Math.max(1, candidatePool.length);
+  // Do not apply rotation to deterministic candidates: doing so can skip all
+  // offline-safe repairs and immediately hit Gemini's exhausted quota again.
+  const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
+    const itemId = text(item.item_id);
+    if (itemId === "160447301" || itemId === "160447305") return true;
+    const localizedTitle = localizeProductTitle(text(item.title));
+    const localizedDetail = localizeProductDescription(text(item.title));
+    return isSpecificJapaneseProductTitle(localizedTitle) &&
+      typeof localizedDetail === "string" &&
+      isJapaneseProductDescription(localizedDetail) &&
+      hasUsableJapaneseCopy(localizedDetail, "detail");
+  });
   const candidates = requestedItemId
     ? candidatePool.slice(0, 1)
-    : candidatePool.length <= limit
-      ? candidatePool
-      : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
+    : offlineCandidates.length > 0
+      ? offlineCandidates.slice(0, limit)
+      : candidatePool.length <= limit
+        ? candidatePool
+        : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
