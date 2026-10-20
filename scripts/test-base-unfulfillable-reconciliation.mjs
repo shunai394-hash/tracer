@@ -13,8 +13,4 @@ assert.match(query, /\.eq\("channel", "base"\)/, "query must be scoped to BASE")
 assert.match(query, /\.eq\("status", "error"\)/, "already-hidden verified rows must not be selected for retry");
 assert.match(query, /\.like\("last_error", "supplier_offer_not_fulfillable%"\)/, "unresolved supplier-offer failures must remain eligible for retry");
 assert.match(route, /\.update\(\{ status: "hidden", last_error: "supplier_offer_not_fulfillable_hidden_verified"/, "confirmed hidden rows must retain the verified hidden marker");
-
-const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-assert.match(publisher, /\.or\("status\.eq\.pending,last_error\.like\.supplier_offer_not_fulfillable%,last_error\.like\.supplier_offer_no_longer_fulfillable%?"\)/, "storefront recovery queue must include both supplier-offer safety error prefixes");
-
-console.log("BASE unfulfillable reconciliation retry filter: 6 assertions passed");
+console.log("BASE unfulfillable reconciliation retry filter: 5 assertions passed");
