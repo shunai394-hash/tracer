@@ -83,10 +83,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "BASE_SNAPSHOT_INCOMPLETE", pages: snapshot.pages }, { status: 502 });
   }
 
-  const candidates = snapshot.items
+  // Always scan the complete snapshot, then rotate the bounded batch. Without
+  // rotation, the same first 50 failed translations can starve every later item.
+  const candidatePool = snapshot.items
     .filter((item) => /^\d+$/.test(text(item.item_id)))
     .filter((item) => needsJapaneseCopy(text(item.title), text(item.detail)))
-    .slice(0, limit);
+    .sort((a, b) => Number(text(a.item_id)) - Number(text(b.item_id)));
+  const requestedOffset = url.searchParams.get("offset");
+  const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
+    ? Number(requestedOffset) % Math.max(1, candidatePool.length)
+    : (Math.floor(Date.now() / (15 * 60 * 1000)) * limit) % Math.max(1, candidatePool.length);
+  const candidates = candidatePool.length <= limit
+    ? candidatePool
+    : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
+
+  console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
+    snapshotItems: snapshot.items.length,
+    candidatePool: candidatePool.length,
+    limit,
+    rotationOffset,
+  }));
 
   let nextIndex = 0;
   const results: Array<Record<string, unknown>> = [];
@@ -145,15 +161,28 @@ export async function GET(request: Request) {
   await Promise.all(Array.from({ length: Math.min(5, candidates.length) }, () => worker()));
   const translated = results.filter((item) => item.outcome === "translated_and_verified").length;
   const failed = results.filter((item) => !["translated_and_verified", "already_japanese_on_readback"].includes(String(item.outcome))).length;
-  return NextResponse.json({
+  const response = {
     ok: failed === 0,
     phase: "base_japanese_copy_repair",
     snapshotItems: snapshot.items.length,
     pages: snapshot.pages,
+    candidatePool: candidatePool.length,
+    rotationOffset,
     requested: candidates.length,
     translatedAndVerified: translated,
     failed,
     remainingEnglishEstimate: Math.max(0, snapshot.items.filter((item) => /^\d+$/.test(text(item.item_id)) && needsJapaneseCopy(text(item.title), text(item.detail))).length - translated),
     results,
-  }, { headers: { "Cache-Control": "no-store" } });
+  };
+  console.log("[TRACER BASE JAPANESE COPY] batch_complete", JSON.stringify({
+    ok: response.ok,
+    snapshotItems: response.snapshotItems,
+    candidatePool: response.candidatePool,
+    rotationOffset: response.rotationOffset,
+    requested: response.requested,
+    translatedAndVerified: response.translatedAndVerified,
+    failed: response.failed,
+    remainingEnglishEstimate: response.remainingEnglishEstimate,
+  }));
+  return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }
