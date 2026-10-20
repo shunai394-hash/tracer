@@ -393,7 +393,22 @@ async function verifyPersistedShopifySeo(productId: string, expected: { title: s
   );
   const seo = data.product?.seo;
   if (!seo || seo.title !== expected.title || seo.description !== expected.description) {
-    throw new Error(`shopify_seo_readback_mismatch_after_${phase}`);
+    // Record bounded diagnostics so production logs reveal which persisted SEO
+    // field differs. Do not weaken the exact comparison or mark the listing synced.
+    const actualTitle = seo?.title ?? null;
+    const actualDescription = seo?.description ?? null;
+    const diagnostic = {
+      phase,
+      titleMatches: actualTitle === expected.title,
+      descriptionMatches: actualDescription === expected.description,
+      expectedTitle: expected.title.slice(0, 120),
+      actualTitle: actualTitle?.slice(0, 120) ?? null,
+      expectedDescriptionLength: expected.description.length,
+      actualDescriptionLength: actualDescription?.length ?? null,
+      expectedDescriptionPrefix: expected.description.slice(0, 100),
+      actualDescriptionPrefix: actualDescription?.slice(0, 100) ?? null,
+    };
+    throw new Error(`shopify_seo_readback_mismatch_after_${phase}:${JSON.stringify(diagnostic)}`);
   }
 }
 
