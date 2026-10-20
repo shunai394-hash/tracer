@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Wait for production deployment
         run: sleep 90
-      - name: Repair repeated batches of up to three BASE items with live readback
+      - name: Repair repeated batches of up to ten BASE items with live readback
         shell: bash
         env:
           PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
@@ -41,7 +41,7 @@ jobs:
             status="$(curl --silent --show-error --max-time 300 \
               -o "$response_file" -w '%{http_code}' \
               -H "Authorization: Bearer ${id_token}" \
-              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=3")"
+              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=10")"
             echo "BASE Japanese-copy batch $batch HTTP $status"
             cat "$response_file"
             echo
@@ -51,7 +51,7 @@ jobs:
             fi
             if ! jq -e '
               .phase == "base_japanese_copy_repair" and
-              .requested >= 0 and .requested <= 3 and
+              .requested >= 0 and .requested <= 10 and
               (.results | type == "array") and
               (.results | length) == .requested and
               ([.results[] | select(
