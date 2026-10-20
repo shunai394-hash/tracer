@@ -382,7 +382,7 @@ function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTit
 }
 
 /** Confirm SEO metadata from a fresh persisted-product read, not the mutation payload. */
-async function verifyPersistedShopifySeo(productId: string, expected: { title: string; description: string }, phase: "create" | "update"): Promise<void> {
+async function verifyPersistedShopifySeo(productId: string, productTitle: string, expected: { title: string; description: string }, phase: "create" | "update"): Promise<void> {
   const data = await shopifyGraphQL<{
     product: { seo: { title: string | null; description: string | null } | null } | null;
   }>(
@@ -392,14 +392,17 @@ async function verifyPersistedShopifySeo(productId: string, expected: { title: s
     { id: productId },
   );
   const seo = data.product?.seo;
-  if (!seo || seo.title !== expected.title || seo.description !== expected.description) {
+  // Shopify can return null for SEO title when it uses the product title as the default.
+  // Treat that as equivalent only when the requested SEO title is exactly the product title.
+  const titleMatches = seo?.title === expected.title || (seo?.title == null && expected.title === productTitle);
+  if (!seo || !titleMatches || seo.description !== expected.description) {
     // Record bounded diagnostics so production logs reveal which persisted SEO
     // field differs. Do not weaken the exact comparison or mark the listing synced.
     const actualTitle = seo?.title ?? null;
     const actualDescription = seo?.description ?? null;
     const diagnostic = {
       phase,
-      titleMatches: actualTitle === expected.title,
+      titleMatches,
       descriptionMatches: actualDescription === expected.description,
       expectedTitle: expected.title.slice(0, 120),
       actualTitle: actualTitle?.slice(0, 120) ?? null,
@@ -429,7 +432,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   const product = data.productCreate.product;
   if (!product) throw new Error("Shopify productCreate returned no product");
   const expectedSeo = shopifySeoInput(input);
-  await verifyPersistedShopifySeo(product.id, expectedSeo, "create");
+  await verifyPersistedShopifySeo(product.id, input.title, expectedSeo, "create");
   const variant = product.variants?.nodes?.[0];
   if (!variant) throw new Error("Shopify productCreate returned no variant");
 
@@ -464,7 +467,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
   const expectedSeo = shopifySeoInput(input);
-  await verifyPersistedShopifySeo(product.id, expectedSeo, "update");
+  await verifyPersistedShopifySeo(product.id, input.title, expectedSeo, "update");
   const variantResolution = resolveShopifyVariantIdentity(
     product.variants?.nodes ?? [],
     input.sku,
