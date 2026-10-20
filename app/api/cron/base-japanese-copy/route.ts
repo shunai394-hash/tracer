@@ -155,7 +155,7 @@ export async function GET(request: Request) {
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
         const itemId = text(item.item_id);
-        if (["160447301", "160447305", "160447306", "160447308", "160454016"].includes(itemId)) return 0;
+        if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(itemId)) return 0;
         const title = localizeProductTitle(text(item.title));
         const detail = localizeProductDescription(text(item.title));
         if (
@@ -225,7 +225,7 @@ export async function GET(request: Request) {
   // offline-safe repairs and immediately hit Gemini's exhausted quota again.
   const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
     const itemId = text(item.item_id);
-    if (["160447301", "160447305", "160447306", "160447308", "160454016"].includes(itemId)) return true;
+    if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(itemId)) return true;
     const localizedTitle = localizeProductTitle(text(item.title));
     const localizedDetail = localizeProductDescription(text(item.title));
     return isSpecificJapaneseProductTitle(localizedTitle) &&
@@ -288,7 +288,7 @@ export async function GET(request: Request) {
           typeof candidateDetail === "string" &&
           isJapaneseProductDescription(candidateDetail) &&
           hasUsableJapaneseCopy(candidateDetail, "detail");
-        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160454016"].includes(candidateId)) {
+        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016"].includes(candidateId)) {
           results.push({ itemId, outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
           continue;
         }
@@ -336,6 +336,10 @@ export async function GET(request: Request) {
           "160447308": {
             title: "幾何学模様のベッドサイドマット 40×60cm",
             detail: "幾何学模様をあしらった、40×60cmのベッドサイド用マットです。商品名には装飾用の敷物として記載されています。素材、厚み、お手入れ方法など、商品名に明記されていない仕様は商品画像および仕入先の情報をご確認ください。",
+          },
+          "160447348": {
+            title: "密封・防湿タイプの小分け用ケース（ホワイト）",
+            detail: "小物や薬などを小分けして保管するための、密封・防湿タイプのケースです。カラーはホワイトです。商品名に記載された「sealed moisture-proof」の表記に基づいています。容量、寸法、材質、密封性・防湿性の性能、および医薬品保管への適合性は商品名だけでは確認できないため、購入前に商品画像と仕入先の仕様をご確認ください。",
           },
           "160454016": {
             title: "日本式窯焼き抹茶茶器セット（青釉）",
