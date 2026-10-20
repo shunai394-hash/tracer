@@ -85,7 +85,7 @@ export async function generateStructuredJson<T>(
           );
           const quotaFailure = response.status === 429 ||
             ((response.status === 403 || response.status === 400) &&
-              /RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(payload.error?.status ?? "" + " " + (payload.error?.message ?? "")));
+              /RESOURCE_EXHAUSTED|quota|rate.?limit/i.test((payload.error?.status ?? "") + " " + (payload.error?.message ?? "")));
           if (quotaFailure && keyIndex < keys.length - 1) {
             lastError = error;
             tryNextKey = true;
