@@ -46,7 +46,9 @@ assert.equal(localizeProductTitle("Harajuku Canvas Bags Students Handbag With Po
 assert.equal(localizeProductTitle("Portable Transparent Shoulder Crossbody Bag Tote Satchel Handbag For Women (Portable Transparent Shoulder Crossbody Bag Tote Satchel Handbag For Women Black)"), "クリア素材 レディースショルダーバッグ");
 assert.equal(localizeProductTitle("Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap (Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap Black)"), "レトロデザイン ヴィーガンレザーショルダーバッグ");
 assert.equal(localizeProductTitle("Summer Woven Hollowed Handbag For Women"), "透かし編み サマーハンドバッグ");
-assert.equal(localizeProductTitle("New Large Capacity Laptop Handbag (New Large Capacity Laptop Handbag Black 12inch)"), "大容量 ノートPC収納対応 レディースハンドバッグ");
+assert.equal(localizeProductTitle("New Large Capacity Laptop Handbag (New Large Capacity Laptop Handbag Black 12inch)"), "大容量 ノートパソコン収納対応 レディースハンドバッグ");
+assert.equal(localizeProductTitle("6 Pack Headbands For Women, Boho Wide Head Bands Hair Accessories"), "ボヘミアン風 ワイドヘッドバンド 6本セット");
+assert.equal(localizeProductTitle("PU Leather Headband Gel Women Ponytail Clip Decoration Hair Accessories"), "合成皮革調 ヘッドバンド付きポニーテールクリップ");
 assert.equal(localizeProductTitle("Unrecognized Supplier Model 4839", "women handbag"), null, "do not fabricate a title from the search query");
 assert.equal(localizeProductTitle("", "beauty tools"), null, "do not fabricate a title when supplier title is missing");
 assert.equal(localizeProductTitle("Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay (Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay D9)"), "おばけ・かぼちゃ柄 シャーク型ヘアクリップ");
