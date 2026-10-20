@@ -44,6 +44,8 @@ const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.me
 assert.ok(cjClient.includes("const minIntervalMs = 2_000"), "local fallback must allow a wider gap than CJ’s one-QPS ceiling");
 assert.ok(cjClient.includes("p_min_interval_ms: 2_000"), "the shared Supabase slot must enforce the same conservative interval");
 assert.ok(cjClient.includes("AbortSignal.timeout(20_000)"), "CJ requests must have a finite timeout");
+assert.ok(cjClient.includes("transient request failure; retrying"), "transient CJ network/timeouts must retry with bounded backoff");
+assert.ok(cjClient.includes("if (init?.signal?.aborted || attempt === maxAttempts) throw error"), "caller cancellation must not be retried and retries must be bounded");
 assert.ok(cjClient.includes("AbortSignal.any([init.signal, timeoutSignal])"), "CJ requests must preserve caller cancellation");
 const pointsExhaustionCheck = cjClient.indexOf("if (isCJQuotaExhausted(diagnostic))");
 const non429Return = cjClient.indexOf("if (response.status !== 429)");
@@ -54,4 +56,4 @@ assert.ok(cjClient.includes("provider_explicit_daily_points_exhausted"),
 const sandboxRoute = await readFile(new URL("../app/api/cron/cj-sandbox-order-test/route.ts", import.meta.url), "utf8");
 assert.ok(sandboxRoute.includes("isCJQuotaCircuitActive(quotaMetadata)"));
 assert.ok(!sandboxRoute.includes("blockedUntil && Date.parse(blockedUntil) > Date.now()"));
-console.log("CJ quota and legacy identity retry policy: 16 assertions passed");
+console.log("CJ quota and legacy identity retry policy: 18 assertions passed");
