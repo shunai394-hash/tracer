@@ -37,7 +37,7 @@ jobs:
           status="$(curl --silent --show-error --max-time 300 \
             -o "$response_file" -w '%{http_code}' \
             -H "Authorization: Bearer ${id_token}" \
-            "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=5")"
+            "${PRODUCTION_URL}/api/cron/base-japanese-copy?itemId=160447305")"
           echo "BASE Japanese copy batch HTTP $status"
           cat "$response_file"
           echo
