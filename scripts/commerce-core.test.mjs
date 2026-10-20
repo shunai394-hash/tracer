@@ -208,7 +208,7 @@ test("published listings without stock, shipping, or profit are removed and exte
   assert.match(publish, /const identityCleanup = await unpublishUnfulfillableListings\(channel, db\)/);
   assert.match(audit, /missingSaleEvidence\(/);
   assert.match(audit, /best\.missing\.length === 0/);
-  assert.match(audit, /priceFresh/);
+  assert.doesNotMatch(audit, /priceFresh|supplierEvidenceFresh|preflightFresh/);
   assert.match(audit, /Number\(price\.margin_rate\) < 0\.5/);
   assert.match(audit, /stock: 0, visible: false/);
   assert.match(audit, /base_unpublish_readback_mismatch/);
