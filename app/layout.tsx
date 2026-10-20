@@ -12,15 +12,33 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "TRACER — 商品一覧",
-  description: "商品を探して、内容を確認し、購入する。シンプルなオンラインストア。",
+  metadataBase: new URL("https://tracer-pied-alpha.vercel.app"),
+  title: {
+    default: "TRACER｜日本向けセレクトショップ",
+    template: "%s｜TRACER",
+  },
+  description: "日本のお客様向けに、商品情報・価格・在庫を確認して選べるオンラインストア。商品ごとの仕様を確認してお買い物いただけます。",
+  applicationName: "TRACER",
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 },
+  },
   icons: { icon: "/icon.svg", apple: "/icon.svg" },
   manifest: "/manifest.webmanifest",
   openGraph: {
-    title: "TRACER — 商品一覧",
-    description: "商品を探して、内容を確認し、購入する。",
+    title: "TRACER｜日本向けセレクトショップ",
+    description: "商品情報・価格・在庫を確認して選べるオンラインストア。",
+    url: "https://tracer-pied-alpha.vercel.app/",
+    siteName: "TRACER",
     type: "website",
     locale: "ja_JP",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TRACER｜日本向けセレクトショップ",
+    description: "商品情報・価格・在庫を確認して選べるオンラインストア。",
   },
 };
 
