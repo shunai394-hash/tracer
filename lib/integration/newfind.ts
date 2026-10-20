@@ -3,6 +3,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
+import { localizeProductTitle, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isRetryableRejectedNewfindEvent } from "@/lib/integration/newfind-retry-policy";
 
 function buildUrl(base: string): string {
@@ -325,6 +326,15 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
 
+  const japaneseProductName = localizeProductTitle(String(listing.title ?? ""));
+  if (!japaneseProductName || !isJapaneseProductTitle(japaneseProductName)) {
+    const reason = "newfind_japanese_product_title_unavailable";
+    await supabase.from("newfind_promotion_deliveries")
+      .update({ status: "failed", last_error: reason, last_attempt_at: new Date().toISOString(), lease_until: null, updated_at: new Date().toISOString() })
+      .eq("listing_id", listingId).eq("status", "sending").eq("event_id", sendEventId);
+    return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
+  }
+
   const payload = {
     source: "tracer",
     event_id: sendEventId,
@@ -333,7 +343,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     occurred_at: new Date().toISOString(),
     payload: {
       source: "tracer",
-      product_name: String(listing.title),
+      product_name: japaneseProductName,
       product_url: productUrl,
       canonical_url: productUrl,
       official_url: productUrl,
