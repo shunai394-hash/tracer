@@ -106,7 +106,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
     return validate(text(result?.title), text(result?.detail));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\d\d|timed out|timeout/i.test(message);
+    const quotaOrProviderFailure = /HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|HTTP 5\d\d|timed out|timeout|translated_title_not_japanese|translated_description_not_japanese/i.test(message);
     if (!quotaOrProviderFailure || !process.env.GROQ_API_KEY?.trim()) throw error;
     return translateWithGroq();
   }
