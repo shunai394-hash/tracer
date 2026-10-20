@@ -98,7 +98,7 @@ export async function GET(request: Request) {
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
         const itemId = text(item.item_id);
-        if (itemId === "160447301" || itemId === "160447305") return 0;
+        if (["160447301", "160447305", "160447306", "160454016"].includes(itemId)) return 0;
         const title = localizeProductTitle(text(item.title));
         const detail = localizeProductDescription(text(item.title));
         if (
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
   // offline-safe repairs and immediately hit Gemini's exhausted quota again.
   const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
     const itemId = text(item.item_id);
-    if (itemId === "160447301" || itemId === "160447305") return true;
+    if (["160447301", "160447305", "160447306", "160454016"].includes(itemId)) return true;
     const localizedTitle = localizeProductTitle(text(item.title));
     const localizedDetail = localizeProductDescription(text(item.title));
     return isSpecificJapaneseProductTitle(localizedTitle) &&
@@ -228,19 +228,28 @@ export async function GET(request: Request) {
           typeof deterministicDetail === "string" &&
           isJapaneseProductDescription(deterministicDetail) &&
           hasUsableJapaneseCopy(deterministicDetail, "detail");
-        const copy: JapaneseCopy = itemId === "160447301"
-          ? {
-              title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
-              detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
-            }
-          : itemId === "160447305"
-            ? {
-                title: "木製ルーレットホイール イエロー 45cm／50cm（アメリカン式 0・00）",
-                detail: "イエローカラーの木製ルーレットホイールです。仕入先の商品名には直径45cm（18インチ）または50cm（20インチ）の表記があり、対象バリエーションは「45cm・アメリカン式 0・00」と記載されています。サイズやルーレット形式は、ご注文前に選択中のバリエーションと商品画像をご確認ください。",
-              }
-            : deterministicCopyIsSafe
-              ? { title: deterministicTitle!, detail: deterministicDetail! }
-              : await translate(originalTitle, originalDetail);
+        const fixedCopyByItemId: Record<string, JapaneseCopy> = {
+          "160447301": {
+            title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
+            detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
+          },
+          "160447305": {
+            title: "木製ルーレットホイール イエロー 45cm／50cm（アメリカン式 0・00）",
+            detail: "イエローカラーの木製ルーレットホイールです。仕入先の商品名には直径45cm（18インチ）または50cm（20インチ）の表記があり、対象バリエーションは「45cm・アメリカン式 0・00」と記載されています。サイズやルーレット形式は、ご注文前に選択中のバリエーションと商品画像をご確認ください。",
+          },
+          "160447306": {
+            title: "ソファ用厚手無地リネン調クッション生地（ホワイト）",
+            detail: "ソファやクッションのカバー製作などに使う、厚手の無地リネン調生地です。カラーはホワイトです。正確な素材組成、寸法、販売単位、洗濯方法は、仕入先の商品画像と仕様をご確認ください。",
+          },
+          "160454016": {
+            title: "日本式窯焼き抹茶茶器セット（青釉）",
+            detail: "日本式の窯焼き仕上げをうたう、青釉カラーの抹茶用茶器セットです。セット内容、寸法、素材、食器としての使用可否などは、商品画像および仕入先の仕様を確認してからご注文ください。",
+          },
+        };
+        const copy: JapaneseCopy = fixedCopyByItemId[itemId] ??
+          (deterministicCopyIsSafe
+            ? { title: deterministicTitle!, detail: deterministicDetail! }
+            : await translate(originalTitle, originalDetail));
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
