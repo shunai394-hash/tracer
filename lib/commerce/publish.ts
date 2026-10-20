@@ -138,6 +138,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       if (best && best.missing.length === 0) {
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
+          status: "pending",
           last_synced_at: checkedAt,
           updated_at: checkedAt,
           last_error: null,
