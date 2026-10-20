@@ -45,7 +45,13 @@ export async function GET(request: Request) {
   try {
     const before = await readStates();
     const allMismatches = mismatchedVariantIds(before);
-    const variantIds = allMismatches.slice(0, 50);
+    // Rotate batches between cron runs. Without this, a permanently blocked first
+    // batch would be selected forever and later mismatches would never be examined.
+    const batchCount = Math.max(1, Math.ceil(allMismatches.length / 50));
+    const cronSlot = Math.floor(Date.now() / (15 * 60 * 1000));
+    const batchIndex = cronSlot % batchCount;
+    const startIndex = batchIndex * 50;
+    const variantIds = allMismatches.slice(startIndex, startIndex + 50);
     if (variantIds.length === 0) {
       return NextResponse.json({
         ok: true,
@@ -71,6 +77,8 @@ export async function GET(request: Request) {
       shopifyRows: before.filter((row) => row.channel === "shopify").length,
       mismatchedVariantsBefore: allMismatches.length,
       attemptedVariants: variantIds.length,
+      attemptedBatchIndex: batchIndex,
+      totalMismatchBatches: batchCount,
       remainingMismatchedVariants: remaining,
       remainingMismatchCount: remaining.length + Math.max(0, allMismatches.length - variantIds.length),
       base: {
