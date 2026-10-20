@@ -196,6 +196,27 @@ export async function GET(request: Request) {
       }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
   }
+  // Always directly verify this recently requested listing. Catalog pagination or
+  // stale snapshot fields must not prevent a deterministic repair from running.
+  // Only add it when the live BASE item still needs Japanese copy, and avoid
+  // duplicating it if it is already in the candidate pool.
+  if (!requestedItemId && !candidatePool.some((item) => text(item.item_id) === "160454198")) {
+    try {
+      const liveTarget = await getBaseItemDetail("160454198");
+      if (
+        text(liveTarget.item_id) === "160454198" &&
+        needsJapaneseCopy(text(liveTarget.title), text(liveTarget.detail))
+      ) {
+        candidatePool.unshift(liveTarget);
+      }
+    } catch (error) {
+      console.warn("[TRACER BASE JAPANESE COPY] direct_target_probe_failed", {
+        itemId: "160454198",
+        error: error instanceof Error ? error.message.slice(0, 180) : "BASE_ITEM_DETAIL_FAILED",
+      });
+    }
+  }
+
   // If the catalog detector returns an empty pool, probe a known public English
   // listing directly. This prevents a false "0 remaining" result from hiding a
   // catalog/API mismatch and lets the normal verified repair worker fix it.
