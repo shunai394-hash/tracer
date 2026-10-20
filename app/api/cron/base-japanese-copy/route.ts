@@ -176,13 +176,18 @@ export async function GET(request: Request) {
       isJapaneseProductDescription(localizedDetail) &&
       hasUsableJapaneseCopy(localizedDetail, "detail");
   });
+  // Fill the batch with remaining catalog candidates when the deterministic
+  // subset is smaller than the requested limit. A stale snapshot item can read
+  // back as already Japanese; it must not make the entire bulk run stop after
+  // checking just that one item.
+  const deterministicIds = new Set(offlineCandidates.map((item) => text(item.item_id)));
   const candidates = requestedItemId
     ? candidatePool.slice(0, 1)
-    : offlineCandidates.length > 0
-      ? offlineCandidates.slice(0, limit)
-      : candidatePool.length <= limit
-        ? candidatePool
-        : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
+    : [
+        ...offlineCandidates,
+        ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id)))
+          .slice(0, Math.max(0, limit - offlineCandidates.length)),
+      ].slice(0, limit);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
