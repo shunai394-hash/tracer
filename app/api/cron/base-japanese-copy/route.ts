@@ -246,6 +246,11 @@ export async function GET(request: Request) {
     failed: response.failed,
     remainingEnglishEstimate: response.remainingEnglishEstimate,
     emptyPoolProbe,
+    failedResults: results.filter((item) => item.outcome === "failed" || item.outcome === "readback_mismatch" || item.outcome === "skipped_live_item_state_incomplete").map((item) => ({
+      itemId: item.itemId,
+      outcome: item.outcome,
+      error: item.error,
+    })),
   }));
   return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }
