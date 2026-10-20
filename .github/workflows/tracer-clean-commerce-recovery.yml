@@ -149,9 +149,10 @@ jobs:
           # CJ's daily API points are exhausted. Publish only already verified,
           # fresh, profitable Japanese listings; supplier import remains separate.
           # Each pass is deliberately small: the previous 100-item requests timed out
-          # at the platform 300-second limit. Three sequential passes make progress
-          # without overwhelming BASE/Shopify APIs or the stale-listing audit.
-          for pass in 1 2 3; do
+          # at the platform 300-second limit. Repeat bounded 10-item passes to drain
+          # the known backlog while preserving per-request limits and safety checks.
+          # Stop on any HTTP/API failure rather than claiming the backlog is complete.
+          for pass in $(seq 1 25); do
             call_publish "api/cron/commerce-publish-base?limit=10&onlyUnpublished=true" "base-publish-${pass}.json" || failed=1
             call_publish "api/cron/commerce-publish-shopify?limit=10&onlyUnpublished=true" "shopify-publish-${pass}.json" || failed=1
           done
