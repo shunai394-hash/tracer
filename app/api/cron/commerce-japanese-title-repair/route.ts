@@ -28,15 +28,30 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   const db = createSupabaseAdminClient();
-  const { data, error } = await db.from("commerce_variants")
-    .select("id,title_ja,product_id,commerce_products!inner(id,title_ja,metadata,active)")
-    .eq("commerce_products.active", true)
-    .limit(1000);
-  if (error) return NextResponse.json({ ok: false, error: "title_repair_candidates_read_failed" }, { status: 500 });
+  // Supabase's default response cap is 1,000 rows. Page through the entire
+  // active catalog so a large English backlog cannot be falsely reported as done.
+  const allRows: VariantRow[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await db.from("commerce_variants")
+      .select("id,title_ja,product_id,commerce_products!inner(id,title_ja,metadata,active)")
+      .eq("commerce_products.active", true)
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) return NextResponse.json({
+      ok: false,
+      error: "title_repair_candidates_read_failed",
+      offset,
+      detail: error.message,
+    }, { status: 500 });
+    const page = (data ?? []) as unknown as VariantRow[];
+    allRows.push(...page);
+    if (page.length < pageSize) break;
+  }
 
   const byProduct = new Map<string, { product: ProductRow; title: string; variants: VariantRow[] }>();
   const unmapped: string[] = [];
-  for (const raw of (data ?? []) as unknown as VariantRow[]) {
+  for (const raw of allRows) {
     const product = asProduct(raw.commerce_products);
     if (!product) continue;
     if (isSpecificJapaneseProductTitle(raw.title_ja) && isSpecificJapaneseProductTitle(product.title_ja) && !hasEnglishWords(raw.title_ja) && !hasEnglishWords(product.title_ja)) continue;
