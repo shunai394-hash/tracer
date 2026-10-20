@@ -166,9 +166,11 @@ export async function GET(request: Request) {
   }));
 
   let nextIndex = 0;
+  let providerUnavailable = false;
   const results: Array<Record<string, unknown>> = [];
   async function worker() {
     while (true) {
+      if (providerUnavailable) return;
       const index = nextIndex++;
       if (index >= candidates.length) return;
       const itemId = text(candidates[index].item_id);
@@ -219,10 +221,14 @@ export async function GET(request: Request) {
           descriptionJapanese: hasUsableJapaneseCopy(text(after.detail)),
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown_error";
+        if (/HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|timed out|timeout/i.test(message)) {
+          providerUnavailable = true;
+        }
         results.push({
           itemId,
           outcome: "failed",
-          error: error instanceof Error ? error.message.slice(0, 180) : "unknown_error",
+          error: message.slice(0, 180),
         });
       }
     }
@@ -241,6 +247,7 @@ export async function GET(request: Request) {
     requested: candidates.length,
     translatedAndVerified: translated,
     failed,
+    providerUnavailable,
     remainingEnglishEstimate: Math.max(0, snapshot.items.filter((item) => /^\d+$/.test(text(item.item_id)) && needsJapaneseCopy(text(item.title), text(item.detail))).length - translated),
     results,
   };
@@ -252,6 +259,7 @@ export async function GET(request: Request) {
     requested: response.requested,
     translatedAndVerified: response.translatedAndVerified,
     failed: response.failed,
+    providerUnavailable: response.providerUnavailable,
     remainingEnglishEstimate: response.remainingEnglishEstimate,
     emptyPoolProbe,
     failedResults: results.filter((item) => item.outcome === "failed" || item.outcome === "readback_mismatch" || item.outcome === "skipped_live_item_state_incomplete").map((item) => ({
