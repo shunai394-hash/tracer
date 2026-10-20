@@ -402,7 +402,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Storefront titles must be fully localized, not merely contain a few Japanese characters.
     // If a stored title contains English words, require a source-grounded Japanese mapping;
     // never republish mixed-language titles as customer-facing copy.
-    const containsEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value);
+    const containsEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value.replace(/\b(?:PU|PC|USB|LED|UV|A4|Type-C|iPhone|Huawei|PHOERA)\b/gi, ""));
     const localizedTitleIsPublishable = Boolean(localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle) &&
       isJapaneseProductTitle(localizedSourceTitle) && !containsEnglishWords(localizedSourceTitle));
     const title = localizedTitleIsPublishable

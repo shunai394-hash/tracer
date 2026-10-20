@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
+import { isSpecificJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ type VariantRow = {
   commerce_products: ProductRow | ProductRow[] | null;
 };
 
-const hasEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value);
+const hasEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value.replace(/\b(?:PU|PC|USB|LED|UV|A4|Type-C|iPhone|Huawei|PHOERA)\b/gi, ""));
 const asProduct = (value: VariantRow["commerce_products"]): ProductRow | null =>
   Array.isArray(value) ? value[0] ?? null : value ?? null;
 
@@ -39,12 +39,12 @@ export async function GET(request: Request) {
   for (const raw of (data ?? []) as unknown as VariantRow[]) {
     const product = asProduct(raw.commerce_products);
     if (!product) continue;
-    if (!hasEnglishWords(raw.title_ja) && !hasEnglishWords(product.title_ja)) continue;
+    if (isSpecificJapaneseProductTitle(raw.title_ja) && isSpecificJapaneseProductTitle(product.title_ja) && !hasEnglishWords(raw.title_ja) && !hasEnglishWords(product.title_ja)) continue;
     const metadata = product.metadata ?? {};
     const sourceTitle = [metadata.sourceTitle, metadata.source_title, metadata.originalTitle]
       .find((value) => typeof value === "string" && value.trim()) as string | undefined;
     const localized = sourceTitle ? localizeProductTitle(sourceTitle) : null;
-    if (!localized || hasEnglishWords(localized)) {
+    if (!localized || !isSpecificJapaneseProductTitle(localized) || hasEnglishWords(localized)) {
       unmapped.push(raw.product_id);
       continue;
     }
