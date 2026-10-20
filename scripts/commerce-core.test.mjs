@@ -554,7 +554,7 @@ test("CJ importer persists exact supplier variant IDs and rotates bounded child-
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /selectRotatingVariantBatch\(variants, variantBatchLimit, variantRunSlot\)/);
   assert.ok(importer.includes("const limit = Math.min(10, Math.max(1, Number(url.searchParams.get(\"limit\") || 3)))"));
-  assert.ok(importer.includes("const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get(\"variantLimit\") || 6)))"));
+  assert.ok(importer.includes("const variantBatchLimit = Math.min(3, Math.max(1, Number(url.searchParams.get(\"variantLimit\") || 3)))"));
   assert.match(importer, /variantsAvailable \+= variants\.length/);
   assert.match(importer, /sourceVariantKey: exactVariant\.vid/);
   assert.match(importer, /sku: exactVariant\.sku/);
@@ -774,7 +774,7 @@ test("CJ catalog importer prioritizes stale evidence and unseen parent products 
   assert.match(importer, /shopifyVariantIds = new Set/);
   assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
-  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 6/);
+  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 3/);
   assert.doesNotMatch(importer, /const fallbackCandidates/);
 });
 
