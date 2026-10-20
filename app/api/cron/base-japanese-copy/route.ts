@@ -181,13 +181,15 @@ export async function GET(request: Request) {
   // back as already Japanese; it must not make the entire bulk run stop after
   // checking just that one item.
   const deterministicIds = new Set(offlineCandidates.map((item) => text(item.item_id)));
-  const candidates = requestedItemId
-    ? candidatePool.slice(0, 1)
+  const orderedCandidates = requestedItemId
+    ? candidatePool
     : [
         ...offlineCandidates,
-        ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id)))
-          .slice(0, Math.max(0, limit - offlineCandidates.length)),
-      ].slice(0, limit);
+        ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id))),
+      ];
+  const candidates = requestedItemId
+    ? orderedCandidates.slice(0, 1)
+    : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
