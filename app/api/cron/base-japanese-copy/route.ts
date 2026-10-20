@@ -88,12 +88,16 @@ export async function GET(request: Request) {
   // Always scan the complete snapshot, then rotate the bounded batch. Without
   // rotation, the same first 50 failed translations can starve every later item.
   const requestedItemId = text(url.searchParams.get("itemId"));
+  const afterItemId = text(url.searchParams.get("afterItemId"));
   let candidatePool = snapshot.items
     .filter((item) => /^\d+$/.test(text(item.item_id)))
+    .filter((item) => !afterItemId || Number(text(item.item_id)) > Number(afterItemId))
     .filter((item) => requestedItemId
       ? text(item.item_id) === requestedItemId
       : needsJapaneseCopy(text(item.title), text(item.detail)))
     .sort((a, b) => {
+      // Cursor-based bulk runs use stable numeric order so failures cannot starve later IDs.
+      if (afterItemId) return Number(text(a.item_id)) - Number(text(b.item_id));
       // Run source-grounded deterministic mappings before Gemini-dependent items.
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
@@ -136,7 +140,7 @@ export async function GET(request: Request) {
   // listing directly. This prevents a false "0 remaining" result from hiding a
   // catalog/API mismatch and lets the normal verified repair worker fix it.
   let emptyPoolProbe: Record<string, unknown> | null = null;
-  if (!requestedItemId && candidatePool.length === 0) {
+  if (!requestedItemId && !afterItemId && candidatePool.length === 0) {
     const probeItemId = "160447301";
     try {
       const probe = await getBaseItemDetail(probeItemId);
@@ -181,7 +185,7 @@ export async function GET(request: Request) {
   // back as already Japanese; it must not make the entire bulk run stop after
   // checking just that one item.
   const deterministicIds = new Set(offlineCandidates.map((item) => text(item.item_id)));
-  const orderedCandidates = requestedItemId
+  const orderedCandidates = requestedItemId || afterItemId
     ? candidatePool
     : [
         ...offlineCandidates,
@@ -189,7 +193,9 @@ export async function GET(request: Request) {
       ];
   const candidates = requestedItemId
     ? orderedCandidates.slice(0, 1)
-    : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
+    : afterItemId
+      ? orderedCandidates.slice(0, limit)
+      : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
