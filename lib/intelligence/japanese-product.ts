@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^medicine box sub-packaging sealed moisture-proof(?:\s*\(.*\))?$/i, "密閉式 防湿薬ケース（ホワイト）"],
   [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "ミニサンゴ風 水槽用デコレーション（ホワイト）"],
   [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製ルーレットホイール（直径約50cm）"],
   [/^14 color hair line powder black root up natural instant waterproof hairline shadow concealer coverage paint repair fill in hair/i, "ヘアライン補正パウダー 14色展開"],
@@ -334,6 +335,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/^medicine box sub-packaging sealed moisture-proof(?:\s*\(.*\))?$/i, "薬を小分けして保管するためのケースです。商品名にはホワイトと記載されています。寸法・材質・仕切りの有無・密閉性・セット内容は、購入前に商品画像と仕入先の最新仕様をご確認ください。"],
     [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "水槽のレイアウトに使うサンゴ風デコレーションです。商品名には「No.9 ホワイト」と記載されています。素材・寸法・水槽内での使用可否・セット内容は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
     [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製のルーレットホイールです。商品名には直径約50cmと記載されています。ゲーム用途や装飾用途、セット内容、実寸、素材、使用方法は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
     [/14 color hair line powder black root up natural instant waterproof hairline shadow concealer coverage paint repair fill in hair/i, "生え際や分け目の気になる部分をカバーするヘアライン補正パウダーです。カラーはアッシュブラウン、内容量は4gと記載されています。仕上がりや色持ちには個人差があります。防水性などの性能は、販売元の最新仕様をご確認ください。"],
