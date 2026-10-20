@@ -19,7 +19,7 @@ concurrency:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Wait for production deployment
         run: sleep 90
@@ -37,7 +37,7 @@ jobs:
           total_verified=0
           total_failed=0
           completed_batches=0
-          for batch in $(seq 1 12); do
+          for batch in $(seq 1 5); do
             status="$(curl --silent --show-error --max-time 300 \
               -o "$response_file" -w '%{http_code}' \
               -H "Authorization: Bearer ${id_token}" \
@@ -81,7 +81,7 @@ jobs:
           {
             echo "## BASE Japanese-copy repair — repeated verified batches"
             echo
-            echo "- Batches completed: $completed_batches (maximum 12)"
+            echo "- Batches completed: $completed_batches (maximum 5)"
             echo "- Items translated and verified: $total_verified"
             echo "- Failed/skipped state count reported by batches: $total_failed"
             echo "- Every translated item passed live checks for Japanese title/description and unchanged price/stock/visibility/identifier."
