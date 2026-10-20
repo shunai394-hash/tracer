@@ -75,7 +75,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const limit = Math.min(50, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || 50))));
+  const limit = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || 1))));
   let snapshot;
   try {
     snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: 50 });
@@ -227,7 +227,7 @@ export async function GET(request: Request) {
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(5, candidates.length) }, () => worker()));
+  // Run sequentially: the previous five-way fan-out exhausted Gemini quota and caused\n  // every item in a batch to fail. Small batches avoid amplifying 429/timeouts.\n  await worker();
   const translated = results.filter((item) => item.outcome === "translated_and_verified").length;
   const failed = results.filter((item) => !["translated_and_verified", "already_japanese_on_readback"].includes(String(item.outcome))).length;
   const response = {
