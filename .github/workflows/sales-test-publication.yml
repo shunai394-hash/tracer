@@ -10,6 +10,7 @@ on:
     paths:
       - ".github/workflows/sales-test-publication.yml"
       - "app/api/cron/commerce-cj-import/route.ts"
+      - "app/api/cron/sales-test-publication/route.ts"
   schedule:
     - cron: "9,39 * * * *"
   workflow_dispatch:
