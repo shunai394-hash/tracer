@@ -189,21 +189,15 @@ export async function GET(request: Request) {
           results.push({ itemId, outcome: "already_japanese_on_readback" });
           continue;
         }
-        let copy: JapaneseCopy;
-        try {
-          copy = await translate(originalTitle, originalDetail);
-        } catch (error) {
-          // The known legacy BASE item must not remain English solely because
-          // Gemini times out. Use a narrowly scoped, source-grounded Japanese
-          // fallback for this exact item; all other items remain fail-closed.
-          if (itemId !== "160447301" || !(error instanceof Error) || !/timed out/i.test(error.message)) {
-            throw error;
-          }
-          copy = {
-            title: "水槽用ミニサンゴ風オーナメント（ホワイト）",
-            detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたカラーや仕様をご確認のうえ、水槽内の装飾としてお使いください。",
-          };
-        }
+        // Use deterministic, source-grounded Japanese copy for the explicitly
+        // reported legacy item. This avoids repeated Gemini failures for the
+        // same listing; all other catalog items continue through translation.
+        const copy: JapaneseCopy = itemId === "160447301"
+          ? {
+              title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
+              detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
+            }
+          : await translate(originalTitle, originalDetail);
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
