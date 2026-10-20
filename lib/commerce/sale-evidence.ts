@@ -23,7 +23,6 @@ export type SaleEvidenceInput = {
   shippingKnown?: boolean | null;
   shipTo?: string | null;
   trackingSupported?: boolean | null;
-  evidenceFresh?: boolean | null;
   currency?: string | null;
   sellingPrice?: number | null;
   expectedProfit?: number | null;
@@ -45,10 +44,8 @@ export function missingSaleEvidence(input: SaleEvidenceInput): SaleEvidenceField
   if (!shippingKnown) missing.push("domestic_shipping");
   const profitKnown = input.currency === "JPY" && Number(input.sellingPrice) > 0 && Number(input.expectedProfit) > 0;
   if (!profitKnown) missing.push("profit");
-  // Keep supplier identity separate from evidence verification/freshness. In
-  // particular, a stale timestamp must not be reported as a missing supplier.
-  if (input.sourceStatus !== "verified" || input.evidenceFresh !== true) {
-    missing.push("verification");
-  }
+  // Verification status remains a hard requirement; timestamp age is not.
+  // Inventory, destination shipping, and tracking must still be positively evidenced.
+  if (input.sourceStatus !== "verified") missing.push("verification");
   return missing;
 }
