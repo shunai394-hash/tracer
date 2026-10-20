@@ -56,7 +56,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   // Groq is the independent fallback when Gemini is quota-limited. This uses
   // the GROQ_API_KEY configured for the production project and validates the
   // result before it can be written to BASE.
-  const translateWithGroq = async (): Promise<JapaneseCopy> => {
+  const translateWithGroq = async (strictRetry = false): Promise<JapaneseCopy> => {
     const apiKey = process.env.GROQ_API_KEY?.trim();
     if (!apiKey) throw new Error("GROQ_FALLBACK_NOT_CONFIGURED");
     const controller = new AbortController();
@@ -77,7 +77,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
           messages: [
             {
               role: "system",
-              content: "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\"title\": string, \"detail\": string} のみ返してください。",
+              content: strictRetry ? "必ず再翻訳してください。商品名と説明文の両方を、購入者がそのまま読める自然で完全な日本語にしてください。英語の文章や英語の説明句を残さず、英語を残してよいのはブランド名・型番・固有の商品コードだけです。説明文は入力にある情報のみを使い、少なくとも2〜3文の日本語に整理してください。入力にない仕様・素材・寸法・機能・性能・保証を創作しないでください。title と detail の文字列だけを持つJSONオブジェクトを返してください。" : "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\"title\": string, \"detail\": string} のみ返してください。",
             },
             { role: "user", content: JSON.stringify({ title, detail }) },
           ],
@@ -91,7 +91,14 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
       const raw = payload.choices?.[0]?.message?.content;
       if (!raw) throw new Error("Groq returned empty translation");
       const parsed = JSON.parse(raw) as { title?: unknown; detail?: unknown };
-      return validate(text(parsed.title), text(parsed.detail));
+      const translatedTitle = text(parsed.title);
+      const translatedDetail = text(parsed.detail);
+      try {
+        return validate(translatedTitle, translatedDetail);
+      } catch (error) {
+        if (strictRetry) throw error;
+        return translateWithGroq(true);
+      }
     } finally {
       clearTimeout(timeout);
     }
