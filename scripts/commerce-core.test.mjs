@@ -1223,4 +1223,6 @@ test("no-longer-fulfillable supplier listings are included in recovery reconcili
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /last_error\.like\.supplier_offer_no_longer_fulfillable%/);
   assert.match(publish, /startsWith\("supplier_offer_no_longer_fulfillable:"\)/);
+  assert.match(publish, /status: "pending",[\s\S]*?last_error: null/,
+    "a recovered listing must re-enter the publication queue");
 });
