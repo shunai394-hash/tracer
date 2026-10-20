@@ -6,7 +6,7 @@ import { syncCommerceListings } from "@/lib/commerce/publish";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type ListingState = { id: string; variant_id: string; channel: string; status: string };
+type ListingState = { id: string; variant_id: string; channel: string; status: string; selling_price: number | null };
 
 /** A variant is in parity only when exactly one row exists per channel and public states match. */
 function mismatchedVariantIds(rows: ListingState[]): string[] {
@@ -34,7 +34,7 @@ function mismatchedVariantIds(rows: ListingState[]): string[] {
 
 async function readStates(variantIds?: string[]): Promise<ListingState[]> {
   const db = createSupabaseAdminClient();
-  let query = db.from("channel_listings").select("id,variant_id,channel,status")
+  let query = db.from("channel_listings").select("id,variant_id,channel,status,selling_price")
     .in("channel", ["base", "shopify"]);
   if (variantIds) query = query.in("variant_id", variantIds);
   const { data, error } = await query.limit(5000);
