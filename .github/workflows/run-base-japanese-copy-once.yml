@@ -60,3 +60,5 @@ jobs:
             echo "Some items failed; inspect the returned JSON above." >&2
             exit 1
           fi
+
+# One-shot trigger: invoke the bounded, readback-verified Japanese copy repair.
