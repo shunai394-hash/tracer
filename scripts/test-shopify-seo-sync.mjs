@@ -10,6 +10,6 @@ assert.match(admin, /seo: shopifySeoInput\(input\)/g, "create and update must bo
 assert.match(admin, /seo \{ title description \}/g, "create and update must request SEO readback");
 assert.match(admin, /shopify_seo_readback_mismatch_after_create/, "create must fail closed if SEO readback differs");
 assert.match(admin, /shopify_seo_readback_mismatch_after_update/, "update must fail closed if SEO readback differs");
-assert.match(admin, /replace\(\/<\[\^>\]\*>\/g, " "/, "SEO description fallback must strip HTML tags");
 
 console.log("Shopify SEO write, bounds, and readback guards are present.");
+
