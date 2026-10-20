@@ -74,6 +74,7 @@ jobs:
       - run: node --experimental-strip-types --no-warnings scripts/test-base-auth-retry-circuit.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-publishable-title.mjs
       - run: node scripts/test-shopify-copy-quota-fallback.mjs
+      - run: npm run test:shopify-seo-sync
       - run: node --experimental-strip-types --no-warnings scripts/test-cj-query-fallback.mjs
       - run: node --experimental-strip-types --no-warnings scripts/test-canonical-supplier-identity-gate.mjs
       - name: Test detached supply inventory holds in sales-test publication
