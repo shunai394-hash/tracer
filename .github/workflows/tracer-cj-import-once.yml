@@ -1,0 +1,62 @@
+name: TRACER CJ import once
+
+# One bounded call to the existing commerce CJ importer. Prints counts only.
+# Does not place orders and does not change the importer.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-cj-import-once
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Run one commerce CJ import
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o import.json -w "%{http_code}" --max-time 300 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import" || true)"
+          echo "=== commerce-cj-import HTTP $code ==="
+          python3 - <<'PY'
+          import json
+          try:
+            d = json.load(open("import.json"))
+          except Exception:
+            print("response was not JSON")
+            raise SystemExit(1)
+          stats = d.get("stats") if isinstance(d.get("stats"), dict) else {}
+          keys = [
+            "verifiedOffersStaleEligible",
+            "evidenceRetryVariantsQueued",
+            "evidenceRetryDeferredByBackoff",
+            "staleLegacyListingVariantsQueued",
+            "finalEvidenceParentCount",
+            "missingPublicationRetriesQueued",
+            "newDiscoveryCandidatesQueued",
+            "finalCandidateCount",
+            "offers",
+            "priced",
+            "skipped",
+            "errors",
+          ]
+          out = {"ok": d.get("ok"), "http": None}
+          for key in keys:
+            value = stats.get(key)
+            if key == "errors":
+              out[key] = len(value) if isinstance(value, list) else value
+            else:
+              out[key] = value
+          print(json.dumps(out, ensure_ascii=False, indent=2))
+          PY
+          if [ "$code" != "200" ] && [ "$code" != "207" ]; then
+            exit 1
+          fi
