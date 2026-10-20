@@ -84,7 +84,7 @@ export async function GET(request: Request) {
   }
 
   const candidates = snapshot.items
-    .filter((item) => /^\\d+$/.test(text(item.item_id)))
+    .filter((item) => /^\d+$/.test(text(item.item_id)))
     .filter((item) => needsJapaneseCopy(text(item.title), text(item.detail)))
     .slice(0, limit);
 
@@ -153,7 +153,7 @@ export async function GET(request: Request) {
     requested: candidates.length,
     translatedAndVerified: translated,
     failed,
-    remainingEnglishEstimate: Math.max(0, snapshot.items.filter((item) => /^\\d+$/.test(text(item.item_id)) && needsJapaneseCopy(text(item.title), text(item.detail))).length - translated),
+    remainingEnglishEstimate: Math.max(0, snapshot.items.filter((item) => /^\d+$/.test(text(item.item_id)) && needsJapaneseCopy(text(item.title), text(item.detail))).length - translated),
     results,
   }, { headers: { "Cache-Control": "no-store" } });
 }
