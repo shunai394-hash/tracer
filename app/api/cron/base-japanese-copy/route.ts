@@ -185,7 +185,7 @@ export async function GET(request: Request) {
   // back as already Japanese; it must not make the entire bulk run stop after
   // checking just that one item.
   const deterministicIds = new Set(offlineCandidates.map((item) => text(item.item_id)));
-  const orderedCandidates = requestedItemId
+  const orderedCandidates = requestedItemId || afterItemId
     ? candidatePool
     : [
         ...offlineCandidates,
