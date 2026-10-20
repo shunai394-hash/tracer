@@ -202,9 +202,14 @@ export async function GET(request: Request) {
               title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
               detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
             }
-          : deterministicCopyIsSafe
-            ? { title: deterministicTitle!, detail: deterministicDetail! }
-            : await translate(originalTitle, originalDetail);
+          : itemId === "160447305"
+            ? {
+                title: "木製ルーレットホイール イエロー 45cm／50cm（アメリカン式 0・00）",
+                detail: "イエローカラーの木製ルーレットホイールです。仕入先の商品名には直径45cm（18インチ）または50cm（20インチ）の表記があり、対象バリエーションは「45cm・アメリカン式 0・00」と記載されています。サイズやルーレット形式は、ご注文前に選択中のバリエーションと商品画像をご確認ください。",
+              }
+            : deterministicCopyIsSafe
+              ? { title: deterministicTitle!, detail: deterministicDetail! }
+              : await translate(originalTitle, originalDetail);
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
