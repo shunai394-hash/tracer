@@ -1,6 +1,13 @@
 name: TRACER sales-test publication
 
 on:
+  # Run immediately when this workflow is changed on main, instead of waiting
+  # for the next hourly schedule. Normal application pushes do not trigger it.
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sales-test-publication.yml"
   schedule:
     - cron: "9,39 * * * *"
   workflow_dispatch:
