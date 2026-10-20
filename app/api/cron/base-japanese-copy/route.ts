@@ -140,7 +140,7 @@ export async function GET(request: Request) {
   // listing directly. This prevents a false "0 remaining" result from hiding a
   // catalog/API mismatch and lets the normal verified repair worker fix it.
   let emptyPoolProbe: Record<string, unknown> | null = null;
-  if (!requestedItemId && candidatePool.length === 0) {
+  if (!requestedItemId && !afterItemId && candidatePool.length === 0) {
     const probeItemId = "160447301";
     try {
       const probe = await getBaseItemDetail(probeItemId);
