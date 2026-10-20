@@ -93,7 +93,10 @@ export async function POST(request: Request) {
   // transition failure: the old order remained CREATED, no payment was made,
   // and no real fulfillment occurred. This exception must never apply to live orders.
   const previousFailureWasSafeSandboxTransition =
-    previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay." &&
+    (
+      previousError === "Current order status is CREATED(100), not UNPAID(200), cannot simulate pay." ||
+      previousError.startsWith("Invalid target status UNPAID(200), allowed values: UNSHIPPED(400)/SHIPPED(500)/DELIVERED(600)/CLOSED(700).")
+    ) &&
     previousMetadata.sandbox === true &&
     previousMetadata.charged === false &&
     previousMetadata.realFulfillment === false;
