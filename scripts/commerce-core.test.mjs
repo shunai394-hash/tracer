@@ -15,6 +15,15 @@ test("localizes the known Maruki side-clip hair accessory from its source title"
   assert.match(japaneseProduct, /サイドクリップ付きヘアアクセサリー/);
 });
 
+test("known detailed CJ hair-accessory titles stay differentiated in Japanese instead of generic category labels", async () => {
+  const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
+  assert.match(japaneseProduct, /ハート・星モチーフ メタルヘアクリップ/);
+  assert.match(japaneseProduct, /手編み風 キャンディモチーフ ヘアクリップ/);
+  assert.match(japaneseProduct, /サテンリボン ヘアクリップ/);
+  assert.match(japaneseProduct, /マットカラー ヘアクリップ 6本セット/);
+  assert.match(japaneseProduct, /ゴールドカラー 幾何学透かし模様 メタルヘアクリップ/);
+});
+
 test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
