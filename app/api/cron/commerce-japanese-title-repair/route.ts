@@ -88,8 +88,8 @@ export async function GET(request: Request) {
     repairedProducts: bothSucceeded ? byProduct.size : 0,
     repairedVariants: bothSucceeded ? variantIds.length : 0,
     variantIds,
-    base: { processed: base.processed ?? base.published ?? 0, failed: base.failed ?? 0, errors: base.errors ?? [] },
-    shopify: { processed: shopify.processed ?? shopify.published ?? 0, failed: shopify.failed ?? 0, errors: shopify.errors ?? [] },
+    base: { processed: base.processed ?? base.published ?? 0, failed: base.failed ?? 0 },
+    shopify: { processed: shopify.processed ?? shopify.published ?? 0, failed: shopify.failed ?? 0 },
     unmappedProducts: [...new Set(unmapped)],
     databaseTitlesSaved: bothSucceeded,
   };
