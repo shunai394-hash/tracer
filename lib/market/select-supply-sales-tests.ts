@@ -304,7 +304,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
     const localizedDescription = localizeProductDescription(sourceTitle)
       ?? localizeProductDescription(localizedTitle)
-      ?? localizedDescriptionFallback(localizedTitle);
+      ?? localizedDescriptionFallback(typeof localizedTitle === "string" ? localizedTitle : "");
     const publishableDescription = isPublishableCatalogDescription(localizedDescription)
       ? localizedDescription
       : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
