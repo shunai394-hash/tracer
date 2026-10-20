@@ -194,7 +194,7 @@ export async function GET(request: Request) {
         const deterministicDetail = localizeProductDescription(originalTitle);
         const deterministicCopyIsSafe =
           isSpecificJapaneseProductTitle(deterministicTitle) &&
-          Boolean(deterministicDetail) &&
+          typeof deterministicDetail === "string" &&
           isJapaneseProductDescription(deterministicDetail) &&
           hasUsableJapaneseCopy(deterministicDetail, "detail");
         const copy: JapaneseCopy = itemId === "160447301"
