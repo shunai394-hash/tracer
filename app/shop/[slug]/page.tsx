@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
@@ -10,6 +11,46 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  try {
+    const listing = await getShopListingBySlug(slug);
+    if (!listing) return { title: "商品が見つかりません", robots: { index: false, follow: false } };
+
+    const title = listing.title.trim();
+    const description = (listing.description ?? `${title}の商品情報・価格・在庫をご確認いただけます。`)
+      .replace(/\\s+/g, " ")
+      .slice(0, 155);
+    const url = `/shop/${encodeURIComponent(listing.slug)}`;
+    return {
+      title,
+      description,
+      alternates: { canonical: url },
+      openGraph: {
+        type: "website",
+        locale: "ja_JP",
+        siteName: "TRACER",
+        title,
+        description,
+        url,
+        ...(listing.imageUrl ? { images: [{ url: listing.imageUrl, alt: title }] } : {}),
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        ...(listing.imageUrl ? { images: [listing.imageUrl] } : {}),
+      },
+    };
+  } catch {
+    return { title: "商品情報｜TRACER", robots: { index: false, follow: true } };
+  }
+}
+
 
 async function loadShopProduct(slug: string) {
   try {
