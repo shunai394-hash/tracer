@@ -1,0 +1,62 @@
+name: TRACER run BASE Japanese copy repair once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/run-base-japanese-copy-once.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-base-japanese-copy-one-shot
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for production deployment
+        run: sleep 90
+      - name: Invoke bounded BASE Japanese copy repair
+        shell: bash
+        env:
+          PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          token_json="$(curl --fail --silent --show-error --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+          id_token="$(printf '%s' "$token_json" | jq -er '.value')"
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 300 \
+            -o "$response_file" -w '%{http_code}' \
+            -H "Authorization: Bearer ${id_token}" \
+            "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=50")"
+          echo "BASE Japanese copy repair HTTP $status"
+          cat "$response_file"
+          echo
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "BASE Japanese copy repair failed with HTTP $status" >&2
+            exit 1
+          fi
+          jq -e '.phase == "base_japanese_copy_repair"' "$response_file" >/dev/null
+          jq -e '.translatedAndVerified >= 0 and .failed >= 0' "$response_file" >/dev/null
+          {
+            echo "## BASE Japanese copy repair"
+            echo
+            echo "- HTTP: $status"
+            echo "- Snapshot items: $(jq -r '.snapshotItems // "unknown"' "$response_file")"
+            echo "- Candidates: $(jq -r '.candidatePool // "unknown"' "$response_file")"
+            echo "- Translated and readback-verified: $(jq -r '.translatedAndVerified // "unknown"' "$response_file")"
+            echo "- Failed: $(jq -r '.failed // "unknown"' "$response_file")"
+            echo "- Remaining English estimate: $(jq -r '.remainingEnglishEstimate // "unknown"' "$response_file")"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq -r '.failed // 1' "$response_file")" != "0" ]; then
+            echo "Some items failed; inspect the returned JSON above." >&2
+            exit 1
+          fi
