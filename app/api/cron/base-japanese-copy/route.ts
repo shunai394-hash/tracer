@@ -119,6 +119,34 @@ export async function GET(request: Request) {
       }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
   }
+  // If the catalog detector returns an empty pool, probe a known public English
+  // listing directly. This prevents a false "0 remaining" result from hiding a
+  // catalog/API mismatch and lets the normal verified repair worker fix it.
+  let emptyPoolProbe: Record<string, unknown> | null = null;
+  if (!requestedItemId && candidatePool.length === 0) {
+    const probeItemId = "160447301";
+    try {
+      const probe = await getBaseItemDetail(probeItemId);
+      if (text(probe.item_id) !== probeItemId) {
+        throw new Error("BASE_ITEM_DETAIL_ID_MISMATCH");
+      }
+      const probeNeedsJapaneseCopy = needsJapaneseCopy(text(probe.title), text(probe.detail));
+      emptyPoolProbe = {
+        itemId: probeItemId,
+        found: true,
+        needsJapaneseCopy: probeNeedsJapaneseCopy,
+        liveTitlePreview: text(probe.title).slice(0, 120),
+      };
+      if (probeNeedsJapaneseCopy) candidatePool = [probe];
+    } catch (error) {
+      emptyPoolProbe = {
+        itemId: probeItemId,
+        found: false,
+        error: error instanceof Error ? error.message.slice(0, 180) : "BASE_ITEM_DETAIL_FAILED",
+      };
+    }
+  }
+
   const requestedOffset = url.searchParams.get("offset");
   const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
     ? Number(requestedOffset) % Math.max(1, candidatePool.length)
@@ -134,6 +162,7 @@ export async function GET(request: Request) {
     candidatePool: candidatePool.length,
     limit,
     rotationOffset,
+    emptyPoolProbe,
   }));
 
   let nextIndex = 0;
@@ -200,6 +229,7 @@ export async function GET(request: Request) {
     pages: snapshot.pages,
     candidatePool: candidatePool.length,
     rotationOffset,
+    emptyPoolProbe,
     requested: candidates.length,
     translatedAndVerified: translated,
     failed,
@@ -215,6 +245,7 @@ export async function GET(request: Request) {
     translatedAndVerified: response.translatedAndVerified,
     failed: response.failed,
     remainingEnglishEstimate: response.remainingEnglishEstimate,
+    emptyPoolProbe,
   }));
   return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
 }
