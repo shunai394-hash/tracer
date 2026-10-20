@@ -384,17 +384,17 @@ function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTit
 /** Confirm SEO metadata from a fresh persisted-product read, not the mutation payload. */
 async function verifyPersistedShopifySeo(productId: string, productTitle: string, expected: { title: string; description: string }, phase: "create" | "update"): Promise<void> {
   const data = await shopifyGraphQL<{
-    product: { seo: { title: string | null; description: string | null } | null } | null;
+    product: { title: string; seo: { title: string | null; description: string | null } | null } | null;
   }>(
     `query VerifyPersistedProductSeo($id: ID!) {
-      product(id: $id) { seo { title description } }
+      product(id: $id) { title seo { title description } }
     }`,
     { id: productId },
   );
   const seo = data.product?.seo;
   // Shopify can return null for SEO title when it uses the product title as the default.
   // Treat that as equivalent only when the requested SEO title is exactly the product title.
-  const titleMatches = seo?.title === expected.title || (seo?.title == null && expected.title === productTitle);
+  const titleMatches = seo?.title === expected.title || (seo?.title == null && expected.title === data.product?.title);
   if (!seo || !titleMatches || seo.description !== expected.description) {
     // Record bounded diagnostics so production logs reveal which persisted SEO
     // field differs. Do not weaken the exact comparison or mark the listing synced.
@@ -405,6 +405,7 @@ async function verifyPersistedShopifySeo(productId: string, productTitle: string
       titleMatches,
       descriptionMatches: actualDescription === expected.description,
       expectedTitle: expected.title.slice(0, 120),
+      productTitleInput: productTitle.slice(0, 120),
       actualTitle: actualTitle?.slice(0, 120) ?? null,
       expectedDescriptionLength: expected.description.length,
       actualDescriptionLength: actualDescription?.length ?? null,
