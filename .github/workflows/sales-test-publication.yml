@@ -1,13 +1,14 @@
 name: TRACER sales-test publication
 
 on:
-  # Run immediately when this workflow is changed on main, instead of waiting
-  # for the next hourly schedule. Normal application pushes do not trigger it.
+  # Trigger after the publication gate or CJ evidence importer is changed on main.
+  # Other application pushes do not trigger supplier publication.
   push:
     branches:
       - main
     paths:
       - ".github/workflows/sales-test-publication.yml"
+      - "app/api/cron/commerce-cj-import/route.ts"
   schedule:
     - cron: "9,39 * * * *"
   workflow_dispatch:
