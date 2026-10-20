@@ -184,3 +184,4 @@ jobs:
           echo "Bounded publication passes finished; inspect each JSON response for published/failed counts."
           exit "$failed"
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY after #1344 newest-first supplier offer scan is live; reconcile prices and publish bounded eligible backlog.
+# 2026-10-20: one-shot rerun after production deploy #1694 removed timestamp-only listing blocks; recheck actual eligibility and bounded channel recovery.
