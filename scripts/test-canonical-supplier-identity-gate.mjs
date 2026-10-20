@@ -183,6 +183,8 @@ assert.doesNotMatch(patrolRoute, /pipelineComplete: pipeline\.complete/,
   "intelligence completion must not be reported as the whole commerce lifecycle");
 assert.match(patrolRoute, /endToEndOrderFlowObservedThisRun: progress\.newCommerceOrders > 0 && progress\.newSupplierProcurementOrders > 0/,
   "end-to-end order flow must only be reported when this run records both a commerce order and supplier procurement order");
+assert.match(patrolRoute, /commerceEndToEndComplete: pipeline\.complete\s*&&\s*errors\.length === 0\s*&&\s*after\.commerceOrders > 0\s*&&\s*after\.supplierProcurementOrders > 0/,
+  "a successful intelligence patrol must not be reported as end-to-end commerce complete without real order and supplier procurement records");
 assert.match(patrolRoute, /JSON\.stringify\(safeReport\)/);
 assert.doesNotMatch(patrolRoute, /console\.log\("\[TRACER PATROL AI REPORT\]", JSON\.stringify\(report\)\)/, "raw full patrol reports must not be emitted to runtime logs");
 console.log("Canonical supplier identity publication and reconciliation checks passed");
