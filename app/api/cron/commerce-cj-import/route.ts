@@ -294,7 +294,7 @@ export async function GET(request: Request) {
   // Process multiple new parents and child variants per 10-minute slot by default.
   // The per-run caps remain bounded to respect CJ rate limits and the 300-second function timeout.
   const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 3)));
-  const variantBatchLimit = Math.min(3, Math.max(1, Number(url.searchParams.get("variantLimit") || 3)));
+  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 6)));
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
