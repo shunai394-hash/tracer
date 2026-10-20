@@ -222,11 +222,15 @@ export async function GET(request: Request) {
     }
     await markStage("bridge_native_product_identities");
     if (missingNativeProducts.size > 0 && !dryRun) {
-      const rowsToInsert = [...missingNativeProducts.values()];
-      for (let i = 0; i < rowsToInsert.length; i += 100) {
-        const { error } = await supabase.from("products")
-          .upsert(rowsToInsert.slice(i, i + 100), { onConflict: "identity_key", ignoreDuplicates: true });
-        if (error) throw new Error(`native_product_identity_bridge_batch_${Math.floor(i / 100) + 1}: ${error.message}`);
+      // products.identity_key has a partial unique index, so PostgREST
+      // ON CONFLICT cannot target it. Insert exact rows and treat a unique
+      // violation as the row already existing. Cap each run so a large backlog
+      // cannot hold the cron open.
+      const rowsToInsert = [...missingNativeProducts.values()].slice(0, 40);
+      for (const row of rowsToInsert) {
+        const { error } = await supabase.from("products").insert(row);
+        if (error?.code === "23505") continue;
+        if (error) throw new Error(`native_product_identity_bridge: ${error.message}`);
       }
       // Re-read after the idempotent upsert so concurrent cron runs are safe
       // and the newly materialized product IDs can be used in this same run.
