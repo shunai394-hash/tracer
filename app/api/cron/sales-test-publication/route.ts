@@ -405,7 +405,7 @@ export async function GET(request: Request) {
     }
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
     await markStage("deliver_legacy_selected_listings");
-    const downstream = await promoteGatePassedListings(decision.selectedListingIds);
+    const downstream = await promoteGatePassedListings();
 
     if (cronRunId) await supabase.from("cron_runs").update({
       status: "succeeded",
