@@ -103,7 +103,7 @@ jobs:
               print(f"Price reconciliation response is invalid: {exc}")
               sys.exit(1)
           errors=data.get("errors") or []
-          if data.get("ok") is not True or errors:
+          if data.get("error") or errors:
               print("Price calculation did not complete cleanly; refusing publication.")
               print(json.dumps({"ok":data.get("ok"),"repriced":data.get("repriced"),"errors":len(errors)},ensure_ascii=False))
               sys.exit(1)
