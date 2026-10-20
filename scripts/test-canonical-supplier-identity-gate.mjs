@@ -238,3 +238,11 @@ assert.match(sixListingPublishWorkflow, /ids\[i:i\+3\]/, "Shopify product sync m
 assert.match(sixListingPublishWorkflow, /-d "@publish-batch-\$index\.json"/);
 assert.doesNotMatch(sixListingPublishWorkflow, /api\/cron\/commerce-procurement|api\/cron\/shopify-orders/);
 assert.match(sixListingPublishWorkflow, /Block(ed|ed) listings were not sent/);
+
+
+// Terminal supplier offers must not be pulled back into the recurring publish retry queue.
+const commercePublishRecovery = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+assert.match(commercePublishRecovery, /\.or\("status\.eq\.pending,last_error\.like\.supplier_offer_not_fulfillable%"\)/,
+  "only pending rows and explicitly retryable supplier-offer errors may enter the bounded recovery queue");
+assert.doesNotMatch(commercePublishRecovery, /\.or\("status\.eq\.pending,status\.eq\.error,last_error\.like\.supplier_offer_not_fulfillable%"\)/,
+  "terminal supplier_offer_no_longer_fulfillable errors must not be retried on every publish pass");
