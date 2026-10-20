@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製ルーレットホイール（直径約50cm）"],
   [/^14 color hair line powder black root up natural instant waterproof hairline shadow concealer coverage paint repair fill in hair/i, "ヘアライン補正パウダー 14色展開"],
   [/^home quality counter wooden piggy bank(?:\s*\(.*\))?$/i, "木製カウンター式貯金箱（約17×12.5×6.7cm）"],
   [/^sofa fabric thick plain thick linen pillow fabric(?:\s*\(.*\))?$/i, "ソファ・クッション用 厚手生地（ホワイト）"],
@@ -332,6 +333,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製のルーレットホイールです。商品名には直径約50cmと記載されています。ゲーム用途や装飾用途、セット内容、実寸、素材、使用方法は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
     [/14 color hair line powder black root up natural instant waterproof hairline shadow concealer coverage paint repair fill in hair/i, "生え際や分け目の気になる部分をカバーするヘアライン補正パウダーです。カラーはアッシュブラウン、内容量は4gと記載されています。仕上がりや色持ちには個人差があります。防水性などの性能は、販売元の最新仕様をご確認ください。"],
     [/^home quality counter wooden piggy bank(?:\s*\(.*\))?$/i, "木製のカウンター式貯金箱です。原文には「1000 styles」とありますが、具体的な仕様・カウント機能・材質・サイズ（約17×12.5×6.7cm）・バリエーションは、購入前に商品画像と仕入先の情報をご確認ください。"],
     [/^sofa fabric thick plain thick linen pillow fabric(?:\s*\(.*\))?$/i, "ソファやクッションの張地・カバー用途を想定した厚手の生地です。原文ではリネンと記載されていますが、素材組成は商品仕様をご確認ください。幅・長さ・販売単位・素材構成は販売元の仕様をご確認ください。"],
