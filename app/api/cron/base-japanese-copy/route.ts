@@ -191,11 +191,15 @@ export async function GET(request: Request) {
         ...offlineCandidates,
         ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id))),
       ];
+  // Always drain offline-safe deterministic mappings first. Rotation was
+  // applied to this list despite the comment above, which could skip safe
+  // repairs and repeatedly hit the exhausted Gemini quota. Once deterministic
+  // candidates are repaired, the live snapshot naturally advances to AI items.
   const candidates = requestedItemId
     ? orderedCandidates.slice(0, 1)
     : afterItemId
       ? orderedCandidates.slice(0, limit)
-      : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
+      : orderedCandidates.slice(0, limit);
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
