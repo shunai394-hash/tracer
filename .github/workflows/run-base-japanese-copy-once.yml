@@ -36,6 +36,8 @@ jobs:
           total_failed=0
           completed_batches=0
           after_item_id=0
+          cursor_exhausted=0
+          no_progress_batches=0
           for batch in $(seq 1 50); do
             # GitHub OIDC ID tokens expire; mint a fresh token for each batch.
             token_json="$(curl --fail --silent --show-error --max-time 20 \
@@ -45,7 +47,7 @@ jobs:
             status="$(curl --silent --show-error --max-time 300 \
               -o "$response_file" -w '%{http_code}' \
               -H "Authorization: Bearer ${id_token}" \
-              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=10&afterItemId=${after_item_id}")"
+              "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=10${after_item_id:+&afterItemId=${after_item_id}}${cursor_exhausted:+&offset=$((batch * 10))}")"
             echo "BASE Japanese-copy batch $batch HTTP $status"
             cat "$response_file"
             echo
@@ -78,17 +80,26 @@ jobs:
             total_failed=$((total_failed + failed))
             completed_batches=$batch
             deferred="$(jq -r '.deferred // 0' "$response_file")"
+            requested="$(jq -r '.requested // 0' "$response_file")"
             next_cursor="$(jq -r '[.results[] | .itemId? | select(. != null) | tonumber] | if length == 0 then empty else max end' "$response_file")"
-            if [ -z "$next_cursor" ]; then
-              echo "Stopping: no product IDs were returned; inspect batch output."
-              break
+            if [ "$requested" -eq 0 ] || [ -z "$next_cursor" ]; then
+              if [ "$cursor_exhausted" -eq 0 ]; then
+                echo "Cursor reached end; restarting scan with rotating offsets. This is not catalog completion."
+                cursor_exhausted=1
+                after_item_id=""
+                continue
+              fi
+              no_progress_batches=$((no_progress_batches + 1))
+              echo "No candidate IDs returned during rotating scan (no-progress count $no_progress_batches); checking further offsets."
+              after_item_id=""
+              if [ "$no_progress_batches" -ge 5 ]; then
+                echo "Stopping after five empty rotating batches; remaining count must be verified separately."
+                break
+              fi
+              continue
             fi
             after_item_id="$next_cursor"
-            requested="$(jq -r '.requested // 0' "$response_file")"
-            if [ "$requested" -eq 0 ]; then
-              echo "Catalog scan complete: no remaining candidate IDs after cursor $after_item_id."
-              break
-            fi
+            if [ "$verified" -eq 0 ]; then no_progress_batches=$((no_progress_batches + 1)); else no_progress_batches=0; fi
             if [ "$failed" -gt 0 ]; then
               echo "Continuing after item-level failures; cursor advanced to $after_item_id so later products are still processed."
             fi
@@ -102,6 +113,9 @@ jobs:
             echo "- Batches completed: $completed_batches (maximum 50)"
             echo "- Items translated and verified: $total_verified"
             echo "- Failed/skipped state count reported by batches: $total_failed"
+            remaining="$(jq -r '.remainingEnglishEstimate // "unknown"' "$response_file" 2>/dev/null || echo unknown)"
+            echo "- Last reported remaining English estimate: $remaining"
+            echo "- A cursor ending or empty batch is not proof of catalog completion; only a full live rescan with zero remaining candidates qualifies."
             echo "- Every translated item passed live checks for Japanese title/description and unchanged price/stock/visibility/identifier."
             echo "- This workflow only edits copy; it does not change publication state or stock."
           } >> "$GITHUB_STEP_SUMMARY"
