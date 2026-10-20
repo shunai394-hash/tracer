@@ -10,7 +10,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/^yellow geometric stars handmade hair clips side$/i, "イエロー 幾何学スター ヘアクリップ"],
   [/^gold alloy hair clips, geometric openwork clips, cute headband.*$/i, "ゴールドカラー 幾何学透かし模様 メタルヘアクリップ"],
   [/^korean style cellulose acetate sheet hair accessories trumpet simplicity temperament hair claw women$/i, "韓国風 セルロースアセテート製 ヘアクリップ"],
-  [/^new large capacity laptop handbag$/i, "大容量 ノートPC収納対応 レディースハンドバッグ"],
+  [/^new large capacity laptop handbag$/i, "大容量 パソコン収納対応 レディースハンドバッグ"],
 
   [/^6 pack headbands for women, boho wide head bands hair accessories$/i, "ボヘミアン風 幅広ヘアバンド 6本セット"],
   [/^new large capacity laptop handbag$/i, "大容量 パソコン収納対応 レディースハンドバッグ"],
