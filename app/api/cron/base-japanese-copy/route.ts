@@ -147,11 +147,22 @@ export async function GET(request: Request) {
   const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
     ? Number(requestedOffset) % Math.max(1, candidatePool.length)
     : (Math.floor(Date.now() / (15 * 60 * 1000)) * limit) % Math.max(1, candidatePool.length);
+  // Prioritize the two explicitly reported English BASE listings so a
+  // provider quota outage cannot keep postponing these known deterministic fixes.
+  const knownCopyPriorityIds = new Set(["160447301", "160447305"]);
+  const prioritizedCandidates = [
+    ...candidatePool.filter((item) => knownCopyPriorityIds.has(text(item.item_id))),
+    ...candidatePool.filter((item) => !knownCopyPriorityIds.has(text(item.item_id))),
+  ];
   const candidates = requestedItemId
     ? candidatePool.slice(0, 1)
     : candidatePool.length <= limit
-      ? candidatePool
-      : Array.from({ length: limit }, (_, index) => candidatePool[(rotationOffset + index) % candidatePool.length]);
+      ? prioritizedCandidates
+      : [
+          ...prioritizedCandidates.filter((item) => knownCopyPriorityIds.has(text(item.item_id))).slice(0, limit),
+          ...Array.from({ length: Math.max(0, limit - prioritizedCandidates.filter((item) => knownCopyPriorityIds.has(text(item.item_id)).length) }, (_, index) =>
+            prioritizedCandidates.filter((item) => !knownCopyPriorityIds.has(text(item.item_id)))[(rotationOffset + index) % Math.max(1, prioritizedCandidates.filter((item) => !knownCopyPriorityIds.has(text(item.item_id))).length)]),
+        ];
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
