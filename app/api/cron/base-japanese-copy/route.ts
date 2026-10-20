@@ -161,7 +161,7 @@ export async function GET(request: Request) {
   }
 
   const requestedOffset = url.searchParams.get("offset");
-  const rotationOffset = requestedOffset !== null && /^\\d+$/.test(requestedOffset)
+  const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
     ? Number(requestedOffset) % Math.max(1, candidatePool.length)
     : (Math.floor(Date.now() / (15 * 60 * 1000)) * limit) % Math.max(1, candidatePool.length);
   // Do not apply rotation to deterministic candidates: doing so can skip all
