@@ -1107,7 +1107,7 @@ test("bounded recovery runs one safe repricing batch before dedicated publicatio
   const workflow = await readFile(new URL("../.github/workflows/tracer-clean-commerce-recovery.yml", import.meta.url), "utf8");
   assert.match(workflow, /commerce-reprice-existing\?limit=25/);
   assert.match(workflow, /Price calculation did not complete cleanly; refusing publication/);
-  assert.match(workflow, /if data\.get\("ok"\) is not True or errors/);
+  assert.match(workflow, /if data\.get\("error"\) or errors/);
   assert.match(workflow, /commerce-publish-base\?limit=10&onlyUnpublished=true/);
   assert.match(workflow, /commerce-publish-shopify\?limit=10&onlyUnpublished=true/);
   assert.doesNotMatch(workflow, /for pass in \$\(seq 1 10\)/);
