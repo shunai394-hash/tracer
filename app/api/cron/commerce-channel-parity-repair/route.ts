@@ -6,26 +6,35 @@ import { syncCommerceListings } from "@/lib/commerce/publish";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type ListingState = { variant_id: string; channel: string; status: string };
+type ListingState = { id: string; variant_id: string; channel: string; status: string };
 
+/** A variant is in parity only when exactly one row exists per channel and public states match. */
 function mismatchedVariantIds(rows: ListingState[]): string[] {
-  const byVariant = new Map<string, Map<string, string>>();
+  const byVariant = new Map<string, Map<string, string[]>>();
   for (const row of rows) {
     const variantId = String(row.variant_id ?? "").trim();
     const channel = String(row.channel ?? "").trim().toLowerCase();
     if (!variantId || (channel !== "base" && channel !== "shopify")) continue;
-    const channels = byVariant.get(variantId) ?? new Map<string, string>();
-    channels.set(channel, String(row.status ?? ""));
+    const channels = byVariant.get(variantId) ?? new Map<string, string[]>();
+    const states = channels.get(channel) ?? [];
+    states.push(String(row.status ?? ""));
+    channels.set(channel, states);
     byVariant.set(variantId, channels);
   }
   return [...byVariant.entries()]
-    .filter(([, channels]) => (channels.get("base") === "published") !== (channels.get("shopify") === "published"))
+    .filter(([, channels]) => {
+      const base = channels.get("base") ?? [];
+      const shopify = channels.get("shopify") ?? [];
+      // Missing channel rows, duplicate rows, and different public states are mismatches.
+      return base.length !== 1 || shopify.length !== 1 ||
+        (base[0] === "published") !== (shopify[0] === "published");
+    })
     .map(([variantId]) => variantId);
 }
 
 async function readStates(variantIds?: string[]): Promise<ListingState[]> {
   const db = createSupabaseAdminClient();
-  let query = db.from("channel_listings").select("variant_id,channel,status")
+  let query = db.from("channel_listings").select("id,variant_id,channel,status")
     .in("channel", ["base", "shopify"]);
   if (variantIds) query = query.in("variant_id", variantIds);
   const { data, error } = await query.limit(5000);
