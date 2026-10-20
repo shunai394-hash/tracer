@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       errorCategories,
     };
     await persistPollResult(summary, imported.failed === 0 && imported.configured ? "succeeded" : "needs_review");
-    console.info("[TRACER SHOPIFY ORDER POLL]", summary);
+    console.info("[TRACER SHOPIFY ORDER POLL]", { configured: imported.configured, fetched: imported.fetched, imported: imported.imported, skipped: imported.skipped, failed: imported.failed, errorCategories: imported.errors.map((item) => item.error.split(":")[0]).slice(0, 10) });
     return NextResponse.json({
       ok: imported.failed === 0,
       phase: "canonical_shopify_order_ingestion",
