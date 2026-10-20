@@ -253,7 +253,24 @@ export async function fetchCJWithRateLimit(
     const signal = init?.signal
       ? AbortSignal.any([init.signal, timeoutSignal])
       : timeoutSignal;
-    const response = await fetch(input, { ...init, signal });
+    let response: Response;
+    try {
+      response = await fetch(input, { ...init, signal });
+    } catch (error) {
+      // Retry transient network failures and this helper's own 20s timeout.
+      // Never retry a caller-requested cancellation, and keep each retry behind
+      // the shared CJ QPS limiter to avoid amplifying supplier traffic.
+      if (init?.signal?.aborted || attempt === maxAttempts) throw error;
+      const retryMs = Math.min(1_000 * 2 ** (attempt - 1), 8_000);
+      console.warn("[cj] transient request failure; retrying", {
+        attempt,
+        maxAttempts,
+        retryMs,
+        reason: error instanceof Error ? error.name : "unknown",
+      });
+      await new Promise((resolve) => setTimeout(resolve, retryMs));
+      continue;
+    }
     // CJ can report daily-point exhaustion in a non-429 JSON response (often
     // HTTP 200 with result=false). Inspect a clone before returning the response
     // so the global circuit opens for every explicit points-exhaustion signal.
