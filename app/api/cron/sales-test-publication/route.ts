@@ -34,7 +34,11 @@ async function buildOpportunityInBatches(productIds: string[], batchSize = 15) {
 async function promoteGatePassedListings() {
   // Delivery channels are independent: a Shopify/BASE outage must not suppress
   // NEWFIND promotion or change the canonical TRACER publication result.
-  const shopify = await syncPublishedListingsToShopify().catch((error) => ({
+  // Use one shared listing cohort for all three downstream channels. The old
+  // flow let BASE independently select 15 rows while Shopify selected 10, and
+  // NEWFIND only received the Shopify result, so each cron could advance a
+  // different product set. Only fan out the exact listing IDs Shopify confirms.
+  const shopify = await syncPublishedListingsToShopify(undefined, 15).catch((error) => ({
     ok: false,
     listingIds: [] as string[],
     error: error instanceof Error ? error.message : String(error),
@@ -52,7 +56,7 @@ async function promoteGatePassedListings() {
       detail: error instanceof Error ? error.message : String(error),
     }))),
   );
-  const base = await publishPublishedListingsToBase(15).catch((error) => ({
+  const base = await publishPublishedListingsToBase(15, publishedListingIds).catch((error) => ({
     ok: false,
     results: [] as Array<{ ok: boolean; baseItemId?: string | null; listingId: string; error?: string }>,
     error: error instanceof Error ? error.message : String(error),
