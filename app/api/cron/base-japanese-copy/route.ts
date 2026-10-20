@@ -70,9 +70,9 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "openai/gpt-oss-120b",
+          model: process.env.GROQ_BASE_TRANSLATION_MODEL?.trim() || "openai/gpt-oss-20b",
           temperature: 0.1,
-          max_tokens: 2200,
+          max_tokens: 1400,
           response_format: { type: "json_object" },
           messages: [
             {
