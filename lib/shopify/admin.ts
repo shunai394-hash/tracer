@@ -381,6 +381,23 @@ function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTit
   return { title, description };
 }
 
+/** Confirm SEO metadata from a fresh persisted-product read, not the mutation payload. */
+async function verifyPersistedShopifySeo(productId: string, expected: { title: string; description: string }, phase: "create" | "update"): Promise<void> {
+  const data = await shopifyGraphQL<{
+    product: { seo: { title: string | null; description: string | null } | null } | null;
+  }>(
+    `query VerifyPersistedProductSeo($id: ID!) {
+      product(id: $id) { seo { title description } }
+    }`,
+    { id: productId },
+  );
+  const seo = data.product?.seo;
+  if (!seo || seo.title !== expected.title || seo.description !== expected.description) {
+    throw new Error(`shopify_seo_readback_mismatch_after_${phase}`);
+  }
+}
+
+
 export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
@@ -397,7 +414,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   const product = data.productCreate.product;
   if (!product) throw new Error("Shopify productCreate returned no product");
   const expectedSeo = shopifySeoInput(input);
-  if (product.seo?.title !== expectedSeo.title || product.seo?.description !== expectedSeo.description) throw new Error("shopify_seo_readback_mismatch_after_create");
+  await verifyPersistedShopifySeo(product.id, expectedSeo, "create");
   const variant = product.variants?.nodes?.[0];
   if (!variant) throw new Error("Shopify productCreate returned no variant");
 
@@ -432,7 +449,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
   const expectedSeo = shopifySeoInput(input);
-  if (product.seo?.title !== expectedSeo.title || product.seo?.description !== expectedSeo.description) throw new Error("shopify_seo_readback_mismatch_after_update");
+  await verifyPersistedShopifySeo(product.id, expectedSeo, "update");
   const variantResolution = resolveShopifyVariantIdentity(
     product.variants?.nodes ?? [],
     input.sku,
