@@ -246,7 +246,13 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // use that evidence as a local catalog fallback instead of rejecting it
     // solely because the enrichment job has not populated product_intelligence.
     const listingMetadata = listing?.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {};
-    const listingImage = firstImageUrl(listingMetadata);
+    const listingImage = firstImageUrl(
+      listing?.image_url,
+      listing?.image,
+      listing?.product_image_url,
+      listing?.productImageUrl,
+      listingMetadata,
+    );
     // Keep the canonical intelligence title/metadata, but recover a missing or
     // invalid catalog image from the exact verified supplier variant. The
     // supplier image is persisted from CJ's product detail response and must not
