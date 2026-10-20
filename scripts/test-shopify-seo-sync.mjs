@@ -10,8 +10,7 @@ assert.match(admin, /seo: shopifySeoInput\(input\)/g, "create and update must bo
 assert.match(admin, /seo \{ title description \}/g, "create and update must request SEO readback");
 assert.match(admin, /async function verifyPersistedShopifySeo\(/, "SEO must be checked with a fresh persisted-product read");
 assert.match(admin, /query VerifyPersistedProductSeo\(\$id: ID!\)/, "SEO verification must query Shopify after the mutation");
-assert.match(admin, /shopify_seo_readback_mismatch_after_create/, "create must fail closed if persisted SEO differs");
-assert.match(admin, /shopify_seo_readback_mismatch_after_update/, "update must fail closed if persisted SEO differs");
+assert.match(admin, /shopify_seo_readback_mismatch_after_\$\{phase\}/, "SEO verification must fail closed when persisted SEO differs");
 assert.match(admin, /verifyPersistedShopifySeo\(product\.id, expectedSeo, "create"\)/, "create must verify persisted SEO");
 assert.match(admin, /verifyPersistedShopifySeo\(product\.id, expectedSeo, "update"\)/, "update must verify persisted SEO");
 
