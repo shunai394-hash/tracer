@@ -104,6 +104,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
       "and(published.eq.true,base_publication_status.neq.published)",
+      // Re-check stale hidden markers even when the denormalized publication
+      // status says published; the canonical supplier helper below decides
+      // whether this exact listing is now eligible to be visible again.
+      "and(published.eq.true,base_last_error.eq.supplier_identity_unlinked_hidden)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null,base_last_error.is.null)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.neq.published,base_last_error.is.null)",
       "and(published.eq.false,base_item_id.not.is.null,base_publication_status.is.null)",
