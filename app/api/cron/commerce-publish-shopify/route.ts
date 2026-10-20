@@ -25,7 +25,17 @@ export async function GET(request: Request) {
     // enables a bounded, authenticated recovery for a known set of eligible products.
     const limit = Number.isFinite(requested) ? Math.min(20, Math.max(1, Math.floor(requested))) : 20;
     const result = await syncCommerceListings("shopify", limit, onlyUnpublished, variantIds);
-    console.info("[TRACER COMMERCE PUBLISH]", JSON.stringify({ channel: "shopify", ok: result.failed === 0 && result.staleListings.failed === 0, staleListings: result.staleListings, considered: result.considered, published: result.published, processed: result.processed, failed: result.failed, errors: result.results.filter((item) => !item.ok).slice(0, 10).map((item) => ({ variantId: item.variantId, error: item.error })), staleListingErrors: result.staleListings.errors.slice(0, 10), generatedAt: new Date().toISOString() }));
+    const blockReasons: Record<string, number> = {};
+    for (const item of result.results) {
+      const reasons = item.missingEvidence?.length
+        ? item.missingEvidence
+        : item.error ? [item.error] : [];
+      for (const reason of reasons) {
+        const key = String(reason).split(":")[0].slice(0, 80);
+        blockReasons[key] = (blockReasons[key] ?? 0) + 1;
+      }
+    }
+    console.info("[TRACER COMMERCE PUBLISH]", JSON.stringify({ channel: "shopify", ok: result.failed === 0 && result.staleListings.failed === 0, staleListings: result.staleListings, considered: result.considered, published: result.published, processed: result.processed, failed: result.failed, blockReasons, errors: result.results.filter((item) => !item.ok).slice(0, 10).map((item) => ({ variantId: item.variantId, error: item.error, missingEvidence: item.missingEvidence ?? [] })), staleListingErrors: result.staleListings.errors.slice(0, 10), generatedAt: new Date().toISOString() }));
     const failed = result.failed > 0 || result.staleListings.failed > 0;
     return NextResponse.json({ ok: !failed, ...result }, { status: failed ? 207 : 200 });
   } catch (error) {
