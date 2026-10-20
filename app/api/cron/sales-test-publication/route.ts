@@ -79,6 +79,18 @@ export async function GET(request: Request) {
   let cronRunId: string | null = null;
   const startedAt = Date.now();
 
+  // Persist a lightweight stage heartbeat so scheduled runs killed by the
+  // platform timeout reveal their last completed phase instead of appearing
+  // as an unexplained stale lock. This is operational evidence only; it does
+  // not change eligibility or publication decisions.
+  const markStage = async (stage: string) => {
+    if (!cronRunId) return;
+    const { error } = await supabase.from("cron_runs").update({
+      metadata: { phase: "sales_test_publication", stage, elapsedMs: Date.now() - startedAt },
+    }).eq("id", cronRunId);
+    if (error) console.warn("[TRACER SALES TEST STAGE HEARTBEAT]", { stage, error: error.message });
+  };
+
   try {
     if (!dryRun) {
       await recoverStaleCronRun(supabase, "sales-test-publication", maxDuration);
@@ -97,6 +109,7 @@ export async function GET(request: Request) {
     // Consume only identifier-grade linked supply. CJ is a supported supply
     // source; payment automation remains an order-time concern and never
     // suppresses a listing that has already passed the publication gate.
+    await markStage("read_demand_supply");
     const { data: demandSupply, error: demandSupplyError } = await supabase
       .from("demand_cj_products")
       .select("product_id")
@@ -104,6 +117,7 @@ export async function GET(request: Request) {
       .limit(1000);
     if (demandSupplyError) throw new Error(demandSupplyError.message);
 
+    await markStage("read_verified_supply");
     const { data: verifiedSupply, error: verifiedSupplyError } = await supabase
       .from("supplier_listings")
       .select("product_id")
@@ -125,6 +139,7 @@ export async function GET(request: Request) {
     // an emergency kill switch, not a required opt-in.
     const nativeSupplyFreshCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const nativeSupplyFutureCutoff = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    await markStage("read_native_cj_supply");
     const { data: nativeCjSupplyRows, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("supplier_product_id,supplier_variant_id,title,metadata")
@@ -205,6 +220,7 @@ export async function GET(request: Request) {
         identity_key: `cj:product:${supplierProductId}:variant:${supplierVariantId}`,
       });
     }
+    await markStage("bridge_native_product_identities");
     if (missingNativeProducts.size > 0 && !dryRun) {
       const rowsToInsert = [...missingNativeProducts.values()];
       for (let i = 0; i < rowsToInsert.length; i += 100) {
@@ -284,6 +300,7 @@ export async function GET(request: Request) {
       processed: 0,
       failed: false,
     };
+    await markStage("repair_missing_opportunity_intelligence");
     if (missingOpportunityIds.length > 0 && !dryRun) {
       const enrichmentIds = missingOpportunityIds.slice(0, 30);
       opportunityEnrichment.attempted = enrichmentIds.length;
@@ -308,6 +325,7 @@ export async function GET(request: Request) {
     // unrelated marketplace-identity feature flag to publish them. Set the env var to
     // "false" only as an emergency kill switch.
     const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false";
+    await markStage("select_and_publish_supply_sales_tests");
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
       dryRun,
       allowNativeCjIdentity,
@@ -356,6 +374,7 @@ export async function GET(request: Request) {
       });
     }
 
+    await markStage("read_legacy_sales_test_fallback");
     const { data: readyRows, error: readyError } = await supabase
       .from("marketplace_bestsellers")
       .select("id,product_id")
@@ -381,6 +400,7 @@ export async function GET(request: Request) {
       }
     }
     const decision = await selectAndPublishSalesTests(candidateIds, 400);
+    await markStage("deliver_legacy_selected_listings");
     const downstream = await promoteGatePassedListings(decision.selectedListingIds);
 
     if (cronRunId) await supabase.from("cron_runs").update({
