@@ -127,7 +127,7 @@ export async function GET(request: Request) {
     const nativeSupplyFutureCutoff = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     const { data: nativeCjSupplyRows, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
-      .select("supplier_product_id,supplier_variant_id")
+      .select("supplier_product_id,supplier_variant_id,title,metadata")
       .in("supplier", ["cj", "cjdropshipping"])
       .eq("identity_status", "supply_discovered")
       .eq("verification_status", "verified")
@@ -176,6 +176,55 @@ export async function GET(request: Request) {
       if (error) throw new Error(`native_products_identity_batch_${Math.floor(i / 100) + 1}: ${error.message}`);
       nativeProducts.push(...((data ?? []) as Array<{ id: string; identity_key: string }>));
     }
+    // Materialize a canonical TRACER product row for each exact native CJ
+    // product+variant identity. This is a supply-native identity, not a claim
+    // that the item matches an unrelated marketplace bestseller. Without this
+    // bridge, verified supplier_listings remain detached and never enter the
+    // sales-test candidate path because products.identity_key is absent.
+    const knownSupplierIdentities = new Set<string>();
+    for (const row of nativeProducts) {
+      const key = String(row.identity_key ?? "");
+      const labeled = /^cj:product:([^:]+):variant:(.+)$/.exec(key);
+      const legacy = /^cj:([^:]+):([^:]+)$/.exec(key);
+      const supplierProductId = labeled?.[1] ?? legacy?.[1];
+      const supplierVariantId = labeled?.[2] ?? legacy?.[2];
+      if (supplierProductId && supplierVariantId) {
+        knownSupplierIdentities.add(`${supplierProductId}:${supplierVariantId}`);
+      }
+    }
+    const missingNativeProducts = new Map<string, { canonical_name: string; identity_key: string }>();
+    for (const row of nativeCjSupplyRows ?? []) {
+      const supplierProductId = String(row.supplier_product_id ?? "").trim();
+      const supplierVariantId = String(row.supplier_variant_id ?? "").trim();
+      const identity = `${supplierProductId}:${supplierVariantId}`;
+      if (!supplierProductId || !supplierVariantId || knownSupplierIdentities.has(identity)) continue;
+      const title = typeof row.title === "string" ? row.title.normalize("NFKC").trim() : "";
+      if (!title) continue;
+      missingNativeProducts.set(identity, {
+        canonical_name: title.slice(0, 500),
+        identity_key: `cj:product:${supplierProductId}:variant:${supplierVariantId}`,
+      });
+    }
+    if (missingNativeProducts.size > 0 && !dryRun) {
+      const rowsToInsert = [...missingNativeProducts.values()];
+      for (let i = 0; i < rowsToInsert.length; i += 100) {
+        const { error } = await supabase.from("products")
+          .upsert(rowsToInsert.slice(i, i + 100), { onConflict: "identity_key", ignoreDuplicates: true });
+        if (error) throw new Error(`native_product_identity_bridge_batch_${Math.floor(i / 100) + 1}: ${error.message}`);
+      }
+      // Re-read after the idempotent upsert so concurrent cron runs are safe
+      // and the newly materialized product IDs can be used in this same run.
+      for (let i = 0; i < nativeSourceRefs.length; i += 100) {
+        const identityBatch = nativeSourceRefs.slice(i, i + 100);
+        const { data, error } = await supabase.from("products")
+          .select("id,identity_key").in("identity_key", identityBatch);
+        if (error) throw new Error(`native_products_identity_reread_batch_${Math.floor(i / 100) + 1}: ${error.message}`);
+        for (const row of data ?? []) {
+          if (!nativeProducts.some((existing) => existing.id === row.id)) nativeProducts.push(row as { id: string; identity_key: string });
+        }
+      }
+    }
+
     const nativeProductBySupplierIdentity = new Map<string, string>();
     for (const row of nativeProducts) {
       const identityKey = String(row.identity_key ?? "");
