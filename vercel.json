@@ -61,6 +61,10 @@
     {
       "path": "/api/cron/commerce-japanese-title-repair",
       "schedule": "12,42 * * * *"
+    },
+    {
+      "path": "/api/cron/base-japanese-copy",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
