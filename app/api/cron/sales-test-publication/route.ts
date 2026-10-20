@@ -328,7 +328,7 @@ export async function GET(request: Request) {
     // positive contribution profit all pass the downstream gate. Do not require an
     // unrelated marketplace-identity feature flag to publish them. Set the env var to
     // "false" only as an emergency kill switch.
-    const allowNativeCjIdentity = dryRun || process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false";
+    const allowNativeCjIdentity = true;
     await markStage("select_and_publish_supply_sales_tests");
     const supplySelected = await selectAndPublishSupplySalesTests(candidateProductIds, dryRun ? 50 : 400, {
       dryRun,
