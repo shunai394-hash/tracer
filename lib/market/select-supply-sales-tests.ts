@@ -20,6 +20,39 @@ function validHttpUrl(value: unknown): boolean {
   if (typeof value !== "string" || !value.trim()) return false;
   try { const parsed = new URL(value); return parsed.protocol === "http:" || parsed.protocol === "https:"; } catch { return false; }
 }
+function firstImageUrl(...sources: unknown[]): string | null {
+  const keys = ["image_url", "imageUrl", "product_image_url", "productImageUrl", "productImage", "main_image", "mainImage", "image", "images", "product_images", "productImages"];
+  const candidates: unknown[] = [];
+  const add = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const item of value) add(item); return; }
+    if (value && typeof value === "object") {
+      const item = value as Record<string, unknown>;
+      for (const key of ["url", "src", "original", "large", "medium"]) if (item[key] !== undefined) add(item[key]);
+      return;
+    }
+    if (typeof value === "string") candidates.push(value);
+  };
+  for (const source of sources) {
+    if (source && typeof source === "object" && !Array.isArray(source)) {
+      const row = source as Record<string, unknown>;
+      for (const key of keys) if (row[key] !== undefined) add(row[key]);
+    } else add(source);
+  }
+  return candidates.find(validHttpUrl) as string | undefined ?? null;
+}
+function localizedDescriptionFallback(title: string): string | null {
+  const normalized = title.normalize("NFKC").replace(/\\s+/g, " ").trim();
+  if (/レディース.{0,8}ショルダーバッグ|ショルダーバッグ.{0,8}レディース/.test(normalized)) {
+    return "日常のお出かけや荷物の持ち運びに使うレディースショルダーバッグです。サイズ・素材・収納部・ストラップ仕様は販売元の最新情報をご確認ください。";
+  }
+  if (/ヘアクリップ/.test(normalized)) {
+    return "髪をまとめるためのヘアクリップです。サイズ・材質・留め具の仕様は販売元の最新情報をご確認ください。";
+  }
+  if (/きのこ型メイクパフ/.test(normalized)) {
+    return "ファンデーションなどのメイクに使うきのこ型メイクパフです。材質・寸法・使用方法・お手入れ方法は販売元の最新情報をご確認ください。";
+  }
+  return null;
+}
 function slugify(title: string, productId: string): string {
   const base = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 54);
   return (base || "tracer-product") + "-" + productId.slice(-8);
@@ -213,7 +246,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     // use that evidence as a local catalog fallback instead of rejecting it
     // solely because the enrichment job has not populated product_intelligence.
     const listingMetadata = listing?.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata) ? listing.metadata as Record<string, unknown> : {};
-    const listingImage = listingMetadata.image_url ?? listingMetadata.imageUrl ?? listingMetadata.product_image_url ?? (Array.isArray(listingMetadata.images) ? listingMetadata.images[0] : null);
+    const listingImage = firstImageUrl(listingMetadata);
     const base = observedBase ?? (typeof listing?.title === "string" && listing.title.trim() ? {
       product_id: productId,
       normalized_title: listing.title,
@@ -258,17 +291,20 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const supplierMetadata = listing.metadata && typeof listing.metadata === "object" && !Array.isArray(listing.metadata)
       ? listing.metadata as Record<string, unknown>
       : {};
-    const supplierImageCandidate = supplierMetadata.image_url ?? supplierMetadata.imageUrl ?? supplierMetadata.product_image_url
-      ?? (Array.isArray(supplierMetadata.images) ? supplierMetadata.images[0] : null);
-    const productImageUrl = validHttpUrl(base.image_url)
-      ? String(base.image_url)
-      : validHttpUrl(supplierImageCandidate) ? String(supplierImageCandidate) : null;
+    const baseMetadata = base.metadata && typeof base.metadata === "object" && !Array.isArray(base.metadata) ? base.metadata as Record<string, unknown> : {};
+    const productImageUrl = firstImageUrl(
+      typeof base.image_url === "string" ? base.image_url : null,
+      baseMetadata,
+      supplierMetadata,
+    );
     if (!productImageUrl) reasons.push("image_url_invalid");
     const localizedTitle = localizeProductTitle(sourceTitle, metadataCategory(base.metadata));
     if (!isJapaneseProductTitle(localizedTitle)) reasons.push("japanese_title_unavailable");
     else if (!isPublishableCatalogTitle(localizedTitle)) reasons.push("catalog_title_not_publishable");
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
-    const localizedDescription = localizeProductDescription(sourceTitle);
+    const localizedDescription = localizeProductDescription(sourceTitle)
+      ?? localizeProductDescription(localizedTitle)
+      ?? localizedDescriptionFallback(localizedTitle);
     const publishableDescription = isPublishableCatalogDescription(localizedDescription)
       ? localizedDescription
       : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
