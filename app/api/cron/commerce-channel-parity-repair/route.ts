@@ -19,7 +19,7 @@ function mismatchedVariantIds(rows: ListingState[]): string[] {
     byVariant.set(variantId, channels);
   }
   return [...byVariant.entries()]
-    .filter(([, channels]) => channels.get("base") !== channels.get("shopify"))
+    .filter(([, channels]) => (channels.get("base") === "published") !== (channels.get("shopify") === "published"))
     .map(([variantId]) => variantId);
 }
 
@@ -73,8 +73,18 @@ export async function GET(request: Request) {
       attemptedVariants: variantIds.length,
       remainingMismatchedVariants: remaining,
       remainingMismatchCount: remaining.length + Math.max(0, allMismatches.length - variantIds.length),
-      base: { processed: base.processed ?? base.published ?? 0, failed: base.failed ?? 0 },
-      shopify: { processed: shopify.processed ?? shopify.published ?? 0, failed: shopify.failed ?? 0 },
+      base: {
+        processed: base.processed ?? base.published ?? 0,
+        failed: base.failed ?? 0,
+        errors: (base.results ?? []).filter((item: { ok?: boolean }) => !item.ok).slice(0, 10).map((item: { variantId?: string; error?: string; missingEvidence?: string[] }) => ({ variantId: item.variantId, error: item.error, missingEvidence: item.missingEvidence ?? [] })),
+        staleListingErrors: (base.staleListings?.errors ?? []).slice(0, 5),
+      },
+      shopify: {
+        processed: shopify.processed ?? shopify.published ?? 0,
+        failed: shopify.failed ?? 0,
+        errors: (shopify.results ?? []).filter((item: { ok?: boolean }) => !item.ok).slice(0, 10).map((item: { variantId?: string; error?: string; missingEvidence?: string[] }) => ({ variantId: item.variantId, error: item.error, missingEvidence: item.missingEvidence ?? [] })),
+        staleListingErrors: (shopify.staleListings?.errors ?? []).slice(0, 5),
+      },
     };
     console.log("[TRACER CHANNEL PARITY REPAIR]", JSON.stringify(result));
     return NextResponse.json(result, { status: result.ok ? 200 : 207, headers: { "Cache-Control": "no-store" } });
