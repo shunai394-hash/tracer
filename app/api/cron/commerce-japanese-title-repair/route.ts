@@ -59,39 +59,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: unmapped.length === 0, repairedProducts: 0, repairedVariants: 0, unmappedProducts: [...new Set(unmapped)], message: "英語混在タイトルの修復対象はありません。" });
   }
 
-  // Use the same canonical variant IDs for both storefronts. The publisher performs
-  // supplier/profit checks and verifies each external write before the DB title is changed.
+  // Persist source-grounded Japanese titles before publishing. The publisher reads
+  // canonical titles from the DB, so syncing first can deadlock on the very title
+  // validation error this repair is intended to fix. Sale eligibility gates remain
+  // enforced by syncCommerceListings; a failed external sync is reported separately.
+  for (const entry of byProduct.values()) {
+    const { error: productUpdateError } = await db.from("commerce_products")
+      .update({ title_ja: entry.title, updated_at: new Date().toISOString() })
+      .eq("id", entry.product.id);
+    if (productUpdateError) throw new Error("title_repair_product_save_failed:" + productUpdateError.message);
+    for (const variant of entry.variants) {
+      const suffix = String(variant.title_ja ?? "").match(/（[^）]*）$/u)?.[0] ?? "";
+      const variantTitle = entry.title + suffix;
+      const { error: variantUpdateError } = await db.from("commerce_variants")
+        .update({ title_ja: variantTitle, updated_at: new Date().toISOString() })
+        .eq("id", variant.id);
+      if (variantUpdateError) throw new Error("title_repair_variant_save_failed:" + variantUpdateError.message);
+    }
+  }
+
   const [base, shopify] = await Promise.all([
     syncCommerceListings("base", variantIds.length, false, variantIds),
     syncCommerceListings("shopify", variantIds.length, false, variantIds),
   ]);
   const bothSucceeded = Number(base.failed ?? 0) === 0 && Number(shopify.failed ?? 0) === 0;
-  if (bothSucceeded) {
-    for (const entry of byProduct.values()) {
-      const { error: productUpdateError } = await db.from("commerce_products")
-        .update({ title_ja: entry.title, updated_at: new Date().toISOString() })
-        .eq("id", entry.product.id);
-      if (productUpdateError) throw new Error("title_repair_product_save_failed:" + productUpdateError.message);
-      for (const variant of entry.variants) {
-        const suffix = String(variant.title_ja ?? "").match(/（[^）]*）$/u)?.[0] ?? "";
-        const variantTitle = entry.title + suffix;
-        const { error: variantUpdateError } = await db.from("commerce_variants")
-          .update({ title_ja: variantTitle, updated_at: new Date().toISOString() })
-          .eq("id", variant.id);
-        if (variantUpdateError) throw new Error("title_repair_variant_save_failed:" + variantUpdateError.message);
-      }
-    }
-  }
-
   const result = {
     ok: bothSucceeded && unmapped.length === 0,
-    repairedProducts: bothSucceeded ? byProduct.size : 0,
-    repairedVariants: bothSucceeded ? variantIds.length : 0,
+    repairedProducts: byProduct.size,
+    repairedVariants: variantIds.length,
     variantIds,
     base: { processed: base.processed ?? base.published ?? 0, failed: base.failed ?? 0 },
     shopify: { processed: shopify.processed ?? shopify.published ?? 0, failed: shopify.failed ?? 0 },
     unmappedProducts: [...new Set(unmapped)],
-    databaseTitlesSaved: bothSucceeded,
+    databaseTitlesSaved: true,
   };
   console.log("[TRACER JAPANESE TITLE REPAIR]", JSON.stringify({
     ok: result.ok, repairedProducts: result.repairedProducts, repairedVariants: result.repairedVariants,
