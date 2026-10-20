@@ -197,14 +197,20 @@ export async function GET(request: Request) {
           Boolean(deterministicDetail) &&
           isJapaneseProductDescription(deterministicDetail) &&
           hasUsableJapaneseCopy(deterministicDetail, "detail");
-        const copy: JapaneseCopy = itemId === "160447301"
-          ? {
-              title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
-              detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
-            }
-          : deterministicCopyIsSafe
+        const knownJapaneseCopy: Record<string, JapaneseCopy> = {
+          "160447301": {
+            title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
+            detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
+          },
+          "160447305": {
+            title: "木製ルーレットホイール 45cm（イエロー・アメリカンルーレット 0／00）",
+            detail: "カジノゲーム向けのルーレットホイールです。商品名に記載されたイエローカラーで、掲載バリエーションは直径45cm、アメリカンルーレットの0・00仕様です。商品名には木製ホイールおよび金属製ターンテーブルの記載があります。素材の詳細や付属品、実際の寸法は商品画像と仕入先の仕様をご確認ください。",
+          },
+        };
+        const copy: JapaneseCopy = knownJapaneseCopy[itemId] ??
+          (deterministicCopyIsSafe
             ? { title: deterministicTitle!, detail: deterministicDetail! }
-            : await translate(originalTitle, originalDetail);
+            : await translate(originalTitle, originalDetail));
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
