@@ -300,6 +300,12 @@ export async function GET(request: Request) {
         const message = error instanceof Error ? error.message : "unknown_error";
         if (/HTTP 429|RESOURCE_EXHAUSTED|quota exceeded|billing details|timed out|timeout/i.test(message)) {
           providerUnavailable = true;
+          results.push({
+            itemId,
+            outcome: "deferred_ai_provider_unavailable",
+            reason: message.slice(0, 180),
+          });
+          continue;
         }
         results.push({
           itemId,
