@@ -552,9 +552,12 @@ test("CJ import rotates bounded batches through every child variant", () => {
 
 test("CJ importer persists exact supplier variant IDs and rotates bounded child-variant batches", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /selectRotatingVariantBatch\(variants, variantBatchLimit, variantRunSlot\)/);
+  assert.match(importer, /selectRotatingVariantBatch\(variants, Math\.min\(variantBatchLimit, variantBudgetRemaining\), variantRunSlot\)/);
   assert.ok(importer.includes("const limit = Math.min(10, Math.max(1, Number(url.searchParams.get(\"limit\") || 3)))"));
   assert.ok(importer.includes("const variantBatchLimit = Math.min(3, Math.max(1, Number(url.searchParams.get(\"variantLimit\") || 3)))"));
+  assert.match(importer, /let variantBudgetRemaining = variantBatchLimit/);
+  assert.match(importer, /if \(variantBudgetRemaining <= 0\) break/);
+  assert.match(importer, /Math\.min\(variantBatchLimit, variantBudgetRemaining\)/);
   assert.match(importer, /filter\(Boolean\)\.length > 3/);
   assert.match(importer, /variantsAvailable \+= variants\.length/);
   assert.match(importer, /sourceVariantKey: exactVariant\.vid/);

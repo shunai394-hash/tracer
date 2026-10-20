@@ -625,7 +625,13 @@ export async function GET(request: Request) {
       candidates = [...dedupedEvidenceCandidates, ...missingPublicationRetries, ...queuedDiscoveryCandidates];
       stats.finalCandidateCount = candidates.length;
     }
-    for (const candidate of candidates) {
+    // Enforce one global child-variant budget across discovery and all retry queues.
+    // Rotate candidate order so a parent with several retry variants cannot starve other parents.
+    let variantBudgetRemaining = variantBatchLimit;
+    const candidateRotation = candidates.length > 0 ? variantRunSlot % candidates.length : 0;
+    const orderedCandidates = [...candidates.slice(candidateRotation), ...candidates.slice(0, candidateRotation)];
+    for (const candidate of orderedCandidates) {
+      if (variantBudgetRemaining <= 0) break;
       try {
         const detail = forcedDetails.get(candidate.id) ?? await getCJProductDetail(candidate.id);
         if (!detail) { recordSkip("product_detail_missing"); continue; }
@@ -635,13 +641,17 @@ export async function GET(request: Request) {
         stats.variantsAvailable += variants.length;
         // Retry only the exact errored child IDs that lack a Shopify publication row;
         // normal discovery keeps its rotating bounded child-variant batch.
-        const variantBatch = candidate.retryVariantIds?.length
+        const retryVariants = candidate.retryVariantIds?.length
           ? variants.filter((item) => candidate.retryVariantIds!.includes(String(item.vid)))
-          : selectRotatingVariantBatch(variants, variantBatchLimit, variantRunSlot);
-        if (candidate.retryVariantIds?.length && variantBatch.length !== candidate.retryVariantIds.length) {
+          : null;
+        if (candidate.retryVariantIds?.length && (retryVariants?.length ?? 0) !== candidate.retryVariantIds.length) {
           stats.errors.push("retry_variant_not_in_parent_catalog:" + candidate.id);
         }
+        const variantBatch = retryVariants
+          ? selectRotatingVariantBatch(retryVariants, Math.min(variantBatchLimit, variantBudgetRemaining), variantRunSlot)
+          : selectRotatingVariantBatch(variants, Math.min(variantBatchLimit, variantBudgetRemaining), variantRunSlot);
         for (const variant of variantBatch) {
+          variantBudgetRemaining -= 1;
           try {
             if (!variant.vid) { recordSkip("variant_id_missing"); continue; }
             // Always resolve the exact live VID. A non-empty productId in a
