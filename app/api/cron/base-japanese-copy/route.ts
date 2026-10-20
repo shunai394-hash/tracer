@@ -233,7 +233,9 @@ export async function GET(request: Request) {
       }
     }
   }
-  // Run sequentially: the previous five-way fan-out exhausted Gemini quota and caused\n  // every item in a batch to fail. Small batches avoid amplifying 429/timeouts.\n  await worker();
+  // Run sequentially: the previous five-way fan-out exhausted Gemini quota and caused
+  // every item in a batch to fail. Small batches avoid amplifying 429/timeouts.
+  await worker();
   const translated = results.filter((item) => item.outcome === "translated_and_verified").length;
   const failed = results.filter((item) => !["translated_and_verified", "already_japanese_on_readback"].includes(String(item.outcome))).length;
   const response = {
