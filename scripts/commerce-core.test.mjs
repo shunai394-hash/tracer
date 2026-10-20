@@ -793,7 +793,7 @@ test("CJ catalog importer prioritizes stale evidence and unseen parent products 
   assert.match(importer, /shopifyVariantIds = new Set/);
   assert.match(importer, /retryVariantIds\?\.length/);
   assert.match(importer, /searchParams\.get\("limit"\) \|\| 3/);
-  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 3/);
+  assert.match(importer, /searchParams\.get\("variantLimit"\) \|\| 6/);
   assert.doesNotMatch(importer, /const fallbackCandidates/);
 });
 
