@@ -76,7 +76,7 @@ export async function generateStructuredJson<T>(
           `Gemini request failed: HTTP ${response.status} ${payload.error?.status ?? ""} ${payload.error?.message ?? ""}`.trim(),
           response.status,
         );
-        if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
+        if ([500, 502, 503, 504].includes(response.status) && attempt < 2) {
           lastError = error;
           await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
@@ -103,7 +103,7 @@ export async function generateStructuredJson<T>(
     } catch (error) {
       if (error instanceof GeminiConfigError) throw error;
       if (error instanceof GeminiRequestError) {
-        if (error.status !== undefined && [429, 500, 502, 503, 504].includes(error.status) && attempt < 2) {
+        if (error.status !== undefined && [500, 502, 503, 504].includes(error.status) && attempt < 2) {
           lastError = error;
           await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
