@@ -140,7 +140,7 @@ export async function GET(request: Request) {
     const nativeSupplyFreshCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const nativeSupplyFutureCutoff = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     await markStage("read_native_cj_supply");
-    const { data: nativeCjSupplyRows, error: nativeCjSupplyError } = await supabase
+    const { data: nativeCjSupplyRowsRaw, error: nativeCjSupplyError } = await supabase
       .from("supplier_listings")
       .select("supplier_product_id,supplier_variant_id,title,metadata")
       .in("supplier", ["cj", "cjdropshipping"])
@@ -164,6 +164,8 @@ export async function GET(request: Request) {
       .order("last_verified_at", { ascending: false, nullsFirst: false })
       .limit(1000);
     if (nativeCjSupplyError) throw new Error(nativeCjSupplyError.message);
+    const nativeCjPublicationEnabled = process.env.TRACER_CJ_NATIVE_SUPPLY_PUBLICATION_ENABLED !== "false";
+    const nativeCjSupplyRows = nativeCjPublicationEnabled ? (nativeCjSupplyRowsRaw ?? []) : [];
 
     // Native CJ supply intentionally has no marketplace product FK. Resolve its
     // standalone product row only by the exact supplier product+variant source key.
