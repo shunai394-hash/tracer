@@ -187,9 +187,22 @@ export async function GET(request: Request) {
         ...offlineCandidates,
         ...candidatePool.filter((item) => !deterministicIds.has(text(item.item_id))),
       ];
+  const aiCandidates = requestedItemId
+    ? []
+    : candidatePool.filter((item) => !deterministicIds.has(text(item.item_id)));
+  const rotatedAiCandidates = aiCandidates.length > 0
+    ? [...aiCandidates.slice(rotationOffset % aiCandidates.length), ...aiCandidates.slice(0, rotationOffset % aiCandidates.length)]
+    : [];
+  // Always process offline-safe mappings first. Previously rotationOffset was
+  // applied to the combined list, which skipped these mappings after the first
+  // few scheduled runs and sent Gemini-only items straight into the exhausted
+  // provider path. Rotate only the AI-dependent remainder.
   const candidates = requestedItemId
     ? orderedCandidates.slice(0, 1)
-    : orderedCandidates.slice(rotationOffset, rotationOffset + limit);
+    : [
+        ...offlineCandidates.slice(0, limit),
+        ...rotatedAiCandidates.slice(0, Math.max(0, limit - Math.min(limit, offlineCandidates.length))),
+      ];
 
   console.log("[TRACER BASE JAPANESE COPY] batch_start", JSON.stringify({
     snapshotItems: snapshot.items.length,
