@@ -8,6 +8,7 @@ export type ShopifyProduct = {
   id: string;
   handle: string;
   status?: string | null;
+  seo?: { title: string | null; description: string | null };
   variants?: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
   media?: { nodes: Array<{ mediaContentType: string; alt: string | null; preview?: { image?: { url: string } | null } | null }> };
 };
@@ -362,21 +363,41 @@ export function verifyShopifyWebhookHmac(rawBody: string, hmacHeader: string | n
 
 const TRACER_TAGS = ["TRACER"];
 
-export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null }): Promise<ShopifyProduct> {
+function shopifySeoInput(input: { title: string; descriptionHtml: string; seoTitle?: string | null; seoDescription?: string | null }): { title: string; description: string } {
+  const plainDescription = input.descriptionHtml
+    .replace(/<\\/(p|div|li|h[1-6])\\s*>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\\s+/g, " ")
+    .trim();
+  const title = (input.seoTitle?.trim() || input.title.trim()).slice(0, 70).trim();
+  const description = (input.seoDescription?.trim() || plainDescription || input.title.trim()).slice(0, 320).trim();
+  if (!title || !description) throw new Error("shopify_seo_metadata_empty");
+  return { title, description };
+}
+
+export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
     `mutation ProductCreate($input: ProductCreateInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input, media: $media) {
-        product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
+        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
-    { input: { title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
+    { input: { title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, seo: shopifySeoInput(input), status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
   );
   if (data.productCreate.userErrors.length) throw new Error(data.productCreate.userErrors.map((error) => error.message).join("; "));
   const product = data.productCreate.product;
   if (!product) throw new Error("Shopify productCreate returned no product");
+  const expectedSeo = shopifySeoInput(input);
+  if (product.seo?.title !== expectedSeo.title || product.seo?.description !== expectedSeo.description) throw new Error("shopify_seo_readback_mismatch_after_create");
   const variant = product.variants?.nodes?.[0];
   if (!variant) throw new Error("Shopify productCreate returned no variant");
 
@@ -395,21 +416,23 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
 }
 
-export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null }): Promise<ShopifyProduct> {
+export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
     `mutation ProductUpdate($input: ProductUpdateInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input, media: $media) {
-        product { id handle status variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
+        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
-    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
+    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, seo: shopifySeoInput(input), status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
   );
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
+  const expectedSeo = shopifySeoInput(input);
+  if (product.seo?.title !== expectedSeo.title || product.seo?.description !== expectedSeo.description) throw new Error("shopify_seo_readback_mismatch_after_update");
   const variantResolution = resolveShopifyVariantIdentity(
     product.variants?.nodes ?? [],
     input.sku,
