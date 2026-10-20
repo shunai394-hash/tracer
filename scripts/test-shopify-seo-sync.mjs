@@ -13,7 +13,7 @@ assert.match(admin, /query VerifyPersistedProductSeo\(\$id: ID!\)/, "SEO verific
 assert.match(admin, /shopify_seo_readback_mismatch_after_\$\{phase\}/, "SEO verification must fail closed when persisted SEO differs");
 assert.match(admin, /verifyPersistedShopifySeo\(product\.id, input\.title, expectedSeo, "create"\)/, "create must verify persisted SEO against the product title default");
 assert.match(admin, /verifyPersistedShopifySeo\(product\.id, input\.title, expectedSeo, "update"\)/, "update must verify persisted SEO against the product title default");
-assert.match(admin, /seo\?\.title == null && expected\.title === productTitle/, "null SEO title is accepted only when Shopify can use the product title as default");
+assert.match(admin, /seo\?\.title == null && expected\.title === data\.product\?\.title/, "null SEO title is accepted only when Shopify can use the product title as default");
 
 console.log("Shopify SEO write, bounds, and readback guards are present.");
 
