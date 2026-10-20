@@ -96,6 +96,8 @@ export async function GET(request: Request) {
   console.log("[TRACER JAPANESE TITLE REPAIR]", JSON.stringify({
     ok: result.ok, repairedProducts: result.repairedProducts, repairedVariants: result.repairedVariants,
     baseFailed: result.base.failed, shopifyFailed: result.shopify.failed, unmappedCount: result.unmappedProducts.length,
+    baseErrors: (base.results ?? []).filter((item: { ok?: boolean }) => !item.ok).slice(0, 5).map((item: { variantId?: string; error?: string; missingEvidence?: string[] }) => ({ variantId: item.variantId, error: item.error, missingEvidence: item.missingEvidence ?? [] })),
+    shopifyErrors: (shopify.results ?? []).filter((item: { ok?: boolean }) => !item.ok).slice(0, 5).map((item: { variantId?: string; error?: string; missingEvidence?: string[] }) => ({ variantId: item.variantId, error: item.error, missingEvidence: item.missingEvidence ?? [] })),
   }));
   return NextResponse.json(result, { status: result.ok ? 200 : 207 });
 }
