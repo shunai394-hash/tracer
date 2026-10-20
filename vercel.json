@@ -3,24 +3,8 @@
   "buildCommand": "npm run build",
   "crons": [
     {
-      "path": "/api/cron/commerce-base-fulfillment",
-      "schedule": "14,29,44,59 * * * *"
-    },
-    {
-      "path": "/api/cron/commerce-base-orders",
-      "schedule": "1,16,31,46 * * * *"
-    },
-    {
-      "path": "/api/cron/commerce-cj-import",
-      "schedule": "0,30 * * * *"
-    },
-    {
-      "path": "/api/cron/commerce-procurement",
-      "schedule": "13,28,43,58 * * * *"
-    },
-    {
-      "path": "/api/cron/commerce-reprice-existing",
-      "schedule": "4,34 * * * *"
+      "path": "/api/intelligence/demand-match",
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/commerce-publish-base",
@@ -31,28 +15,48 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/shopify-publish",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/cron/patrol-ai",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/sales-test-publication",
-      "schedule": "9,39 * * * *"
-    },
-    {
-      "path": "/api/cron/shopify-fulfillment",
-      "schedule": "7,22,37,52 * * * *"
     },
     {
       "path": "/api/cron/shopify-orders",
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/commerce-cj-import",
+      "schedule": "0,30 * * * *"
+    },
+    {
+      "path": "/api/cron/commerce-base-orders",
+      "schedule": "1,16,31,46 * * * *"
+    },
+    {
+      "path": "/api/cron/commerce-procurement",
+      "schedule": "13,28,43,58 * * * *"
+    },
+    {
+      "path": "/api/cron/commerce-base-fulfillment",
+      "schedule": "14,29,44,59 * * * *"
+    },
+    {
       "path": "/api/cron/base-legacy-price-reconcile",
       "schedule": "2,17,32,47 * * * *"
     },
     {
-      "path": "/api/cron/shopify-publish",
-      "schedule": "*/30 * * * *"
+      "path": "/api/cron/commerce-reprice-existing",
+      "schedule": "4,34 * * * *"
+    },
+    {
+      "path": "/api/cron/shopify-fulfillment",
+      "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "path": "/api/cron/sales-test-publication",
+      "schedule": "9,39 * * * *"
     }
   ]
 }
