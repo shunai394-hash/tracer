@@ -242,7 +242,14 @@ export async function getBaseItemDetail(itemId: string): Promise<Record<string, 
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     throw new Error("BASE_ITEM_DETAIL_RESPONSE_INVALID");
   }
-  return item as Record<string, unknown>;
+  const record = item as Record<string, unknown>;
+  const returnedId = String(record.item_id ?? "").trim();
+  if (!returnedId || returnedId !== normalizedId) {
+    // Fail closed: the detail endpoint must never authorize edits to a different
+    // item or claim a requested listing was read back without its exact ID.
+    throw new Error("BASE_ITEM_DETAIL_ID_MISMATCH");
+  }
+  return record;
 }
 
 /**
