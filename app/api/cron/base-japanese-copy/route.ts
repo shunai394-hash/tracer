@@ -46,7 +46,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   const result = await generateStructuredJson<JapaneseCopy>({
     systemInstruction: "あなたは日本のEC商品編集者兼SEO担当です。商品名は、商品種別・ブランド・型番など入力にある重要語を自然な日本語で前方に置き、検索結果で内容がすぐ伝わる簡潔な表現にしてください。説明文は日本語で、入力に明記された用途・特徴・素材・サイズ等だけを整理し、購入者が検索しそうな関連語を不自然にならない範囲で含めてください。キーワードの羅列、誇大表現、根拠のない最上級は禁止です。ブランド名・型番など必要な固有名詞のみ原文を残してください。入力にない素材、サイズ、機能、性能、認証、保証、配送条件を絶対に創作しないでください。商品名と説明の両方を日本語にし、JSONのみ返してください.",
     prompt: JSON.stringify({ title, detail }),
-    timeoutMs: 12_000,
+    timeoutMs: 25_000,
   });
   const translatedTitle = text(result?.title);
   const translatedDetail = text(result?.detail);
