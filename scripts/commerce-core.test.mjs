@@ -1229,3 +1229,20 @@ test("no-longer-fulfillable supplier listings are included in recovery reconcili
   assert.match(publish, /status: "pending",[\s\S]*?last_error: null/,
     "a recovered listing must re-enter the publication queue");
 });
+
+
+test("storefront publication localizes mixed English product titles and blocks English fallback", async () => {
+  const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  for (const phrase of [
+    "アイシャドウ用メイクブラシセット",
+    "卵型 コンパクトメイクスポンジ",
+    "ブライダル用 ネックレス・ピアス・ヘアアクセサリーセット",
+    "携帯用メイクブラシ 5本セット",
+    "メイクブラシ20本セット",
+    "大容量 吊り下げ式メイク収納バッグ",
+  ]) assert.ok(japaneseProduct.includes(phrase), "missing Japanese title mapping: " + phrase);
+  assert.match(publish, /Storefront titles must be fully localized/);
+  assert.match(publish, /!containsEnglishWords\(candidate\.title_ja\)/);
+  assert.match(publish, /!containsEnglishWords\(product\.title_ja\)/);
+});
