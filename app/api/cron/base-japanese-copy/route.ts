@@ -98,7 +98,7 @@ export async function GET(request: Request) {
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
         const itemId = text(item.item_id);
-        if (["160447301", "160447305", "160447306", "160454016"].includes(itemId)) return 0;
+        if (["160447301", "160447305", "160447306", "160447308", "160454016"].includes(itemId)) return 0;
         const title = localizeProductTitle(text(item.title));
         const detail = localizeProductDescription(text(item.title));
         if (
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
   // offline-safe repairs and immediately hit Gemini's exhausted quota again.
   const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
     const itemId = text(item.item_id);
-    if (["160447301", "160447305", "160447306", "160454016"].includes(itemId)) return true;
+    if (["160447301", "160447305", "160447306", "160447308", "160454016"].includes(itemId)) return true;
     const localizedTitle = localizeProductTitle(text(item.title));
     const localizedDetail = localizeProductDescription(text(item.title));
     return isSpecificJapaneseProductTitle(localizedTitle) &&
@@ -240,6 +240,10 @@ export async function GET(request: Request) {
           "160447306": {
             title: "ソファ用厚手無地リネン調クッション生地（ホワイト）",
             detail: "ソファやクッションのカバー製作などに使う、厚手の無地リネン調生地です。カラーはホワイトです。正確な素材組成、寸法、販売単位、洗濯方法は、仕入先の商品画像と仕様をご確認ください。",
+          },
+          "160447308": {
+            title: "幾何学模様のベッドサイドマット 40×60cm",
+            detail: "幾何学模様をあしらった、40×60cmのベッドサイド用マットです。商品名には装飾用の敷物として記載されています。素材、厚み、お手入れ方法など、商品名に明記されていない仕様は商品画像および仕入先の情報をご確認ください。",
           },
           "160454016": {
             title: "日本式窯焼き抹茶茶器セット（青釉）",
