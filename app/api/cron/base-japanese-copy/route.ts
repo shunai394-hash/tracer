@@ -194,12 +194,17 @@ export async function GET(request: Request) {
         // Use deterministic, source-grounded Japanese copy for the explicitly
         // reported legacy item. This avoids repeated Gemini failures for the
         // same listing; all other catalog items continue through translation.
-        const copy: JapaneseCopy = itemId === "160447301"
-          ? {
-              title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
-              detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
-            }
-          : await translate(originalTitle, originalDetail);
+        const knownJapaneseCopy: Record<string, JapaneseCopy> = {
+          "160447301": {
+            title: "水槽用ミニサンゴ風オーナメント No.9（ホワイト）",
+            detail: "水槽のレイアウトに使える、ホワイトカラーのミニサンゴ風オーナメントです。商品名に記載されたNo.9のデザインです。素材や水中での使用可否など、商品ページに明記されていない仕様は購入前にご確認ください。",
+          },
+          "160447305": {
+            title: "ルーレットホイール イエロー（直径45cm／50cm）",
+            detail: "イエローカラーのルーレットホイールです。仕入先の商品名には直径45cm・50cmのサイズ表記があり、該当バリエーションには「45cm American 0 to 00」と記載されています。素材や仕様の詳細は商品画像・仕入先情報をご確認ください。商品ページに明記されていない内容は推測していません。",
+          },
+        };
+        const copy: JapaneseCopy = knownJapaneseCopy[itemId] ?? await translate(originalTitle, originalDetail);
         await editBaseItem({ itemId, title: copy.title, detail: copy.detail, price, stock, visible });
         const after = await getBaseItemDetail(itemId);
         const verified =
