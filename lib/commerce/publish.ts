@@ -107,16 +107,13 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const evaluated = offers.map((offer) => {
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id) ?? null;
         const raw = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data : {};
-        const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
+        // Evidence age is recorded for auditing, but must not by itself delist a product.
         const stockKnown = raw.stockKnown === true || (raw.stockKnown === undefined && offer.source_status === "verified");
         const shippingKnown = raw.shippingKnown === true ||
           (raw.shippingKnown === undefined && raw.shippingEstimated !== true && offer.source_status === "verified" && Number(offer.shipping_cost) > 0);
         const nativeIdsValid = offer.supplier_code !== "cj" ||
           (isCanonicalCjNativeId(offer.supplier_product_id) && isCanonicalCjNativeId(offer.supplier_variant_id));
-        const priceAt = price && typeof price.calculated_at === "string" ? Date.parse(price.calculated_at) : Number.NaN;
-        const priceFresh = Number.isFinite(priceAt) && priceAt <= Date.now() + 5 * 60_000 &&
-          Date.now() - priceAt <= 7 * 24 * 60 * 60_000;
+        // A stored price is eligible based on its actual JPY/profit/margin values, not age alone.
         const missing = missingSaleEvidence({
           supplierCode: offer.supplier_code,
           supplierProductId: nativeIdsValid ? offer.supplier_product_id : null,
@@ -129,13 +126,11 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           shippingKnown,
           shipTo: offer.ship_to,
           trackingSupported: offer.tracking_supported === true,
-          evidenceFresh: fresh,
-          currency: price?.currency,
+           currency: price?.currency,
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-        if (!priceFresh) missing.push("verification");
-        if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -325,10 +320,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const offer = offers.find((item) => String(item.id) === String(price?.supplier_offer_id ?? ""));
         const data = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
           ? offer.raw_data as Record<string, unknown> : {};
-        const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-        const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 &&
-          Date.now() - checkedAt <= 24 * 60 * 60_000;
-        const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
+         const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
           data.shippingKnown === true ||
           (data.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
@@ -336,7 +328,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const stockKnown = data.stockKnown === true ||
           (data.stockKnown === undefined && offer?.source_status === "verified");
         const saleable = Boolean(offer && price && offer.source_status === "verified" &&
-          shippingKnown && stockKnown && fresh && offer.ship_to === "JP" &&
+          shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
           Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
@@ -424,19 +416,14 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         (preflightRawOfferData.shippingKnown === undefined && preflightRawOfferData.shippingEstimated !== true && rawOffer?.source_status === "verified"));
     const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
       (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
-    const preflightCheckedAt = typeof rawOffer?.last_checked_at === "string"
-      ? Date.parse(rawOffer.last_checked_at) : Number.NaN;
-    const preflightFresh = Number.isFinite(preflightCheckedAt) &&
-      preflightCheckedAt <= Date.now() + 5 * 60_000 &&
-      Date.now() - preflightCheckedAt <= 24 * 60 * 60_000;
-    const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
-      !preflightShippingKnown || !preflightStockKnown || !preflightFresh ||
+     const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
+      !preflightShippingKnown || !preflightStockKnown ||
       rawOffer.tracking_supported !== true || rawOffer.ship_to !== "JP" ||
       !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0;
     const currentState = stateByVariant.get(candidate.id);
-    // Never republish a previously-created item just because a recovery run selected
-    // pending/error rows. Existing unfulfillable items must remain hidden until the
-    // exact supplier offer proves fresh JP stock, shipping, and tracking.
+    // Never republish a previously-created item unless supplier identity, known positive
+    // stock, Japan shipping, tracking, and positive-margin pricing are all evidenced.
+    // A stale timestamp alone is not a reason to delist; the order flow must recheck stock.
     if (currentState?.external_product_id && supplierEvidenceUnverified) {
       const missing = rawOffer ? missingSaleEvidence({
         supplierCode: rawOffer.supplier_code,
@@ -450,8 +437,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         shippingKnown: preflightShippingKnown,
         shipTo: rawOffer.ship_to,
         trackingSupported: rawOffer.tracking_supported === true,
-        evidenceFresh: preflightFresh,
-        currency: currentCanonicalPrice?.currency,
+         currency: currentCanonicalPrice?.currency,
         sellingPrice: Number(currentCanonicalPrice?.selling_price),
         expectedProfit: Number(currentCanonicalPrice?.expected_profit),
       }) : ["supplier", "identity", "variant", "stock", "cost", "domestic_shipping", "profit"];
@@ -533,18 +519,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     );
     const supplierStockKnown = rawOfferData.stockKnown === true ||
       (rawOfferData.stockKnown === undefined && offer.source_status === "verified");
-    const supplierCheckedAt = typeof offer.last_checked_at === "string"
-      ? Date.parse(offer.last_checked_at)
-      : Number.NaN;
-    const supplierEvidenceFresh = Number.isFinite(supplierCheckedAt) &&
-      supplierCheckedAt <= Date.now() + 5 * 60_000 &&
-      Date.now() - supplierCheckedAt <= 24 * 60 * 60_000;
-    const supplierSaleable = supplierShippingKnown && supplierStockKnown &&
+     const supplierSaleable = supplierShippingKnown && supplierStockKnown &&
       offer.source_status === "verified" &&
       offer.ship_to === "JP" &&
       offer.tracking_supported === true &&
-      supplierEvidenceFresh &&
-      Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
+       Number.isFinite(Number(offer.inventory)) && Number(offer.inventory) > 0;
     // Do not create a visible but non-purchasable listing for an unverified offer.
     if (!supplierSaleable && !currentState?.external_product_id) {
       const missing = missingSaleEvidence({
@@ -559,8 +538,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         shippingKnown: supplierShippingKnown,
         shipTo: offer.ship_to,
         trackingSupported: offer.tracking_supported === true,
-        evidenceFresh: supplierEvidenceFresh,
-        currency: price.currency,
+         currency: price.currency,
         sellingPrice: Number(price.selling_price),
         expectedProfit: Number(price.expected_profit),
       });

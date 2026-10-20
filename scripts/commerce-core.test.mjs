@@ -83,8 +83,10 @@ test("storefront publication requires exact supplier identity and evidenced land
   assert.match(publish, /offer\.source_status === "verified"/);
   assert.match(publish, /offer\.ship_to === "JP"/);
   assert.match(publish, /offer\.tracking_supported === true/);
-  assert.match(publish, /supplierEvidenceFresh/);
-  assert.match(publish, /Date\.now\(\) - supplierCheckedAt <= 24 \* 60 \* 60_000/);
+  assert.doesNotMatch(publish, /supplierEvidenceFresh|preflightFresh|priceFresh/);
+  assert.doesNotMatch(publish, /Date\.now\(\) - (?:supplierCheckedAt|preflightCheckedAt|checkedAt|priceAt) <= (?:24|7) \* 60 \* 60_000/);
+  assert.match(publish, /shippingKnown && stockKnown && offer\.ship_to === "JP"/);
+  assert.match(publish, /Number\(price\.expected_profit\) > 0/);
   assert.doesNotMatch(publish, /Math\.max\(1, Number\(offer\.inventory\) \|\| 0\)/);
   assert.match(publish, /shippingInclusiveDescription/);
   assert.match(publish, /日本向け送料は商品価格に含まれています/);
@@ -206,7 +208,7 @@ test("published listings without stock, shipping, or profit are removed and exte
   assert.match(publish, /const identityCleanup = await unpublishUnfulfillableListings\(channel, db\)/);
   assert.match(audit, /missingSaleEvidence\(/);
   assert.match(audit, /best\.missing\.length === 0/);
-  assert.match(audit, /priceFresh/);
+  assert.doesNotMatch(audit, /priceFresh|supplierEvidenceFresh|preflightFresh/);
   assert.match(audit, /Number\(price\.margin_rate\) < 0\.5/);
   assert.match(audit, /stock: 0, visible: false/);
   assert.match(audit, /base_unpublish_readback_mismatch/);
