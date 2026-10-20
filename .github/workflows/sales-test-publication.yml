@@ -40,6 +40,8 @@ jobs:
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
           id_token="$(printf '%s' "$token_json" | jq -er '.value')"
+          # Give the matching production deployment time to become READY after a push-triggered run.
+          sleep 90
           response_file="$(mktemp)"
           status="$(curl --silent --show-error --max-time 240 \
             -o "$response_file" -w '%{http_code}' \
