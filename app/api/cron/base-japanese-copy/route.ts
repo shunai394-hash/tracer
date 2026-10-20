@@ -93,7 +93,24 @@ export async function GET(request: Request) {
     .filter((item) => requestedItemId
       ? text(item.item_id) === requestedItemId
       : needsJapaneseCopy(text(item.title), text(item.detail)))
-    .sort((a, b) => Number(text(a.item_id)) - Number(text(b.item_id)));
+    .sort((a, b) => {
+      // Run source-grounded deterministic mappings before Gemini-dependent items.
+      // A quota failure must not starve listings that can be safely localized offline.
+      const priority = (item: (typeof snapshot.items)[number]) => {
+        const itemId = text(item.item_id);
+        if (itemId === "160447301" || itemId === "160447305") return 0;
+        const title = localizeProductTitle(text(item.title));
+        const detail = localizeProductDescription(text(item.title));
+        if (
+          isSpecificJapaneseProductTitle(title) &&
+          typeof detail === "string" &&
+          isJapaneseProductDescription(detail) &&
+          hasUsableJapaneseCopy(detail, "detail")
+        ) return 1;
+        return 2;
+      };
+      return priority(a) - priority(b) || Number(text(a.item_id)) - Number(text(b.item_id));
+    });
   // A published legacy BASE URL may remain valid even when its item is absent
   // from the paginated catalog. For an explicitly requested ID, probe that exact
   // item detail endpoint before declaring it missing; the worker still performs
@@ -274,6 +291,16 @@ export async function GET(request: Request) {
     providerUnavailable: response.providerUnavailable,
     remainingEnglishEstimate: response.remainingEnglishEstimate,
     emptyPoolProbe,
+    successfulResults: results.filter((item) => item.outcome === "translated_and_verified").map((item) => ({
+      itemId: item.itemId,
+      outcome: item.outcome,
+      titleJapanese: item.titleJapanese,
+      descriptionJapanese: item.descriptionJapanese,
+      pricePreserved: item.pricePreserved,
+      stockPreserved: item.stockPreserved,
+      visibilityPreserved: item.visibilityPreserved,
+      identifierPreserved: item.identifierPreserved,
+    })),
     failedResults: results.filter((item) => item.outcome === "failed" || item.outcome === "readback_mismatch" || item.outcome === "skipped_live_item_state_incomplete").map((item) => ({
       itemId: item.itemId,
       outcome: item.outcome,
