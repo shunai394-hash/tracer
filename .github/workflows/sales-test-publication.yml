@@ -2,6 +2,7 @@ name: TRACER sales-test publication
 
 on:
   # Trigger after the publication gate or CJ evidence importer is changed on main.
+  # This trigger also permits an operator to continue the bounded publication backlog with a workflow-only commit.
   # Other application pushes do not trigger supplier publication.
   push:
     branches:
