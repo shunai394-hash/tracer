@@ -92,19 +92,32 @@ export async function GET(request: Request) {
   // Always scan the complete snapshot, then rotate the bounded batch. Without
   // rotation, the same first 50 failed translations can starve every later item.
   const requestedItemId = text(url.searchParams.get("itemId"));
-  const candidatePool = snapshot.items
+  let candidatePool = snapshot.items
     .filter((item) => /^\d+$/.test(text(item.item_id)))
     .filter((item) => requestedItemId
       ? text(item.item_id) === requestedItemId
       : needsJapaneseCopy(text(item.title), text(item.detail)))
     .sort((a, b) => Number(text(a.item_id)) - Number(text(b.item_id)));
+  // A published legacy BASE URL may remain valid even when its item is absent
+  // from the paginated catalog. For an explicitly requested ID, probe that exact
+  // item detail endpoint before declaring it missing; the worker still performs
+  // its own live read and verifies price, stock, visibility, identifier, and copy.
   if (requestedItemId && candidatePool.length === 0) {
-    return NextResponse.json({
-      ok: false,
-      error: "BASE_ITEM_ID_NOT_FOUND_IN_COMPLETE_SNAPSHOT",
-      itemId: requestedItemId,
-      snapshotItems: snapshot.items.length,
-    }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    try {
+      const directItem = await getBaseItemDetail(requestedItemId);
+      if (text(directItem.item_id) !== requestedItemId) {
+        throw new Error("BASE_ITEM_DETAIL_ID_MISMATCH");
+      }
+      candidatePool = [directItem];
+    } catch (error) {
+      return NextResponse.json({
+        ok: false,
+        error: "BASE_ITEM_ID_NOT_FOUND_IN_SNAPSHOT_OR_DETAIL",
+        itemId: requestedItemId,
+        snapshotItems: snapshot.items.length,
+        detailError: error instanceof Error ? error.message.slice(0, 180) : "BASE_ITEM_DETAIL_FAILED",
+      }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
   }
   const requestedOffset = url.searchParams.get("offset");
   const rotationOffset = requestedOffset !== null && /^\d+$/.test(requestedOffset)
