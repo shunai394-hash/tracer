@@ -108,7 +108,7 @@ export async function GET(request: Request) {
     if (recentCronRows.error) throw new Error("cron_runs_recent_read_failed:" + recentCronRows.error.message);
     const [failedCronRows, listingErrorRows, supplierOfferErrorRows] = await Promise.all([
       db.from("cron_runs").select("job_name,error").gte("started_at", freshSince).eq("status", "failed").limit(500),
-      db.from("channel_listings").select("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants(sku,title_ja,supplier_offers(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at))").eq("status", "error").order("variant_id").limit(500),
+      (async () => ({ data: await readAll(db, "channel_listings", "channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants(sku,title_ja,supplier_offers(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at))", "variant_id", q => q.eq("status", "error")), error: null as unknown as { message: string } | null }))(),
       db.from("supplier_offers").select("supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at,updated_at,raw_data").eq("source_status", "error").order("updated_at", { ascending: false }).limit(100),
     ]);
     // NEWFIND: count from the rows themselves with one outcome definition

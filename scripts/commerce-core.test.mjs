@@ -1207,3 +1207,10 @@ test("read-only commerce status exposes legacy products and exact CJ product-var
   assert.match(route, /legacyCatalog: \{ products: legacyProducts, nativeCjProductVariantIdentities: legacyCjIdentityProducts \}/);
   assert.match(route, /readOnly: true/);
 });
+
+
+test("read-only commerce status reads all channel listing errors instead of truncating diagnostics at 500 rows", async () => {
+  const route = await readFile(new URL("../app/api/admin/commerce/status/route.ts", import.meta.url), "utf8");
+  assert.match(route, /readAll\(db, "channel_listings", "channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)", "variant_id", q => q\.eq\("status", "error"\)\)/);
+  assert.doesNotMatch(route, /from\("channel_listings"\)\.select\("channel,variant_id,external_product_id,last_error,last_synced_at,commerce_variants\(sku,title_ja,supplier_offers\(supplier_code,supplier_product_id,supplier_variant_id,source_status,last_checked_at\)\)"\)\.eq\("status", "error"\)\.order\("variant_id"\)\.limit\(500\)/);
+});
