@@ -37,8 +37,8 @@ jobs:
           status="$(curl --silent --show-error --max-time 300 \
             -o "$response_file" -w '%{http_code}' \
             -H "Authorization: Bearer ${id_token}" \
-            "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=5")"
-          echo "BASE Japanese copy batch HTTP $status"
+            "${PRODUCTION_URL}/api/cron/base-japanese-copy?limit=1&itemId=160447305")"
+          echo "BASE Japanese copy item 160447305 HTTP $status"
           cat "$response_file"
           echo
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
@@ -48,7 +48,7 @@ jobs:
           jq -e '.phase == "base_japanese_copy_repair"' "$response_file" >/dev/null
           jq -e '.translatedAndVerified >= 0 and .failed >= 0 and (.results | type == "array")' "$response_file" >/dev/null
           {
-            echo "## BASE Japanese copy — five-item batch"
+            echo "## BASE Japanese copy — item 160447305"
             echo
             echo "- HTTP: $status"
             echo "- Snapshot items: $(jq -r '.snapshotItems // "unknown"' "$response_file")"
@@ -66,4 +66,4 @@ jobs:
             exit 1
           fi
 
-# One bounded five-item batch; each item must pass BASE readback verification.
+# One explicitly targeted BASE item; title and description must pass Japanese validation and BASE readback verification.
