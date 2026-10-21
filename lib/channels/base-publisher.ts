@@ -92,7 +92,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
+  let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -126,8 +126,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   // Only publish rows whose exact supplier listing is currently eligible for publication.
   // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
-  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => listing.supplier_listing_id));
-  const nativeCjRepairIds = (listings ?? []).filter((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified" && (listing.orderable !== true || listing.tracking_available !== true)).map((listing) => String(listing.id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => ({
+    listingId: String(listing.id),
+    supplierListingId: listing.supplier_listing_id == null ? null : String(listing.supplier_listing_id),
+    productId: listing.product_id == null ? null : String(listing.product_id),
+    supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
+    supplierVariantId: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
+  })));
+  const nativeCjRepairIds = (listings ?? []).filter((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" && (listing.orderable !== true || listing.tracking_available !== true)).map((listing) => String(listing.id));
   if (nativeCjRepairIds.length > 0) {
     const now = new Date().toISOString();
     const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
@@ -135,7 +141,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }
   const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
   const identityUnlinkedIds = new Set<string>(publishableListings
-    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)) || listing.orderable !== true || listing.tracking_available !== true)
+    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
