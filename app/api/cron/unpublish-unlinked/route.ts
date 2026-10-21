@@ -17,15 +17,21 @@ export async function GET(request: Request) {
 
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("shop_listings")
-    .select("id,supplier_listing_id,published,orderable,tracking_available,pipeline_reason,shopify_product_id,shopify_sync_status,shopify_sync_error,base_item_id,base_publication_status,base_last_error")
+    .select("id,product_id,supplier_listing_id,supplier_product_id,supplier_variant_id,published,orderable,tracking_available,pipeline_reason,shopify_product_id,shopify_sync_status,shopify_sync_error,base_item_id,base_publication_status,base_last_error")
     .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.neq.shopify_unpublished_verified),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
     .order("created_at", { ascending: true })
     .limit(1000);
   if (error) return NextResponse.json({ ok: false, stage: "read", error: error.message }, { status: 500 });
 
-  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => row.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses((data ?? []).map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+    productId: row.product_id == null ? null : String(row.product_id),
+    supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+    supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+  })));
   // Repair stale denormalized flags only when the supplier helper has freshly verified the exact native CJ variant.
-  const nativeCjRepairIds = (data ?? []).filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
+  const nativeCjRepairIds = (data ?? []).filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
   if (nativeCjRepairIds.length > 0) {
     const now = new Date().toISOString();
     const { error: repairError } = await db.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
@@ -112,8 +118,10 @@ export async function GET(request: Request) {
 
       const allListings: Array<{
         id: string;
-        published: boolean | null;
+        product_id: string | null;
         supplier_listing_id: string | null;
+        supplier_product_id: string | null;
+        supplier_variant_id: string | null;
         orderable: boolean | null;
         tracking_available: boolean | null;
         base_item_id: string | number | null;
@@ -121,7 +129,7 @@ export async function GET(request: Request) {
       for (let offset = 0; offset < 10_000; offset += 1000) {
         const { data: page, error: pageError } = await db
           .from("shop_listings")
-          .select("id,published,supplier_listing_id,orderable,tracking_available,base_item_id")
+          .select("id,product_id,published,supplier_listing_id,supplier_product_id,supplier_variant_id,orderable,tracking_available,base_item_id")
           .order("created_at", { ascending: true })
           .range(offset, offset + 999);
         if (pageError) throw new Error("TRACER_LISTING_SNAPSHOT_READ_FAILED");
@@ -129,10 +137,16 @@ export async function GET(request: Request) {
         if ((page ?? []).length < 1000) break;
         if (offset === 9000) throw new Error("TRACER_LISTING_SNAPSHOT_INCOMPLETE");
       }
-      const statuses = await getPublishableSupplierListingStatuses(allListings.map((row) => row.supplier_listing_id));
+      const statuses = await getPublishableSupplierListingStatuses(allListings.map((row) => ({
+        listingId: String(row.id),
+        supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+        productId: row.product_id == null ? null : String(row.product_id),
+        supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+        supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+      })));
       const eligibleIdentifiers = new Set(allListings
         .filter((row) => row.published === true && row.orderable === true && row.tracking_available === true
-          && row.supplier_listing_id && statuses.has(String(row.supplier_listing_id)))
+          && row.supplier_listing_id && statuses.has(String(row.id)))
         .map((row) => `TRC-${String(row.id).toLowerCase()}`));
       const knownBaseIds = new Set(allListings
         .map((row) => String(row.base_item_id ?? "").trim())
