@@ -8,6 +8,7 @@ import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitl
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { buildSourceGroundedJapaneseDescription } from "@/lib/catalog/source-grounded-description";
 import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy, resolveUnknownShippingAllowanceUsd } from "@/lib/market/supply-pricing";
 import { persistedListingShippingCost } from "@/lib/market/listing-shipping-cost";
 
@@ -39,61 +40,6 @@ function firstImageUrl(...sources: unknown[]): string | null {
     } else add(source);
   }
   return candidates.find(validHttpUrl) as string | undefined ?? null;
-}
-function localizedDescriptionFallback(title: string, sourceTitle = ""): string | null {
-  const normalized = title.normalize("NFKC").replace(/\\s+/g, " ").trim();
-  const source = sourceTitle.normalize("NFKC").replace(/\\s+/g, " ").trim();
-  const combined = (normalized + " " + source).toLocaleLowerCase("ja-JP");
-
-  // Copy is grounded in product-title evidence. Do not invent measurements,
-  // materials, compatibility, or performance claims that the source did not state.
-  if (/透かし編み|woven hollowed|woven handbag/.test(combined)) {
-    return "透かし編みデザインのサマーハンドバッグです。編み目の表情を楽しめるデザインで、春夏の外出スタイルに合わせやすい一品です。サイズ・素材・開口部・内ポケット・付属品は販売元の最新仕様をご確認ください。";
-  }
-  if (/ノートpc収納|パソコン収納|laptop handbag|laptop bag/.test(combined)) {
-    return "ノートPC収納対応と商品名に記載されたレディースバッグです。通勤や移動時にPCと日用品をまとめて持ち運ぶ用途に向いています。対応PCサイズ・収納寸法・素材・重量・仕切りの構成は販売元の最新仕様をご確認ください。";
-  }
-  if (/防水|waterproof/.test(combined) && /トラベルバッグ|旅行.*バッグ|travel bag|travel backpack/.test(combined)) {
-    return "商品名に防水仕様と記載されたトラベルバッグです。旅行やジム用品の持ち運びを想定した形状です。防水性能・収納区画・シューズ収納の有無・寸法は販売元の最新仕様をご確認ください。";
-  }
-  if (/puレザー|ヴィーガンレザー|vegan leather|pu leather/.test(combined) && /バッグ|bag|shoulder|tote|hobo/.test(combined)) {
-    return "商品名にPUレザーまたはヴィーガンレザーと記載されたレディースバッグです。レトロな形状や肩掛けスタイルをコーディネートのアクセントとして楽しめます。実際の素材表記・寸法・ストラップ調整幅・収納部は販売元の最新仕様をご確認ください。";
-  }
-  if (/キャンバス|canvas/.test(combined) && /バッグ|bag|rucksack|backpack/.test(combined)) {
-    return "キャンバス素材と商品名に記載されたカジュアルなバッグです。日常のお出かけで小物や日用品を持ち運ぶ用途に使えます。素材組成・サイズ・収納部・持ち手や肩ひもの仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/タッセル|tassel/.test(combined) && /バッグ|bag/.test(combined)) {
-    return "タッセル装飾を取り入れたレディースハンドバッグです。装飾をコーディネートのアクセントとして楽しめます。サイズ・素材・収納部・持ち手仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/ショルダーバッグ|shoulder bag|crossbody|cross body/.test(combined)) {
-    return "肩掛けや斜め掛けで持ち運ぶレディースショルダーバッグです。日常のお出かけ用として、商品画像で形状や収納部を確認して選べます。サイズ・素材・ストラップ調整幅・ポケット仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/ハンドバッグ|handbag|tote bag|トートバッグ/.test(combined)) {
-    return "日常のお出かけで使うレディースハンドバッグです。商品名に記載されたデザインをコーディネートに取り入れやすいアイテムです。サイズ・素材・開口部・収納部・持ち手仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/コスメポーチ|メイクポーチ|化粧ポーチ|cosmetic bag|makeup organizer|make up bag/.test(combined)) {
-    return "メイク用品や旅行小物を整理するコスメポーチです。仕切りやポケットの構成は商品画像で確認し、寸法・素材・収納可能なサイズは販売元の最新仕様をご確認ください。";
-  }
-  if (/メイクブラシ|makeup brush/.test(combined)) {
-    const count = source.match(/\b(\d{1,2})\s*(?:pcs|pieces|piece|brushes|brush set|本|本セット)\b/i)?.[1];
-    return `メイクに使うブラシセットです。${count ? `商品名には${count}本セットと記載されています。` : ""}ブラシの本数・毛質・形状・セット内容・お手入れ方法は販売元の最新仕様をご確認ください。`;
-  }
-  if (/メイクパフ|メイクスポンジ|makeup sponge|beauty egg/.test(combined)) {
-    return "ファンデーションなどのメイクに使うメイクスポンジです。形状や使用方法は商品画像で確認し、材質・寸法・洗浄方法・セット内容は販売元の最新仕様をご確認ください。";
-  }
-  if (/ヘアクリップ|ヘアピン|hair clip|barrette|hair claw/.test(combined)) {
-    return "髪をまとめるためのヘアクリップです。モチーフや色柄は商品画像と選択中のバリエーションをご確認ください。サイズ・材質・留め具の仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/ヘアバンド|カチューシャ|ヘッドバンド|headband|hair band/.test(combined)) {
-    return "髪をまとめたり、ヘアスタイルのアクセントに使うヘアバンドです。幅・素材・伸縮性・カラーは販売元の最新仕様をご確認ください。";
-  }
-  if (/洗顔ブラシ|フェイスブラシ|facial brush|face cleaning brush/.test(combined)) {
-    return "洗顔時に使うフェイスブラシです。ブラシ形状や素材の詳細は商品画像と仕様表をご確認ください。使用方法・お手入れ方法・使用上の注意は販売元の最新情報をご確認ください。";
-  }
-  if (/きのこ型メイクパフ/.test(normalized)) {
-    return "ファンデーションなどのメイクに使うきのこ型メイクパフです。材質・寸法・使用方法・お手入れ方法は販売元の最新情報をご確認ください。";
-  }
-  return null;
 }
 function slugify(title: string, productId: string): string {
   const base = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 54);
@@ -364,7 +310,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
     const localizedDescription = localizeProductDescription(sourceTitle)
       ?? localizeProductDescription(localizedTitle)
-      ?? localizedDescriptionFallback(typeof localizedTitle === "string" ? localizedTitle : "", sourceTitle);
+      ?? buildSourceGroundedJapaneseDescription(typeof localizedTitle === "string" ? localizedTitle : "", sourceTitle);
     const publishableDescription = isPublishableCatalogDescription(localizedDescription)
       ? localizedDescription
       : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
