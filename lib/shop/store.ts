@@ -129,13 +129,19 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
 
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
   const mapped = rows.map(mapListing);
-  const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => listing.supplierListingId));
+  const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => ({
+    listingId: listing.id,
+    supplierListingId: listing.supplierListingId,
+    productId: listing.productId,
+    supplierProductId: listing.supplierProductId,
+    supplierVariantId: listing.supplierVariantId,
+  })));
   const listings = mapped
     // The TRACER storefront checkout uses Shopify. Unsynced listings must not
     // be treated as purchasable, and must not poison the live-stock batch for
     // products that are already synced and saleable.
     .filter((listing) => listing.shopifySyncStatus === "synced" && Boolean(listing.shopifyVariantId))
-    .filter((listing) => Boolean(listing.supplierListingId && supplierStatuses.has(listing.supplierListingId)))
+    .filter((listing) => supplierStatuses.has(listing.id))
     .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
 
   if (listings.length === 0) return [];
@@ -473,8 +479,14 @@ export async function placeShopOrder(args: {
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
-  const supplierStatuses = await getPublishableSupplierListingStatuses(listings.map((listing) => listing.supplier_listing_id));
-  if (listings.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.supplier_listing_id)))) {
+  const supplierStatuses = await getPublishableSupplierListingStatuses(listings.map((listing) => ({
+    listingId: String(listing.id),
+    supplierListingId: listing.supplier_listing_id == null ? null : String(listing.supplier_listing_id),
+    productId: listing.product_id == null ? null : String(listing.product_id),
+    supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
+    supplierVariantId: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
+  })));
+  if (listings.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)))) {
     throw new Error("supplier_identity_unlinked");
   }
 

@@ -40,9 +40,42 @@ export function isNativeCjSupplierListing(row: Record<string, unknown>, nowMs = 
 }
 
 /** Returns publication-safe supplier identity states; native CJ supply is kept distinct from canonical links. */
-export async function getPublishableSupplierListingStatuses(values: unknown[]): Promise<Map<string, SupplierPublicationIdentity>> {
-  const ids = [...new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0))];
+export type SupplierListingReference = {
+  /** The shop_listings row that will be published or sold. */
+  listingId: string;
+  supplierListingId: string | null;
+  productId: string | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
+};
+
+/**
+ * Returns publication-safe supplier identity states keyed by shop listing ID.
+ * A healthy supplier row is not sufficient by itself: its internal product ID,
+ * external product ID, and exact variant ID must match this listing's snapshot.
+ * This prevents a stale supplier_listing_id foreign key from making a different
+ * product appear orderable or publishable.
+ */
+export async function getPublishableSupplierListingStatuses(
+  references: SupplierListingReference[],
+): Promise<Map<string, SupplierPublicationIdentity>> {
+  const validReferences = references.filter((reference) =>
+    Boolean(reference.listingId?.trim())
+    && Boolean(reference.supplierListingId?.trim())
+    && Boolean(reference.productId?.trim())
+    && Boolean(reference.supplierProductId?.trim())
+    && Boolean(reference.supplierVariantId?.trim()),
+  );
+  const ids = [...new Set(validReferences.map((reference) => reference.supplierListingId as string))];
   if (ids.length === 0) return new Map();
+
+  const referencesBySupplierId = new Map<string, SupplierListingReference[]>();
+  for (const reference of validReferences) {
+    const supplierId = reference.supplierListingId as string;
+    const group = referencesBySupplierId.get(supplierId) ?? [];
+    group.push(reference);
+    referencesBySupplierId.set(supplierId, group);
+  }
 
   const supabase = createSupabaseAdminClient();
   const statuses = new Map<string, SupplierPublicationIdentity>();
@@ -50,13 +83,22 @@ export async function getPublishableSupplierListingStatuses(values: unknown[]): 
     const batch = ids.slice(offset, offset + 100);
     const { data, error } = await supabase
       .from("supplier_listings")
-      .select("id,supplier,identity_status,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at")
+      .select("id,product_id,supplier,identity_status,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at")
       .in("id", batch);
     if (error) throw new Error(`supplier_publication_identity_lookup_failed:${error.message}`);
     for (const row of data ?? []) {
       const id = String(row.id);
-      if (row.identity_status === "linked") statuses.set(id, "linked");
-      else if (isNativeCjSupplierListing(row as Record<string, unknown>)) statuses.set(id, "native_cj_verified");
+      const exactReferences = (referencesBySupplierId.get(id) ?? []).filter((reference) =>
+        String(row.product_id ?? "") === reference.productId
+        && String(row.supplier_product_id ?? "") === reference.supplierProductId
+        && String(row.supplier_variant_id ?? "") === reference.supplierVariantId,
+      );
+      if (exactReferences.length === 0) continue;
+      let status: SupplierPublicationIdentity | null = null;
+      if (row.identity_status === "linked") status = "linked";
+      else if (isNativeCjSupplierListing(row as Record<string, unknown>)) status = "native_cj_verified";
+      if (!status) continue;
+      for (const reference of exactReferences) statuses.set(reference.listingId, status);
     }
   }
   return statuses;

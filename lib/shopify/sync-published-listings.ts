@@ -252,20 +252,26 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     }
   }
 
-  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
-  const nativeCjRepairIds = rows.filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+    productId: row.product_id == null ? null : String(row.product_id),
+    supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+    supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+  })));
+  const nativeCjRepairIds = rows.filter((row) => row.supplier_listing_id && supplierStatuses.get(String(row.id)) === "native_cj_verified" && (row.orderable !== true || row.tracking_available !== true)).map((row) => String(row.id));
   if (nativeCjRepairIds.length > 0) {
     const now = new Date().toISOString();
     const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
-  const eligibleRows = rows.map((row) => row.supplier_listing_id && supplierStatuses.get(String(row.supplier_listing_id)) === "native_cj_verified" ? { ...row, orderable: true, tracking_available: true } : row);
+  const eligibleRows = rows.map((row) => row.supplier_listing_id && supplierStatuses.get(String(row.id)) === "native_cj_verified" ? { ...row, orderable: true, tracking_available: true } : row);
   const actionable = listingIds?.length
     ? eligibleRows.slice(0, safeLimit)
     : eligibleRows.filter((row) => {
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
-        const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)));
+        const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.id)));
         const listingEligible = supplierEligible && blockReasons(row).length === 0;
         if (row.published === true) {
           // Reconcile already-synced products when supplier evidence/orderability expires,
@@ -366,10 +372,19 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
     .order("pipeline_updated_at", { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 1000));
   if (error) throw new Error(error.message);
+  const previewRows = (data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>;
+  const supplierStatuses = await getPublishableSupplierListingStatuses(previewRows.map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+    productId: row.product_id == null ? null : String(row.product_id),
+    supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+    supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+  })));
   const reasonCounts: Record<string, number> = {};
-  const rows = ((data ?? []) as Array<Listing & { shopify_sync_error?: string | null }>).map((rawRow) => {
+  const rows = previewRows.map((rawRow) => {
     const row = rawRow;
     const reasons = blockReasons(row);
+    if (!supplierStatuses.has(String(row.id))) reasons.push("supplier_identity_unlinked");
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
     if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
@@ -403,9 +418,15 @@ async function syncListingRows(
     shopify_product_id: toShopifyGid("Product", row.shopify_product_id),
     shopify_variant_id: toShopifyGid("ProductVariant", row.shopify_variant_id),
   }));
-  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => row.supplier_listing_id));
+  const supplierStatuses = await getPublishableSupplierListingStatuses(rows.map((row) => ({
+    listingId: String(row.id),
+    supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+    productId: row.product_id == null ? null : String(row.product_id),
+    supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+    supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+  })));
   const candidates = rows.filter((row) =>
-    Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.supplier_listing_id)))
+    Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.id)))
     && blockReasons(row).length === 0
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
