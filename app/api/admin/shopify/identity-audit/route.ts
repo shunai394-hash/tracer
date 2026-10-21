@@ -146,6 +146,12 @@ export async function GET(request: Request) {
         const verificationError = referenced.verification_error;
         const nativeBlockReasons: string[] = [];
         if (String(referenced.supplier ?? "").trim().toLowerCase() !== "cj") nativeBlockReasons.push("supplier_not_cj");
+        // Readiness must validate the exact foreign-key tuple, not only the
+        // supplier row's own healthy evidence. A stale FK can otherwise make
+        // a different internal product look publishable and later fail checkout.
+        if (String(referenced.product_id ?? "") !== String(row.product_id ?? "")) nativeBlockReasons.push("internal_product_id_mismatch");
+        if (String(referenced.supplier_product_id ?? "").trim() !== product) nativeBlockReasons.push("supplier_product_id_mismatch");
+        if (String(referenced.supplier_variant_id ?? "").trim() !== variant) nativeBlockReasons.push("supplier_variant_id_mismatch");
         if (referenced.verification_status !== "verified") nativeBlockReasons.push("verification_status_not_verified");
         if (referenced.shipping_status !== "verified") nativeBlockReasons.push("shipping_status_not_verified");
         if (referenced.configured !== true) nativeBlockReasons.push("supplier_not_configured");
