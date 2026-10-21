@@ -35,10 +35,10 @@ assert.match(shopify, /supplier_identity_unlinked/, "Shopify dry-run must expose
 assert.match(base, /supplierStatuses\.has\(String\(listing\.id\)\)/, "BASE publication must gate each listing by its own verified identity tuple");
 assert.match(store, /supplierStatuses\.has\(listing\.id\)/, "storefront must not accept a healthy supplier row linked to a different product");
 assert.match(store, /supplierStatuses\.has\(String\(listing\.id\)\)/, "checkout must validate the exact supplier tuple for each listing");
-const identityAuditRoute = await readFile(new URL("../app/api/admin/shopify/identity-audit/route.ts", import.meta.url), "utf8");
-assert.match(identityAuditRoute, /internal_product_id_mismatch/);
-assert.match(identityAuditRoute, /supplier_product_id_mismatch/);
-assert.match(identityAuditRoute, /supplier_variant_id_mismatch/);
+const identityAuditRouteExactTuple = await readFile(new URL("../app/api/admin/shopify/identity-audit/route.ts", import.meta.url), "utf8");
+assert.match(identityAuditRouteExactTuple, /internal_product_id_mismatch/);
+assert.match(identityAuditRouteExactTuple, /supplier_product_id_mismatch/);
+assert.match(identityAuditRouteExactTuple, /supplier_variant_id_mismatch/);
 assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(priorVerificationError && priorVerificationError !== "no_unique_canonical_child_variant_match" \? priorVerificationError : "supplier_native_evidence_pending"\)/, "only fresh, fully verified native supplier evidence may clear the old configuration error; marketplace identity is not required");
 assert.match(persist, /shipping_status: Number\.isFinite\(args\.shippingCost\) && args\.shippingCost > 0[\s\S]{0,100}"verified"/, "a fresh positive Japan freight quote must be persisted as verified shipping evidence independently of orderability");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
