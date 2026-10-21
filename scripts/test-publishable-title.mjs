@@ -21,6 +21,7 @@ const cases = [
   ["overlong title", "a".repeat(181), false],
   ["description placeholder", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。", false],
   ["description placeholder with shipping suffix", "商品の仕様・サイズ・素材・使用方法は、販売元の掲載情報をご確認ください。 日本向け配送：送料別。", false],
+  ["sales workflow placeholder description", "レディース ハンドバッグ は観測された需要と供給データに基づいて販売テスト候補になる", false],
   ["specific product description", "収納ボックス。折りたたみ式で、使わない時は薄く収納できます。", true],
   ["empty description", "", false],
 ];
@@ -51,6 +52,13 @@ assert.equal(localizeProductTitle("6 Pack Headbands For Women, Boho Wide Head Ba
 assert.equal(localizeProductTitle("PU Leather Headband Gel Women Ponytail Clip Decoration Hair Accessories"), "レザー調ヘッドバンド付きポニーテールクリップ");
 assert.equal(localizeProductTitle("Unrecognized Supplier Model 4839", "women handbag"), null, "do not fabricate a title from the search query");
 assert.equal(localizeProductTitle("", "beauty tools"), null, "do not fabricate a title when supplier title is missing");
+const selectorSource = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
+assert.match(selectorSource, /function localizedDescriptionFallback\(title: string, sourceTitle = ""\)/);
+assert.match(selectorSource, /透かし編みデザインのサマーハンドバッグ/);
+assert.match(selectorSource, /ノートPC収納対応と商品名に記載されたレディースバッグ/);
+assert.match(selectorSource, /メイク用品や旅行小物を整理するコスメポーチ/);
+assert.match(selectorSource, /髪をまとめるためのヘアクリップ/);
+
 assert.equal(localizeProductTitle("Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay (Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay D9)"), "おばけ・かぼちゃ柄 シャーク型ヘアクリップ");
 for (const title of ["竹炭突起付き フェイス洗顔ブラシ", "レトロデザイン レディースミニハンドバッグ", "ポケット付き キャンバスリュック レディース"]) {
   assert.equal(isPublishableCatalogTitle(title), true, title);
