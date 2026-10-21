@@ -139,7 +139,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
-  const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.supplier_listing_id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
+  const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
   const identityUnlinkedIds = new Set<string>(publishableListings
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
