@@ -59,7 +59,7 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   const translateWithGroq = async (strictRetry = false): Promise<JapaneseCopy> => {
     const apiKey = process.env.GROQ_API_KEY?.trim();
     if (!apiKey) throw new Error("GROQ_FALLBACK_NOT_CONFIGURED");
-    const attempts = strictRetry ? [false] : [true, false];
+    const attempts = strictRetry ? [false] : [true, false, true, false];
     let lastError: unknown;
     for (const jsonMode of attempts) {
       const controller = new AbortController();
@@ -105,7 +105,12 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
-        if (!jsonMode || !/HTTP 400|invalid JSON|empty translation|translated_title_not_japanese|translated_description_not_japanese/i.test(message)) {
+        const retryableOutputFailure = /invalid JSON|empty translation|translated_title_not_japanese|translated_description_not_japanese/i.test(message);
+        const jsonModeUnsupported = jsonMode && /HTTP 400/i.test(message);
+        // Retry empty/malformed/invalid-language outputs in either mode. The
+        // previous guard only retried failures from JSON mode, so an empty
+        // response on the plain-text fallback aborted the whole item.
+        if (!retryableOutputFailure && !jsonModeUnsupported) {
           throw error;
         }
       } finally {
