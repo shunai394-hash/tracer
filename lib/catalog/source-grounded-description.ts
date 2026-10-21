@@ -45,7 +45,7 @@ export function buildSourceGroundedJapaneseDescription(title: string, sourceTitl
     return "メイク用品や旅行小物を整理するコスメポーチです。仕切りやポケットの構成は商品画像で確認し、寸法・素材・収納可能なサイズは販売元の最新仕様をご確認ください。";
   }
 
-  const brushCount = source.match(/(\d{1,2})\s*(?:pcs|pieces|piece|brushes|brush set|本|本セット)/i)?.[1];
+  const brushCount = source.match(/(\d{1,2})\s*(?:pcs|pieces|piece|makeup\s+brush(?:es)?|brushes|brush\s+set|本|本セット)/i)?.[1];
   if (/メイクブラシ|makeup brush/.test(combined) && (brushCount || /wooden|portable|multi.color|soft hair|eyes?h?adow|beginner|木製|携帯用|多色|柔らか毛|初心者/i.test(sourceLower + " " + normalized))) {
     return `メイクに使うブラシセットです。${brushCount ? `商品名には${brushCount}本セットと記載されています。` : ""}ブラシの本数・毛質・形状・セット内容・お手入れ方法は販売元の最新仕様をご確認ください。`;
   }
