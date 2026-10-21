@@ -50,4 +50,7 @@ assert.match(workflow, /outcomeCounts/);
 assert.match(workflow, /sourceCounts/);
 assert.match(workflow, /base-identity-repair\.json/);
 assert.doesNotMatch(workflow, /baseIdentityRepair[^\n]*(?:baseItemId|listingId)/, "identity report must include counts, not item IDs");
-console.log("Read-only channel auth diagnostics: 30 assertions passed");
+assert.match(workflow, /BASE_APPLY=false[\s\S]*?github\.event_name[^\n]*workflow_dispatch[\s\S]*?apply_exact_base_links/, "BASE identity repair must require an explicit manual opt-in");
+assert.doesNotMatch(workflow, /github\.event_name[^\n]*push[^\n]*BASE_APPLY=true/, "push-triggered audits must never enable BASE writes");
+assert.match(workflow, /Automatic triggers are read-only/, "diagnostic report must state the automatic trigger write policy");
+console.log("Read-only channel auth diagnostics: 33 assertions passed");
