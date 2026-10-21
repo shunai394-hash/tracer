@@ -119,6 +119,7 @@ export async function GET(request: Request) {
       const allListings: Array<{
         id: string;
         product_id: string | null;
+        published: boolean | null;
         supplier_listing_id: string | null;
         supplier_product_id: string | null;
         supplier_variant_id: string | null;
