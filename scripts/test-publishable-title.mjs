@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
+import { buildSourceGroundedJapaneseDescription } from "../lib/catalog/source-grounded-description.ts";
 import { localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
 import { womenProductPriority } from "../lib/intelligence/womens-priority.ts";
 
@@ -52,12 +53,16 @@ assert.equal(localizeProductTitle("6 Pack Headbands For Women, Boho Wide Head Ba
 assert.equal(localizeProductTitle("PU Leather Headband Gel Women Ponytail Clip Decoration Hair Accessories"), "レザー調ヘッドバンド付きポニーテールクリップ");
 assert.equal(localizeProductTitle("Unrecognized Supplier Model 4839", "women handbag"), null, "do not fabricate a title from the search query");
 assert.equal(localizeProductTitle("", "beauty tools"), null, "do not fabricate a title when supplier title is missing");
-const selectorSource = await readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8");
-assert.match(selectorSource, /function localizedDescriptionFallback\(title: string, sourceTitle = ""\)/);
-assert.match(selectorSource, /透かし編みデザインのサマーハンドバッグ/);
-assert.match(selectorSource, /ノートPC収納対応と商品名に記載されたレディースバッグ/);
-assert.match(selectorSource, /メイク用品や旅行小物を整理するコスメポーチ/);
-assert.match(selectorSource, /髪をまとめるためのヘアクリップ/);
+const wovenDescription = buildSourceGroundedJapaneseDescription("透かし編み サマーハンドバッグ", "Summer Woven Hollowed Handbag For Women");
+assert.match(wovenDescription ?? "", /透かし編み/);
+assert.match(wovenDescription ?? "", /サイズ・素材・開口部/);
+const laptopDescription = buildSourceGroundedJapaneseDescription("大容量 レディースハンドバッグ", "New Large Capacity Laptop Handbag (12inch)");
+assert.match(laptopDescription ?? "", /ノートPC収納対応/);
+const puLeatherDescription = buildSourceGroundedJapaneseDescription("レディース ハンドバッグ", "Women Vintage Hobo Bag Casual PU Leather Shoulder Bag");
+assert.match(puLeatherDescription ?? "", /PUレザー/);
+const brushDescription = buildSourceGroundedJapaneseDescription("携帯用メイクブラシ10本セット", "Black Portable 10 Makeup Brushes");
+assert.match(brushDescription ?? "", /10本セット/);
+assert.equal(buildSourceGroundedJapaneseDescription("レディース ハンドバッグ", "Handbag For Women"), null, "category-only source titles must not get fabricated buyer copy");
 
 assert.equal(localizeProductTitle("Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay (Halloween Shark Claw Clip - Ghost Pumpkin Black Cat Print Hair Accessory for Women Girls Party Cosplay D9)"), "おばけ・かぼちゃ柄 シャーク型ヘアクリップ");
 for (const title of ["竹炭突起付き フェイス洗顔ブラシ", "レトロデザイン レディースミニハンドバッグ", "ポケット付き キャンバスリュック レディース"]) {
