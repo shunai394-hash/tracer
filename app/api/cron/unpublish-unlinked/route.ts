@@ -39,7 +39,7 @@ export async function GET(request: Request) {
   }
   const unlinked = (data ?? []).filter((row) => {
     if (!row.supplier_listing_id) return true;
-    const status = supplierStatuses.get(String(row.supplier_listing_id));
+    const status = supplierStatuses.get(String(row.id));
     if (!status) return true;
     if (status === "native_cj_verified") return false;
     return row.orderable !== true || row.tracking_available !== true;
