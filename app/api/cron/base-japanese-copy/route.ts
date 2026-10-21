@@ -59,49 +59,60 @@ async function translate(title: string, detail: string): Promise<JapaneseCopy> {
   const translateWithGroq = async (strictRetry = false): Promise<JapaneseCopy> => {
     const apiKey = process.env.GROQ_API_KEY?.trim();
     if (!apiKey) throw new Error("GROQ_FALLBACK_NOT_CONFIGURED");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25_000);
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.GROQ_BASE_TRANSLATION_MODEL?.trim() || "openai/gpt-oss-20b",
-          temperature: 0.1,
-          max_tokens: 1400,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: strictRetry ? "必ず再翻訳してください。商品名と説明文の両方を、購入者がそのまま読める自然で完全な日本語にしてください。英語の文章や英語の説明句を残さず、英語を残してよいのはブランド名・型番・固有の商品コードだけです。説明文は入力にある情報のみを使い、少なくとも2〜3文の日本語に整理してください。入力にない仕様・素材・寸法・機能・性能・保証を創作しないでください。title と detail の文字列だけを持つJSONオブジェクトを返してください。" : "あなたは日本のEC商品編集者です。入力に明記された情報だけを使い、商品名と説明文を自然な日本語に翻訳してください。ブランド名・型番・数値は必要に応じて保持し、入力にない仕様や機能を創作しないでください。JSONで {\"title\": string, \"detail\": string} のみ返してください。",
-            },
-            { role: "user", content: JSON.stringify({ title, detail }) },
-          ],
-        }),
-      });
-      const payload = await response.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
-        error?: { message?: string };
-      };
-      if (!response.ok) throw new Error(`Groq request failed: HTTP ${response.status} ${payload.error?.message ?? ""}`.trim());
-      const raw = payload.choices?.[0]?.message?.content;
-      if (!raw) throw new Error("Groq returned empty translation");
-      const parsed = JSON.parse(raw) as { title?: unknown; detail?: unknown };
-      const translatedTitle = text(parsed.title);
-      const translatedDetail = text(parsed.detail);
+    const attempts = strictRetry ? [false] : [true, false];
+    let lastError: unknown;
+    for (const jsonMode of attempts) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25_000);
       try {
-        return validate(translatedTitle, translatedDetail);
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: process.env.GROQ_BASE_TRANSLATION_MODEL?.trim() || "openai/gpt-oss-20b",
+            temperature: 0.1,
+            max_tokens: 1400,
+            ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+            messages: [
+              {
+                role: "system",
+                content: "日本のEC商品編集者として商品名と説明文を自然な日本語に翻訳してください。入力にない仕様・素材・寸法・機能・性能・保証は創作しないでください。ブランド名・型番以外の英語文は残さず、title と detail のキーを持つJSONオブジェクトだけを返してください。",
+              },
+              { role: "user", content: JSON.stringify({ title, detail }) },
+            ],
+          }),
+        });
+        const payload = await response.json() as {
+          choices?: Array<{ message?: { content?: string } }>;
+          error?: { message?: string };
+        };
+        if (!response.ok) {
+          throw new Error(`Groq request failed: HTTP ${response.status} ${payload.error?.message ?? ""}`.trim());
+        }
+        const raw = payload.choices?.[0]?.message?.content?.trim();
+        if (!raw) throw new Error("Groq returned empty translation");
+        let parsed: { title?: unknown; detail?: unknown };
+        try {
+          parsed = JSON.parse(raw) as { title?: unknown; detail?: unknown };
+        } catch {
+          const start = raw.indexOf("{");
+          const end = raw.lastIndexOf("}");
+          if (start < 0 || end <= start) throw new Error("Groq returned invalid JSON translation");
+          parsed = JSON.parse(raw.slice(start, end + 1)) as { title?: unknown; detail?: unknown };
+        }
+        return validate(text(parsed.title), text(parsed.detail));
       } catch (error) {
-        if (strictRetry) throw error;
-        return translateWithGroq(true);
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (!jsonMode || !/HTTP 400|invalid JSON|empty translation|translated_title_not_japanese|translated_description_not_japanese/i.test(message)) {
+          throw error;
+        }
+      } finally {
+        clearTimeout(timeout);
       }
-    } finally {
-      clearTimeout(timeout);
     }
+    throw lastError instanceof Error ? lastError : new Error("GROQ_TRANSLATION_FAILED");
   };
 
   try {
