@@ -32,7 +32,8 @@ jobs:
               const raw = await response.text();
               let data;
               try { data = JSON.parse(raw); } catch { throw new Error(`Batch ${batch}: non-JSON response HTTP ${response.status}: ${raw.slice(0, 300)}`); }
-              core.info(`Batch ${batch}: HTTP ${response.status}; requested=${data.requested ?? "?"}; verified=${data.translatedAndVerified ?? 0}; failed=${data.failed ?? "?"}; deferred=${data.deferred ?? "?"}; remainingEstimate=${data.remainingEnglishEstimate ?? "?"}`);\n              core.info(`Batch ${batch} item results: ${JSON.stringify(data.results ?? [])}`);
+              core.info(`Batch ${batch}: HTTP ${response.status}; requested=${data.requested ?? "?"}; verified=${data.translatedAndVerified ?? 0}; failed=${data.failed ?? "?"}; deferred=${data.deferred ?? "?"}; remainingEstimate=${data.remainingEnglishEstimate ?? "?"}`);
+              core.info(`Batch ${batch} item results: ${JSON.stringify(data.results ?? [])}`);
               if (!response.ok || data.ok === false && !(data.translatedAndVerified > 0)) {
                 core.warning(JSON.stringify(data.results ?? data).slice(0, 4000));
                 break;
