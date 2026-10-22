@@ -304,12 +304,6 @@ async function repairGenericCommerceTitles(db: ReturnType<typeof createSupabaseA
       const nextTitle = japaneseCommerceTitle(sourceTitle, productType, variantNames);
       const oldTitle = String(product.title_ja ?? "");
       if (!nextTitle || genericSet.has(nextTitle) || nextTitle === oldTitle) return;
-      const { error: updateError } = await db.from("commerce_products").update({
-        title_ja: nextTitle,
-        description_ja: japaneseCommerceDescription(nextTitle),
-        updated_at: now,
-      }).eq("id", String(product.id));
-      if (updateError) throw new Error("generic_title_repair_product_write_failed:" + updateError.message);
       for (const variant of productVariants) {
         const oldVariantTitle = String(variant.title_ja ?? "");
         const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
@@ -326,6 +320,14 @@ async function repairGenericCommerceTitles(db: ReturnType<typeof createSupabaseA
         }).eq("id", String(variant.id));
         if (variantUpdateError) throw new Error("generic_title_repair_variant_write_failed:" + variantUpdateError.message);
       }
+      // Update the parent last so a failed variant write leaves the parent generic
+      // and eligible for repair on the next run.
+      const { error: updateError } = await db.from("commerce_products").update({
+        title_ja: nextTitle,
+        description_ja: japaneseCommerceDescription(nextTitle),
+        updated_at: now,
+      }).eq("id", String(product.id));
+      if (updateError) throw new Error("generic_title_repair_product_write_failed:" + updateError.message);
       repaired += 1;
     }));
   }
