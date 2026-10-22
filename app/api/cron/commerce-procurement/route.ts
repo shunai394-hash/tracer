@@ -186,7 +186,16 @@ export async function GET(request: Request) {
       (rawOffer.stockKnown === undefined && offer?.source_status === "verified");
     const shippingCostKnown = offer?.shipping_cost !== null && offer?.shipping_cost !== undefined &&
       Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) >= 0;
+    // A conservative historical freight estimate may be used to price a listing,
+    // but it is not supplier-order evidence. Allow it through this stored-offer
+    // eligibility check only so the exact live CJ preflight below can quote freight
+    // and revalidate the 50% margin immediately before creating the order.
+    // Never treat an estimate as a verified live quote or skip validateOrderInput.
     const shippingKnown = rawOffer.shippingKnown === true ||
+      (rawOffer.shippingEstimated === true &&
+        Number.isFinite(Number(rawOffer.shippingEstimateUsd)) &&
+        Number(rawOffer.shippingEstimateUsd) > 0 &&
+        shippingCostKnown && Number(offer?.shipping_cost) > 0) ||
       (rawOffer.shippingKnown === undefined && rawOffer.shippingEstimated !== true &&
         offer?.source_status === "verified" && shippingCostKnown && Number(offer?.shipping_cost) > 0);
     if (offerError || !offer ||
