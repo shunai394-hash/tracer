@@ -572,6 +572,7 @@ async function syncListingRows(
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
+      if (existing && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
         const safeHandle = `tracer-${row.slug}-${row.id.slice(0, 8)}`
           .toLowerCase()
           .replace(/[^a-z0-9-]+/g, "-")
