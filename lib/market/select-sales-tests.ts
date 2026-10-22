@@ -368,9 +368,9 @@ export async function selectAndPublishSalesTests(
     // not the marketplace bestseller row. Otherwise the same supplier variant
     // can be inserted repeatedly when discovered through multiple bestseller records.
     const supplierIdentity = [
-      String(item.listing.supplier ?? "unknown").trim().toLowerCase(),
-      String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim(),
       String(item.listing.supplier_variant_id ?? "").trim(),
+      String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim(),
+      String(item.listing.supplier ?? "unknown").trim().toLowerCase(),
     ].join(":");
     if (!String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim() ||
         !String(item.listing.supplier_variant_id ?? "").trim()) {
