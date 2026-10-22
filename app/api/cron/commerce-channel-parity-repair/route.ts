@@ -34,14 +34,21 @@ function mismatchedVariantIds(rows: ListingState[]): string[] {
 
 async function readStates(variantIds?: string[]): Promise<ListingState[]> {
   const db = createSupabaseAdminClient();
-  let query = db.from("channel_listings").select("id,variant_id,channel,status")
-    .in("channel", ["base", "shopify"])
-    .order("variant_id", { ascending: true })
-    .order("channel", { ascending: true });
-  if (variantIds) query = query.in("variant_id", variantIds);
-  const { data, error } = await query.limit(5000);
-  if (error) throw new Error("channel_parity_read_failed:" + error.message);
-  return (data ?? []) as ListingState[];
+  const pageSize = 1000;
+  const rows: ListingState[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = db.from("channel_listings").select("id,variant_id,channel,status")
+      .in("channel", ["base", "shopify"])
+      .order("variant_id", { ascending: true })
+      .order("channel", { ascending: true });
+    if (variantIds) query = query.in("variant_id", variantIds);
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw new Error("channel_parity_read_failed:" + error.message);
+    const page = (data ?? []) as ListingState[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 function rotatingBatch(ids: string[], offset: number, limit = 50): string[] {
@@ -89,8 +96,11 @@ export async function GET(request: Request) {
     ]);
     const after = await readStates(variantIds);
     const remaining = mismatchedVariantIds(after);
+    const remainingMismatchCount = remaining.length + Math.max(0, allMismatches.length - variantIds.length);
     const result = {
-      ok: remaining.length === 0 && Number(base.failed ?? 0) === 0 && Number(shopify.failed ?? 0) === 0,
+      // A successful batch is not a complete reconciliation while any unprocessed
+      // mismatch remains. Do not report ok:true for partial work.
+      ok: remainingMismatchCount === 0 && Number(base.failed ?? 0) === 0 && Number(shopify.failed ?? 0) === 0,
       phase: "commerce_channel_parity_repair",
       scannedVariants: new Set(before.map((row) => row.variant_id)).size,
       baseRows: before.filter((row) => row.channel === "base").length,
@@ -99,7 +109,7 @@ export async function GET(request: Request) {
       batchOffset: rotationOffset,
       attemptedVariants: variantIds.length,
       remainingMismatchedVariants: remaining,
-      remainingMismatchCount: remaining.length + Math.max(0, allMismatches.length - variantIds.length),
+      remainingMismatchCount,
       base: {
         processed: base.processed ?? base.published ?? 0,
         failed: base.failed ?? 0,
