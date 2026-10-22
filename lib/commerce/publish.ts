@@ -666,11 +666,20 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         type RecoveredShopifyProduct = { id: string; handle: string; vendor?: string | null; tags?: string[]; variants: { nodes: Array<{ id: string; sku?: string | null }> } };
         const isTracerProduct = (item: RecoveredShopifyProduct) => item.vendor === "TRACER" || (item.tags ?? []).includes("TRACER");
         const findTracerProducts = async (query: string) => {
-          const found = await shopifyGraphQL<{ products: { nodes: RecoveredShopifyProduct[] } }>(
-            `query CommerceRecoverProduct($query: String!) { products(first: 5, query: $query) { nodes { id handle vendor tags variants(first: 10) { nodes { id sku } } } } }`,
-            { query },
-          );
-          return (found.products?.nodes ?? []).filter(isTracerProduct);
+          // Shopify's products connection defaults to active products when status
+          // is omitted. Timed-out TRACER creates can remain archived/draft, so search
+          // each status explicitly before deciding that a handle is free to create.
+          const byId = new Map<string, RecoveredShopifyProduct>();
+          for (const status of ["active", "draft", "archived"] as const) {
+            const found = await shopifyGraphQL<{ products: { nodes: RecoveredShopifyProduct[] } }>(
+              `query CommerceRecoverProduct($query: String!) { products(first: 10, query: $query) { nodes { id handle vendor tags variants(first: 10) { nodes { id sku } } } } }`,
+              { query: query + " status:" + status },
+            );
+            for (const item of found.products?.nodes ?? []) {
+              if (isTracerProduct(item)) byId.set(item.id, item);
+            }
+          }
+          return [...byId.values()];
         };
         let recoveredProduct: RecoveredShopifyProduct | null = null;
         if (!productId || !variantId) {
