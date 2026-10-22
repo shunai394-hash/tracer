@@ -68,6 +68,13 @@ test("canonical repricing uses the highest existing storefront price and preserv
   assert.match(pricing, /Math\.max\(minimumPrice\.sellingPrice, highestExistingPrice\)/);
   assert.match(pricing, /marginRate \+ Number\.EPSILON < \(input\.targetMarginRate \?\? 0\.5\)/);
 });
+test("keeps calculated storefront prices at or above BASE minimum ¥50", () => {
+  const result = calculateSellingPrice({ unitCostJpy: 0, shippingCostJpy: 0, feeRate: 0.1, targetMarginRate: 0.5 });
+  assert.ok(result.sellingPrice >= 50);
+  assert.ok(result.expectedProfit > 0);
+  assert.ok(result.marginRate >= 0.5);
+});
+
 test("rejects invalid rates", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: 100, shippingCostJpy: 0, feeRate: 1, targetMarginRate: 0.1 }), /invalid_rate/);
 });
