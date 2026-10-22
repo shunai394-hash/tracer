@@ -98,31 +98,31 @@ export function ManualInventoryPanel() {
   }
 
   return (
-    <section className="mt-10 border border-cyan-300/20 bg-[#0a0d10] p-5 text-zinc-100 sm:p-7" aria-labelledby="manual-inventory-heading">
+    <section className="mt-10 border border-2 border-cyan-300/60 bg-[#101820] p-5 text-white shadow-xl sm:p-7" aria-labelledby="manual-inventory-heading">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">TRACER Store Management</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200">TRACER Store Management</p>
           <h2 id="manual-inventory-heading" className="mt-2 text-xl">商品登録・在庫・公開管理</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-200">
             TRACERの商品一覧に掲載する商品を手動登録できます。BASE・Shopifyの公開状態とは独立しています。在庫はここで入力した数を管理します。
           </p>
         </div>
-        <a href="/shop" target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-cyan-200 hover:bg-white/5">公開商品一覧を見る ↗</a>
+        <a href="/shop" target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-white/5">公開商品一覧を見る ↗</a>
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <label className="flex-1 text-xs text-zinc-400">
-          管理トークン
+      <div className="mt-6 rounded-lg border-2 border-cyan-200/70 bg-[#16232b] p-4 flex flex-col gap-3 sm:flex-row">
+        <label className="flex-1 text-xs text-zinc-200">
+          管理トークン（未入力だと読み込み・保存できません）
           <input
             type="password"
             autoComplete="current-password"
             value={token}
             onChange={(event) => setToken(event.target.value)}
-            placeholder="TRACER_ADMIN_TOKEN"
-            className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-300"
+            placeholder="管理トークンを入力"
+            className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-300"
           />
         </label>
-        <button type="button" onClick={() => void load()} disabled={loading || !token.trim()} className="self-end border border-cyan-300/40 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-40">
+        <button type="button" onClick={() => void load()} disabled={loading || !token.trim()} className="self-end border-2 border-cyan-200 bg-[#12303b] px-5 py-3 text-base font-semibold text-white hover:bg-[#1a4654] disabled:opacity-70">
           {loading ? "処理中…" : "商品を読み込む"}
         </button>
       </div>
@@ -130,30 +130,30 @@ export function ManualInventoryPanel() {
       <form onSubmit={save} className="mt-7 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-2">
         <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-medium">{form.id ? "商品を編集" : "新しい商品を登録"}</h3>
-          {form.id ? <button type="button" onClick={() => setForm(emptyForm)} className="text-xs text-zinc-400 underline">新規登録に切り替え</button> : null}
+          {form.id ? <button type="button" onClick={() => setForm(emptyForm)} className="text-xs text-zinc-200 underline">新規登録に切り替え</button> : null}
         </div>
-        <label className="text-xs text-zinc-400">商品名 *
-          <input required maxLength={180} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
+        <label className="text-xs text-zinc-200">商品名 *
+          <input required maxLength={180} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400">販売価格（円）*
-          <input required type="number" min="0" step="1" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
+        <label className="text-xs text-zinc-200">販売価格（円）*
+          <input required type="number" min="0" step="1" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">商品説明 *
-          <textarea required maxLength={10000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
+        <label className="text-xs text-zinc-200 sm:col-span-2">商品説明 *
+          <textarea required maxLength={10000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">商品画像URL（HTTPS）*
-          <input required type="url" value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
+        <label className="text-xs text-zinc-200 sm:col-span-2">商品画像URL（HTTPS）*
+          <input required type="url" value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400">手動管理する在庫数 *
-          <input required type="number" min="0" max="1000000" step="1" value={form.inventory} onChange={(event) => setForm({ ...form, inventory: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
+        <label className="text-xs text-zinc-200">手動管理する在庫数 *
+          <input required type="number" min="0" max="1000000" step="1" value={form.inventory} onChange={(event) => setForm({ ...form, inventory: event.target.value })} className="mt-2 w-full border-2 border-zinc-500 bg-[#05080b] px-3 py-2.5 text-sm text-white" />
         </label>
         <label className="flex items-center gap-3 self-end border border-white/10 p-3 text-sm">
           <input type="checkbox" checked={form.published} onChange={(event) => setForm({ ...form, published: event.target.checked })} />
           TRACERの商品一覧に公開する
         </label>
         <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={loading} className="bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-40">{loading ? "保存中…" : form.published ? "保存して公開" : "非公開で保存"}</button>
-          <p className="text-xs leading-5 text-zinc-500">公開には商品名・説明・HTTPS画像・1個以上の在庫・正の販売価格が必要です。</p>
+          <button type="submit" disabled={loading} className="bg-cyan-200 px-6 py-3 text-base font-bold text-black hover:bg-white disabled:opacity-70">{loading ? "保存中…" : form.published ? "保存して公開" : "非公開で保存"}</button>
+          <p className="text-xs leading-5 text-zinc-300">公開には商品名・説明・HTTPS画像・1個以上の在庫・正の販売価格が必要です。</p>
         </div>
       </form>
 
@@ -162,16 +162,16 @@ export function ManualInventoryPanel() {
       {loaded ? (
         <div className="mt-7 space-y-2">
           <h3 className="mb-3 text-sm font-medium">手動管理商品（{listings.length}件）</h3>
-          {listings.length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-500">まだ商品はありません。上のフォームから登録できます。</p> : listings.map((listing) => (
+          {listings.length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-300">まだ商品はありません。上のフォームから登録できます。</p> : listings.map((listing) => (
             <article key={listing.id} className="flex flex-col gap-3 border border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm">{listing.title}</p>
-                <p className="mt-1 text-xs text-zinc-500">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.published ? "公開中" : "非公開"}</p>
-                <p className="mt-1 break-all font-mono text-[10px] text-zinc-600">{listing.id}</p>
+                <p className="mt-1 text-sm text-white">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.published ? "公開中" : "非公開"}</p>
+                <p className="mt-1 break-all font-mono text-[10px] text-zinc-300">{listing.id}</p>
               </div>
               <div className="flex shrink-0 gap-2">
-                <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-zinc-300">商品ページ ↗</a>
-                <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200">編集</button>
+                <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-sm text-white">商品ページ ↗</a>
+                <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-sm font-semibold text-cyan-100">編集</button>
               </div>
             </article>
           ))}
