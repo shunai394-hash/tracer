@@ -96,6 +96,11 @@ export default async function DashboardPage() {
       <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
         商品数ではなく、販売テストまで進んだ商機と、仕入先・variantまでの接続状態を追跡します。
       </p>
+      <div className="mt-5">
+        <a href="/dashboard/analytics" className="inline-flex items-center border border-cyan-300/30 bg-cyan-300/5 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:bg-cyan-300/10">
+          売上・売れ筋分析を見る <span className="ml-2" aria-hidden="true">→</span>
+        </a>
+      </div>
       {error ? <p className="mt-8 text-sm text-amber-300">{error}</p> : null}
       {kpis ? <div className="mt-10"><OpportunityKpis kpis={kpis} /></div> : null}
 
