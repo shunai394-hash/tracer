@@ -45,6 +45,7 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     if (/silver/.test(variant)) return "シルバーカラーのレディースハンドバッグ";
   }
   const rules: Array<[RegExp, string]> = [
+    [/synthetic hair extension clips 16 clips hair cover-up pieces 4 colors|hair cover-up pieces.*4 colors/, "ヘアエクステ用クリップ16個セット（4色）"],
     [/net celebrity curling artifact lazy sponge curling iron|sponge curling iron.*curling iron/, "スポンジカーラー"],
     [/springsummer vibe adjustable lace scrunchie|adjustable lace scrunchie/, "レースデザインの調節式シュシュ"],
     [/air cushion comb cleaner brush cleaning brush|comb cleaner brush/, "クッションコーム用クリーナーブラシ"],
