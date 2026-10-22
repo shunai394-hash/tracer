@@ -732,6 +732,7 @@ test("CJ import reports stale supplier-evidence retry queue progress", async () 
   }
   assert.match(importer, /last_error\.eq\.japanese_product_title_invalid/, "invalid storefront titles must queue exact CJ evidence refresh so the catalog title can be repaired from supplier detail");
   assert.match(importer, /レディース用ボヘミアン風ワイドヘッドバンド6本セット/, "known CJ headband source title must not fall back to generic Japanese title");
+assert.match(importer, /ヘアエクステ用クリップ16個セット（4色）/, "known CJ synthetic hair extension clip title must not fall back to generic Japanese title");
   assert.match(importer, /discoverySearchPagesScanned/);
   assert.match(importer, /while \(newCandidates\.length < 1 && scanPage <= page \+ 5\)/);
   assert.match(importer, /const reserveDiscoverySlot = newCandidates\.length > 0 \? 1 : 0;/, "reserve a discovery slot only when discovery found a new parent");
