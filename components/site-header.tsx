@@ -1,22 +1,4 @@
 "use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-
-export function SiteHeader() {
-  const pathname = usePathname();
-  const isStore = pathname.startsWith("/shop");
-
-  return (
-    <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
-      <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-5">
-        <Link href="/" className="text-xl font-bold tracking-tight text-neutral-900">TRACER</Link>
-        <nav aria-label="メインメニュー" className="flex items-center gap-4 text-sm sm:gap-6">
-          <Link href="/shop" className={isStore ? "font-semibold text-neutral-900" : "text-neutral-600 hover:text-neutral-900"}>商品一覧</Link>
-          <Link href="/shop/cart" className="text-neutral-600 hover:text-neutral-900">カート</Link>
-          <Link href="/mypage" className="hidden text-neutral-600 hover:text-neutral-900 sm:inline">マイページ</Link>
-        </nav>
-      </div>
-    </header>
-  );
-}
+import {usePathname} from "next/navigation";
+export function SiteHeader(){const pathname=usePathname(),isStore=pathname.startsWith("/shop");return <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white"><div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-5"><Link href="/" className="text-xl font-bold tracking-tight text-neutral-900">TRACER</Link><nav aria-label="メインメニュー" className="flex items-center gap-3 text-xs sm:gap-5 sm:text-sm"><Link href="/shop" className={isStore?"font-semibold text-neutral-900":"text-neutral-600 hover:text-neutral-900"}>商品一覧</Link><Link href="/shop/cart" className="text-neutral-600 hover:text-neutral-900">カート</Link><Link href="/support" className="hidden text-neutral-600 hover:text-neutral-900 sm:inline">サポート</Link><Link href="/contact" className="text-neutral-600 hover:text-neutral-900">お問い合わせ</Link><Link href="/mypage" className="hidden text-neutral-600 hover:text-neutral-900 sm:inline">マイページ</Link></nav></div></header>}
