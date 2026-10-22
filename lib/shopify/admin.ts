@@ -274,6 +274,7 @@ export async function shopifyGraphQL<T>(
   query: string,
   variables: Record<string, unknown> = {},
   throttleRetryAttempt = 0,
+  httpReadRetryAttempt = 0,
 ): Promise<T> {
   // The configured auth mode is deterministic; auth failures never switch credentials.
   const { response, token } = await shopifyAdminRequest({ query, variables });
@@ -281,7 +282,8 @@ export async function shopifyGraphQL<T>(
   const requestId = response.headers.get("x-request-id");
   const responseText = await response.text();
 
-  // Never log the raw HTTP error body.
+  // Never replay a mutation after a 5xx: Shopify may have committed it even if
+  // the response failed. Only read-only queries can safely retry transient HTTP errors.
   if (!response.ok) {
     const diagnostic = {
       phase: "shopify_admin_request",
@@ -293,6 +295,13 @@ export async function shopifyGraphQL<T>(
     };
 
     console.error("Shopify Admin API request failed", diagnostic);
+
+    const isReadOnlyQuery = /^\s*(?:#[^\n]*\n\s*)*query\b/i.test(query);
+    const retryableStatus = response.status === 429 || [500, 502, 503, 504].includes(response.status);
+    if (isReadOnlyQuery && retryableStatus && httpReadRetryAttempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** httpReadRetryAttempt)));
+      return shopifyGraphQL<T>(query, variables, throttleRetryAttempt, httpReadRetryAttempt + 1);
+    }
 
     throw new Error(
       `Shopify Admin API HTTP ${response.status}; requestId=${requestId ?? "unknown"}`,
