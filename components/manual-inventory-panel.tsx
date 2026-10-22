@@ -14,6 +14,12 @@ type Listing = {
   inventory: number | null;
   published: boolean;
   published_at: string | null;
+  manual_inventory?: boolean;
+  archived_at?: string | null;
+  supplier_name?: string | null;
+  supplier_product_id?: string | null;
+  supplier_variant_id?: string | null;
+  shopify_sync_status?: string | null;
 };
 
 const emptyForm = { id: "", title: "", description: "", imageUrl: "", price: "", inventory: "1", published: false };
@@ -25,6 +31,8 @@ export function ManualInventoryPanel() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     if (!token.trim()) {
@@ -42,13 +50,28 @@ export function ManualInventoryPanel() {
       if (!response.ok || !body.ok) throw new Error(response.status === 401 ? "管理トークンが正しくありません。" : body.error ?? "商品を読み込めませんでした。");
       setListings(body.listings ?? []);
       setLoaded(true);
-      setMessage(`${(body.listings ?? []).length}件の商品を読み込みました。`);
+      setMessage(`${(body.listings ?? []).length}件の商品レコードを読み込みました。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "読み込みに失敗しました。");
     } finally {
       setLoading(false);
     }
   }, [token]);
+
+  async function changeState(listing: Listing, action: "archive" | "restore" | "publish" | "unpublish") {
+    if (!token.trim()) return setMessage("管理トークンを入力してください。");
+    const labels = { archive: "アーカイブ", restore: "復旧", publish: "公開", unpublish: "非公開" };
+    if (!window.confirm(`「${listing.title}」を${labels[action]}しますか？${action === "archive" ? "\\n商品データは削除せず、アーカイブに移動します。" : ""}`)) return;
+    setLoading(true); setMessage("");
+    try {
+      const response = await fetch("/api/admin/manual-inventory", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.trim()}` }, body: JSON.stringify({ id: listing.id, action }) });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "状態の変更に失敗しました。");
+      setMessage(`「${listing.title}」を${labels[action]}しました。`);
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "状態の変更に失敗しました。"); }
+    finally { setLoading(false); }
+  }
 
   function edit(listing: Listing) {
     setForm({
@@ -104,7 +127,7 @@ export function ManualInventoryPanel() {
           <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">TRACER Store Management</p>
           <h2 id="manual-inventory-heading" className="mt-2 text-xl">商品登録・在庫・公開管理</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-            TRACERの商品一覧に掲載する商品を手動登録できます。BASE・Shopifyの公開状態とは独立しています。在庫はここで入力した数を管理します。
+            登録済み商品を横断して検索し、公開・非公開・アーカイブ・復旧を操作します。手動登録商品は編集でき、仕入先連携商品は登録内容を壊さないよう状態管理のみ行います。BASE・Shopifyの状態とは別管理です。
           </p>
         </div>
         <a href="/shop" target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-cyan-200 hover:bg-white/5">公開商品一覧を見る ↗</a>
@@ -161,17 +184,17 @@ export function ManualInventoryPanel() {
 
       {loaded ? (
         <div className="mt-7 space-y-2">
-          <h3 className="mb-3 text-sm font-medium">手動管理商品（{listings.length}件）</h3>
-          {listings.length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-500">まだ商品はありません。上のフォームから登録できます。</p> : listings.map((listing) => (
+          <div className="mb-3 flex flex-wrap items-center gap-3"><h3 className="text-sm font-medium">TRACER商品一覧（{listings.length}件）</h3><input aria-label="商品検索" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="商品名・仕入先IDで検索" className="min-w-[220px] flex-1 border border-white/15 bg-black/40 px-3 py-2 text-sm text-white" /><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />アーカイブも表示</label></div>
+          {listings.filter((listing) => (showArchived || !listing.archived_at) && `${listing.title} ${listing.id} ${listing.supplier_product_id ?? ""} ${listing.supplier_variant_id ?? ""}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-500">該当商品はありません。検索語またはアーカイブ表示を確認してください。</p> : listings.filter((listing) => (showArchived || !listing.archived_at) && `${listing.title} ${listing.id} ${listing.supplier_product_id ?? ""} ${listing.supplier_variant_id ?? ""}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).map((listing) => (
             <article key={listing.id} className="flex flex-col gap-3 border border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm">{listing.title}</p>
-                <p className="mt-1 text-xs text-zinc-500">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.published ? "公開中" : "非公開"}</p>
+                <p className="mt-1 text-xs text-zinc-500">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.archived_at ? "アーカイブ" : listing.published ? "公開中" : "非公開"} · {listing.manual_inventory ? "手動商品" : `仕入先商品 ${listing.supplier_name ?? "未設定"}`}</p><p className="mt-1 break-all text-[10px] text-zinc-600">仕入先商品ID: {listing.supplier_product_id ?? "未設定"} / Variant: {listing.supplier_variant_id ?? "未設定"} / Shopify: {listing.shopify_sync_status ?? "未同期"}</p>
                 <p className="mt-1 break-all font-mono text-[10px] text-zinc-600">{listing.id}</p>
               </div>
               <div className="flex shrink-0 gap-2">
                 <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-zinc-300">商品ページ ↗</a>
-                <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200">編集</button>
+                {listing.manual_inventory && !listing.archived_at ? <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200">編集</button> : null}{listing.archived_at ? <button type="button" disabled={loading} onClick={() => void changeState(listing, "restore")} className="border border-emerald-300/30 px-3 py-2 text-xs text-emerald-200 disabled:opacity-40">復旧</button> : <><button type="button" disabled={loading} onClick={() => void changeState(listing, listing.published ? "unpublish" : "publish")} className="border border-white/15 px-3 py-2 text-xs text-zinc-200 disabled:opacity-40">{listing.published ? "非公開" : "公開"}</button><button type="button" disabled={loading} onClick={() => void changeState(listing, "archive")} className="border border-rose-300/30 px-3 py-2 text-xs text-rose-200 disabled:opacity-40">アーカイブ</button></>}
               </div>
             </article>
           ))}
