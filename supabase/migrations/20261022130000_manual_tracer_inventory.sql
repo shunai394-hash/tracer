@@ -9,7 +9,7 @@ create index if not exists shop_listings_manual_published_idx
 create or replace function public.reserve_manual_listing_stock(p_listing_id uuid, p_quantity integer)
 returns boolean
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -34,7 +34,7 @@ $$;
 create or replace function public.release_manual_listing_stock(p_listing_id uuid, p_quantity integer)
 returns void
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 begin
