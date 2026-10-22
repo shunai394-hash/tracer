@@ -210,7 +210,10 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   const legacyListings = (await loadLiveListings((data ?? []) as Record<string, unknown>[])).filter((listing) => hasJapaneseText(listing.title) && isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description));
   const canonicalListings = await loadCanonicalCommerceListings();
   const byVariant = new Map<string, ShopListing>();
-  for (const listing of legacyListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
+  for (const listing of legacyListings) {
+    if (listing.manualInventory) byVariant.set(`manual:${listing.id}`, listing);
+    else if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
+  }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
   return listings
