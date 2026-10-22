@@ -19,5 +19,11 @@ assert.match(store, /reserve_manual_listing_stock/, "checkout must reserve manua
 assert.match(store, /release_manual_listing_stock/, "failed order writes must release reserved manual stock");
 assert.match(migration, /where manual_inventory = true[\s\S]*inventory >= p_quantity/, "stock reservation must be atomic and bounded by available inventory");
 assert.match(dashboard, /TRACERの商品一覧に公開する/, "dashboard must expose a manual publish control");
+assert.match(route, /export async function DELETE/, "manual products must support safe archive from the dashboard");
+assert.match(route, /export async function PATCH/, "archived manual products must be restorable");
+assert.match(route, /manual_admin_archive/, "removing a manual product must archive rather than hard-delete it");
+assert.match(dashboard, /商品名で検索/, "dashboard must support finding products by title");
+assert.match(dashboard, /非公開・退避/, "dashboard must expose a clear safe removal action");
+assert.match(dashboard, /退避済み/, "dashboard must separate archived products from active management");
 
 console.log("TRACER manual inventory contract tests passed");
