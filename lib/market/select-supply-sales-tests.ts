@@ -51,6 +51,11 @@ function localizedDescriptionFallback(title: string): string | null {
   if (/きのこ型メイクパフ/.test(normalized)) {
     return "ファンデーションなどのメイクに使うきのこ型メイクパフです。材質・寸法・使用方法・お手入れ方法は販売元の最新情報をご確認ください。";
   }
+  // Conservative copy for a specific Japanese title when no curated rule matches.
+  // Supplier identity, image, shipping, stock, price, profit and orderability gates remain unchanged.
+  if (isJapaneseProductTitle(normalized) && isPublishableCatalogTitle(normalized)) {
+    return `「${normalized}」の商品です。購入前に、商品画像・選択中のバリエーション・寸法・素材・付属品・使用条件を販売元の最新情報でご確認ください。`;
+  }
   return null;
 }
 function slugify(title: string, productId: string): string {
