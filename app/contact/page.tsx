@@ -1,0 +1,16 @@
+"use client";
+import Link from "next/link";
+import {useState,type FormEvent} from "react";
+const categories=["注文・配送","返品・交換","商品について","アカウント","不具合","その他"];
+export default function ContactPage(){
+ const [busy,setBusy]=useState(false),[sent,setSent]=useState(false),[error,setError]=useState("");
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");const form=e.currentTarget;try{const r=await fetch("/api/support/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"送信できませんでした。");setSent(true);form.reset();}catch(x){setError(x instanceof Error?x.message:"送信できませんでした。");}finally{setBusy(false);}}
+ return <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-12 sm:px-8 sm:py-16"><p className="text-xs font-semibold uppercase tracking-[.24em] text-neutral-500">TRACER / CONTACT</p><h1 className="mt-3 text-3xl font-bold">お問い合わせ</h1><p className="mt-4 text-sm leading-6 text-neutral-600">送信内容は管理画面に記録され、担当者が確認します。</p><Link href="/support" className="mt-5 inline-block underline">AIチャットサポートも利用できます</Link>
+ {sent?<div role="status" className="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm">お問い合わせを受け付けました。内容は管理画面に記録されています。<button className="ml-3 underline" onClick={()=>setSent(false)}>別の問い合わせ</button></div>:<form onSubmit={submit} className="mt-8 space-y-5 rounded-xl border border-neutral-200 p-5 sm:p-7">
+ <div className="grid gap-5 sm:grid-cols-2"><label className="text-sm font-medium">お名前 *<input name="name" required maxLength={100} autoComplete="name" className="mt-2 w-full rounded-md border p-3 font-normal"/></label><label className="text-sm font-medium">メールアドレス *<input name="email" type="email" required maxLength={254} autoComplete="email" className="mt-2 w-full rounded-md border p-3 font-normal"/></label></div>
+ <label className="block text-sm font-medium">お問い合わせ種別<select name="category" className="mt-2 w-full rounded-md border bg-white p-3 font-normal">{categories.map(c=><option key={c}>{c}</option>)}</select></label>
+ <label className="block text-sm font-medium">件名 *<input name="subject" required minLength={2} maxLength={180} className="mt-2 w-full rounded-md border p-3 font-normal"/></label>
+ <label className="block text-sm font-medium">内容 *<textarea name="message" required minLength={10} maxLength={5000} rows={7} className="mt-2 w-full rounded-md border p-3 font-normal" placeholder="注文番号など、確認に必要な情報を記載してください。カード番号やパスワードは入力しないでください。"/></label>
+ <div className="hidden" aria-hidden="true"><label>Website<input name="website" tabIndex={-1} autoComplete="off"/></label></div><p className="text-xs text-neutral-500">入力情報は問い合わせ対応に使用します。<Link href="/privacy" className="underline">プライバシーポリシー</Link></p>{error?<p role="alert" className="text-sm text-red-700">{error}</p>:null}
+ <button disabled={busy} className="w-full rounded-md bg-neutral-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy?"送信中…":"お問い合わせを送信する"}</button></form>}</main>;
+}
