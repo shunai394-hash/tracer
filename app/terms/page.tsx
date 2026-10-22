@@ -1,25 +1,3 @@
 import Link from "next/link";
-
-export const metadata = {
-  title: "Terms of Service — TRACER",
-  description: "TRACER terms of service.",
-};
-
-export default function TermsPage() {
-  return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-16">
-      <p className="font-mono text-xs uppercase tracking-[0.3em] text-cyan-400">Legal</p>
-      <h1 className="mt-3 text-4xl text-zinc-100">Terms of Service</h1>
-      <p className="mt-4 text-sm text-zinc-500">Last updated: September 27, 2026</p>
-      <div className="mt-10 space-y-8 text-sm leading-7 text-zinc-300">
-        <section><h2 className="text-xl text-zinc-100">1. Service</h2><p className="mt-3">TRACER provides product research, product identification, price observation, supplier research, and related commerce intelligence features. Availability and extracted fields can vary by source.</p></section>
-        <section><h2 className="text-xl text-zinc-100">2. Acceptable use</h2><p className="mt-3">Use TRACER only in accordance with applicable law, the rules of the websites and marketplaces you access, and the terms that apply to your accounts. Do not use TRACER to bypass access controls, abuse a service, or collect data you are not authorized to access.</p></section>
-        <section><h2 className="text-xl text-zinc-100">3. Data accuracy</h2><p className="mt-3">Market prices, availability, rankings, shipping costs, supplier information, and identifiers can change. TRACER may mark information as unknown when it cannot verify it. Users remain responsible for independently confirming material information before making purchasing, listing, or business decisions.</p></section>
-        <section><h2 className="text-xl text-zinc-100">4. Third-party services</h2><p className="mt-3">TRACER can interact with third-party marketplaces, retailers, suppliers, payment providers, and data services. Their own terms, policies, availability, and fees apply.</p></section>
-        <section><h2 className="text-xl text-zinc-100">5. No guarantee of business results</h2><p className="mt-3">TRACER does not guarantee sales, profit, product availability, supplier fulfillment, marketplace approval, or any particular commercial result.</p></section>
-        <section><h2 className="text-xl text-zinc-100">6. Changes</h2><p className="mt-3">We may update these terms as the service evolves. The effective date shown on this page identifies the current version.</p></section>
-      </div>
-      <Link href="/" className="mt-10 inline-block text-sm text-cyan-300 hover:text-cyan-100">← Back to TRACER</Link>
-    </main>
-  );
-}
+export const metadata={title:"利用規約",description:"TRACERオンラインストアの利用条件"};
+export default function TermsPage(){return <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-12 sm:px-8 sm:py-16"><p className="text-xs font-semibold uppercase tracking-[.24em] text-neutral-500">TRACER / TERMS</p><h1 className="mt-3 text-3xl font-bold">利用規約</h1><p className="mt-4 text-sm text-neutral-500">最終更新日：2026年10月22日</p><div className="mt-8 space-y-7 text-sm leading-7 text-neutral-700"><section><h2 className="text-lg font-semibold">第1条（適用）</h2><p>本規約はTRACERのウェブサイトおよびオンラインストアの利用条件を定めます。利用者は本規約および購入時に表示される販売条件に従うものとします。</p></section><section><h2 className="text-lg font-semibold">第2条（注文・契約）</h2><p>注文成立の時点、決済、配送等は購入手続きおよび注文確認時に表示する条件に従います。注文確定前に価格、送料、支払方法、引渡時期、返品条件を最終確認画面でご確認ください。</p></section><section><h2 className="text-lg font-semibold">第3条（禁止事項）</h2><p>法令違反、不正アクセス、サービス運営の妨害、他者の権利侵害、虚偽情報による注文等を禁止します。</p></section><section><h2 className="text-lg font-semibold">第4条（商品情報）</h2><p>商品情報、価格、在庫、配送見込みは変更される場合があります。購入時点の表示内容をご確認ください。</p></section><section><h2 className="text-lg font-semibold">第5条（返品・キャンセル）</h2><p>返品、交換、キャンセルの条件は<Link href="/returns" className="underline">返品・交換ポリシー</Link>および購入時に表示する条件に従います。</p></section><section><h2 className="text-lg font-semibold">第6条（外部サービス）</h2><p>決済、配送、商品供給等に外部事業者のサービスを利用する場合、適用される範囲で各事業者の規約等にも従います。</p></section><section><h2 className="text-lg font-semibold">第7条（変更）</h2><p>本規約を変更する場合、重要な変更は本サイト上で告知するなど適切な方法で周知します。</p></section><section><h2 className="text-lg font-semibold">第8条（お問い合わせ）</h2><p>ご質問は<Link href="/contact" className="underline">お問い合わせフォーム</Link>からお送りください。</p></section></div><Link href="/" className="mt-10 inline-block text-sm underline">TRACERトップへ戻る</Link></main>}
