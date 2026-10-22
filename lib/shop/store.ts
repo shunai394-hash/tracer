@@ -49,7 +49,7 @@ export type ShopListing = {
   shopifyHandle: string | null;
   shopifySyncStatus: string | null;
   canonicalCommerce?: boolean;
-  manualInventory: boolean;
+  manualInventory?: boolean;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
