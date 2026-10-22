@@ -188,6 +188,34 @@ async function findByHandle(handle: string): Promise<ShopifyProductNode | null> 
   return data.products.nodes.find((node) => node.handle === handle) ?? null;
 }
 
+async function findBySku(skuValue: string): Promise<{ product: ShopifyProductNode; variantId: string } | null> {
+  const data = await shopifyGraphQL<{
+    productVariants: {
+      nodes: Array<{ id: string; sku: string | null; product: ShopifyProductNode | null }>;
+    };
+  }>(
+    `query ProductVariantBySku($query: String!) {
+      productVariants(first: 10, query: $query) {
+        nodes {
+          id
+          sku
+          product {
+            id handle status vendor tags
+            variants(first: 10) { nodes { id sku price } }
+            media(first: 10) { nodes { mediaContentType preview { image { url } } } }
+          }
+        }
+      }
+    }`,
+    { query: `sku:${skuValue}` },
+  );
+  const matches = (data.productVariants.nodes ?? []).filter((node) => node.sku === skuValue && node.product);
+  if (matches.length > 1) throw new Error("shopify_sku_match_ambiguous");
+  const match = matches[0];
+  if (!match?.product) return null;
+  return { product: match.product, variantId: match.id };
+}
+
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
 /** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
@@ -533,7 +561,14 @@ async function syncListingRows(
         : null;
       // A stored id whose product no longer exists in Shopify is stale: fall
       // back to an exact handle match, otherwise create the product afresh.
-      let existing = existingById ?? (await findByHandle(productInput.handle));
+      // Recover an unpersisted create by exact SKU before relying on a handle.
+      // This avoids creating a second Shopify product when the previous API
+      // call succeeded but the listing-to-product mapping write did not.
+      const exactSkuMatch = existingById ? null : await findBySku(productInput.sku);
+      let existing = existingById ?? exactSkuMatch?.product ?? (await findByHandle(productInput.handle));
+      let recoveredVariantId = !existingById && exactSkuMatch && exactSkuMatch.product.id === existing?.id
+        ? exactSkuMatch.variantId
+        : null;
 
       // Never overwrite a product owned by another vendor. Recover from a
       // stale/colliding handle by choosing a deterministic TRACER-owned handle.
@@ -546,26 +581,66 @@ async function syncListingRows(
           .slice(0, 240);
         productInput = { ...productInput, handle: safeHandle };
         existing = await findByHandle(safeHandle);
+        recoveredVariantId = null;
         if (existing && existing.vendor !== "TRACER" && !existing.tags.includes("TRACER")) {
           throw new Error("shopify_fallback_handle_owned_by_non_tracer_product");
         }
       }
 
-      const product = existing
-        ? await updateShopifyProduct({
-            productId: existing.id,
-            title: productInput.title,
-            descriptionHtml: productInput.descriptionHtml,
-            handle: productInput.handle,
-            price: productInput.price,
-            // Prefer the persisted Shopify variant ID; admin.ts corroborates it with the TRACER SKU and fails closed on conflict.
-            variantId: row.shopify_variant_id || null,
-            sku: productInput.sku,
-            imageUrl: existing.media?.nodes?.length ? null : row.image_url,
-          })
-        : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+      let product: Awaited<ReturnType<typeof createShopifyProduct>>;
+      if (existing) {
+        product = await updateShopifyProduct({
+          productId: existing.id,
+          title: productInput.title,
+          descriptionHtml: productInput.descriptionHtml,
+          handle: productInput.handle,
+          price: productInput.price,
+          // Reuse a saved variant ID only when the saved product ID was the one verified above.
+          // Otherwise use an exact SKU recovery match, which admin.ts verifies against the SKU.
+          variantId: existingById?.id === existing.id ? (row.shopify_variant_id || null) : recoveredVariantId,
+          sku: productInput.sku,
+          imageUrl: existing.media?.nodes?.length ? null : row.image_url,
+        });
+      } else {
+        try {
+          product = await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/handle.*already in use|already in use.*handle/i.test(message)) throw error;
 
-      const variant = product.variants?.nodes?.[0];
+          // A stale/fuzzy handle search can miss the exact conflicting handle.
+          // The row-specific handle prevents a retry from failing on the same slug.
+          const safeHandle = `tracer-${row.slug}-${row.id.slice(0, 8)}`
+            .toLowerCase()
+            .replace(/[^a-z0-9-]+/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "")
+            .slice(0, 240);
+          productInput = { ...productInput, handle: safeHandle };
+          const exactFallback = await findByHandle(safeHandle);
+          if (exactFallback && exactFallback.vendor !== "TRACER" && !exactFallback.tags.includes("TRACER")) {
+            throw new Error("shopify_fallback_handle_owned_by_non_tracer_product");
+          }
+          product = exactFallback
+            ? await updateShopifyProduct({
+                productId: exactFallback.id,
+                title: productInput.title,
+                descriptionHtml: productInput.descriptionHtml,
+                handle: productInput.handle,
+                price: productInput.price,
+                variantId: null,
+                sku: productInput.sku,
+                imageUrl: exactFallback.media?.nodes?.length ? null : row.image_url,
+              })
+            : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
+        }
+      }
+
+      const preferredVariantId = existingById?.id === product.id
+        ? row.shopify_variant_id
+        : (recoveredVariantId ?? null);
+      const variant = product.variants?.nodes?.find((item) => item.id === preferredVariantId)
+        ?? product.variants?.nodes?.[0];
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,

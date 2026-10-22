@@ -34,12 +34,28 @@ function mismatchedVariantIds(rows: ListingState[]): string[] {
 
 async function readStates(variantIds?: string[]): Promise<ListingState[]> {
   const db = createSupabaseAdminClient();
-  let query = db.from("channel_listings").select("id,variant_id,channel,status")
-    .in("channel", ["base", "shopify"]);
-  if (variantIds) query = query.in("variant_id", variantIds);
-  const { data, error } = await query.limit(5000);
-  if (error) throw new Error("channel_parity_read_failed:" + error.message);
-  return (data ?? []) as ListingState[];
+  const pageSize = 1000;
+  const rows: ListingState[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = db.from("channel_listings").select("id,variant_id,channel,status")
+      .in("channel", ["base", "shopify"])
+      .order("variant_id", { ascending: true })
+      .order("channel", { ascending: true });
+    if (variantIds) query = query.in("variant_id", variantIds);
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw new Error("channel_parity_read_failed:" + error.message);
+    const page = (data ?? []) as ListingState[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+function rotatingBatch(ids: string[], offset: number, limit = 50): string[] {
+  if (ids.length === 0) return [];
+  const start = ((Math.floor(offset) % ids.length) + ids.length) % ids.length;
+  const count = Math.min(Math.max(1, Math.floor(limit)), ids.length);
+  return Array.from({ length: count }, (_, index) => ids[(start + index) % ids.length]);
 }
 
 /**
@@ -54,7 +70,14 @@ export async function GET(request: Request) {
   try {
     const before = await readStates();
     const allMismatches = mismatchedVariantIds(before);
-    const variantIds = allMismatches.slice(0, 50);
+    const url = new URL(request.url);
+    const requestedOffset = Number(url.searchParams.get("offset"));
+    // Cron runs every 15 minutes. Rotate through the full mismatch queue so a
+    // persistent BASE outage cannot pin the same first 50 variants forever.
+    const rotationOffset = Number.isFinite(requestedOffset) && url.searchParams.has("offset")
+      ? Math.max(0, Math.floor(requestedOffset))
+      : Math.floor(Date.now() / (15 * 60 * 1000)) * 50;
+    const variantIds = rotatingBatch(allMismatches, rotationOffset, 50);
     if (variantIds.length === 0) {
       return NextResponse.json({
         ok: true,
@@ -63,6 +86,7 @@ export async function GET(request: Request) {
         shopifyRows: before.filter((row) => row.channel === "shopify").length,
         mismatchedVariants: 0,
         repairedVariants: 0,
+        batchOffset: rotationOffset,
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
@@ -72,16 +96,20 @@ export async function GET(request: Request) {
     ]);
     const after = await readStates(variantIds);
     const remaining = mismatchedVariantIds(after);
+    const remainingMismatchCount = remaining.length + Math.max(0, allMismatches.length - variantIds.length);
     const result = {
-      ok: remaining.length === 0 && Number(base.failed ?? 0) === 0 && Number(shopify.failed ?? 0) === 0,
+      // A successful batch is not a complete reconciliation while any unprocessed
+      // mismatch remains. Do not report ok:true for partial work.
+      ok: remainingMismatchCount === 0 && Number(base.failed ?? 0) === 0 && Number(shopify.failed ?? 0) === 0,
       phase: "commerce_channel_parity_repair",
       scannedVariants: new Set(before.map((row) => row.variant_id)).size,
       baseRows: before.filter((row) => row.channel === "base").length,
       shopifyRows: before.filter((row) => row.channel === "shopify").length,
       mismatchedVariantsBefore: allMismatches.length,
+      batchOffset: rotationOffset,
       attemptedVariants: variantIds.length,
       remainingMismatchedVariants: remaining,
-      remainingMismatchCount: remaining.length + Math.max(0, allMismatches.length - variantIds.length),
+      remainingMismatchCount,
       base: {
         processed: base.processed ?? base.published ?? 0,
         failed: base.failed ?? 0,
