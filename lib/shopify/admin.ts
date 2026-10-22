@@ -283,9 +283,7 @@ export async function shopifyGraphQL<T>(
   const responseText = await response.text();
 
   // Never replay a mutation after a 5xx: Shopify may have committed it even if
-  // the response failed, and replaying product/order/inventory writes can duplicate
-  // side effects. Read-only GraphQL queries can safely retry transient transport
-  // failures so parity/readback jobs do not fail on a brief Shopify 503.
+  // the response failed. Only read-only queries can safely retry transient HTTP errors.
   if (!response.ok) {
     const diagnostic = {
       phase: "shopify_admin_request",
