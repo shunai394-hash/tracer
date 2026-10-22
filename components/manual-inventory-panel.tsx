@@ -28,7 +28,7 @@ export function ManualInventoryPanel() {
 
   const load = useCallback(async () => {
     if (!token.trim()) {
-      setMessage("管理トークンを入力してください。");
+      setMessage("管理用トークン（サーバー設定 TRACER_ADMIN_TOKEN）を入力してください。");
       return;
     }
     setLoading(true);
@@ -49,6 +49,32 @@ export function ManualInventoryPanel() {
       setLoading(false);
     }
   }, [token]);
+
+  async function remove(listing: Listing) {
+    if (!token.trim()) {
+      setMessage("先に管理トークンを入力してください。");
+      return;
+    }
+    if (!window.confirm(`「${listing.title}」を商品一覧から削除しますか？\nデータは完全削除せず、非公開アーカイブにします。`)) return;
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/manual-inventory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.trim()}` },
+        body: JSON.stringify({ id: listing.id }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "削除に失敗しました。");
+      setListings((current) => current.filter((item) => item.id !== listing.id));
+      if (form.id === listing.id) setForm(emptyForm);
+      setMessage("商品を非公開アーカイブにしました。販売一覧からは外れています。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "削除に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function edit(listing: Listing) {
     setForm({
@@ -104,7 +130,7 @@ export function ManualInventoryPanel() {
           <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">TRACER Store Management</p>
           <h2 id="manual-inventory-heading" className="mt-2 text-xl">商品登録・在庫・公開管理</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-            TRACERの商品一覧に掲載する商品を手動登録できます。BASE・Shopifyの公開状態とは独立しています。在庫はここで入力した数を管理します。
+            ここで追加・編集・非公開化できます。対象は手動管理商品です。仕入先連携済み商品を誤って壊さないよう、削除は完全削除ではなくアーカイブします。BASE・Shopifyへの掲載操作とは別です。
           </p>
         </div>
         <a href="/shop" target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-cyan-200 hover:bg-white/5">公開商品一覧を見る ↗</a>
@@ -123,7 +149,7 @@ export function ManualInventoryPanel() {
           />
         </label>
         <button type="button" onClick={() => void load()} disabled={loading || !token.trim()} className="self-end border border-cyan-300/40 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-40">
-          {loading ? "処理中…" : "商品を読み込む"}
+          {loading ? "処理中…" : "商品一覧を表示"}
         </button>
       </div>
 
@@ -171,7 +197,8 @@ export function ManualInventoryPanel() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-zinc-300">商品ページ ↗</a>
-                <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200">編集</button>
+                <button type="button" onClick={() => edit(listing)} disabled={loading} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">編集</button>
+                <button type="button" onClick={() => void remove(listing)} disabled={loading} className="border border-red-400/40 px-3 py-2 text-xs text-red-200 disabled:opacity-40">一覧から削除</button>
               </div>
             </article>
           ))}
