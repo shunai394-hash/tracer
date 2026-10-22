@@ -81,11 +81,18 @@ export async function createDropshipPurchaseOrdersForShopOrder(
     // Idempotent: a repeated call for the same shop order (e.g. a retried
     // Stripe webhook, or the fulfillment-retry cron) must not create a
     // second purchase order for the same line item.
-    const { data: existingPo } = await supabase
+    const { data: existingPo, error: existingPoLookupError } = await supabase
       .from("purchase_orders")
       .select("id")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
+
+    // A failed idempotency lookup must never be treated as "no purchase order":
+    // otherwise a transient DB error could permit a second supplier order.
+    if (existingPoLookupError) {
+      skipped.push({ itemId: String(row.id), reason: "purchase_order_idempotency_lookup_failed" });
+      continue;
+    }
 
     const productId = row.product_id ? String(row.product_id) : null;
     if (!productId) {
