@@ -218,26 +218,23 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  // CJ can expose many options as separate supplier variants while their
-  // customer-facing title, image and price are identical. Avoid repeating
-  // indistinguishable cards in TRACER, while retaining one exact variant
-  // identity for checkout/procurement. Visibly different options remain.
+  // A supplier product is the storefront parent; supplier_variant_id is the
+  // procurement identity, not a separate customer-facing product card. Group
+  // all variants by exact supplier + supplier product ID even when supplier
+  // feeds vary the title, image, or option price. Keep one deterministic
+  // representative card; checkout still uses its exact variant identity.
+  // Listings without a trustworthy supplier product identity are never merged.
   const storefrontProducts = new Map<string, ShopListing>();
   for (const listing of listings) {
     const supplier = listing.supplierName?.trim().toLowerCase() ?? "";
     const productId = listing.supplierProductId?.trim() ?? "";
     const duplicateKey = !listing.manualInventory && supplier && productId
-      ? [
-          "supplier-product",
-          supplier,
-          productId,
-          listing.title.trim().toLocaleLowerCase(),
-          listing.imageUrl?.trim() ?? "",
-          String(listing.sellingPrice ?? ""),
-          listing.currency?.trim().toUpperCase() ?? "",
-        ].join(":")
+      ? `supplier-product:${supplier}:${productId}`
       : `listing:${listing.id}`;
-    if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
+    const existing = storefrontProducts.get(duplicateKey);
+    if (!existing || listing.id.localeCompare(existing.id) < 0) {
+      storefrontProducts.set(duplicateKey, listing);
+    }
   }
   return [...storefrontProducts.values()]
     .map((listing) => {
