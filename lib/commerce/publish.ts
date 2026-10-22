@@ -677,11 +677,17 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           // Recover an external create whose response was lost before the DB ID was saved.
           // The current handle, the exact SKU, and the legacy 8-character handle are checked
           // separately. A SKU that belongs to more than one TRACER product is not adopted.
-          const byHandle = (await findTracerProducts("handle:" + handle)).filter((item) =>
-            (item.variants?.nodes ?? []).some((variant) => variant.sku === sku),
-          );
+          const byHandle = await findTracerProducts("handle:" + handle);
           if (byHandle.length > 1) throw new Error("shopify_handle_ambiguous:" + handle);
-          recoveredProduct = byHandle[0] ?? null;
+          const handleCandidate = byHandle[0] ?? null;
+          const handleVariants = handleCandidate?.variants?.nodes ?? [];
+          const handleSkuMatches = handleVariants.some((variant) => variant.sku === sku);
+          // A timed-out TRACER create can leave the exact handle behind with an empty
+          // SKU. Reuse only a single TRACER-owned product with exactly one SKU-empty
+          // variant; never adopt a product with a conflicting SKU.
+          const handleSkuUnset = handleVariants.length === 1 && !handleVariants[0]?.sku;
+          if (handleCandidate && (handleSkuMatches || handleSkuUnset)) recoveredProduct = handleCandidate;
+          else if (handleCandidate) throw new Error("shopify_handle_sku_mismatch:" + handle);
           if (!recoveredProduct) {
             const bySku = (await findTracerProducts("sku:" + sku)).filter((item) =>
               (item.variants?.nodes ?? []).some((variant) => variant.sku === sku),
@@ -703,7 +709,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
             }
           }
         }
-        const recoveredVariantId = recoveredProduct?.variants.nodes.find((variant) => variant.sku === sku)?.id ?? null;
+        const recoveredVariants = recoveredProduct?.variants.nodes ?? [];
+        const recoveredVariantId = recoveredVariants.find((variant) => variant.sku === sku)?.id
+          ?? (recoveredVariants.length === 1 && !recoveredVariants[0]?.sku ? recoveredVariants[0].id : null);
         const productResult = productId && variantId
           ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
