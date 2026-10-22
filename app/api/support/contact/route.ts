@@ -33,8 +33,8 @@ export async function POST(request: Request) {
 
   try {
     const db = createSupabaseAdminClient();
-    const { data, error } = await db.from("customer_inquiries").insert({
-      name, email, category, subject, message, source: "contact_form",
+    const { data, error } = await db.from("support_messages").insert({
+      name, email, category, subject, message,
     }).select("id").single();
     if (error) throw error;
     return NextResponse.json({ ok: true, ticketId: data.id }, { status: 201, headers: { "Cache-Control": "no-store" } });
