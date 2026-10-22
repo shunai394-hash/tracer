@@ -177,7 +177,7 @@ export async function GET(request: Request) {
       .filter((group) => group.count > 1)
       .map((group) => {
         group.distinctVariantCount = group.variants.filter((item) => item.supplierVariantId !== null).length;
-        group.exactVariantDuplicateExtraRows = group.variants.reduce((sum, item) => sum + Math.max(0, item.count - 1), 0);
+        group.exactVariantDuplicateExtraRows = group.variants.reduce((sum, item) => sum + (item.supplierVariantId !== null ? Math.max(0, item.count - 1) : 0), 0);
         group.titles = [...new Set(group.titles)];
         group.distinctTitleCount = group.titles.length;
         group.variants.sort((a, b) => b.count - a.count || String(a.supplierVariantId).localeCompare(String(b.supplierVariantId)));
