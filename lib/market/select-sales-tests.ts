@@ -422,13 +422,47 @@ export async function selectAndPublishSalesTests(
       published_at: fetchedAt,
       updated_at: fetchedAt,
     };
-    const existing = await supabase.from("shop_listings").select("id, archived_at").eq("slug", slug).maybeSingle();
+    // Match canonical supplier identity first so rows created under the previous
+    // bestseller-based slug format are reused rather than duplicated.
+    const supplierName = String(item.listing.supplier ?? "unknown").trim();
+    const supplierProductId = String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim();
+    const supplierVariantId = String(item.listing.supplier_variant_id ?? "").trim();
+    const canonicalMatches = await supabase
+      .from("shop_listings")
+      .select("id, archived_at")
+      .eq("supplier_name", supplierName)
+      .eq("supplier_product_id", supplierProductId)
+      .eq("supplier_variant_id", supplierVariantId)
+      .limit(2);
+    if (canonicalMatches.error) throw new Error(canonicalMatches.error.message);
+    if ((canonicalMatches.data ?? []).length > 1) {
+      const reasons = ["duplicate_canonical_supplier_identity_requires_review"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+
+    const slugMatch = await supabase
+      .from("shop_listings")
+      .select("id, archived_at")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (slugMatch.error) throw new Error(slugMatch.error.message);
+    const identityMatch = (canonicalMatches.data ?? [])[0] ?? null;
+    // If the canonical identity and deterministic slug point to different rows,
+    // stop instead of overwriting a potentially unrelated product or its mappings.
+    if (identityMatch && slugMatch.data && identityMatch.id !== slugMatch.data.id) {
+      const reasons = ["supplier_identity_slug_conflict_requires_review"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+    const existing = identityMatch ?? slugMatch.data;
     let upsert: { data: { id: string } | null; error: { message: string } | null };
-    if (existing.error) throw new Error(existing.error.message);
     // Keep archived rows and their delivery/view history untouched; never republish them in place.
-    if (existing.data?.archived_at) continue;
-    if (existing.data?.id) {
-      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
+    if (existing?.archived_at) continue;
+    if (existing?.id) {
+      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.id).select("id").single();
       upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };
     } else {
       const inserted = await supabase.from("shop_listings").insert(listingPayload).select("id").single();
