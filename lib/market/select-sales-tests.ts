@@ -364,7 +364,22 @@ export async function selectAndPublishSalesTests(
       rejected.push({ id: String(item.bestseller.id), reasons });
       continue;
     }
-    const slug = slugify(listingTitle, String(item.bestseller.id));
+    // Stable listing identity must come from the supplier product + variant,
+    // not the marketplace bestseller row. Otherwise the same supplier variant
+    // can be inserted repeatedly when discovered through multiple bestseller records.
+    const supplierIdentity = [
+      String(item.listing.supplier ?? "unknown").trim().toLowerCase(),
+      String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim(),
+      String(item.listing.supplier_variant_id ?? "").trim(),
+    ].join(":");
+    if (!String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim() ||
+        !String(item.listing.supplier_variant_id ?? "").trim()) {
+      const reasons = ["supplier_identity_missing_for_deduplication"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+    const slug = slugify(listingTitle, supplierIdentity);
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
