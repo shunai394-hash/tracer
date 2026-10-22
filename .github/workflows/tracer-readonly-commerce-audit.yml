@@ -7,6 +7,7 @@ on:
       - ".github/workflows/tracer-readonly-commerce-audit.yml"
       - "app/api/admin/commerce/status/route.ts"
       - "app/api/admin/commerce/live-price-audit/route.ts"
+      - "app/api/admin/commerce/duplicates/route.ts"
       - "app/api/admin/channels/base/legacy-id-detail-audit/route.ts"
       - "app/api/channels/base/diagnostics/route.ts"
       - "app/api/cron/commerce-reprice-existing/route.ts"
@@ -137,3 +138,25 @@ jobs:
               raise SystemExit("live storefront audit was not complete/read-only")
           PY
           [[ "${audit_code}" == "200" || "${audit_code}" == "207" ]]
+
+          duplicate_token="$(get_oidc_token)"
+          duplicate_code="$(curl --silent --show-error --max-time 150 -o commerce-duplicates.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${duplicate_token}" \
+            "${BASE}/api/admin/commerce/duplicates")"
+          echo "=== COMMERCE DUPLICATE AUDIT HTTP ${duplicate_code} ==="
+          python3 - <<'PY'
+          import json
+          with open("commerce-duplicates.json", encoding="utf-8") as f:
+              r=json.load(f)
+          print("ok:", r.get("ok"), "readOnly:", r.get("readOnly"), "generatedAt:", r.get("generatedAt"))
+          for key in ("counts", "summary", "duplicates", "groups"):
+              if key in r:
+                  value=r[key]
+                  if isinstance(value, list):
+                      print(key + ":", json.dumps(value[:100], ensure_ascii=False, separators=(",",":")))
+                  else:
+                      print(key + ":", json.dumps(value, ensure_ascii=False, separators=(",",":")))
+          if r.get("ok") is not True or r.get("readOnly") is not True:
+              raise SystemExit("commerce duplicate audit was not successful/read-only")
+          PY
+          test "${duplicate_code}" = "200"
