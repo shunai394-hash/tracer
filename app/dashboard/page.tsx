@@ -94,7 +94,7 @@ export default async function DashboardPage() {
       <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">Dashboard</p>
       <h1 className="mt-3 text-3xl text-zinc-50">運用ダッシュボード</h1>
       <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
-        商品数ではなく、販売テストまで進んだ商機と、仕入先・variantまでの接続状態を追跡します。
+        まずここで商品を追加・編集・一覧から外せます。下の各パネルは仕入先接続とBASE運用の確認用です。
       </p>
       <div className="mt-5">
         <a href="/dashboard/analytics" className="inline-flex items-center border border-cyan-300/30 bg-cyan-300/5 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:bg-cyan-300/10">
@@ -102,6 +102,8 @@ export default async function DashboardPage() {
         </a>
       </div>
       {error ? <p className="mt-8 text-sm text-amber-300">{error}</p> : null}
+
+      <ManualInventoryPanel />
       {kpis ? <div className="mt-10"><OpportunityKpis kpis={kpis} /></div> : null}
 
       <section className="mt-10 border border-cyan-300/15 bg-[#0a0d10] p-5 sm:p-7" aria-labelledby="linkage-heading">
@@ -146,7 +148,6 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <ManualInventoryPanel />
       <BaseOperationsPanel configured={isBaseConfigured()} listings={baseListings} loadError={baseLoadError} />
       <div className="mt-10 max-w-xl"><ConnectionPanel status={status} /></div>
     </main>
