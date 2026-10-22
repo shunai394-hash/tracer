@@ -92,9 +92,9 @@ function sourceSpecificFallbackTitle(title: string, variantNames: string[] = [])
   else if (/makeup brush|cosmetic brush|brush cleaner|brush cleaning|brush scrubber|puff cleanser/.test(source)) core = "メイクブラシ・お手入れ用品";
   else if (/eyebrow|eyelash|lash|gua sha|roller massager|acne|pimple|nail|beauty tool|facial/.test(source)) core = "美容ケアツール";
   if (!core) return null;
-  const meaningful = modifiers.filter((item) => !["レザー調"].includes(item));
+  const meaningful = modifiers;
   if (meaningful.length === 0 && variants) {
-    const color = [/black/.test(variants) && "ブラック", /white/.test(variants) && "ホワイト", /pink/.test(variants) && "ピンク", /brown|coffee/.test(variants) && "ブラウン", /blue/.test(variants) && "ブルー", /green/.test(variants) && "グリーン", /purple/.test(variants) && "パープル", /gold/.test(variants) && "ゴールド", /silver/.test(variants) && "シルバー"].filter(Boolean);
+    const color = [/black/.test(variants) && "ブラック", /white/.test(variants) && "ホワイト", /pink/.test(variants) && "ピンク", /brown|coffee/.test(variants) && "ブラウン", /blue/.test(variants) && "ブルー", /green/.test(variants) && "グリーン", /purple/.test(variants) && "パープル", /gold/.test(variants) && "ゴールド", /silver/.test(variants) && "シルバー"].filter((item): item is string => Boolean(item));
     if (color.length) meaningful.push(...color);
   }
   if (meaningful.length === 0) return null;
