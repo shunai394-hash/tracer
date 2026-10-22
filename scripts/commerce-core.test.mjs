@@ -1267,7 +1267,7 @@ test("storefront publication localizes mixed English product titles and blocks E
 test("Shopify retries transient HTTP failures only for read-only GraphQL queries", async () => {
   const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
   assert.match(admin, /httpReadRetryAttempt = 0/);
-  assert.match(admin, /const isReadOnlyQuery = \/\^\\\\s\*\(\?:#\[\^\\\\n\]\*\\\\n\\\\s\*\)\*query\\\\b\/i\.test\(query\)/);
+  assert.ok(admin.includes(String.raw`const isReadOnlyQuery = /^\\s*(?:#[^\\n]*\\n\\s*)*query\\b/i.test(query);`));
   assert.match(admin, /const retryableStatus = response\.status === 429 \|\| \[500, 502, 503, 504\]\.includes\(response\.status\)/);
   assert.match(admin, /if \(isReadOnlyQuery && retryableStatus && httpReadRetryAttempt < 3\)/);
   assert.match(admin, /Never replay a mutation after a 5xx/);
