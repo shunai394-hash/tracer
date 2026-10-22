@@ -20,7 +20,10 @@ export function resolveShopifyVariantIdentity(
   if (preferredId) {
     const saved = variants.find((variant) => variant.id === preferredId);
     if (!saved) return { ok: false, reason: "saved_variant_id_not_found" };
-    if (!saved.sku?.trim()) return { ok: false, reason: "saved_variant_sku_missing" };
+    // The saved Shopify variant ID is already an exact identity within the fetched
+    // product. If its SKU is blank, the caller can safely repair that SKU on this
+    // same variant; do not block recovery merely because the repair target is blank.
+    if (!saved.sku?.trim()) return { ok: true, variant: saved, matchedBy: "saved_id" };
     if (saved.sku.trim() !== targetSku) {
       return { ok: false, reason: "saved_variant_sku_mismatch" };
     }
