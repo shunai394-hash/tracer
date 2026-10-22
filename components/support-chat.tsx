@@ -1,0 +1,11 @@
+"use client";
+import Link from "next/link";
+import {useState,type FormEvent} from "react";
+type Msg={role:"user"|"assistant";text:string;href?:string;label?:string};
+export function SupportChat(){
+ const [messages,setMessages]=useState<Msg[]>([{role:"assistant",text:"こんにちは。TRACERのAIチャットサポートです。配送、返品・交換、支払い、規約についてご案内します。分からないことは推測せず、お問い合わせ窓口をご案内します。"}]);
+ const [input,setInput]=useState(""),[busy,setBusy]=useState(false);
+ async function send(raw:string){const message=raw.trim();if(!message||busy)return;setMessages(a=>[...a,{role:"user",text:message}]);setInput("");setBusy(true);try{const r=await fetch("/api/support/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message})});const p=await r.json();setMessages(a=>[...a,{role:"assistant",text:p.answer||p.error||"回答できませんでした。",href:p.href,label:p.label}]);}catch{setMessages(a=>[...a,{role:"assistant",text:"チャットに接続できません。お問い合わせフォームをご利用ください。",href:"/contact",label:"お問い合わせフォーム"}]);}finally{setBusy(false);}}
+ function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();void send(input);}
+ return <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"><div className="border-b bg-neutral-50 p-4"><p className="font-semibold">TRACER サポート</p><p className="mt-1 text-xs text-neutral-500">よくあるご質問を案内します</p></div><div className="max-h-[440px] min-h-[250px] space-y-4 overflow-y-auto p-4 sm:p-6" aria-live="polite">{messages.map((m,i)=><div key={i} className={m.role==="user"?"ml-8 rounded-xl bg-neutral-900 p-3 text-sm leading-6 text-white":"mr-5 rounded-xl bg-neutral-100 p-3 text-sm leading-6"}><p className="whitespace-pre-wrap">{m.text}</p>{m.href&&m.label?<Link href={m.href} className="mt-2 inline-block font-semibold underline">{m.label} →</Link>:null}</div>)}</div><form onSubmit={submit} className="flex gap-2 border-t p-3"><input value={input} onChange={e=>setInput(e.target.value)} maxLength={500} placeholder="質問を入力" className="min-w-0 flex-1 rounded-md border p-3 text-sm"/><button disabled={busy||!input.trim()} className="rounded-md bg-neutral-900 px-4 text-sm text-white disabled:opacity-40">{busy?"…":"送信"}</button></form></section>;
+}
