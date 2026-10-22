@@ -8,6 +8,7 @@ import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitl
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { isNativeCjSupplierListing } from "@/lib/catalog/canonical-supplier-identity";
+import { buildSourceGroundedJapaneseDescription } from "@/lib/catalog/source-grounded-description";
 import { calculateSupplySellingPriceJpy, resolveSupplierFxRateToJpy, resolveUnknownShippingAllowanceUsd } from "@/lib/market/supply-pricing";
 import { persistedListingShippingCost } from "@/lib/market/listing-shipping-cost";
 
@@ -39,19 +40,6 @@ function firstImageUrl(...sources: unknown[]): string | null {
     } else add(source);
   }
   return candidates.find(validHttpUrl) as string | undefined ?? null;
-}
-function localizedDescriptionFallback(title: string): string | null {
-  const normalized = title.normalize("NFKC").replace(/\\s+/g, " ").trim();
-  if (/レディース.{0,8}ショルダーバッグ|ショルダーバッグ.{0,8}レディース/.test(normalized)) {
-    return "日常のお出かけや荷物の持ち運びに使うレディースショルダーバッグです。サイズ・素材・収納部・ストラップ仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/ヘアクリップ/.test(normalized)) {
-    return "髪をまとめるためのヘアクリップです。サイズ・材質・留め具の仕様は販売元の最新情報をご確認ください。";
-  }
-  if (/きのこ型メイクパフ/.test(normalized)) {
-    return "ファンデーションなどのメイクに使うきのこ型メイクパフです。材質・寸法・使用方法・お手入れ方法は販売元の最新情報をご確認ください。";
-  }
-  return null;
 }
 function slugify(title: string, productId: string): string {
   const base = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 54);
@@ -322,7 +310,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     const recommendationSummary = typeof intelligence.recommendation_summary === "string" ? intelligence.recommendation_summary.trim() : null;
     const localizedDescription = localizeProductDescription(sourceTitle)
       ?? localizeProductDescription(localizedTitle)
-      ?? localizedDescriptionFallback(typeof localizedTitle === "string" ? localizedTitle : "");
+      ?? buildSourceGroundedJapaneseDescription(typeof localizedTitle === "string" ? localizedTitle : "", sourceTitle);
     const publishableDescription = isPublishableCatalogDescription(localizedDescription)
       ? localizedDescription
       : isPublishableCatalogDescription(recommendationSummary) ? recommendationSummary : null;
