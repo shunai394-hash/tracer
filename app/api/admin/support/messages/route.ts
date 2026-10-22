@@ -14,14 +14,14 @@ async function guard(req:Request){
 }
 export async function GET(req:Request){
  const denied=await guard(req);if(denied)return denied;
- try{const u=new URL(req.url),s=u.searchParams.get("status");let q=createSupabaseAdminClient().from("support_messages").select("id,name,email,category,subject,message,status,admin_note,created_at,updated_at").order("created_at",{ascending:false}).limit(200);if(s&&statuses.includes(s))q=q.eq("status",s);const {data,error}=await q;if(error)throw error;return NextResponse.json({ok:true,messages:data||[]});}
+ try{const u=new URL(req.url),s=u.searchParams.get("status");let q=createSupabaseAdminClient().from("customer_inquiries").select("id,name,email,category,subject,message,status,admin_note,created_at,updated_at").order("created_at",{ascending:false}).limit(200);if(s&&statuses.includes(s))q=q.eq("status",s);const {data,error}=await q;if(error)throw error;return NextResponse.json({ok:true,messages:data||[]});}
  catch(e){console.error("[ADMIN SUPPORT]",e instanceof Error?e.message:"unknown");return NextResponse.json({ok:false,error:"取得できませんでした。"},{status:503});}
 }
 export async function PATCH(req:Request){
  const denied=await guard(req);if(denied)return denied;
  const b=await req.json().catch(()=>({})) as {id?:unknown;status?:unknown;adminNote?:unknown};
  if(typeof b.id!=="string"||!/^[0-9a-f-]{36}$/i.test(b.id)||typeof b.status!=="string"||!statuses.includes(b.status))return NextResponse.json({ok:false,error:"更新内容が正しくありません。"},{status:400});
- const {error}=await createSupabaseAdminClient().from("support_messages").update({status:b.status,admin_note:typeof b.adminNote==="string"?b.adminNote.slice(0,4000)||null:null,updated_at:new Date().toISOString()}).eq("id",b.id);
+ const {error}=await createSupabaseAdminClient().from("customer_inquiries").update({status:b.status,admin_note:typeof b.adminNote==="string"?b.adminNote.slice(0,4000)||null:null,updated_at:new Date().toISOString()}).eq("id",b.id);
  if(error){console.error("[ADMIN SUPPORT UPDATE]",error.message);return NextResponse.json({ok:false,error:"更新できませんでした。"},{status:503});}
  return NextResponse.json({ok:true});
 }
