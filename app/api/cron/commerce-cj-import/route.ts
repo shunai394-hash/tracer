@@ -21,6 +21,96 @@ function japaneseCommerceComplianceBlockReason(title: string, productType?: stri
   return null;
 }
 
+function sourceSpecificFallbackTitle(title: string, variantNames: string[] = []): string | null {
+  const source = String(title ?? "").normalize("NFKC").toLowerCase();
+  const variants = variantNames.join(" ").toLowerCase();
+  const all = source + " " + variants;
+  const words: Array<[RegExp, string]> = [
+    [/rose|floral|flower/, "花柄"],
+    [/knit|knitted|crochet/, "ニット編み"],
+    [/woven|weaving|braided/, "編み込み"],
+    [/retro|vintage/, "レトロデザイン"],
+    [/rhinestone|diamond|crystal|bling/, "ビジュー装飾"],
+    [/pearl/, "パール装飾"],
+    [/tassel|fringe/, "タッセル付き"],
+    [/bow|ribbon/, "リボンモチーフ"],
+    [/snake.print|leopard|alligator|crocodile|animal print/, "アニマル柄"],
+    [/transparent|clear/, "クリア素材"],
+    [/plush|fluffy|fleece/, "ふんわり素材"],
+    [/canvas/, "キャンバス素材"],
+    [/denim/, "デニム素材"],
+    [/suede/, "スエード調"],
+    [/leather|cowhide|sheepskin|pu /, "レザー調"],
+    [/metal|metallic|chain|buckle/, "メタルパーツ付き"],
+    [/crescent|moon/, "三日月型"],
+    [/star|stars/, "星モチーフ"],
+    [/cat/, "猫モチーフ"],
+    [/butterfly|moth/, "蝶モチーフ"],
+    [/geometric|rhombus|diamond pattern/, "幾何学柄"],
+    [/color.block|contrast.color|two.color/, "配色切替"],
+    [/large.capacity|capacity/, "大容量"],
+    [/mini|small/, "ミニサイズ"],
+    [/laptop|computer/, "PC収納対応"],
+    [/commuter|work bag/, "通勤向け"],
+    [/crossbody|cross.shoulder|messenger/, "斜めがけ"],
+    [/underarm|armpit/, "アンダーアーム"],
+    [/clutch|evening/, "パーティー向け"],
+    [/hair claw|shark clip|claw clip/, "シャーク型"],
+    [/christmas|santa|elk|snowflake/, "クリスマスモチーフ"],
+    [/halloween|ghost|pumpkin/, "ハロウィンモチーフ"],
+    [/plaid|checkered|checkerboard/, "チェック柄"],
+    [/scissors|salon|duckbill/, "サロン用"],
+    [/12\s*pcs|12pcs|dozen/, "12本セット"],
+    [/15\s*pcs|15pcs/, "15本セット"],
+    [/150 piece|150-piece|150 pcs/, "150本セット"],
+    [/electric|automatic|machine|cleaner/, "電動クリーナー"],
+    [/cleaning|cleaner|wash/, "お手入れ用品"],
+    [/eyebrow|brow/, "眉メイク用"],
+    [/eyelash|lash/, "まつげ用"],
+    [/gua sha|scraping|roller massager|massage/, "フェイスケア用"],
+    [/acne|pimple|comedone/, "毛穴ケア用"],
+    [/nail|manicure/, "ネイルケア用"],
+    [/wooden handle|wood handle/, "木製ハンドル"],
+    [/diamond handle/, "ビジューハンドル"],
+    [/silicone/, "シリコン製"],
+    [/stainless steel|steel/, "スチール製"],
+    [/portable|retractable|travel/, "携帯用"],
+    [/simple|minimalist|minimal/, "シンプルデザイン"],
+    [/casual|daily|everyday/, "カジュアル"],
+    [/fashion|stylish|trendy|all.match|versatile/, "ファッション"],
+    [/elegant|luxury|light luxury/, "エレガント"],
+    [/pattern|printed|print/, "柄デザイン"],
+    [/square/, "スクエア型"],
+    [/round/, "ラウンド型"],
+    [/solid color|plain/, "無地"],
+    [/wide strap|wide shoulder strap/, "ワイドストラップ"],
+    [/acrylic|acetate/, "アクリル・アセテート調"],
+    [/10 pcs|10pcs/, "10本セット"],
+    [/8 mini|8 mini brushes|8 brushes/, "8本セット"],
+    [/9 beige|beige brushes/, "ベージュカラー"],
+    [/80ml/, "80mL"],
+  ];
+  const modifiers = [...new Set(words.filter(([pattern]) => pattern.test(all)).map(([, label]) => label))];
+  let core: string | null = null;
+  if (/handbag|purse/.test(source)) core = "レディースハンドバッグ";
+  else if (/crossbody|messenger/.test(source)) core = "レディースクロスボディバッグ";
+  else if (/shoulder bag|shoulder handbag|one shoulder/.test(source)) core = "レディースショルダーバッグ";
+  else if (/tote/.test(source)) core = "レディーストートバッグ";
+  else if (/bag/.test(source)) core = "レディースバッグ";
+  else if (/hair clip|hair claw|barrette|hairpin|hair pin/.test(source)) core = "ヘアアクセサリー";
+  else if (/headband|hair band|hair tie|scrunchie|hair rope/.test(source)) core = "ヘアバンド・ヘアゴム";
+  else if (/makeup brush|cosmetic brush|brush cleaner|brush cleaning|brush scrubber|puff cleanser/.test(source)) core = "メイクブラシ・お手入れ用品";
+  else if (/eyebrow|eyelash|lash|gua sha|roller massager|acne|pimple|nail|beauty tool|facial/.test(source)) core = "美容ケアツール";
+  if (!core) return null;
+  const meaningful = modifiers;
+  if (meaningful.length === 0 && variants) {
+    const color = [/black/.test(variants) && "ブラック", /white/.test(variants) && "ホワイト", /pink/.test(variants) && "ピンク", /brown|coffee/.test(variants) && "ブラウン", /blue/.test(variants) && "ブルー", /green/.test(variants) && "グリーン", /purple/.test(variants) && "パープル", /gold/.test(variants) && "ゴールド", /silver/.test(variants) && "シルバー"].filter((item): item is string => Boolean(item));
+    if (color.length) meaningful.push(...color);
+  }
+  if (meaningful.length === 0) return null;
+  return (meaningful.slice(0, 2).join("・") + " " + core).slice(0, 120);
+}
+
 function japaneseCommerceTitle(title: string, productType?: string | null, variantNames: string[] = []): string | null {
   const source = (String(title ?? "") + " " + String(productType ?? "")).toLowerCase();
 
@@ -29,10 +119,12 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   // "ヘアケアアイテム" or "ヘアバンド".
   const localizedFirst = localizeProductTitle(title, productType);
   const genericLocalizedTitles = new Set([
-    "ヘアケアアイテム", "ヘアバンド", "ヘアアクセサリー",
+    "ヘアケアアイテム", "ヘアバンド", "ヘアアクセサリー", "ヘアクリップ",
     "レディース ヘアアクセサリー", "美容・メイクアイテム",
     "美容ツール", "バッグ・収納アイテム", "レディースハンドバッグ",
-    "ハンドバッグ", "メイクブラシ",
+    "レディース ハンドバッグ", "レディース ショルダーバッグ",
+    "レディース クロスボディバッグ", "レディース トートバッグ",
+    "ハンドバッグ", "ショルダーバッグ", "メイクブラシ",
   ]);
   if (localizedFirst && !genericLocalizedTitles.has(localizedFirst)) {
     return localizedFirst;
@@ -126,7 +218,12 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     [/beauty tool|makeup|cosmetic/, "美容ツール"],
   ];
   const specific = rules.find(([pattern]) => pattern.test(source));
-  if (!specific) return localizeProductTitle(title, productType);
+  if (!specific) {
+    const localized = localizeProductTitle(title, productType);
+    return localized && !genericLocalizedTitles.has(localized)
+      ? localized
+      : sourceSpecificFallbackTitle(title, variantNames);
+  }
 
   // Broad category rules must not override an available source-specific Japanese
   // title. Older versions returned "メイクブラシ" or "レディースハンドバッグ"
@@ -134,6 +231,10 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   // creating dozens of indistinguishable storefront cards.
   const categoryOnlyTitles = new Set([
     "レディースハンドバッグ",
+    "レディース ハンドバッグ",
+    "レディース ショルダーバッグ",
+    "レディース クロスボディバッグ",
+    "レディース トートバッグ",
     "ハンドバッグ",
     "ショルダーバッグ",
     "斜めがけバッグ",
@@ -148,6 +249,8 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     "レディース ヘアアクセサリー",
     "美容ツール",
     "美容・メイクアイテム",
+    "ヘアケアアイテム",
+    "バッグ・収納アイテム",
     "スマートフォンケース",
     "ペット用品",
     "キッチン収納用品",
@@ -156,11 +259,90 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   ]);
   if (categoryOnlyTitles.has(specific[1])) {
     const sourceSpecificTitle = localizeProductTitle(title, productType);
-    if (sourceSpecificTitle && !categoryOnlyTitles.has(sourceSpecificTitle)) {
+    if (sourceSpecificTitle && !categoryOnlyTitles.has(sourceSpecificTitle) && !genericLocalizedTitles.has(sourceSpecificTitle)) {
       return sourceSpecificTitle;
     }
+    return sourceSpecificFallbackTitle(title, variantNames);
   }
   return specific[1];
+}
+
+const GENERIC_COMMERCE_TITLES = [
+  "レディース ハンドバッグ", "レディース ショルダーバッグ", "レディース クロスボディバッグ",
+  "レディース トートバッグ", "レディースハンドバッグ", "ハンドバッグ", "ショルダーバッグ",
+  "斜めがけバッグ", "トートバッグ", "クラッチバッグ", "ヘアクリップ", "メイクブラシ",
+  "メイク用ファンブラシ", "美容ツール", "美容・メイクアイテム", "ヘアケアアイテム",
+  "ヘアバンド", "ヘアアクセサリー", "レディース ヘアアクセサリー", "バッグ・収納アイテム",
+];
+
+async function repairGenericCommerceTitles(db: ReturnType<typeof createSupabaseAdminClient>): Promise<number> {
+  const { data: products, error } = await db.from("commerce_products")
+    .select("id,title_ja,description_ja,metadata,category")
+    .in("title_ja", GENERIC_COMMERCE_TITLES)
+    .not("metadata->>sourceTitle", "is", null)
+    .limit(1000);
+  if (error) throw new Error("generic_title_repair_products_read_failed:" + error.message);
+  const rows = (products ?? []) as Array<Record<string, unknown>>;
+  if (!rows.length) return 0;
+  const productIds = rows.map((row) => String(row.id));
+  const { data: variants, error: variantsError } = await db.from("commerce_variants")
+    .select("id,product_id,title_ja,attributes")
+    .in("product_id", productIds);
+  if (variantsError) throw new Error("generic_title_repair_variants_read_failed:" + variantsError.message);
+  const variantsByProduct = new Map<string, Array<Record<string, unknown>>>();
+  for (const variant of (variants ?? []) as Array<Record<string, unknown>>) {
+    const key = String(variant.product_id ?? "");
+    const list = variantsByProduct.get(key) ?? [];
+    list.push(variant);
+    variantsByProduct.set(key, list);
+  }
+  const genericSet = new Set(GENERIC_COMMERCE_TITLES);
+  let repaired = 0;
+  const now = new Date().toISOString();
+  for (let offset = 0; offset < rows.length; offset += 10) {
+    await Promise.all(rows.slice(offset, offset + 10).map(async (product) => {
+      const metadata = product.metadata && typeof product.metadata === "object" && !Array.isArray(product.metadata)
+        ? product.metadata as Record<string, unknown> : {};
+      const sourceTitle = typeof metadata.sourceTitle === "string" ? metadata.sourceTitle : "";
+      const productType = typeof metadata.sourceProductType === "string" ? metadata.sourceProductType : (typeof product.category === "string" ? product.category : null);
+      const productVariants = variantsByProduct.get(String(product.id)) ?? [];
+      const variantNames = productVariants.map((variant) => {
+        const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
+          ? variant.attributes as Record<string, unknown> : {};
+        return typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName : "";
+      }).filter(Boolean);
+      const nextTitle = japaneseCommerceTitle(sourceTitle, productType, variantNames);
+      const oldTitle = String(product.title_ja ?? "");
+      if (!nextTitle || genericSet.has(nextTitle) || nextTitle === oldTitle) return;
+      for (const variant of productVariants) {
+        const oldVariantTitle = String(variant.title_ja ?? "");
+        const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
+          ? variant.attributes as Record<string, unknown> : {};
+        const variantName = typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName : "";
+        const suffix = oldVariantTitle.startsWith(oldTitle)
+          ? oldVariantTitle.slice(oldTitle.length)
+          : japaneseVariantSuffix(variantName);
+        const nextVariantTitle = nextTitle + suffix;
+        if (!oldVariantTitle || oldVariantTitle === nextVariantTitle || (!genericSet.has(oldVariantTitle) && !oldVariantTitle.startsWith(oldTitle))) continue;
+        const { error: variantUpdateError } = await db.from("commerce_variants").update({
+          title_ja: nextVariantTitle,
+          updated_at: now,
+        }).eq("id", String(variant.id));
+        if (variantUpdateError) throw new Error("generic_title_repair_variant_write_failed:" + variantUpdateError.message);
+      }
+      // Update the parent last so a failed variant write leaves the parent generic
+      // and eligible for repair on the next run.
+      const { error: updateError } = await db.from("commerce_products").update({
+        title_ja: nextTitle,
+        description_ja: japaneseCommerceDescription(nextTitle),
+        updated_at: now,
+      }).eq("id", String(product.id));
+      if (updateError) throw new Error("generic_title_repair_product_write_failed:" + updateError.message);
+      repaired += 1;
+    }));
+  }
+  console.info("[TRACER GENERIC TITLE REPAIR]", { candidates: rows.length, repaired });
+  return repaired;
 }
 
 function japaneseVariantSuffix(nameEn: unknown): string {
@@ -254,6 +436,13 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const db = createSupabaseAdminClient();
+  let genericTitleRepairCount = 0;
+  try {
+    genericTitleRepairCount = await repairGenericCommerceTitles(db);
+  } catch (error) {
+    console.error("[TRACER GENERIC TITLE REPAIR FAILED]", error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ ok: false, error: "GENERIC_TITLE_REPAIR_FAILED", repaired: genericTitleRepairCount }, { status: 500 });
+  }
   const { data: quotaRun, error: quotaReadError } = await db
     .from("cron_runs")
     .select("metadata")
