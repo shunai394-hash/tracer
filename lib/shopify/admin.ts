@@ -298,7 +298,7 @@ export async function shopifyGraphQL<T>(
 
     console.error("Shopify Admin API request failed", diagnostic);
 
-    const isReadOnlyQuery = /^\\s*(?:#[^\\n]*\\n\\s*)*query\\b/i.test(query);
+    const isReadOnlyQuery = /^\s*(?:#[^\n]*\n\s*)*query\b/i.test(query);
     const retryableStatus = response.status === 429 || [500, 502, 503, 504].includes(response.status);
     if (isReadOnlyQuery && retryableStatus && httpReadRetryAttempt < 3) {
       await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** httpReadRetryAttempt)));
