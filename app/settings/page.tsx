@@ -35,10 +35,14 @@ export default async function SettingsPage() {
       <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">
         Settings
       </p>
-      <h1 className="mt-3 text-3xl text-zinc-50">接続設定</h1>
+      <h1 className="mt-3 text-3xl text-zinc-50">規則・注文・接続設定</h1>
       <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
-        値は `.env.local` または Vercel の環境変数に置きます。この画面では有無だけを確認できます。
+        商品選定フィルターと注文モードをここで設定します。APIキーなどの接続秘密情報そのものは、この画面では編集しません。
       </p>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <a href="/admin/operations" className="border border-cyan-300/40 bg-cyan-300/10 px-4 py-3 text-sm text-cyan-100 hover:bg-cyan-300/15">管理センター（BOT・規則一覧） →</a>
+        <a href="/dashboard" className="border border-white/15 px-4 py-3 text-sm text-zinc-200 hover:bg-white/5">商品管理へ →</a>
+      </div>
       <div className="mt-10 max-w-xl">
         <ConnectionPanel status={status} />
       </div>
