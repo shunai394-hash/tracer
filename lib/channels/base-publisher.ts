@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
-import { createBaseItem, editBaseItem, addBaseItemImage, isBaseConfigured } from "@/lib/channels/base";
+import { createBaseItem, editBaseItem, addBaseItemImage, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -91,6 +91,20 @@ async function addBaseItemImageWithFallback(input: {
 export async function publishPublishedListingsToBase(limit = 10, listingIds?: string[]): Promise<BasePublicationResult> {
   if (!isBaseConfigured()) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
   if (listingIds !== undefined && listingIds.length === 0) return { attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 0, results: [] };
+
+  // Fail fast before mutating listing state if BASE OAuth is unavailable. Previously,
+  // a token-refresh outage (for example HTTP 503) was recorded against every listing,
+  // and the remaining publication loop continued making more failing requests.
+  try {
+    await getBasePublicShopUrl();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      attempted: 0, published: 0, hidden: 0, skipped: 0, failed: 1,
+      results: [{ listingId: "BASE_OAUTH_PREFLIGHT", ok: false, error: message.slice(0, 500) }],
+    };
+  }
+
   const supabase = createSupabaseAdminClient();
   let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
   if (listingIds && listingIds.length > 0) {
