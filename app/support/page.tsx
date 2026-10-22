@@ -1,0 +1,4 @@
+import Link from "next/link";
+import {SupportChat} from "@/components/support-chat";
+export const metadata={title:"AIチャットサポート",description:"TRACERの商品・注文・返品についてのサポート"};
+export default function SupportPage(){return <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-12 sm:px-8 sm:py-16"><p className="text-xs font-semibold uppercase tracking-[.24em] text-neutral-500">TRACER / SUPPORT</p><h1 className="mt-3 text-3xl font-bold sm:text-4xl">AIチャットサポート</h1><p className="mt-4 text-sm leading-6 text-neutral-600">よくある質問をすぐに確認できます。注文ごとの状況など確認できない内容は、問い合わせ窓口へご案内します。</p><div className="mt-8"><SupportChat/></div><div className="mt-6 flex flex-wrap gap-5 text-sm"><Link href="/contact" className="underline">お問い合わせ</Link><Link href="/returns" className="underline">返品・交換ポリシー</Link><Link href="/legal" className="underline">事業者情報</Link></div></main>}
