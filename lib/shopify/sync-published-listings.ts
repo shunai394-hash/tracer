@@ -566,7 +566,7 @@ async function syncListingRows(
       // call succeeded but the listing-to-product mapping write did not.
       const exactSkuMatch = existingById ? null : await findBySku(productInput.sku);
       let existing = existingById ?? exactSkuMatch?.product ?? (await findByHandle(productInput.handle));
-      let recoveredVariantId = !existingById && exactSkuMatch?.product.id === existing?.id
+      let recoveredVariantId = !existingById && exactSkuMatch && exactSkuMatch.product.id === existing?.id
         ? exactSkuMatch.variantId
         : null;
 
@@ -587,7 +587,7 @@ async function syncListingRows(
         }
       }
 
-      let product: ShopifyProductNode;
+      let product: Awaited<ReturnType<typeof createShopifyProduct>>;
       if (existing) {
         product = await updateShopifyProduct({
           productId: existing.id,
