@@ -48,7 +48,7 @@ export type ShopListing = {
   shopifyProductId: string | null;
   shopifyHandle: string | null;
   shopifySyncStatus: string | null;
-  canonicalCommerce?: boolean;
+  canonicalCommerce?: boolean;\n  manualInventory: boolean;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -76,7 +76,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
     shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
-    canonicalCommerce: false,
+    canonicalCommerce: false,\n    manualInventory: row.manual_inventory === true,
   };
 }
 
@@ -129,7 +129,8 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
 
 async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopListing[]> {
   const mapped = rows.map(mapListing);
-  const supplierStatuses = await getPublishableSupplierListingStatuses(mapped.map((listing) => ({
+  const supplierRequired = mapped.filter((listing) => !listing.manualInventory);
+  const supplierStatuses = await getPublishableSupplierListingStatuses(supplierRequired.map((listing) => ({
     listingId: listing.id,
     supplierListingId: listing.supplierListingId,
     productId: listing.productId,
@@ -137,29 +138,27 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     supplierVariantId: listing.supplierVariantId,
   })));
   const listings = mapped
-    // The TRACER storefront checkout uses Shopify. Unsynced listings must not
-    // be treated as purchasable, and must not poison the live-stock batch for
-    // products that are already synced and saleable.
-    .filter((listing) => listing.shopifySyncStatus === "synced" && Boolean(listing.shopifyVariantId))
-    .filter((listing) => supplierStatuses.has(listing.id))
-    .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && listing.orderable && listing.trackingAvailable && listing.sellingPrice !== null && listing.sellingPrice > 0);
+    // TRACER-managed listings use the stock entered in this dashboard. Other
+    // listings still require a synced Shopify variant and verified supplier identity.
+    .filter((listing) => listing.manualInventory || (listing.shopifySyncStatus === "synced" && Boolean(listing.shopifyVariantId)))
+    .filter((listing) => listing.manualInventory || supplierStatuses.has(listing.id))
+    .filter((listing) => isPublishableCatalogTitle(listing.title) && isPublishableCatalogDescription(listing.description) && listing.inventory > 0 && (listing.manualInventory || (listing.orderable && listing.trackingAvailable)) && listing.sellingPrice !== null && listing.sellingPrice > 0 && Boolean(listing.imageUrl));
 
   if (listings.length === 0) return [];
 
+  const shopifyListings = listings.filter((listing) => !listing.manualInventory);
+  if (shopifyListings.length === 0) return listings;
   let liveStock = new Map<string, number>();
   try {
     liveStock = await getLiveShopifyStock(
-      listings.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)),
+      shopifyListings.map((listing) => listing.shopifyVariantId).filter((id): id is string => Boolean(id)),
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    // Preserve the published catalog for display during a temporary Shopify
-    // inventory API outage. Checkout independently rechecks live stock and
-    // rejects orders when the current quantity cannot be verified.
     return listings;
   }
 
-  const staleSoldOut = listings.filter((listing) => {
+  const staleSoldOut = shopifyListings.filter((listing) => {
     const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
     return live !== undefined && live <= 0;
   });
@@ -182,10 +181,12 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 
   return listings
     .filter((listing) => {
+      if (listing.manualInventory) return true;
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
       return hasVerifiedPositiveShopifyStock(listing.shopifyVariantId, live);
     })
     .map((listing) => {
+      if (listing.manualInventory) return listing;
       const live = listing.shopifyVariantId ? liveStock.get(listing.shopifyVariantId) : undefined;
       return live === undefined ? listing : { ...listing, inventory: live };
     });
@@ -198,11 +199,8 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     .select(STOREFRONT_SELECT)
     .is("archived_at", null)
     .eq("published", true)
-    .not("shopify_product_id", "is", null)
-    .eq("shopify_sync_status", "synced")
-    .eq("orderable", true)
+    .or("manual_inventory.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.eq.synced,orderable.eq.true,tracking_available.eq.true)")
     .gt("inventory", 0)
-    .eq("tracking_available", true)
     .gt("selling_price", 0)
     .eq("currency", "JPY")
     .order("published_at", { ascending: false })
@@ -234,11 +232,8 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   const { data, error } = await listingQuery
     .is("archived_at", null)
     .eq("published", true)
-    .not("shopify_product_id", "is", null)
-    .eq("shopify_sync_status", "synced")
-    .eq("orderable", true)
+    .or("manual_inventory.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.eq.synced,orderable.eq.true,tracking_available.eq.true)")
     .gt("inventory", 0)
-    .eq("tracking_available", true)
     .gt("selling_price", 0)
     .eq("currency", "JPY")
     .maybeSingle();
@@ -251,9 +246,11 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   }
 
   const listing = mapListing(data as Record<string, unknown>);
-  if (!listing.supplierListingId || !listing.shopifyProductId || !listing.shopifyVariantId || !listing.shopifyHandle) return null;
-  if (!/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(listing.shopifyVariantId)) return null;
-  if (!isPublishableCatalogTitle(listing.title) || !isPublishableCatalogDescription(listing.description) || !hasJapaneseText(listing.title)) return null;
+  if (!isPublishableCatalogTitle(listing.title) || !isPublishableCatalogDescription(listing.description) || !hasJapaneseText(listing.title) || !listing.imageUrl) return null;
+  if (!listing.manualInventory) {
+    if (!listing.supplierListingId || !listing.shopifyProductId || !listing.shopifyVariantId || !listing.shopifyHandle) return null;
+    if (!/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(listing.shopifyVariantId)) return null;
+  }
 
   // The public product page is a landing page that sends customers to the
   // already-published Shopify product. Supplier identity and live-stock checks
