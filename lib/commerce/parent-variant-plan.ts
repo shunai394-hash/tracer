@@ -27,7 +27,7 @@ export type BaseVariantGroupPlan =
   | {
       sourceKey: string;
       kind: "keep_separate";
-      reason: "invalid_price" | "mixed_prices" | "ambiguous_variant_identity";
+      reason: "invalid_input" | "invalid_price" | "mixed_prices" | "ambiguous_variant_identity";
       variants: ParentVariantInput[];
     };
 
@@ -73,17 +73,30 @@ export function planBaseVariantGroups(
     ]);
     const identityKeys = identities.map((identity) => JSON.stringify(identity));
     const hasAmbiguousIdentity = identityKeys.some((key, index) => identityKeys.indexOf(key) !== index) ||
-      identities.some(([variantId, sourceVariantKey, sku]) => !variantId || !sourceVariantKey || !sku);
+      identities.some(([variantId, sourceVariantKey, sku]) => !variantId || !sourceVariantKey || !sku) ||
+      identities.some((identity, index) => identities.some((other, otherIndex) =>
+        otherIndex !== index && identity[0] === other[0])) ||
+      identities.some((identity, index) => identities.some((other, otherIndex) =>
+        otherIndex !== index && identity[1] === other[1])) ||
+      identities.some((identity, index) => identities.some((other, otherIndex) =>
+        otherIndex !== index && identity[2] === other[2]));
+    const hasInvalidInput = variants.some((variant) =>
+      !normalized(variant.sourceKey) || !normalized(variant.variantId) ||
+      !normalized(variant.sourceVariantKey) || !normalized(variant.sku) ||
+      !normalized(variant.title) || !Number.isSafeInteger(Number(variant.stock)) ||
+      Number(variant.stock) < 0);
     const hasInvalidPrice = variants.some((variant) =>
       !Number.isSafeInteger(Number(variant.sellingPrice)) || Number(variant.sellingPrice) <= 0);
     const prices = new Set(variants.map((variant) => Number(variant.sellingPrice)));
     const reason = hasAmbiguousIdentity
       ? "ambiguous_variant_identity" as const
-      : hasInvalidPrice
-        ? "invalid_price" as const
-        : prices.size > 1
-          ? "mixed_prices" as const
-          : null;
+      : hasInvalidInput
+        ? "invalid_input" as const
+        : hasInvalidPrice
+          ? "invalid_price" as const
+          : prices.size > 1
+            ? "mixed_prices" as const
+            : null;
 
     if (reason) return { sourceKey, kind: "keep_separate" as const, reason, variants };
     return {
