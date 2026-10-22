@@ -36,9 +36,8 @@ export async function GET(request: Request) {
     const db = createSupabaseAdminClient();
     const { data, error } = await db
       .from("shop_listings")
-      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,created_at,updated_at")
+      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,created_at,updated_at,archived_at,archive_reason")
       .eq("manual_inventory", true)
-      .is("archived_at", null)
       .order("updated_at", { ascending: false })
       .limit(500);
     if (error) throw error;
@@ -148,5 +147,69 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, listing: data }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_save_failed" }, { status: 500 });
+  }
+}
+
+
+export async function DELETE(request: Request) {
+  if (!authorized(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+  const id = text(body.id, 80);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json({ ok: false, error: "商品IDが不正です。" }, { status: 400 });
+  }
+  try {
+    const db = createSupabaseAdminClient();
+    const { data, error } = await db.from("shop_listings")
+      .update({ published: false, published_at: null, archived_at: new Date().toISOString(), archive_reason: "manual_admin_archive", updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("manual_inventory", true)
+      .is("archived_at", null)
+      .select("id,title,archived_at,published")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ ok: false, error: "商品が見つからないか、手動管理商品ではありません。" }, { status: 404 });
+    return NextResponse.json({ ok: true, listing: data });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_archive_failed" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (!authorized(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+  const id = text(body.id, 80);
+  const action = text(body.action, 20);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || action !== "restore") {
+    return NextResponse.json({ ok: false, error: "復元する商品を指定してください。" }, { status: 400 });
+  }
+  try {
+    const db = createSupabaseAdminClient();
+    const { data, error } = await db.from("shop_listings")
+      .update({ archived_at: null, archive_reason: null, published: false, published_at: null, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("manual_inventory", true)
+      .not("archived_at", "is", null)
+      .select("id,title,archived_at,published")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ ok: false, error: "復元できる商品が見つかりません。" }, { status: 404 });
+    return NextResponse.json({ ok: true, listing: data });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_restore_failed" }, { status: 500 });
   }
 }
