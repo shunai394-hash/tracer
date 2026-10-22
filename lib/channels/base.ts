@@ -102,20 +102,30 @@ async function getBaseAccessToken(): Promise<string> {
     redirect_uri: BASE_REDIRECT_URI,
   });
 
-  const response = await fetch(`${BASE_API_URL}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body,
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  const text = await response.text();
+  let response: Response | null = null;
+  let responseText = "";
   let payload: Record<string, unknown> | null = null;
-  try {
-    payload = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    payload = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    response = await fetch(`${BASE_API_URL}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    responseText = await response.text();
+    try {
+      payload = JSON.parse(responseText) as Record<string, unknown>;
+    } catch {
+      payload = null;
+    }
+    const message = safeBaseError(payload);
+    const maintenanceResponse = response.status === 400 && /メンテナンス中|maintenance/i.test(message);
+    const retryable = response.status === 429 || response.status >= 500 || maintenanceResponse;
+    if (response.ok || !retryable || attempt === 3) break;
+    await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
   }
+  if (!response) throw new Error("BASE_OAUTH_REFRESH_FAILED:NO_RESPONSE");
   if (!response.ok) {
     throw new Error(`BASE_OAUTH_REFRESH_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
   }
