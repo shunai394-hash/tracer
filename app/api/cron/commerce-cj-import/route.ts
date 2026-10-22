@@ -252,6 +252,82 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   return specific[1];
 }
 
+const GENERIC_COMMERCE_TITLES = [
+  "レディース ハンドバッグ", "レディース ショルダーバッグ", "レディース クロスボディバッグ",
+  "レディース トートバッグ", "レディースハンドバッグ", "ハンドバッグ", "ショルダーバッグ",
+  "斜めがけバッグ", "トートバッグ", "クラッチバッグ", "ヘアクリップ", "メイクブラシ",
+  "メイク用ファンブラシ", "美容ツール", "美容・メイクアイテム", "ヘアケアアイテム",
+  "ヘアバンド", "ヘアアクセサリー", "レディース ヘアアクセサリー", "バッグ・収納アイテム",
+];
+
+async function repairGenericCommerceTitles(db: ReturnType<typeof createSupabaseAdminClient>): Promise<number> {
+  const { data: products, error } = await db.from("commerce_products")
+    .select("id,title_ja,description_ja,metadata,category")
+    .in("title_ja", GENERIC_COMMERCE_TITLES)
+    .not("metadata->>sourceTitle", "is", null)
+    .limit(1000);
+  if (error) throw new Error("generic_title_repair_products_read_failed:" + error.message);
+  const rows = (products ?? []) as Array<Record<string, unknown>>;
+  if (!rows.length) return 0;
+  const productIds = rows.map((row) => String(row.id));
+  const { data: variants, error: variantsError } = await db.from("commerce_variants")
+    .select("id,product_id,title_ja,attributes")
+    .in("product_id", productIds);
+  if (variantsError) throw new Error("generic_title_repair_variants_read_failed:" + variantsError.message);
+  const variantsByProduct = new Map<string, Array<Record<string, unknown>>>();
+  for (const variant of (variants ?? []) as Array<Record<string, unknown>>) {
+    const key = String(variant.product_id ?? "");
+    const list = variantsByProduct.get(key) ?? [];
+    list.push(variant);
+    variantsByProduct.set(key, list);
+  }
+  const genericSet = new Set(GENERIC_COMMERCE_TITLES);
+  let repaired = 0;
+  const now = new Date().toISOString();
+  for (let offset = 0; offset < rows.length; offset += 10) {
+    await Promise.all(rows.slice(offset, offset + 10).map(async (product) => {
+      const metadata = product.metadata && typeof product.metadata === "object" && !Array.isArray(product.metadata)
+        ? product.metadata as Record<string, unknown> : {};
+      const sourceTitle = typeof metadata.sourceTitle === "string" ? metadata.sourceTitle : "";
+      const productType = typeof metadata.sourceProductType === "string" ? metadata.sourceProductType : (typeof product.category === "string" ? product.category : null);
+      const productVariants = variantsByProduct.get(String(product.id)) ?? [];
+      const variantNames = productVariants.map((variant) => {
+        const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
+          ? variant.attributes as Record<string, unknown> : {};
+        return typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName : "";
+      }).filter(Boolean);
+      const nextTitle = japaneseCommerceTitle(sourceTitle, productType, variantNames);
+      const oldTitle = String(product.title_ja ?? "");
+      if (!nextTitle || genericSet.has(nextTitle) || nextTitle === oldTitle) return;
+      const { error: updateError } = await db.from("commerce_products").update({
+        title_ja: nextTitle,
+        description_ja: japaneseCommerceDescription(nextTitle),
+        updated_at: now,
+      }).eq("id", String(product.id));
+      if (updateError) throw new Error("generic_title_repair_product_write_failed:" + updateError.message);
+      for (const variant of productVariants) {
+        const oldVariantTitle = String(variant.title_ja ?? "");
+        const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
+          ? variant.attributes as Record<string, unknown> : {};
+        const variantName = typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName : "";
+        const suffix = oldVariantTitle.startsWith(oldTitle)
+          ? oldVariantTitle.slice(oldTitle.length)
+          : japaneseVariantSuffix(variantName);
+        const nextVariantTitle = nextTitle + suffix;
+        if (!oldVariantTitle || oldVariantTitle === nextVariantTitle || (!genericSet.has(oldVariantTitle) && !oldVariantTitle.startsWith(oldTitle))) continue;
+        const { error: variantUpdateError } = await db.from("commerce_variants").update({
+          title_ja: nextVariantTitle,
+          updated_at: now,
+        }).eq("id", String(variant.id));
+        if (variantUpdateError) throw new Error("generic_title_repair_variant_write_failed:" + variantUpdateError.message);
+      }
+      repaired += 1;
+    }));
+  }
+  console.info("[TRACER GENERIC TITLE REPAIR]", { candidates: rows.length, repaired });
+  return repaired;
+}
+
 function japaneseVariantSuffix(nameEn: unknown): string {
   const source = String(nameEn ?? "").toLowerCase();
   const colorCount = source.match(/\b([0-9]+)\s*color\b/);
@@ -343,6 +419,13 @@ export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
   if (authError) return authError;
   const db = createSupabaseAdminClient();
+  let genericTitleRepairCount = 0;
+  try {
+    genericTitleRepairCount = await repairGenericCommerceTitles(db);
+  } catch (error) {
+    console.error("[TRACER GENERIC TITLE REPAIR FAILED]", error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ ok: false, error: "GENERIC_TITLE_REPAIR_FAILED", repaired: genericTitleRepairCount }, { status: 500 });
+  }
   const { data: quotaRun, error: quotaReadError } = await db
     .from("cron_runs")
     .select("metadata")
