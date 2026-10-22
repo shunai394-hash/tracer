@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 function authorized(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") ?? "";
+  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (!expected || !supplied) return false;
   const a = Buffer.from(expected);
   const b = Buffer.from(supplied);
