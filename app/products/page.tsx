@@ -91,10 +91,10 @@ export default async function ProductsPage() {
         .eq("filter_state", "PASS")
         .eq("profit_state", "PROFIT_OK"),
       supabase.from("commerce_products").select("id,title_ja,description_ja,image_url,active,updated_at").order("updated_at", { ascending: false }).limit(500),
-      supabase.from("commerce_variants").select("id,product_id,title_ja,sku,source_variant_key").order("updated_at", { ascending: false }).limit(500),
-      supabase.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,raw_data,currency,ship_to,tracking_supported,source_status,last_checked_at").limit(500),
-      supabase.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,currency").limit(500),
-      supabase.from("channel_listings").select("id,variant_id,channel,external_product_id,external_variant_id,external_sku,selling_price,status,published_url,last_error,last_synced_at").order("last_synced_at", { ascending: false }).limit(1000),
+      supabase.from("commerce_variants").select("id,product_id,title_ja,sku,source_variant_key").order("updated_at", { ascending: false }).limit(1000),
+      supabase.from("supplier_offers").select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,raw_data,currency,ship_to,tracking_supported,source_status,last_checked_at").limit(1000),
+      supabase.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price,expected_profit,margin_rate,currency").limit(1000),
+      supabase.from("channel_listings").select("id,variant_id,channel,external_product_id,external_variant_id,external_sku,selling_price,status,published_url,last_error,last_synced_at").order("last_synced_at", { ascending: false }).range(0, 999),
     ]);
 
     if (productResult.error) throw new Error(productResult.error.message);
@@ -114,7 +114,13 @@ export default async function ProductsPage() {
     commerceVariants = (commerceVariantResult.data ?? []) as CommerceVariant[];
     commerceOffers = (commerceOfferResult.data ?? []) as CommerceOffer[];
     commercePrices = (commercePriceResult.data ?? []) as CommercePrice[];
-    commerceListings = (commerceListingResult.data ?? []) as CommerceListing[];
+    const commerceListingPage2 = await supabase
+      .from("channel_listings")
+      .select("id,variant_id,channel,external_product_id,external_variant_id,external_sku,selling_price,status,published_url,last_error,last_synced_at")
+      .order("last_synced_at", { ascending: false })
+      .range(1000, 1999);
+    if (commerceListingPage2.error) throw new Error(commerceListingPage2.error.message);
+    commerceListings = [...(commerceListingResult.data ?? []), ...(commerceListingPage2.data ?? [])] as CommerceListing[];
     const freshnessCutoff = Date.now() - 24 * 60 * 60 * 1000;
     const freshOffers = commerceOffers.filter((offer) =>
       offer.source_status === "verified" &&
