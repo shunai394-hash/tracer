@@ -50,6 +50,33 @@ export function ManualInventoryPanel() {
     }
   }, [token]);
 
+  async function archive(listing: Listing) {
+    const confirmed = window.confirm(`「${listing.title}」を管理一覧から外しますか？\n商品データは完全削除せず、アーカイブして非公開にします。`);
+    if (!confirmed) return;
+    if (!token.trim()) {
+      setMessage("管理トークンを入力してください。");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/manual-inventory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.trim()}` },
+        body: JSON.stringify({ id: listing.id }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "アーカイブに失敗しました。");
+      setListings((current) => current.filter((item) => item.id !== listing.id));
+      if (form.id === listing.id) setForm(emptyForm);
+      setMessage("商品をアーカイブしました。商品データは完全削除していません。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "アーカイブに失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function edit(listing: Listing) {
     setForm({
       id: listing.id,
@@ -171,7 +198,7 @@ export function ManualInventoryPanel() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-zinc-300">商品ページ ↗</a>
-                <button type="button" onClick={() => edit(listing)} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200">編集</button>
+                <button type="button" onClick={() => edit(listing)} disabled={loading} className="border border-cyan-300/40 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">編集</button>\n                <button type="button" onClick={() => void archive(listing)} disabled={loading} className="border border-rose-300/30 px-3 py-2 text-xs text-rose-200 disabled:opacity-40">アーカイブ</button>
               </div>
             </article>
           ))}

@@ -150,3 +150,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_save_failed" }, { status: 500 });
   }
 }
+
+
+export async function DELETE(request: Request) {
+  if (!authorized(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+
+  const id = text(body.id, 80);
+  if (!id) return NextResponse.json({ ok: false, error: "削除対象の商品IDがありません。" }, { status: 400 });
+
+  try {
+    const db = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    const { data, error } = await db
+      .from("shop_listings")
+      .update({
+        archived_at: now,
+        archive_reason: "manual_admin_archived",
+        published: false,
+        published_at: null,
+        orderable: false,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("manual_inventory", true)
+      .is("archived_at", null)
+      .select("id,title,archived_at")
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return NextResponse.json({ ok: false, error: "対象商品が見つからないか、手動管理商品ではありません。データは変更していません。" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, archived: data });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_archive_failed" }, { status: 500 });
+  }
+}
