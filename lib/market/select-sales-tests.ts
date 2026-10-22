@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
@@ -23,7 +25,8 @@ function slugify(title: string, id: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48);
-  return `${base || "item"}-${id.slice(0, 8)}`;
+  const stableSuffix = createHash("sha256").update(id).digest("hex").slice(0, 12);
+  return `${base || "item"}-${stableSuffix}`;
 }
 
 function validHttpUrl(value: unknown): boolean {
