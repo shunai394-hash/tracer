@@ -11,7 +11,7 @@
     "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
     "test:order-status-write-failures": "node --experimental-strip-types --no-warnings scripts/test-order-status-write-failures.mjs",
     "test:catalog-count-safety-check": "node --experimental-strip-types --no-warnings scripts/test-catalog-count-safety-check.mjs",
-    "prebuild": "npm run test:base-japanese-copy-id-regex && npm run test:commerce-core && npm run test:tracer-core && npm run test:cj-procurement-adapter && npm run test:auth-diagnostics",
+    "prebuild": "npm run test:base-japanese-copy-id-regex && npm run test:commerce-core && npm run test:tracer-core && npm run test:cj-procurement-adapter && npm run test:auth-diagnostics && npm run test:manual-inventory",
     "test:auth-diagnostics": "node scripts/test-auth-diagnostics.mjs",
     "test:bounded-product-scoring": "node scripts/test-bounded-product-scoring.mjs",
     "test:bounded-reorder-recommendations": "node scripts/test-bounded-reorder-recommendations.mjs",
@@ -48,7 +48,8 @@
     "test:base-stale-item-deletion-contract": "node scripts/test-base-stale-item-deletion-contract.mjs",
     "test:archived-listing-republication-guards": "node scripts/test-archived-listing-republication-guards.mjs",
     "test:archive-listing-republication": "node scripts/test-archive-listing-republication.mjs",
-    "test:base-japanese-copy-id-regex": "node scripts/test-base-japanese-copy-id-regex.mjs"
+    "test:base-japanese-copy-id-regex": "node scripts/test-base-japanese-copy-id-regex.mjs",
+    "test:manual-inventory": "node scripts/test-manual-inventory.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

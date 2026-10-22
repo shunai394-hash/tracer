@@ -1,4 +1,5 @@
 import { BaseOperationsPanel } from "@/components/base-operations-panel";
+import { ManualInventoryPanel } from "@/components/manual-inventory-panel";
 import { ConnectionPanel } from "@/components/connection-panel";
 import { OpportunityKpis } from "@/components/opportunity-kpis";
 import { getFoundationStatus } from "@/lib/config/env";
@@ -140,6 +141,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
+      <ManualInventoryPanel />
       <BaseOperationsPanel configured={isBaseConfigured()} listings={baseListings} loadError={baseLoadError} />
       <div className="mt-10 max-w-xl"><ConnectionPanel status={status} /></div>
     </main>
