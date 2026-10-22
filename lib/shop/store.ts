@@ -48,7 +48,8 @@ export type ShopListing = {
   shopifyProductId: string | null;
   shopifyHandle: string | null;
   shopifySyncStatus: string | null;
-  canonicalCommerce?: boolean;\n  manualInventory: boolean;
+  canonicalCommerce?: boolean;
+  manualInventory: boolean;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -76,7 +77,8 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
     shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
-    canonicalCommerce: false,\n    manualInventory: row.manual_inventory === true,
+    canonicalCommerce: false,
+    manualInventory: row.manual_inventory === true,
   };
 }
 
