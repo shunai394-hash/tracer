@@ -24,6 +24,17 @@ test("known detailed CJ hair-accessory titles stay differentiated in Japanese in
   assert.match(japaneseProduct, /ゴールドカラー 幾何学透かし模様 メタルヘアクリップ/);
 });
 
+test("CJ catalog repair replaces generic category titles with source-specific Japanese titles", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(route, /function sourceSpecificFallbackTitle/);
+  assert.match(route, /function repairGenericCommerceTitles/);
+  assert.match(route, /metadata\.sourceTitle/);
+  assert.match(route, /GENERIC_TITLE_REPAIR_FAILED/);
+  assert.match(route, /generic_title_repair_variant_write_failed/);
+  assert.match(route, /レディース クロスボディバッグ/);
+  assert.match(route, /電動クリーナー/);
+});
+
 test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
