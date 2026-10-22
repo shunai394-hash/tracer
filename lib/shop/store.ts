@@ -466,30 +466,30 @@ export async function placeShopOrder(args: {
     .in("id", listingIds)
     .is("archived_at", null)
     .eq("published", true)
-    .not("shopify_product_id", "is", null)
-    .eq("shopify_sync_status", "synced")
-    .eq("orderable", true)
+    .or("manual_inventory.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.eq.synced,orderable.eq.true,tracking_available.eq.true)")
     .gt("inventory", 0)
-    .eq("tracking_available", true)
     .gt("selling_price", 0)
     .eq("currency", "JPY");
 
   if (error) throw new Error(error.message);
-  if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published Shopify listing not found");
-  const supplierStatuses = await getPublishableSupplierListingStatuses(listings.map((listing) => ({
+  if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published listing not found");
+
+  const supplierRequired = listings.filter((listing) => listing.manual_inventory !== true);
+  const supplierStatuses = await getPublishableSupplierListingStatuses(supplierRequired.map((listing) => ({
     listingId: String(listing.id),
     supplierListingId: listing.supplier_listing_id == null ? null : String(listing.supplier_listing_id),
     productId: listing.product_id == null ? null : String(listing.product_id),
     supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
     supplierVariantId: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
   })));
-  if (listings.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)))) {
+  if (supplierRequired.some((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)))) {
     throw new Error("supplier_identity_unlinked");
   }
 
-  const liveStock = await getLiveShopifyStock(
-    listings.map((listing) => listing.shopify_variant_id).filter((id): id is string => typeof id === "string" && id.length > 0),
-  );
+  const shopifyListings = listings.filter((listing) => listing.manual_inventory !== true);
+  const liveStock = shopifyListings.length
+    ? await getLiveShopifyStock(shopifyListings.map((listing) => listing.shopify_variant_id).filter((id): id is string => typeof id === "string" && id.length > 0))
+    : new Map<string, number>();
 
   let subtotal = 0;
   let currency: string | null = null;
@@ -498,18 +498,17 @@ export async function placeShopOrder(args: {
   for (const item of args.items) {
     const listing = listings.find((row) => row.id === item.listingId) as Record<string, unknown> | undefined;
     if (!listing) throw new Error("listing is not published");
+    if (!Number.isInteger(item.qty) || item.qty <= 0) throw new Error("quantity must be a positive integer");
     if (!isPublishableCatalogTitle(listing.title)) throw new Error("listing title failed catalog quality gate");
     if (!isPublishableCatalogDescription(listing.description)) throw new Error("listing description failed catalog quality gate");
-    if (listing.orderable !== true) throw new Error("listing is not currently orderable");
-    const liveQuantity = typeof listing.shopify_variant_id === "string"
-      ? liveStock.get(listing.shopify_variant_id)
-      : undefined;
-    if (!hasVerifiedPositiveShopifyStock(listing.shopify_variant_id, liveQuantity)) {
+    const manual = listing.manual_inventory === true;
+    if (!manual && listing.orderable !== true) throw new Error("listing is not currently orderable");
+    const liveQuantity = typeof listing.shopify_variant_id === "string" ? liveStock.get(listing.shopify_variant_id) : undefined;
+    if (!manual && !hasVerifiedPositiveShopifyStock(listing.shopify_variant_id as string | null, liveQuantity)) {
       throw new Error("shopify_live_stock_unverified");
     }
-    const inventory = Math.min(asNumber(listing.inventory) ?? 0, liveQuantity as number);
-    if (inventory < item.qty) throw new Error("requested quantity exceeds verified live inventory");
-    if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("quantity must be greater than zero");
+    const inventory = manual ? (asNumber(listing.inventory) ?? 0) : Math.min(asNumber(listing.inventory) ?? 0, liveQuantity as number);
+    if (inventory < item.qty) throw new Error("requested quantity exceeds available inventory");
     if (String(listing.currency ?? "").trim().toUpperCase() !== "JPY") throw new Error("currency must be JPY");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");
@@ -519,54 +518,79 @@ export async function placeShopOrder(args: {
     lines.push({ listing, qty: item.qty, unitPrice });
   }
 
-  const { data: order, error: orderError } = await supabase
-    .from("shop_orders")
-    .insert({
-      listing_id: lines[0].listing.id,
-      status: "placed",
-      payment_method: args.paymentMethod,
-      payment_status: "pending",
-      order_status: "pending_payment",
-      paid_at: null,
-      customer_name: args.customerName,
-      customer_email: args.customerEmail,
-      customer_phone: args.customerPhone,
-      shipping_address: args.shippingAddress,
-      shipping_country_code: args.shippingCountryCode ?? null,
-      shipping_province: args.shippingProvince ?? null,
-      shipping_city: args.shippingCity ?? null,
-      shipping_zip: args.shippingZip ?? null,
-      shipping_line1: args.shippingLine1 ?? null,
-      subtotal,
-      shipping_cost: null,
-      total: subtotal,
-      currency,
-      notes: args.notes ?? null,
-      metadata: { kind: "observed_checkout" },
-    })
-    .select("id")
-    .single();
-
-  if (orderError) throw new Error(orderError.message);
-
+  const reserved: Array<{ listingId: string; qty: number }> = [];
   for (const line of lines) {
-    const itemInsert = await supabase.from("shop_order_items").insert({
-      order_id: order.id,
-      listing_id: line.listing.id,
-      product_id: line.listing.product_id,
-      supplier_listing_id: line.listing.supplier_listing_id ?? null,
-      supplier_name: line.listing.supplier_name ?? null,
-      supplier_product_id: line.listing.supplier_product_id ?? null,
-      supplier_variant_id: line.listing.supplier_variant_id ?? null,
-      title: String(line.listing.title),
-      qty: line.qty,
-      unit_price: line.unitPrice,
-      currency,
+    if (line.listing.manual_inventory !== true) continue;
+    const { data, error: reserveError } = await supabase.rpc("reserve_manual_listing_stock", {
+      p_listing_id: String(line.listing.id),
+      p_quantity: line.qty,
     });
-    if (itemInsert.error) throw new Error(itemInsert.error.message);
+    if (reserveError || data !== true) {
+      for (const item of reserved) {
+        await supabase.rpc("release_manual_listing_stock", { p_listing_id: item.listingId, p_quantity: item.qty });
+      }
+      throw new Error("manual_inventory_changed_refresh_cart");
+    }
+    reserved.push({ listingId: String(line.listing.id), qty: line.qty });
   }
 
-  return { orderId: String(order.id) };
+  let orderId: string | null = null;
+  try {
+    const { data: order, error: orderError } = await supabase
+      .from("shop_orders")
+      .insert({
+        listing_id: lines[0].listing.id,
+        status: "placed",
+        payment_method: args.paymentMethod,
+        payment_status: "pending",
+        order_status: "pending_payment",
+        paid_at: null,
+        customer_name: args.customerName,
+        customer_email: args.customerEmail,
+        customer_phone: args.customerPhone,
+        shipping_address: args.shippingAddress,
+        shipping_country_code: args.shippingCountryCode ?? null,
+        shipping_province: args.shippingProvince ?? null,
+        shipping_city: args.shippingCity ?? null,
+        shipping_zip: args.shippingZip ?? null,
+        shipping_line1: args.shippingLine1 ?? null,
+        subtotal,
+        shipping_cost: null,
+        total: subtotal,
+        currency,
+        notes: args.notes ?? null,
+        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier" },
+      })
+      .select("id")
+      .single();
+
+    if (orderError || !order) throw new Error(orderError?.message ?? "order_create_failed");
+    orderId = String(order.id);
+
+    for (const line of lines) {
+      const itemInsert = await supabase.from("shop_order_items").insert({
+        order_id: order.id,
+        listing_id: line.listing.id,
+        product_id: line.listing.product_id,
+        supplier_listing_id: line.listing.supplier_listing_id ?? null,
+        supplier_name: line.listing.supplier_name ?? null,
+        supplier_product_id: line.listing.supplier_product_id ?? null,
+        supplier_variant_id: line.listing.supplier_variant_id ?? null,
+        title: String(line.listing.title),
+        qty: line.qty,
+        unit_price: line.unitPrice,
+        currency,
+      });
+      if (itemInsert.error) throw new Error(itemInsert.error.message);
+    }
+    return { orderId };
+  } catch (error) {
+    if (orderId) await supabase.from("shop_orders").delete().eq("id", orderId);
+    for (const item of reserved) {
+      await supabase.rpc("release_manual_listing_stock", { p_listing_id: item.listingId, p_quantity: item.qty });
+    }
+    throw error;
+  }
 }
 
 export async function attachStripeCheckoutSession(args: {
