@@ -218,24 +218,15 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  // CJ can expose many options as separate supplier variants while their
-  // customer-facing title, image and price are identical. Avoid repeating
-  // indistinguishable cards in TRACER, while retaining one exact variant
-  // identity for checkout/procurement. Visibly different options remain.
+  // De-duplicate identical customer-facing cards across supplier records.
+  // Do not use title alone: generic titles can represent different products.
+  // Keep one original listing identity for checkout and procurement.
   const storefrontProducts = new Map<string, ShopListing>();
   for (const listing of listings) {
-    const supplier = listing.supplierName?.trim().toLowerCase() ?? "";
-    const productId = listing.supplierProductId?.trim() ?? "";
-    const duplicateKey = !listing.manualInventory && supplier && productId
-      ? [
-          "supplier-product",
-          supplier,
-          productId,
-          listing.title.trim().toLocaleLowerCase(),
-          listing.imageUrl?.trim() ?? "",
-          String(listing.sellingPrice ?? ""),
-          listing.currency?.trim().toUpperCase() ?? "",
-        ].join(":")
+    const titleKey = listing.title.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+    const imageKey = listing.imageUrl?.trim() ?? "";
+    const duplicateKey = !listing.manualInventory && titleKey && imageKey
+      ? ["visible-product", titleKey, imageKey, String(listing.sellingPrice ?? ""), listing.currency?.trim().toUpperCase() ?? ""].join(":")
       : `listing:${listing.id}`;
     if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
   }
