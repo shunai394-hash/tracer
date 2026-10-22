@@ -217,8 +217,29 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     else if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
-  const listings = [...byVariant.values()];
-  return listings
+  const variantListings = [...byVariant.values()];
+
+  // The storefront is a product catalogue, not a supplier-variant inventory table.
+  // Keep each supplier product as one card; Shopify still owns the variant picker
+  // on the linked product page. Never merge different supplier products by title.
+  const productListings = new Map<string, ShopListing>();
+  for (const listing of variantListings) {
+    const supplierProductId = listing.supplierProductId?.trim();
+    const supplierName = listing.supplierName?.trim().toLowerCase();
+    const productKey = supplierProductId && supplierName
+      ? `supplier:${supplierName}:${supplierProductId}`
+      : listing.manualInventory
+        ? `manual:${listing.id}`
+        : listing.shopifyVariantId
+          ? `variant:${listing.shopifyVariantId}`
+          : `listing:${listing.id}`;
+    const current = productListings.get(productKey);
+    // Keep the first eligible variant, as legacy rows are ordered by publication
+    // time and canonical rows replace matching Shopify variants above.
+    if (!current) productListings.set(productKey, listing);
+  }
+
+  return [...productListings.values()]
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
