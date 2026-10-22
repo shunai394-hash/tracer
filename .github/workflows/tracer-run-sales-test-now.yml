@@ -30,3 +30,4 @@ jobs:
 
 # Retrigger the guarded Sales Test Gate after the verified Japanese-copy additions.
 # [run-sales-test-now] Run the real publication gate instead of reporting a skipped workflow.
+# Retrigger after Japanese localization fix merged on 2026-10-22.
