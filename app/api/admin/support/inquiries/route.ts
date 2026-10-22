@@ -19,8 +19,8 @@ export async function GET(request: Request) {
   try {
     const db = createSupabaseAdminClient();
     const status = new URL(request.url).searchParams.get("status");
-    let query = db.from("customer_inquiries")
-      .select("id,name,email,category,subject,message,status,admin_note,source,created_at,updated_at")
+    let query = db.from("support_messages")
+      .select("id,name,email,category,subject,message,status,admin_note,created_at,updated_at")
       .order("created_at", { ascending: false }).limit(500);
     if (status && ["new", "in_progress", "resolved", "spam"].includes(status)) query = query.eq("status", status);
     const { data, error } = await query;
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, inquiries: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[SUPPORT ADMIN] inquiry read failed", error);
-    return NextResponse.json({ ok: false, error: "問い合わせを読み込めませんでした。マイグレーションの適用を確認してください。" }, { status: 503 });
+    return NextResponse.json({ ok: false, error: "問い合わせを読み込めませんでした。DBのサポートテーブル設定を確認してください。" }, { status: 503 });
   }
 }
 
@@ -46,7 +46,7 @@ export async function PATCH(request: Request) {
   }
   try {
     const db = createSupabaseAdminClient();
-    const { data, error } = await db.from("customer_inquiries")
+    const { data, error } = await db.from("support_messages")
       .update({ status, admin_note: adminNote || null })
       .eq("id", id).select("id,status,admin_note,updated_at").single();
     if (error) throw error;
