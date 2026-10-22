@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { womenProductPriority } from "@/lib/intelligence/womens-priority";
 import { simulateContributionProfit } from "@/lib/intelligence/simulate-profit";
@@ -23,7 +25,8 @@ function slugify(title: string, id: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48);
-  return `${base || "item"}-${id.slice(0, 8)}`;
+  const stableSuffix = createHash("sha256").update(id).digest("hex").slice(0, 12);
+  return `${base || "item"}-${stableSuffix}`;
 }
 
 function validHttpUrl(value: unknown): boolean {
@@ -364,7 +367,23 @@ export async function selectAndPublishSalesTests(
       rejected.push({ id: String(item.bestseller.id), reasons });
       continue;
     }
-    const slug = slugify(listingTitle, String(item.bestseller.id));
+    // Stable listing identity must come from the supplier product + variant,
+    // not the marketplace bestseller row. Otherwise the same supplier variant
+    // can be inserted repeatedly when discovered through multiple bestseller records.
+    const supplierIdentity = [
+      String(item.listing.supplier_variant_id ?? "").trim(),
+      String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim(),
+      String(item.listing.supplier ?? "unknown").trim().toLowerCase(),
+    ].join(":");
+    if (!String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim() ||
+        !String(item.listing.supplier_variant_id ?? "").trim()) {
+      const reasons = ["supplier_identity_missing_for_deduplication"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+    // Stable supplier identity must not change when the Japanese title is edited.
+    const slug = slugify("supplier-item", supplierIdentity);
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
@@ -403,13 +422,47 @@ export async function selectAndPublishSalesTests(
       published_at: fetchedAt,
       updated_at: fetchedAt,
     };
-    const existing = await supabase.from("shop_listings").select("id, archived_at").eq("slug", slug).maybeSingle();
+    // Match canonical supplier identity first so rows created under the previous
+    // bestseller-based slug format are reused rather than duplicated.
+    const supplierName = String(item.listing.supplier ?? "unknown").trim();
+    const supplierProductId = String(item.listing.supplier_product_id ?? item.listing.external_id ?? "").trim();
+    const supplierVariantId = String(item.listing.supplier_variant_id ?? "").trim();
+    const canonicalMatches = await supabase
+      .from("shop_listings")
+      .select("id, archived_at")
+      .eq("supplier_name", supplierName)
+      .eq("supplier_product_id", supplierProductId)
+      .eq("supplier_variant_id", supplierVariantId)
+      .limit(2);
+    if (canonicalMatches.error) throw new Error(canonicalMatches.error.message);
+    if ((canonicalMatches.data ?? []).length > 1) {
+      const reasons = ["duplicate_canonical_supplier_identity_requires_review"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+
+    const slugMatch = await supabase
+      .from("shop_listings")
+      .select("id, archived_at")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (slugMatch.error) throw new Error(slugMatch.error.message);
+    const identityMatch = (canonicalMatches.data ?? [])[0] ?? null;
+    // If the canonical identity and deterministic slug point to different rows,
+    // stop instead of overwriting a potentially unrelated product or its mappings.
+    if (identityMatch && slugMatch.data && identityMatch.id !== slugMatch.data.id) {
+      const reasons = ["supplier_identity_slug_conflict_requires_review"];
+      await markPipeline(String(item.bestseller.id), "SALES_TEST", "blocked", reasons.join(","));
+      rejected.push({ id: String(item.bestseller.id), reasons });
+      continue;
+    }
+    const existing = identityMatch ?? slugMatch.data;
     let upsert: { data: { id: string } | null; error: { message: string } | null };
-    if (existing.error) throw new Error(existing.error.message);
     // Keep archived rows and their delivery/view history untouched; never republish them in place.
-    if (existing.data?.archived_at) continue;
-    if (existing.data?.id) {
-      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.data.id).select("id").single();
+    if (existing?.archived_at) continue;
+    if (existing?.id) {
+      const updated = await supabase.from("shop_listings").update(listingPayload).eq("id", existing.id).select("id").single();
       upsert = { data: updated.data as { id: string } | null, error: updated.error ? { message: updated.error.message } : null };
     } else {
       const inserted = await supabase.from("shop_listings").insert(listingPayload).select("id").single();

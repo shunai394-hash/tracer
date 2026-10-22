@@ -37,6 +37,12 @@ assert.doesNotMatch(supplySelector, /if \(shippingEstimated\) reasons\.push\(/, 
 assert.match(supplySelector, /shippingCost: pricingShippingCost/, "the configured allowance must reach the shipping gate for profitability evaluation");
 assert.match(supplySelector, /shippingUnknown: profit\.shippingUnknown/);
 assert.match(marketSelector, /requireDomesticShipping: true/);
+assert.match(marketSelector, /const supplierIdentity = \[/, "listing identity must use canonical supplier identifiers");
+assert.match(marketSelector, /slugify\("supplier-item", supplierIdentity\)/, "listing slug must remain stable when the title changes");
+assert.match(marketSelector, /\.eq\("supplier_name", supplierName\)[\s\S]*?\.eq\("supplier_product_id", supplierProductId\)[\s\S]*?\.eq\("supplier_variant_id", supplierVariantId\)/, "existing listings must be found by canonical supplier identity");
+assert.match(marketSelector, /duplicate_canonical_supplier_identity_requires_review/, "ambiguous existing duplicates must be blocked for review");
+assert.match(marketSelector, /supplier_identity_slug_conflict_requires_review/, "identity/slug conflicts must not overwrite another listing");
+
 assert.match(supplySelector, /rejectedCount: rejected\.length/);
 assert.match(supplySelector, /rejectionCounts: summarizeRejections\(rejected\)/);
 assert.match(supplySelector, /title: sourceTitle/);
