@@ -93,4 +93,25 @@ jobs:
           reconcile_code="$(curl -sS -o reconcile.json -w "%{http_code}" --max-time 130 -H "Authorization: Bearer $token" "$BASE/api/admin/shopify/reconcile?variant=3ce7d60e-dc48-4eae-9d5e-485a7348d1d4" || true)"
           echo "HTTP $reconcile_code"
           python3 -c 'import json; d=json.load(open("reconcile.json")); print(json.dumps({k: d.get(k) for k in ("ok","error","catalog","shopify","db")}, ensure_ascii=False, indent=1))' || echo "reconcile response was not JSON"
-          [[ "$status_code" =~ ^2 ]]
+          # A green workflow must mean all three read-only checks succeeded.
+          # HTTP 200 alone is insufficient when an endpoint returns {"ok": false}.
+          python3 - <<'PY'
+          import json, sys
+          checks = [
+              ("commerce status", "status.json"),
+              ("approval queue", "approvals.json"),
+              ("Shopify reconcile", "reconcile.json"),
+          ]
+          failed = []
+          for name, path in checks:
+              try:
+                  data = json.load(open(path))
+                  if data.get("ok") is not True:
+                      failed.append(f"{name}: ok is not true")
+              except Exception:
+                  failed.append(f"{name}: invalid or missing JSON")
+          if failed:
+              print("Read-only commerce verification failed: " + "; ".join(failed))
+              sys.exit(1)
+          PY
+          [[ "$status_code" =~ ^2 ]] && [[ "$approvals_code" =~ ^2 ]] && [[ "$reconcile_code" =~ ^2 ]]
