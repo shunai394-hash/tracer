@@ -668,6 +668,11 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   assert.match(japaneseCommerceDescription("日光で色が変わるアセテート製シャーククリップ"), /日光で色の変化を楽しめるアセテート製/);
   assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
   assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
+  assert.match(japaneseCommerceDescription("レディース ショルダーバッグ（ブラック）"), /ショルダー・クロスボディバッグ/);
+  assert.match(japaneseCommerceDescription("牛革 レディースハンドバッグ（ブラウン）"), /革素材をうたうレディースハンドバッグ/);
+  assert.match(japaneseCommerceDescription("メイクブラシ収納・お手入れ用品（ホワイト）"), /メイクブラシをまとめて収納/);
+  assert.match(japaneseCommerceDescription("ハート・星モチーフ メタルヘアクリップ（スタイル9）"), /ハートモチーフを取り入れたヘアクリップ/);
+
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
   for (const title of [
