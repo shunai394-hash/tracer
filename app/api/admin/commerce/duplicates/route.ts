@@ -39,7 +39,7 @@ async function readAll(table: string, columns: string): Promise<Row[]> {
     const { data, error } = await db.from(table).select(columns)
       .range(offset, offset + pageSize - 1);
     if (error) throw new Error(table + "_read_failed:" + error.message);
-    const page = (data ?? []) as Row[];
+    const page = (data ?? []) as unknown as Row[];
     rows.push(...page);
     if (page.length < pageSize) {
       return rows;
