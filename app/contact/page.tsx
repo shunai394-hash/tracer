@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import {useState,type FormEvent} from "react";
-const categories=["注文・配送","返品・返金","商品について","決済について","アカウント","その他"];
+const categories=["注文・配送","返品・交換","商品について","アカウント","不具合","その他"];
 export default function ContactPage(){
  const [busy,setBusy]=useState(false),[sent,setSent]=useState(false),[error,setError]=useState("");
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");const form=e.currentTarget;try{const r=await fetch("/api/support/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"送信できませんでした。");setSent(true);form.reset();}catch(x){setError(x instanceof Error?x.message:"送信できませんでした。");}finally{setBusy(false);}}
