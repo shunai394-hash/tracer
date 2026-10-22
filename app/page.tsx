@@ -65,7 +65,7 @@ export default async function HomePage() {
                   <h3 className="line-clamp-2 text-sm font-medium leading-5">{listing.title}</h3>
                   {listing.description ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-neutral-500">{listing.description}</p> : null}
                   <p className="mt-3 text-base font-semibold">{formatMoney(listing.sellingPrice, listing.currency)}</p>
-                  <p className="mt-1 text-xs text-neutral-500">在庫 {listing.inventory}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{listing.manualInventory ? `在庫 ${listing.inventory}` : "在庫あり"}</p>
                 </div>
               </Link>
             ))}
