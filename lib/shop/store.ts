@@ -218,7 +218,30 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  return listings
+  // CJ often exposes each option as a separate supplier variant, but TRACER's
+  // public catalog currently renders each row as a standalone product card.
+  // Collapse rows that are indistinguishable to a customer (same supplier
+  // product, title, image and price) while retaining the chosen variant's exact
+  // supplier/SKU identity for checkout and procurement. Variants with a visibly
+  // different image or price remain separately selectable/listed.
+  const storefrontProducts = new Map<string, ShopListing>();
+  for (const listing of listings) {
+    const supplier = listing.supplierName?.trim().toLowerCase() ?? "";
+    const productId = listing.supplierProductId?.trim() ?? "";
+    const duplicateKey = !listing.manualInventory && supplier && productId
+      ? [
+          "supplier-product",
+          supplier,
+          productId,
+          listing.title.trim().toLocaleLowerCase(),
+          listing.imageUrl?.trim() ?? "",
+          String(listing.sellingPrice ?? ""),
+          listing.currency?.trim().toUpperCase() ?? "",
+        ].join(":")
+      : `listing:${listing.id}`;
+    if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
+  }
+  return [...storefrontProducts.values()]
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
