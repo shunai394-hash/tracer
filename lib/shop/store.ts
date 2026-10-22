@@ -218,7 +218,28 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  return listings
+  // CJ can expose many options as separate supplier variants while their
+  // customer-facing title, image and price are identical. Avoid repeating
+  // indistinguishable cards in TRACER, while retaining one exact variant
+  // identity for checkout/procurement. Visibly different options remain.
+  const storefrontProducts = new Map<string, ShopListing>();
+  for (const listing of listings) {
+    const supplier = listing.supplierName?.trim().toLowerCase() ?? "";
+    const productId = listing.supplierProductId?.trim() ?? "";
+    const duplicateKey = !listing.manualInventory && supplier && productId
+      ? [
+          "supplier-product",
+          supplier,
+          productId,
+          listing.title.trim().toLocaleLowerCase(),
+          listing.imageUrl?.trim() ?? "",
+          String(listing.sellingPrice ?? ""),
+          listing.currency?.trim().toUpperCase() ?? "",
+        ].join(":")
+      : `listing:${listing.id}`;
+    if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
+  }
+  return [...storefrontProducts.values()]
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
