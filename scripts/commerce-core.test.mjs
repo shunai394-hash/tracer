@@ -1268,6 +1268,7 @@ test("Shopify retries transient HTTP failures only for read-only GraphQL queries
   const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
   assert.match(admin, /httpReadRetryAttempt = 0/);
   assert.ok(admin.includes("const isReadOnlyQuery ="));
+  assert.ok(admin.includes("query\\\\b/i.test(query)"), "retry guard must recognize GraphQL query operations");
   assert.match(admin, /const retryableStatus = response\.status === 429 \|\| \[500, 502, 503, 504\]\.includes\(response\.status\)/);
   assert.match(admin, /if \(isReadOnlyQuery && retryableStatus && httpReadRetryAttempt < 3\)/);
   assert.match(admin, /Never replay a mutation after a 5xx/);
