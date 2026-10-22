@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +81,12 @@ export async function POST(request: Request) {
   }
   if (published && (!imageUrl || inventory < 1)) {
     return NextResponse.json({ ok: false, error: "公開にはHTTPS画像と1個以上の在庫が必要です。" }, { status: 400 });
+  }
+  if (published && !/[ぁ-んァ-ヶ一-龯々ー]/u.test(title)) {
+    return NextResponse.json({ ok: false, error: "TRACERの公開商品名は日本語で入力してください。" }, { status: 400 });
+  }
+  if (published && (!isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description))) {
+    return NextResponse.json({ ok: false, error: "商品名または説明が公開品質基準を満たしていません。内容を修正してください。" }, { status: 400 });
   }
 
   const db = createSupabaseAdminClient();
