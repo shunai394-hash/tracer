@@ -157,7 +157,10 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     );
   } catch (error) {
     console.error("[shopify-live-stock-unavailable]", error instanceof Error ? error.message.slice(0, 300) : String(error));
-    return listings;
+    // Supplier-backed listings must not fall back to stale cached inventory when
+    // Shopify's live quantity cannot be read. Keep only explicitly manual-stock
+    // listings; they are managed in TRACER and do not depend on Shopify readback.
+    return listings.filter((listing) => listing.manualInventory);
   }
 
   const staleSoldOut = shopifyListings.filter((listing) => {
