@@ -297,7 +297,8 @@ export async function shopifyGraphQL<T>(
 
     // Never replay a mutation after a 5xx: Shopify may have committed it even if
     // the response failed. Only read-only queries can safely retry transient HTTP errors.
-    const isReadOnlyQuery = query.trimStart().toLowerCase().startsWith("query");
+    // GraphQL documents may start with comments; recognize query operations without retrying mutations.
+    const isReadOnlyQuery = /^\s*(?:#[^\n]*\n\s*)*query\b/i.test(query);
     const retryableStatus = response.status === 429 || [500, 502, 503, 504].includes(response.status);
     if (isReadOnlyQuery && retryableStatus && httpReadRetryAttempt < 3) {
       await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** httpReadRetryAttempt)));
