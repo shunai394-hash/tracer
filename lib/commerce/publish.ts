@@ -136,9 +136,11 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
       if (best && best.missing.length === 0) {
+        // A successful safety re-check is not a publication change. Preserve the
+        // externally verified state; changing published -> pending here creates
+        // artificial BASE/Shopify count drift on every reconciliation run.
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
-          status: "pending",
           last_synced_at: checkedAt,
           updated_at: checkedAt,
           last_error: null,
