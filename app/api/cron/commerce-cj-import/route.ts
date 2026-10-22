@@ -208,7 +208,12 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     [/beauty tool|makeup|cosmetic/, "美容ツール"],
   ];
   const specific = rules.find(([pattern]) => pattern.test(source));
-  if (!specific) return localizeProductTitle(title, productType);
+  if (!specific) {
+    const localized = localizeProductTitle(title, productType);
+    return localized && !genericLocalizedTitles.has(localized)
+      ? localized
+      : sourceSpecificFallbackTitle(title, variantNames);
+  }
 
   // Broad category rules must not override an available source-specific Japanese
   // title. Older versions returned "メイクブラシ" or "レディースハンドバッグ"
