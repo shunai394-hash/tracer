@@ -564,7 +564,7 @@ async function syncListingRows(
       // Recover an unpersisted create by exact SKU before relying on a handle.
       // This avoids creating a second Shopify product when the previous API
       // call succeeded but the listing-to-product mapping write did not.
-      const exactSkuMatch = await findBySku(productInput.sku);
+      const exactSkuMatch = existingById ? null : await findBySku(productInput.sku);
       let existing = existingById ?? exactSkuMatch?.product ?? (await findByHandle(productInput.handle));
       let recoveredVariantId = !existingById && exactSkuMatch?.product.id === existing?.id
         ? exactSkuMatch.variantId
