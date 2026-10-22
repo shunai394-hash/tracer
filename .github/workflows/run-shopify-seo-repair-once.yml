@@ -1,0 +1,94 @@
+name: TRACER backfill Shopify SEO metadata from canonical listings
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/run-shopify-seo-repair-once.yml"
+      - "app/api/cron/shopify-seo-repair/route.ts"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-shopify-seo-metadata-backfill
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-shopify-seo-repair]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Wait for production deployment
+        run: sleep 90
+      - name: Backfill Shopify SEO metadata in verified batches
+        shell: bash
+        env:
+          PRODUCTION_URL: https://tracer-pied-alpha.vercel.app
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          after_id=""
+          total_verified=0
+          total_failed=0
+          completed_batches=0
+          for batch in $(seq 1 30); do
+            token_json="$(curl --fail --silent --show-error --max-time 20 \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+            id_token="$(printf '%s' "$token_json" | jq -er '.value')"
+            request_url="${PRODUCTION_URL}/api/cron/shopify-seo-repair?limit=10"
+            if [ -n "$after_id" ]; then request_url="${request_url}&afterId=${after_id}"; fi
+            status="$(curl --silent --show-error --max-time 300 \
+              -o "$response_file" -w '%{http_code}' \
+              -H "Authorization: Bearer ${id_token}" "$request_url")"
+            echo "Shopify SEO batch $batch HTTP $status"
+            cat "$response_file"
+            echo
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              echo "Stopping after HTTP $status." >&2
+              exit 1
+            fi
+            if ! jq -e '
+              .phase == "shopify_seo_metadata_backfill" and
+              .requested >= 0 and .requested <= 10 and
+              (.results | type == "array") and
+              (.results | length) == .requested and
+              ([.results[] | select(
+                .outcome == "updated_and_verified" and
+                .titleVerified == true and
+                .descriptionVerified == true
+              )] | length) == .updatedAndVerified
+            ' "$response_file" >/dev/null; then
+              echo "Stopping: persisted SEO readback contract failed." >&2
+              exit 1
+            fi
+            verified="$(jq -r '.updatedAndVerified // 0' "$response_file")"
+            failed="$(jq -r '.failed // 0' "$response_file")"
+            requested="$(jq -r '.requested // 0' "$response_file")"
+            total_verified=$((total_verified + verified))
+            total_failed=$((total_failed + failed))
+            completed_batches=$batch
+            next_after_id="$(jq -r '.nextAfterId // empty' "$response_file")"
+            complete="$(jq -r '.complete // false' "$response_file")"
+            if [ "$requested" -eq 0 ] || [ "$complete" = "true" ] || [ -z "$next_after_id" ]; then
+              break
+            fi
+            after_id="$next_after_id"
+          done
+          {
+            echo "## Shopify SEO metadata backfill"
+            echo
+            echo "- Batches completed: $completed_batches"
+            echo "- SEO updates verified from a fresh Shopify read: $total_verified"
+            echo "- Failed items: $total_failed"
+            echo "- Only SEO title/description fields were requested; product title, description, price, stock, status and publication were not mutated."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$total_verified" -eq 0 ] || [ "$total_failed" -gt 0 ]; then
+            echo "Shopify SEO backfill did not complete cleanly." >&2
+            exit 1
+          fi
