@@ -161,7 +161,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
         const itemId = String(listing.external_product_id);
         await editBaseItem({
           itemId, title, detail,
-          price: Math.max(1, Math.round(Number(price?.selling_price) || 1)),
+          price: Math.min(100_000_000, Math.max(50, Math.round(Number(price?.selling_price) || 50))),
           stock: 0, visible: false,
         });
         const readback = await getBaseItemDetail(itemId);
@@ -452,7 +452,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       const reason = missing.join(",") || "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
-        const fallbackPrice = Math.max(1, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 1));
+        const fallbackPrice = Math.min(100_000_000, Math.max(50, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 50)));
         if (channel === "base") {
           await editBaseItem({
             itemId: String(currentState.external_product_id),
