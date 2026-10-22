@@ -382,7 +382,8 @@ export async function selectAndPublishSalesTests(
       rejected.push({ id: String(item.bestseller.id), reasons });
       continue;
     }
-    const slug = slugify(listingTitle, supplierIdentity);
+    // Stable supplier identity must not change when the Japanese title is edited.
+    const slug = slugify("supplier-item", supplierIdentity);
 
     await markPipeline(String(item.bestseller.id), "SELECTED", "selected", "sales_test_selected");
 
