@@ -12,6 +12,8 @@ assert.match(route, /TRACER_ADMIN_TOKEN/, "manual inventory writes must require 
 assert.match(route, /timingSafeEqual/, "admin token comparison must be timing safe");
 assert.match(route, /published && \(!imageUrl \|\| inventory < 1\)/, "publishing must require an image and positive stock");
 assert.match(route, /manual_inventory: true/, "new manual listings must be explicitly marked");
+assert.match(route, /isPublishableCatalogTitle\(title\)/, "publish action must enforce the storefront title gate");
+assert.match(route, /isPublishableCatalogDescription\(description\)/, "publish action must enforce the storefront description gate");
 assert.match(store, /manual_inventory\.eq\.true/, "TRACER-owned listings must be independently queryable");
 assert.match(store, /reserve_manual_listing_stock/, "checkout must reserve manual stock");
 assert.match(store, /release_manual_listing_stock/, "failed order writes must release reserved manual stock");
