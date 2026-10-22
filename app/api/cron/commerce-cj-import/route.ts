@@ -29,10 +29,12 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   // "ヘアケアアイテム" or "ヘアバンド".
   const localizedFirst = localizeProductTitle(title, productType);
   const genericLocalizedTitles = new Set([
-    "ヘアケアアイテム", "ヘアバンド", "ヘアアクセサリー",
+    "ヘアケアアイテム", "ヘアバンド", "ヘアアクセサリー", "ヘアクリップ",
     "レディース ヘアアクセサリー", "美容・メイクアイテム",
     "美容ツール", "バッグ・収納アイテム", "レディースハンドバッグ",
-    "ハンドバッグ", "メイクブラシ",
+    "レディース ハンドバッグ", "レディース ショルダーバッグ",
+    "レディース クロスボディバッグ", "レディース トートバッグ",
+    "ハンドバッグ", "ショルダーバッグ", "メイクブラシ",
   ]);
   if (localizedFirst && !genericLocalizedTitles.has(localizedFirst)) {
     return localizedFirst;
@@ -134,6 +136,10 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
   // creating dozens of indistinguishable storefront cards.
   const categoryOnlyTitles = new Set([
     "レディースハンドバッグ",
+    "レディース ハンドバッグ",
+    "レディース ショルダーバッグ",
+    "レディース クロスボディバッグ",
+    "レディース トートバッグ",
     "ハンドバッグ",
     "ショルダーバッグ",
     "斜めがけバッグ",
@@ -148,6 +154,8 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     "レディース ヘアアクセサリー",
     "美容ツール",
     "美容・メイクアイテム",
+    "ヘアケアアイテム",
+    "バッグ・収納アイテム",
     "スマートフォンケース",
     "ペット用品",
     "キッチン収納用品",
