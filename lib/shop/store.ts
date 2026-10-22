@@ -233,7 +233,6 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
           productId,
           listing.title.trim().toLocaleLowerCase(),
           listing.imageUrl?.trim() ?? "",
-          String(listing.sellingPrice ?? ""),
           listing.currency?.trim().toUpperCase() ?? "",
         ].join(":")
       : `listing:${listing.id}`;
