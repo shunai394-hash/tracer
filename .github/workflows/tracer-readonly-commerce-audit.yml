@@ -160,3 +160,18 @@ jobs:
               raise SystemExit("commerce duplicate audit was not successful/read-only")
           PY
           test "${duplicate_code}" = "200"
+
+      - name: Preserve read-only audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-commerce-audit-reports
+          path: |
+            commerce-status.json
+            base-diagnostics.json
+            base-identity-repair-dry-run.json
+            base-legacy-id-detail-audit.json
+            live-price-audit.json
+            commerce-duplicates.json
+          if-no-files-found: ignore
+          retention-days: 14
