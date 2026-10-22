@@ -106,7 +106,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
+  let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null).or("supplier_name.is.null,supplier_name.neq.cj");
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
