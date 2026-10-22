@@ -218,17 +218,23 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  // De-duplicate identical customer-facing cards across supplier records.
-  // Do not use title alone: generic titles can represent different products.
-  // Keep one original listing identity for checkout and procurement.
+  // Group supplier variants only when both the supplier product identity and
+  // Shopify product identity match. Shopify's product page retains the variant
+  // selector; keep the cheapest verified variant as the storefront entry point.
+  // Different Shopify products, manual inventory, and listings without exact
+  // supplier identity remain separate. No database rows are deleted or changed.
   const storefrontProducts = new Map<string, ShopListing>();
   for (const listing of listings) {
-    const titleKey = listing.title.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
-    const imageKey = listing.imageUrl?.trim() ?? "";
-    const duplicateKey = !listing.manualInventory && titleKey && imageKey
-      ? ["visible-product", titleKey, imageKey, String(listing.sellingPrice ?? ""), listing.currency?.trim().toUpperCase() ?? ""].join(":")
+    const supplier = listing.supplierName?.trim().toLocaleLowerCase() ?? "";
+    const supplierProduct = listing.supplierProductId?.trim() ?? "";
+    const shopifyProduct = listing.shopifyProductId?.trim() ?? "";
+    const duplicateKey = !listing.manualInventory && supplier && supplierProduct && shopifyProduct
+      ? ["supplier-product", supplier, supplierProduct, shopifyProduct].join(":")
       : `listing:${listing.id}`;
-    if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
+    const existing = storefrontProducts.get(duplicateKey);
+    if (!existing || (listing.sellingPrice ?? Number.POSITIVE_INFINITY) < (existing.sellingPrice ?? Number.POSITIVE_INFINITY)) {
+      storefrontProducts.set(duplicateKey, listing);
+    }
   }
   return [...storefrontProducts.values()]
     .map((listing) => {

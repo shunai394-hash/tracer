@@ -105,8 +105,9 @@ export default async function ShopProductPage({
 
   const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
   const shopifyDomain = rawShopifyDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const shopifyVariantNumericId = listing.shopifyVariantId?.match(/^gid:\/\/shopify\/ProductVariant\/(\d+)$/)?.[1] ?? null;
   const shopifyProductUrl = listing.shopifySyncStatus === "synced" && listing.shopifyHandle && shopifyDomain
-    ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
+    ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}${shopifyVariantNumericId ? `?variant=${shopifyVariantNumericId}` : ""}`
     : null;
 
   const productJsonLd = {
