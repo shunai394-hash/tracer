@@ -5,8 +5,19 @@ import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "TRACER — オンラインストア",
-  description: "毎日の暮らしに取り入れたいアイテムを見つけるオンラインストア。",
+  title: "レディースバッグ・美容ツール・ヘアアクセサリーの通販｜TRACER",
+  description:
+    "レディースバッグ、美容ツール、ヘアアクセサリーなど、毎日の暮らしに取り入れやすいアイテムを掲載。商品ごとの価格・在庫・仕様を確認してお買い物いただけます。",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "レディースバッグ・美容ツール・ヘアアクセサリーの通販｜TRACER",
+    description:
+      "レディースバッグ、美容ツール、ヘアアクセサリーなど、毎日の暮らしに取り入れやすいアイテムを掲載。商品ごとの価格・在庫・仕様を確認してお買い物いただけます。",
+    url: "https://tracer-pied-alpha.vercel.app/",
+    siteName: "TRACER",
+    type: "website",
+    locale: "ja_JP",
+  },
 };
 
 export default async function HomePage() {
