@@ -220,6 +220,9 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
     .from("shop_listings")
     .select(baseSelect)
     .is("archived_at", null)
+    // CJ variants are published from the canonical commerce catalog, where variants share one parent product.
+    // Do not let the legacy one-listing-per-variant path create another standalone page.
+    .or("supplier_name.is.null,supplier_name.neq.cj")
     .or("published.eq.true,and(published.eq.false,supplier_product_id.not.is.null,supplier_variant_id.not.is.null)")
     .order("pipeline_updated_at", { ascending: true });
 
