@@ -9,7 +9,7 @@ This document is a migration plan only. It does not publish, unpublish, merge, o
 ## Verified current behavior
 
 - `lib/commerce/publish.ts` iterates `commerce_variants` as publication candidates.
-- For a new BASE candidate, it calls `createBaseItem` with one title, identifier, detail, price, and stock. The current wrapper in `lib/channels/base.ts` posts these fields to `/items/add`; it does not expose a variant/option collection.
+- For a new BASE candidate, it calls `createBaseItem` with one title, identifier, detail, price, and stock. The wrapper uses the legacy `/1/items/add` API. Official BASE API documentation supports `variation[n]`, `variation_stock[n]`, `variation_identifier[n]`, and `barcode[n]`; the current publication path does not yet pass grouped variations. BASE still applies one item-level price to the whole item, so variants with different selling prices cannot be grouped without a different pricing representation.
 - For a new Shopify candidate, `createShopifyProduct` calls `productCreate`, then updates the one default variant's SKU and price. The current sync path derives a distinct handle from the parent source key plus the variant UUID, which permits each child variant to become a separate Shopify product.
 - `channel_listings` records a mapping for each canonical `variant_id` to its external product and variant IDs. These mappings are order/procurement-sensitive and must not be discarded during migration.
 
@@ -41,10 +41,10 @@ These numbers describe reconciliation candidates, not safe deletions. Recompute 
 
 ### BASE
 
-1. The current wrapper only exposes a single BASE item with identifier, price, stock, title and detail; it does not implement variants.
-2. Verify the currently supported BASE API and actual shop capabilities before choosing a grouping strategy.
-3. If BASE cannot represent variants under one item through its supported API, keep distinct sellable BASE items but group them under the same TRACER parent identity in the internal catalog. Do not pretend BASE product counts can equal Shopify product counts if the channel's data model cannot represent the same structure.
-4. Keep each BASE item ID and identifier/SKU mapping intact for order-line reconciliation.
+1. BASE's legacy `/1/items/add` API supports variation name, stock, identifier, and barcode fields. The API wrapper now has an additive, optional encoding path in PR #1852, but the live publication flow still publishes variants individually until parent-aware orchestration is implemented.
+2. BASE variations share the item's single selling price. Only group canonical variants when their intended BASE selling prices are equal and their variant names/identifiers are unambiguous.
+3. Keep distinct sellable BASE items when variant prices differ or when variant mapping is incomplete. Do not pretend BASE product counts must equal Shopify product counts where the channel's pricing/data model differs.
+4. Preserve each existing BASE item ID and item-variation ID / identifier mapping for order-line reconciliation. Do not automatically merge or delete old items.
 
 ## Migration safety gates
 
