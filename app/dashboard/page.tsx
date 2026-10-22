@@ -96,8 +96,14 @@ export default async function DashboardPage() {
       <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
         まずここで商品を追加・編集・一覧から外せます。下の各パネルは仕入先接続とBASE運用の確認用です。
       </p>
-      <div className="mt-5">
-        <a href="/dashboard/analytics" className="inline-flex items-center border border-cyan-300/30 bg-cyan-300/5 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:bg-cyan-300/10">
+      <div className="mt-5 flex flex-wrap gap-3">
+        <a href="/admin/operations" className="inline-flex items-center border border-cyan-300/40 bg-cyan-300/10 px-4 py-3 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15">
+          管理センター（規則・BOT） <span className="ml-2" aria-hidden="true">→</span>
+        </a>
+        <a href="/settings" className="inline-flex items-center border border-white/15 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/5">
+          規則・注文設定 <span className="ml-2" aria-hidden="true">→</span>
+        </a>
+        <a href="/dashboard/analytics" className="inline-flex items-center border border-white/15 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/5">
           売上・売れ筋分析を見る <span className="ml-2" aria-hidden="true">→</span>
         </a>
       </div>
