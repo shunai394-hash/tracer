@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/solid color casual shoulder.*women bag|women.*solid color casual shoulder.*bag/i, "レディース ショルダーバッグ（カラー・仕様は商品選択画面で確認）"],
   [/^purple sand flower pot rectangular(?:\\s*\\(.*\\))?$/i, "長方形の紫砂植木鉢（紫泥・約35×22.8×8.5cm）"],
   [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "ミニサンゴ風 水槽用デコレーション（ホワイト）"],
   [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製ルーレットホイール（直径約50cm）"],
@@ -335,6 +336,7 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/solid color casual shoulder.*women bag|women.*solid color casual shoulder.*bag/i, "レディース向けショルダーバッグです。色・素材・寸法・収納仕様・付属品は、購入前に商品画像と仕入先の最新商品仕様をご確認ください。"],
     [/^purple sand flower pot rectangular(?:\\s*\\(.*\\))?$/i, "長方形の紫砂製植木鉢です。仕入先表記では素材はPurple Clay、サイズは約35×22.8×8.5cmです。色・寸法・素材・セット内容は購入前に商品画像と仕入先の最新仕様をご確認ください。"],
     [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "水槽のレイアウトに使うサンゴ風デコレーションです。商品名には「No.9 ホワイト」と記載されています。素材・寸法・水槽内での使用可否・セット内容は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
     [/^solid wood roulette wheel yellow diameter 50cm.*$/i, "木製のルーレットホイールです。商品名には直径約50cmと記載されています。ゲーム用途や装飾用途、セット内容、実寸、素材、使用方法は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
