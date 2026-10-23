@@ -92,6 +92,9 @@ export function planShopifyParityRepair(input: {
       const row = byProduct[0];
       const refs = { channelListingId: row.id, variantId: row.variant_id };
       if (row.status === "published") decide({ ...refs, action: "keep", reason: "linked_published_channel_listing" });
+      // "pending" is the publisher's re-verification queue (verified offers are
+      // set pending and republished next run); drafting them would churn sellable items.
+      else if (row.status === "pending") decide({ ...refs, action: "keep", reason: "linked_channel_listing_pending_resync" });
       else decide({ ...refs, action: "draft", reason: "linked_channel_listing_status_" + row.status + (row.last_error ? ":" + String(row.last_error).slice(0, 80) : "") });
       continue;
     }
@@ -105,7 +108,8 @@ export function planShopifyParityRepair(input: {
       const row = bySku[0];
       const linked = tail(row.external_product_id);
       const refs = { channelListingId: row.id, variantId: row.variant_id, linkedProductId: row.external_product_id };
-      if (row.status !== "published") decide({ ...refs, action: "draft", reason: "sku_matches_unpublished_channel_listing_status_" + row.status });
+      if (row.status === "pending") decide({ ...refs, action: "manual_review", reason: "sku_matches_pending_channel_listing" });
+      else if (row.status !== "published") decide({ ...refs, action: "draft", reason: "sku_matches_unpublished_channel_listing_status_" + row.status });
       else if (linked && linked !== productTail) decide({ ...refs, action: "draft", reason: "duplicate_sku_of_linked_product" });
       // Published row with no product id yet: the publisher links it; never guess here.
       else decide({ ...refs, action: "manual_review", reason: "sku_matches_published_row_without_product_id" });

@@ -123,6 +123,7 @@ check("a paid BASE line for an unlinked item is recorded for review, never silen
 check("Shopify parity repair drafts only id/SKU-matched products and never acts on unmatched ones", () => {
   const v1 = "11111111-2222-4333-8444-555555555555";
   const v2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const v3 = "cccccccc-dddd-4eee-8fff-000000000000";
   const legacy = "99999999-8888-4777-8666-555555555555";
   assert.equal(canonicalCommerceSku(v1), "TRC-111111112222433384445555");
   const live = (id, sku, extra = {}) => ({ id: "gid://shopify/Product/" + id, handle: "h" + id, status: "ACTIVE", vendor: "TRACER", publishedOnPublication: true, variants: [{ id: "v" + id, sku }], ...extra });
@@ -133,17 +134,21 @@ check("Shopify parity repair drafts only id/SKU-matched products and never acts 
       live(3, canonicalCommerceSku(v2)),
       live(4, "TRC-" + legacy),
       live(5, "UNRELATED-SKU"),
+      live(8, canonicalCommerceSku(v3)),
       live(6, canonicalCommerceSku(v1), { status: "DRAFT" }),
       live(7, canonicalCommerceSku(v1), { vendor: "Other" }),
     ],
     commerceRows: [
       { id: "c1", variant_id: v1, external_product_id: "1", external_sku: null, status: "published" },
       { id: "c2", variant_id: v2, external_product_id: null, external_sku: null, status: "error", last_error: "shopify_handle_sku_mismatch" },
+      { id: "c3", variant_id: v3, external_product_id: "8", external_sku: null, status: "pending" },
     ],
     legacyRows: [{ id: legacy, published: false, shopify_product_id: null }],
   });
   const by = Object.fromEntries(decisions.map((d) => [d.shopifyProductId.split("/").pop(), d]));
-  assert.deepEqual(Object.keys(by).sort(), ["1", "2", "3", "4", "5"]);
+  assert.deepEqual(Object.keys(by).sort(), ["1", "2", "3", "4", "5", "8"]);
+  // Pending rows are being republished by the publisher; never draft them.
+  assert.equal(by[8].action, "keep");
   assert.equal(by[1].action, "keep");
   assert.equal(by[2].action, "draft");
   assert.equal(by[2].reason, "duplicate_sku_of_linked_product");
