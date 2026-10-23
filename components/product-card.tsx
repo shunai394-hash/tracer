@@ -1,21 +1,18 @@
 import Link from "next/link";
 import type { ShopListing } from "@/lib/shop/store";
 import { formatMoney } from "@/lib/intelligence/format-display";
+import { ProductImage } from "@/components/product-image";
 
 export function ProductCard({ listing, priority = false }: { listing: ShopListing; priority?: boolean }) {
   return (
     <Link href={`/shop/${listing.id}`} className="group block">
       <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-        {listing.imageUrl ? (
-          <img
-            src={listing.imageUrl}
-            alt={listing.title}
-            loading={priority ? "eager" : "lazy"}
-            className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <div className="flex aspect-square items-center justify-center text-sm text-neutral-400">画像準備中</div>
-        )}
+        <ProductImage
+          src={listing.imageUrl}
+          alt={listing.title}
+          eager={priority}
+          className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+        />
       </div>
       <div className="px-1 pt-3">
         <h3 className="line-clamp-2 text-[13px] leading-5 text-neutral-800 group-hover:underline sm:text-sm">{listing.title}</h3>
