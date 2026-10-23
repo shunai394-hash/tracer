@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
+import { ProductImage } from "@/components/product-image";
 import { STOREFRONT_CATEGORIES, STOREFRONT_IMAGES, categoryOf, pickDistinct } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
@@ -83,8 +84,8 @@ export default async function HomePage() {
                 const cover = category.items.find((item) => item.imageUrl);
                 return (
                   <Link key={category.slug} href={`/shop?cat=${category.slug}`} className="group relative overflow-hidden rounded-2xl bg-[#F4ECE6]">
-                    {cover?.imageUrl ? <img src={cover.imageUrl} alt="" loading="lazy" className="aspect-[4/5] w-full object-cover transition duration-500 group-hover:scale-[1.04]" /> : <div className="aspect-[4/5]" />}
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#3B241A]/75 to-transparent p-4 pt-12 text-white">
+                    <ProductImage src={cover?.imageUrl ?? null} alt="" className="aspect-[4/5] w-full object-cover transition duration-500 group-hover:scale-[1.04]" />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#3B241A]/90 via-[#3B241A]/60 to-transparent p-4 pt-16 text-white">
                       <p className="font-serif text-lg">{category.label}</p>
                       <p className="mt-1 text-[11px] leading-4 text-white/85">{category.lead}</p>
                       <p className="mt-2 text-[11px] text-white/80">{category.items.length}点 →</p>
