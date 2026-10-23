@@ -512,6 +512,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
         : null,
     inventory: inventoryByCountry.length ? verifiedInventory : null,
     inventoryByCountry,
+    imageUrl: row.variantImage?.trim() || null,
   };
 }
 
@@ -1149,6 +1150,7 @@ type CJVariantRow = {
   variantNameEn?: string;
   variantKey?: string;
   variantSellPrice?: string | number;
+  variantImage?: string;
   barcode?: string | number;
   variantBarcode?: string | number;
   variantBarCode?: string | number;
