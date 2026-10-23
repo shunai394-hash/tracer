@@ -45,7 +45,16 @@ Higgsfieldのアカウント：Plusプラン（ユーザーID `user_3L5iapCiBz1V
 
 ## 残りの作業
 1. （完了）c1〜c7とc9の目視確認。
-2. ナレーション：サンドボックスのKokoro（`jf_alpha`）で合成する。台本は `bot/tts.py` と `SCRIPT.md`。
-3. BGM：テンポの速いオリジナル曲を合成する。
-4. 30秒に編集し、字幕を焼き込む。エンドカードは `pkg_cut.png` で作る。
-5. 書き出し、確認（デコードエラー、音量、文字起こしでの照合、フレームの目視）、Higgsfieldへのアップロード。
+2. （完了）ナレーション：サンドボックスのKokoro（`jf_alpha`、1.05倍速で合成し、ミックス時に1.12倍速）で10行を合成した。読みはかな表記で固定（いっぱい／わたし／じゅうろくグラム）。
+   サンドボックスの注意点：`env -u PYTHONPATH HOME=/home/user` で実行すること（`PYTHONPATH=/root/` が原因でpipが失敗する）。日本語辞書は unidic-lite の dicdir を unidic/dicdir にシンボリックリンクし、空の `mecabrc` を置く。
+3. （完了）BGM：`bgm_upbeat.py`（118BPM、オリジナル）。
+4. （完了）30秒の編集：`edit30.py`。カットと字幕のタイミングは、ナレーションの位置（`mix30.sh` の STARTS）に合わせてある。
+5. （完了）書き出しとHiggsfieldへのアップロード。
+
+## 完成品
+- `beauty_formula_botanical_30s_9x16.mp4`：1080×1920、30fps、30.000秒、900フレーム、H.264＋AAC 48kHz ステレオ
+- Higgsfieldのメディア：media_id `997e4ad0-a46c-4ed3-b3ac-398d5d49aa1b`
+  URL：https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/997e4ad0-a46c-4ed3-b3ac-398d5d49aa1b.mp4
+- 確認結果：全フレームのデコードでエラー0件。音量は -14.3 LUFS、ピーク -3.2 dBFS。
+  faster-whisper small で文字起こしした結果、10行すべてが台本どおりの読み・タイミングだった（同音異字の変換違いのみ）。
+- 実際の消費クレジット：66.75（1210 → 1143.25）
