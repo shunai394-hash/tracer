@@ -1,3 +1,5 @@
+import BotLiveStatus from "@/components/admin/bot-live-status";
+
 const cards = [
   {
     title: "商品管理",
@@ -55,6 +57,8 @@ export default function AdminOperationsPage() {
         ))}
       </section>
 
+      <BotLiveStatus />
+
       <section className="mt-10 border border-white/10 bg-[#0a0d10] p-5 sm:p-7" aria-labelledby="bots-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -96,7 +100,6 @@ export default function AdminOperationsPage() {
       <section className="mt-8 border border-amber-300/20 p-5" aria-labelledby="missing-controls-heading">
         <h2 id="missing-controls-heading" className="text-base text-amber-200">まだ追加が必要な管理機能</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-zinc-400">
-          <li>BOTごとの最終実行時刻・成功/失敗・処理件数をTRACER内に表示するライブ状態パネル</li>
           <li>安全確認付きのBOT停止・再開操作と、変更履歴</li>
           <li>公開・仕入れ・利益率ルールを一元管理し、どの処理がそのルールを使うかを表示する画面</li>
         </ul>
