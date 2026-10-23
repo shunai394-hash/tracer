@@ -24,7 +24,7 @@
     },
     {
       "path": "/api/cron/shopify-orders",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/commerce-cj-import",
