@@ -1235,7 +1235,7 @@ test("Shopify inventory sync retries stale changeFromQuantity conflicts with a f
 
 test("CJ evidence recovery uses a bounded adaptive retry cap and four-variant batches", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /const retryVariantLimit = Math\.min\(8, Math\.max\(4, limit \* 2\)\)/);
+  assert.match(importer, /const retryVariantLimit = Math\.min\(10, Math\.max\(4, limit \* 2\)\)/);
   assert.match(importer, /group\.variantIds\.slice\(0, 4\)/);
   assert.match(importer, /variantIds\.slice\(0, 4\)/);
 });
