@@ -36,8 +36,7 @@ export async function GET(request: Request) {
     const db = createSupabaseAdminClient();
     const { data, error } = await db
       .from("shop_listings")
-      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,created_at,updated_at")
-      .eq("manual_inventory", true)
+      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,supplier_name,supplier_product_id,supplier_variant_id,shopify_product_id,base_item_id,created_at,updated_at")
       .is("archived_at", null)
       .order("updated_at", { ascending: false })
       .limit(500);
@@ -61,6 +60,38 @@ export async function POST(request: Request) {
   }
 
   const id = text(body.id, 80);
+  const action = text(body.action, 32);
+  const db = createSupabaseAdminClient();
+
+  if (action === "unpublish") {
+    if (!id) return NextResponse.json({ ok: false, error: "商品IDが必要です。" }, { status: 400 });
+    const { data, error } = await db
+      .from("shop_listings")
+      .update({ published: false, published_at: null, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .is("archived_at", null)
+      .select("id,title,published,manual_inventory")
+      .maybeSingle();
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ ok: false, error: "商品が見つかりません。" }, { status: 404 });
+    return NextResponse.json({ ok: true, listing: data, message: "TRACERの商品一覧への掲載を停止しました。BASE・Shopifyの掲載状態は別途です。" });
+  }
+
+  if (action === "archive") {
+    if (!id) return NextResponse.json({ ok: false, error: "商品IDが必要です。" }, { status: 400 });
+    const { data, error } = await db
+      .from("shop_listings")
+      .update({ published: false, published_at: null, archived_at: new Date().toISOString(), archive_reason: "admin_manual_archive", updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("manual_inventory", true)
+      .is("archived_at", null)
+      .select("id,title")
+      .maybeSingle();
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ ok: false, error: "削除できません。手動管理商品ではないか、既にアーカイブされています。" }, { status: 409 });
+    return NextResponse.json({ ok: true, listing: data, message: "手動管理商品をアーカイブしました。データは完全削除していません。" });
+  }
+
   const title = text(body.title, 180);
   const description = text(body.description, 10000);
   const imageUrl = text(body.imageUrl, 2000);
@@ -89,7 +120,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "商品名または説明が公開品質基準を満たしていません。内容を修正してください。" }, { status: 400 });
   }
 
-  const db = createSupabaseAdminClient();
   const slugBase = title
     .toLowerCase()
     .normalize("NFKC")
