@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
-import { STOREFRONT_CATEGORIES, categoryOf, variantFamily } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -25,7 +25,6 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   const cat = param(query.cat);
   const q = param(query.q);
   const sort = param(query.sort);
-  const showAll = param(query.all) === "1";
   const requestedPage = Math.max(1, Math.floor(Number(param(query.page)) || 1));
 
   let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
@@ -50,25 +49,8 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   if (sort === "price_asc") shown = [...shown].sort((a, b) => (a.sellingPrice ?? 0) - (b.sellingPrice ?? 0));
   if (sort === "price_desc") shown = [...shown].sort((a, b) => (b.sellingPrice ?? 0) - (a.sellingPrice ?? 0));
 
-  // Default view collapses exact title families such as the same bag in different
-  // colours. The full list remains available, and no database/order identity is changed.
-  const matchingCount = shown.length;
-  const familyCounts = new Map<string, number>();
-  for (const listing of shown) {
-    const family = variantFamily(listing.title);
-    familyCounts.set(family, (familyCounts.get(family) ?? 0) + 1);
-  }
-  const duplicateCandidateCount = [...familyCounts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
-  if (!showAll) {
-    const seenFamilies = new Set<string>();
-    shown = shown.filter((listing) => {
-      const family = variantFamily(listing.title);
-      if (seenFamilies.has(family)) return false;
-      seenFamilies.add(family);
-      return true;
-    });
-  }
-
+  // Exact duplicate supplier variants are removed in listPublishedShopListings.
+  // Distinct variants must not be hidden merely because their titles normalize to one family.
   const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const page = Math.min(requestedPage, pageCount);
   const pageItems = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -80,7 +62,6 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     if (nextCat) params.set("cat", nextCat);
     if (q) params.set("q", q);
     if (nextSort) params.set("sort", nextSort);
-    if (showAll) params.set("all", "1");
     if (next.page && next.page > 1) params.set("page", String(next.page));
     const text = params.toString();
     return text ? `/shop?${text}` : "/shop";
@@ -112,18 +93,8 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#EADBD3] pb-4">
           <div>
             <p className="text-sm text-[#5C4035]">{error ? "読込エラー" : `${shown.length}件表示${q ? `（「${q}」の検索結果）` : ""}`}</p>
-            {!error && duplicateCandidateCount > 0 ? (
-              <p className="mt-1 text-xs text-[#9A6B5B]">
-                {showAll ? `色違いなどの重複候補を含む全${matchingCount}件` : `色違いなど同じ商品名の候補をまとめています（${duplicateCandidateCount}件を非表示）`}
-              </p>
-            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            {duplicateCandidateCount > 0 ? (
-              <Link href={showAll ? href({}) : `/shop?${new URLSearchParams({ ...(cat ? { cat } : {}), ...(q ? { q } : {}), ...(sort ? { sort } : {}), all: "1" }).toString()}`} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
-                {showAll ? "重複候補をまとめる" : "色違い・重複候補も表示"}
-              </Link>
-            ) : null}
             {SORTS.map((option) => (
               <Link key={option.value} href={href({ sort: option.value })} className={sort === option.value ? "font-semibold underline underline-offset-4" : "text-[#5C4035] hover:underline"}>
                 {option.label}
