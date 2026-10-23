@@ -87,6 +87,7 @@ const STOREFRONT_SELECT = "*";
 type ShopifyVariantStock = {
   id: string;
   inventoryQuantity: number | null;
+  product?: { status?: string | null; onlineStoreUrl?: string | null } | null;
 };
 
 async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, number>> {
@@ -111,6 +112,7 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
           ... on ProductVariant {
             id
             inventoryQuantity
+            product { status onlineStoreUrl }
           }
         }
       }`,
@@ -121,7 +123,10 @@ async function getLiveShopifyStock(variantIds: string[]): Promise<Map<string, nu
       if (!node?.id || !batch.includes(node.id)) continue;
       const quantity = asNumber(node.inventoryQuantity);
       if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
-      liveStock.set(node.id, Math.max(0, Math.floor(quantity)));
+      // A variant that customers cannot buy on Shopify (draft/archived, or not on the
+      // Online Store) must not appear in TRACER either: treat it as out of stock.
+      const purchasable = node.product?.status === "ACTIVE" && Boolean(node.product?.onlineStoreUrl);
+      liveStock.set(node.id, purchasable ? Math.max(0, Math.floor(quantity)) : 0);
     }
     // Missing/retired variants fail closed per listing below. Do not let one
     // stale variant suppress every other healthy product from the storefront.
