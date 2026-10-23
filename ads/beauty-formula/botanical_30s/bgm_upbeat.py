@@ -67,6 +67,14 @@ def pad(notes, length):
     return sum(np.sin(2 * np.pi * hz(m + d) * t) for m in notes for d in (-0.08, 0.08)) * env * 0.04
 
 
+def layer(*sigs):
+    """Sum signals of different lengths."""
+    out = np.zeros(max(len(x) for x in sigs))
+    for x in sigs:
+        out[:len(x)] += x
+    return out
+
+
 def riser(length):
     t = np.arange(int(length * SR)) / SR
     n = rng.standard_normal(len(t))
@@ -104,10 +112,10 @@ for b in range(n_bars):
             m = (chord + [chord[1] + 12])[(q * 2 + e) % 4] + 12
             add(pluck(m), tb + e * BEAT / 2, pan=0.25 * (1 if e else -1), gain=0.22)
 # hook impacts at 0 and 1.3s, riser into the drop at 2.6s
-add(kick() * 1.4 + clap(), 0.0, gain=0.9)
+add(layer(kick() * 1.4, clap()), 0.0, gain=0.9)
 add(kick() * 1.2, 1.3, gain=0.8)
 add(riser(1.2), 1.4)
-add(clap() + kick(), 2.6, gain=1.0)
+add(layer(clap(), kick()), 2.6, gain=1.0)
 
 mix = np.tanh(mix * 1.2)
 fade = np.minimum(1, (DUR - np.arange(N) / SR) / 1.0)[:, None]
