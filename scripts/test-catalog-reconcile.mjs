@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { classifyUnmappedBaseItem } from "../lib/channels/base-unmapped-classify.ts";
 import { reconcileShopifyCatalog } from "../lib/shopify/catalog-reconcile.ts";
+import { localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
 import { canonicalCommerceSku, planShopifyParityRepair } from "../lib/shopify/parity-repair-plan.ts";
 import { newfindDeliveryOutcome, tallyNewfindDeliveries } from "../lib/integration/newfind-delivery-state.ts";
 
@@ -163,6 +164,27 @@ check("Shopify parity repair drafts only id/SKU-matched products and never acts 
   assert.match(route, /shopify_scan_incomplete/);
   assert.match(route, /status: "DRAFT"/);
   assert.doesNotMatch(route, /productDelete|productArchive|status: "ARCHIVED"/);
+});
+
+check("source-grounded titles separate products that shared one generic name", () => {
+  const brush = [
+    "4 In 1 Electric Makeup Brush Cleaner USB Powered Automatic Brush Blender Machine With Timer Digital Display Cleaning Drying UV Disinfection Brush Storage",
+    "Makeup Brush Cleaner Automatic Rotating Makeup Brush Cleaner USB Portable Electric Cosmetic Makeup Brush Rotary Washing Machine",
+    "Foldable Silicone Makeup Brush Cleaner Bowl, Reusable Makeup Brush Washing Tool",
+    "Professional Silicone Makeup Brush Cleaner Mat With Suction Cups - Portable Washing Pad, 2 Pack",
+    "Puff Cleaner Makeup Brush Cleaner Liquid Makeup Tools Beauty Egg Cushion Sponge Clean No Residue",
+    "Original Makeup Brush Cleaner  Dryer Make Up Cleaning Tools",
+  ].map((title) => localizeProductTitle(title));
+  assert.equal(new Set(brush).size, brush.length);
+  assert.ok(brush.every((title) => title && title !== "メイクブラシ収納・お手入れ用品"));
+  // A dryer without an electric claim in the source must not be called electric.
+  assert.equal(localizeProductTitle("Original Makeup Brush Cleaner  Dryer Make Up Cleaning Tools"), "乾燥機能付き メイクブラシクリーナー");
+  assert.equal(localizeProductTitle("Women Hair Scrunchies Vintage Velvet Solid Color Hair Band For Girls"), "ベルベット シュシュ");
+  assert.equal(localizeProductTitle("Retro Patchwork Shoulder Bag For Women"), "パッチワーク レトロショルダーバッグ");
+  const route = readFileSync(new URL("../app/api/admin/commerce/title-refresh/route.ts", import.meta.url), "utf8");
+  assert.match(route, /apply_requires_product_ids_from_dry_run/);
+  assert.match(route, /titleCount\.get\(current\) \?\? 0\) < 2/);
+  assert.doesNotMatch(route, /\.delete\(/);
 });
 
 console.log(`catalog reconciliation: ${cases} cases passed`);
