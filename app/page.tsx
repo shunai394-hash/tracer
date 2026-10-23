@@ -7,7 +7,7 @@ import { STOREFRONT_CATEGORIES, STOREFRONT_IMAGES, categoryOf, pickDistinct } fr
 
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "TRACER — 毎日を、少しだけ上品に。",
+  title: { absolute: "TRACER | 毎日を、少しだけ上品に。" },
   description: "バッグ、ヘアアクセサリー、メイク小物。いつもの装いに寄り添うアイテムを集めたセレクトショップ。",
 };
 

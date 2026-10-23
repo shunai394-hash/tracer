@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Privacy Policy — TRACER",
+  title: "Privacy Policy",
   description: "TRACER privacy policy and extension data practices.",
 };
 

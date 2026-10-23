@@ -2,6 +2,8 @@ import { CancelOrderForm } from "@/components/cancel-order-form";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
+export const metadata = { title: "ご注文ありがとうございます", robots: { index: false, follow: false } };
+
 export const dynamic = "force-dynamic";
 
 type OrderStatusView = {

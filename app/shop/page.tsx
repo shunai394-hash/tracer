@@ -6,7 +6,7 @@ import { STOREFRONT_CATEGORIES, categoryOf, variantFamily } from "@/lib/shop/sto
 
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "商品一覧 — TRACER",
+  title: "商品一覧",
   description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
 };
 

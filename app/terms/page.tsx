@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Terms of Service — TRACER",
+  title: "Terms of Service",
   description: "TRACER terms of service.",
 };
 
