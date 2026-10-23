@@ -194,6 +194,7 @@ function japaneseCommerceTitle(title: string, productType?: string | null, varia
     [/mushroom.*powder puff|powder puff.*mushroom/, "きのこ型メイクパフ"],
     [/women.*hair accessories|hair accessories.*women/, "レディース ヘアアクセサリー"],
     [/fan brush/, "メイク用ファンブラシ"],
+    [/cosmetic brush cleaner/, "メイクブラシクリーナー"],
     [/fan brush|makeup brush|make-up brush|cosmetic brush|tartaric acid brush/, "メイクブラシ"],
     [/hair claw|hair clip/, "ヘアクリップ"],
     [/headband|hair band/, "ヘアバンド"],
@@ -271,7 +272,7 @@ const GENERIC_COMMERCE_TITLES = [
   "レディース ハンドバッグ", "レディース ショルダーバッグ", "レディース クロスボディバッグ",
   "レディース トートバッグ", "レディースハンドバッグ", "ハンドバッグ", "ショルダーバッグ",
   "斜めがけバッグ", "トートバッグ", "クラッチバッグ", "ヘアクリップ", "メイクブラシ",
-  "メイク用ファンブラシ", "美容ツール", "美容・メイクアイテム", "ヘアケアアイテム",
+  "メイク用ファンブラシ", "コスメ ブラシ Cleaner", "美容ツール", "美容・メイクアイテム", "ヘアケアアイテム",
   "ヘアバンド", "ヘアアクセサリー", "レディース ヘアアクセサリー", "バッグ・収納アイテム",
 ];
 

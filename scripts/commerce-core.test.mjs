@@ -93,6 +93,14 @@ test("rejects negative costs", () => {
   assert.throws(() => calculateSellingPrice({ unitCostJpy: -1, shippingCostJpy: 0, feeRate: 0.1 }), /invalid_unitCostJpy/);
 });
 
+
+test("CJ importer repairs the mixed-language cosmetic brush cleaner title before channel publication", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(route, /cosmetic brush cleaner/);
+  assert.match(route, /メイクブラシクリーナー/);
+  assert.match(route, /"コスメ ブラシ Cleaner"/);
+});
+
 test("storefront publication requires exact supplier identity and evidenced landed costs, not cached stock or tracking", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
