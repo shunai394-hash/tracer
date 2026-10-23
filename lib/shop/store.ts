@@ -369,7 +369,12 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     if (!selectedPair) continue;
     const { price, offer } = selectedPair;
     const checkedAt = typeof offer.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
-    if (!Number.isFinite(checkedAt) || Date.now() - checkedAt > 24 * 60 * 60_000 || checkedAt > Date.now() + 5 * 60_000) continue;
+    const offerFresh = Number.isFinite(checkedAt) &&
+      Date.now() - checkedAt <= 24 * 60 * 60_000 &&
+      checkedAt <= Date.now() + 5 * 60_000;
+    // Catalog visibility follows the live published Shopify listing and live Shopify
+    // inventory below. Stale supplier checks must not silently remove products from
+    // TRACER's catalog; they disable TRACER's own orderable flag until reverified.
     const title = String(variant.title_ja || product.title_ja || "").trim();
     const description = typeof product.description_ja === "string" ? product.description_ja : null;
     const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
@@ -401,7 +406,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
-      orderable: isCJLiveOrderPathReady(),
+      orderable: isCJLiveOrderPathReady() && offerFresh,
       trackingAvailable: true,
       selectionReasons: ["仕入先在庫確認済み", "日本向け配送確認済み", "利益計算済み"],
       productId: String(product.id),
