@@ -658,9 +658,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
           ?? resolveBasePublicUrl(baseResponse, externalProductId, basePublicShopUrl);
       } else {
-        // Use the full stable variant UUID in the handle. Eight characters collided in the live catalog,
-        // and Shopify rejects a duplicate handle even when the SKU differs.
-        const handle = safeSlug(product.source_key + "-" + candidate.id.replace(/-/g, ""));
+        // Keep the stable variant UUID at the end of the handle. safeSlug truncates
+        // at 120 characters, so slugging the combined source key + UUID can cut the UUID
+        // off for long source keys and create collisions. Bound the prefix first, then append
+        // the complete UUID so every commerce variant receives a deterministic unique handle.
+        const handlePrefix = safeSlug(product.source_key).slice(0, 70).replace(/-+$/g, "") || "tracer-item";
+        const handle = safeSlug(handlePrefix + "-" + candidate.id.replace(/-/g, ""));
         const productId = toShopifyGid("Product", externalProductId);
         const variantId = toShopifyGid("ProductVariant", externalVariantId);
         type RecoveredShopifyProduct = { id: string; handle: string; vendor?: string | null; tags?: string[]; variants: { nodes: Array<{ id: string; sku?: string | null }> } };
