@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "TRACER Chrome Extension",
+  title: "Chrome拡張機能",
   description: "Capture Amazon product data with the TRACER Chrome extension.",
 };
 

@@ -1,5 +1,7 @@
 import { CheckoutForm } from "@/components/checkout-form";
 
+export const metadata = { title: "ご注文手続き", robots: { index: false, follow: false } };
+
 export default function CheckoutPage() {
   const steps = [
     ["01", "Contact"],

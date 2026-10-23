@@ -6,7 +6,7 @@ import { STOREFRONT_CATEGORIES, categoryOf, variantFamily } from "@/lib/shop/sto
 
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "商品一覧 — TRACER",
+  title: "商品一覧",
   description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
 };
 
@@ -26,6 +26,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   const q = param(query.q);
   const sort = param(query.sort);
   const showAll = param(query.all) === "1";
+  const requestedPage = Math.max(1, Math.floor(Number(param(query.page)) || 1));
 
   let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
   let error: string | null = null;
@@ -68,7 +69,11 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     });
   }
 
-  const href = (next: { cat?: string; sort?: string }) => {
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const page = Math.min(requestedPage, pageCount);
+  const pageItems = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const href = (next: { cat?: string; sort?: string; page?: number }) => {
     const params = new URLSearchParams();
     const nextCat = next.cat ?? cat;
     const nextSort = next.sort ?? sort;
@@ -76,6 +81,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     if (q) params.set("q", q);
     if (nextSort) params.set("sort", nextSort);
     if (showAll) params.set("all", "1");
+    if (next.page && next.page > 1) params.set("page", String(next.page));
     const text = params.toString();
     return text ? `/shop?${text}` : "/shop";
   };
@@ -139,13 +145,23 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           </div>
         ) : (
           <div className="mt-8 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4">
-            {shown.map((listing, index) => <ProductCard key={listing.id} listing={listing} priority={index < 4} />)}
+            {pageItems.map((listing, index) => <ProductCard key={listing.id} listing={listing} priority={index < 4} />)}
           </div>
         )}
+
+        {!error && pageCount > 1 ? (
+          <nav aria-label="ページ" className="mt-12 flex items-center justify-center gap-4 text-sm">
+            {page > 1 ? <Link href={href({ page: page - 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B]">← 前へ</Link> : null}
+            <span className="text-[#5C4035]">{page} / {pageCount}ページ</span>
+            {page < pageCount ? <Link href={href({ page: page + 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B]">次へ →</Link> : null}
+          </nav>
+        ) : null}
       </div>
     </main>
   );
 }
+
+const PAGE_SIZE = 48;
 
 function chip(active: boolean): string {
   return active

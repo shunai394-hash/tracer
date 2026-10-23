@@ -14,8 +14,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL("https://tracer-pied-alpha.vercel.app"),
   title: {
-    default: "TRACER｜日本向けセレクトショップ",
-    template: "%s｜TRACER",
+    default: "TRACER | 日本向けセレクトショップ",
+    template: "%s | TRACER",
   },
   description: "日本のお客様向けに、商品情報・価格・在庫を確認して選べるオンラインストア。商品ごとの仕様を確認してお買い物いただけます。",
   applicationName: "TRACER",
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   icons: { icon: "/icon.svg", apple: "/icon.svg" },
   manifest: "/manifest.webmanifest",
   openGraph: {
-    title: "TRACER｜日本向けセレクトショップ",
+    title: "TRACER | 日本向けセレクトショップ",
     description: "商品情報・価格・在庫を確認して選べるオンラインストア。",
     url: "https://tracer-pied-alpha.vercel.app/",
     siteName: "TRACER",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "TRACER｜日本向けセレクトショップ",
+    title: "TRACER | 日本向けセレクトショップ",
     description: "商品情報・価格・在庫を確認して選べるオンラインストア。",
   },
 };

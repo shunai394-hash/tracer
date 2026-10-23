@@ -47,7 +47,7 @@ export async function generateMetadata({
       },
     };
   } catch {
-    return { title: "商品情報｜TRACER", robots: { index: false, follow: true } };
+    return { title: "商品情報", robots: { index: false, follow: true } };
   }
 }
 

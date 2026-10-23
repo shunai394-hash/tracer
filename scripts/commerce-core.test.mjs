@@ -452,7 +452,9 @@ test("TRACER storefront displays published canonical Shopify listings without en
   assert.match(store, /candidate\.source_status === "verified"/);
   assert.match(store, /candidate\.tracking_supported === true && candidate\.ship_to === "JP"/);
   assert.doesNotMatch(store, /if \(!isCJLiveOrderingEnabled\(\)\) return \[\]/);
-  assert.match(store, /orderable: isCJLiveOrderPathReady\(\)/);
+  assert.match(store, /orderable: isCJLiveOrderPathReady\(\) && offerFresh/);
+  // Stale supplier checks must not drop published products before offerFresh is evaluated.
+  assert.doesNotMatch(store, /\.gte\("last_checked_at", freshAfter\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
   assert.match(productPage, /shopifyProductUrl/);
   assert.match(productPage, /Shopifyで購入する/);
