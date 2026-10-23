@@ -48,6 +48,45 @@ export async function GET(request: Request) {
   }
 }
 
+export async function DELETE(request: Request) {
+  if (!authorized(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+  const id = text(body.id, 80);
+  if (!id) return NextResponse.json({ ok: false, error: "削除する商品を選択してください。" }, { status: 400 });
+
+  try {
+    const db = createSupabaseAdminClient();
+    // Archive instead of hard-delete: preserve order/history references and allow recovery.
+    const now = new Date().toISOString();
+    const { data, error } = await db
+      .from("shop_listings")
+      .update({
+        published: false,
+        published_at: null,
+        archived_at: now,
+        archive_reason: "admin_removed_manual_listing",
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("manual_inventory", true)
+      .is("archived_at", null)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ ok: false, error: "商品が見つからないか、手動管理商品ではありません。" }, { status: 404 });
+    return NextResponse.json({ ok: true, archived: true, id: data.id });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_archive_failed" }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
