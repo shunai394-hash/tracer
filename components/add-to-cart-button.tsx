@@ -47,17 +47,17 @@ export function AddToCartButton(props: {
         disabled={disabled}
         onClick={() => void add()}
         aria-describedby={message ? "add-to-cart-status" : undefined}
-        className="group flex w-full items-center justify-between gap-4 border border-cyan-300/70 bg-cyan-300 px-5 py-4 text-left text-sm font-medium tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-200 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+        className="group flex w-full items-center justify-center gap-3 rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <span>{disabled ? "現在購入できません" : "カートに入れる"}</span>
-        <span aria-hidden="true" className="text-lg transition-transform duration-300 group-hover:translate-x-1">↗</span>
+        
       </button>
       {disabled ? (
-        <p className="mt-2 text-xs leading-5 text-amber-300">販売価格が確認できないため、購入操作を無効にしています。</p>
+        <p className="mt-2 text-xs leading-5 text-[#B84A62]">販売価格が確認できないため、購入操作を無効にしています。</p>
       ) : null}
       {message ? (
-        <p id="add-to-cart-status" role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-xs text-cyan-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-hidden="true" />
+        <p id="add-to-cart-status" role="status" aria-live="polite" className="mt-3 flex items-center justify-center gap-2 text-xs text-[#5C4035]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#B84A62]" aria-hidden="true" />
           {message}
         </p>
       ) : null}
