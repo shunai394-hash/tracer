@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
-import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf, variantFamily } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -25,6 +25,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   const cat = param(query.cat);
   const q = param(query.q);
   const sort = param(query.sort);
+  const showAll = param(query.all) === "1";
 
   let listings: Awaited<ReturnType<typeof listPublishedShopListings>> = [];
   let error: string | null = null;
@@ -48,6 +49,25 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   if (sort === "price_asc") shown = [...shown].sort((a, b) => (a.sellingPrice ?? 0) - (b.sellingPrice ?? 0));
   if (sort === "price_desc") shown = [...shown].sort((a, b) => (b.sellingPrice ?? 0) - (a.sellingPrice ?? 0));
 
+  // Default view collapses exact title families such as the same bag in different
+  // colours. The full list remains available, and no database/order identity is changed.
+  const matchingCount = shown.length;
+  const familyCounts = new Map<string, number>();
+  for (const listing of shown) {
+    const family = variantFamily(listing.title);
+    familyCounts.set(family, (familyCounts.get(family) ?? 0) + 1);
+  }
+  const duplicateCandidateCount = [...familyCounts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  if (!showAll) {
+    const seenFamilies = new Set<string>();
+    shown = shown.filter((listing) => {
+      const family = variantFamily(listing.title);
+      if (seenFamilies.has(family)) return false;
+      seenFamilies.add(family);
+      return true;
+    });
+  }
+
   const href = (next: { cat?: string; sort?: string }) => {
     const params = new URLSearchParams();
     const nextCat = next.cat ?? cat;
@@ -55,6 +75,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     if (nextCat) params.set("cat", nextCat);
     if (q) params.set("q", q);
     if (nextSort) params.set("sort", nextSort);
+    if (showAll) params.set("all", "1");
     const text = params.toString();
     return text ? `/shop?${text}` : "/shop";
   };
