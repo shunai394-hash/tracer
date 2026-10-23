@@ -65,7 +65,7 @@ function sourceSpecificFallbackTitle(title: string, variantNames: string[] = [])
     [/150 piece|150-piece|150 pcs/, "150本セット"],
     [/electric|automatic|machine|cleaner/, "電動クリーナー"],
     [/cleaning|cleaner|wash/, "お手入れ用品"],
-    [/eyebrow|brow/, "眉メイク用"],
+    [/eyebrow|\bbrow\b/, "眉メイク用"],
     [/eyelash|lash/, "まつげ用"],
     [/gua sha|scraping|roller massager|massage/, "フェイスケア用"],
     [/acne|pimple|comedone/, "毛穴ケア用"],

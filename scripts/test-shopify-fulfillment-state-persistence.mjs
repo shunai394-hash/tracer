@@ -22,5 +22,5 @@ assert.match(source, /shopify_fulfillment_line_match_missing/,
   "only supplier-shipped lines with exact Shopify line IDs may be fulfilled");
 const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 assert.deepEqual(vercel.crons.filter((job) => job.path === "/api/cron/shopify-fulfillment").map((job) => job.schedule),
-  ["7,22,37,52 * * * *"], "canonical Shopify tracking sync must run every 15 minutes, offset from publication");
+  ["7,37 * * * *"], "canonical Shopify tracking sync must run every 30 minutes, offset from publication");
 console.log("Shopify fulfillment state persistence: fail-closed regression checks passed");

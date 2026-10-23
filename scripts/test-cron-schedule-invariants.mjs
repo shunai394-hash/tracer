@@ -20,7 +20,7 @@ for (const path of ["/api/cron/commerce-publish-base", "/api/cron/commerce-publi
 }
 
 const shopifyFulfillment = crons.find((entry) => entry.path === "/api/cron/shopify-fulfillment");
-assert.equal(shopifyFulfillment.schedule, "7,22,37,52 * * * *", "Shopify tracking sync must remain every 15 minutes");
+assert.equal(shopifyFulfillment.schedule, "7,37 * * * *", "Shopify tracking sync must remain every 30 minutes");
 const priceReconcile = crons.find((entry) => entry.path === "/api/cron/commerce-reprice-existing");
 assert.ok(priceReconcile, "existing storefront price reconciliation must be scheduled");
 assert.equal(priceReconcile.schedule, "4,34 * * * *", "price reconciliation must run twice hourly, staggered after CJ import to reduce execution cost");
