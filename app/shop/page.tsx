@@ -104,8 +104,20 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
         </nav>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#EADBD3] pb-4">
-          <p className="text-sm text-[#5C4035]">{error ? "読込エラー" : `${shown.length}件${q ? `（「${q}」の検索結果）` : ""}`}</p>
-          <div className="flex gap-3 text-sm">
+          <div>
+            <p className="text-sm text-[#5C4035]">{error ? "読込エラー" : `${shown.length}件表示${q ? `（「${q}」の検索結果）` : ""}`}</p>
+            {!error && duplicateCandidateCount > 0 ? (
+              <p className="mt-1 text-xs text-[#9A6B5B]">
+                {showAll ? `色違いなどの重複候補を含む全${matchingCount}件` : `色違いなど同じ商品名の候補をまとめています（${duplicateCandidateCount}件を非表示）`}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            {duplicateCandidateCount > 0 ? (
+              <Link href={showAll ? href({}) : `/shop?${new URLSearchParams({ ...(cat ? { cat } : {}), ...(q ? { q } : {}), ...(sort ? { sort } : {}), all: "1" }).toString()}`} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
+                {showAll ? "重複候補をまとめる" : "色違い・重複候補も表示"}
+              </Link>
+            ) : null}
             {SORTS.map((option) => (
               <Link key={option.value} href={href({ sort: option.value })} className={sort === option.value ? "font-semibold underline underline-offset-4" : "text-[#5C4035] hover:underline"}>
                 {option.label}
