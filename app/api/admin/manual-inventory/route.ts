@@ -36,9 +36,7 @@ export async function GET(request: Request) {
     const db = createSupabaseAdminClient();
     const { data, error } = await db
       .from("shop_listings")
-      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,created_at,updated_at")
-      .eq("manual_inventory", true)
-      .is("archived_at", null)
+      .select("id,product_id,slug,title,description,image_url,selling_price,currency,inventory,published,published_at,manual_inventory,archived_at,supplier_name,supplier_product_id,supplier_variant_id,shopify_sync_status,created_at,updated_at")
       .order("updated_at", { ascending: false })
       .limit(500);
     if (error) throw error;
@@ -148,5 +146,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, listing: data }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_save_failed" }, { status: 500 });
+  }
+}
+
+
+export async function PATCH(request: Request) {
+  if (!authorized(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+  const id = text(body.id, 80);
+  const action = text(body.action, 20);
+  if (!id || !["archive", "restore", "publish", "unpublish"].includes(action)) {
+    return NextResponse.json({ ok: false, error: "商品IDまたは操作が不正です。" }, { status: 400 });
+  }
+  try {
+    const db = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    let query = db.from("shop_listings").update({
+      ...(action === "archive" ? { archived_at: now, published: false, published_at: null } : {}),
+      ...(action === "restore" ? { archived_at: null } : {}),
+      ...(action === "publish" ? { published: true, published_at: now } : {}),
+      ...(action === "unpublish" ? { published: false, published_at: null } : {}),
+      updated_at: now,
+    }).eq("id", id);
+    if (action === "restore") query = query.not("archived_at", "is", null);
+    else if (action !== "archive") query = query.is("archived_at", null);
+    const { data, error } = await query.select("id,title,published,archived_at").maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ ok: false, error: "商品が見つからないか、状態が変更されています。" }, { status: 404 });
+    return NextResponse.json({ ok: true, listing: data });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "listing_update_failed" }, { status: 500 });
   }
 }
