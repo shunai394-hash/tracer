@@ -185,6 +185,9 @@ check("source-grounded titles separate products that shared one generic name", (
   assert.match(route, /apply_requires_product_ids_from_dry_run/);
   assert.match(route, /titleCount\.get\(current\) \?\? 0\) < 2/);
   assert.doesNotMatch(route, /\.delete\(/);
+  // Renames must never downgrade a descriptive title to a bare category label.
+  assert.match(route, /GENERIC_TARGET_TITLES\.has\(next\)/);
+  assert.match(route, /"レディース ショルダーバッグ"/);
 });
 
 console.log(`catalog reconciliation: ${cases} cases passed`);

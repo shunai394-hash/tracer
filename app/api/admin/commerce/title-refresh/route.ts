@@ -12,6 +12,16 @@ export const maxDuration = 300;
 type ProductRow = { id: string; title_ja: string | null; metadata: Record<string, unknown> | null };
 type VariantRow = { id: string; product_id: string; title_ja: string | null };
 
+// Category labels the broad localizer rules fall back to. Renaming a product to
+// one of these loses detail (e.g. "レザー調 レディースショルダーバッグ" →
+// "レディース ショルダーバッグ"), so they are never rename targets.
+const GENERIC_TARGET_TITLES = new Set([
+  "レディース ハンドバッグ", "レディースハンドバッグ", "レディース ショルダーバッグ", "レディースショルダーバッグ",
+  "レディース クロスボディバッグ", "レディースクロスボディバッグ", "レディース トートバッグ", "レディーストートバッグ",
+  "ハンドバッグ", "ショルダーバッグ", "斜めがけバッグ", "トートバッグ", "クラッチバッグ", "レディースバッグ",
+  "ヘアクリップ", "ヘアバンド", "ヘアアクセサリー", "レディース ヘアアクセサリー", "メイクブラシ", "美容ツール",
+]);
+
 const hasEnglishWords = (value: string) => /[A-Za-z]{2,}/.test(value.replace(/\b(?:PU|PC|USB|LED|UV|A4|Type-C|iPhone|Huawei|PHOERA)\b/gi, ""));
 
 /**
@@ -56,7 +66,7 @@ export async function POST(request: Request) {
     const metadata = product.metadata ?? {};
     const source = [metadata.sourceTitle, metadata.source_title, metadata.originalTitle].find((value) => typeof value === "string" && value.trim());
     const next = typeof source === "string" ? localizeProductTitle(source) : null;
-    if (!next || next === current || !isSpecificJapaneseProductTitle(next) || !isPublishableCatalogTitle(next) || hasEnglishWords(next)) return [];
+    if (!next || next === current || GENERIC_TARGET_TITLES.has(next) || !isSpecificJapaneseProductTitle(next) || !isPublishableCatalogTitle(next) || hasEnglishWords(next)) return [];
     return [{ productId: product.id, from: current, to: next, sourceTitle: String(source).slice(0, 160) }];
   });
   if (!apply) {
