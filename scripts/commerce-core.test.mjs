@@ -1288,6 +1288,7 @@ test("Shopify retries transient HTTP failures only for read-only GraphQL queries
 
 test("CJ importer repairs the mixed-language cosmetic brush cleaner title before channel publication", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(route, /\[/cosmetic brush cleaner\/, "メイクブラシクリーナー"\]/);
+  assert.match(route, /cosmetic brush cleaner/);
+  assert.match(route, /メイクブラシクリーナー/);
   assert.match(route, /"コスメ ブラシ Cleaner"/);
 });
