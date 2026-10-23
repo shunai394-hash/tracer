@@ -194,7 +194,21 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     });
 }
 
-export async function listPublishedShopListings(): Promise<ShopListing[]> {
+// The full catalog read touches Supabase and Shopify live stock for ~1000 variants.
+// Reuse one result per server instance briefly so every page view does not repeat it.
+// Final stock is still enforced at Shopify checkout; failures are never cached.
+const LISTINGS_TTL_MS = 60_000;
+let listingsCache: { at: number; value: Promise<ShopListing[]> } | null = null;
+
+export function listPublishedShopListings(): Promise<ShopListing[]> {
+  if (listingsCache && Date.now() - listingsCache.at < LISTINGS_TTL_MS) return listingsCache.value;
+  const value = loadPublishedShopListings();
+  listingsCache = { at: Date.now(), value };
+  value.catch(() => { if (listingsCache?.value === value) listingsCache = null; });
+  return value;
+}
+
+async function loadPublishedShopListings(): Promise<ShopListing[]> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
@@ -285,7 +299,6 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
   // until live supplier ordering/payment readiness is verified.
   // UUID product-page liveness checks must query one variant, not rebuild the full catalog.
   const supabase = createSupabaseAdminClient();
-  const freshAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   let channelQuery = supabase
     .from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,external_sku,published_url,status,channel,updated_at")
@@ -326,8 +339,9 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .eq("source_status", "verified")
         .eq("tracking_supported", true)
         .eq("ship_to", "JP")
-        .gt("inventory", 0)
-        .gte("last_checked_at", freshAfter),
+        // No freshness filter here: a stale check keeps the published product visible
+        // and only clears orderable (offerFresh below) until the offer is reverified.
+        .gt("inventory", 0),
       supabase.from("commerce_prices")
         .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
         .in("variant_id", batch)
