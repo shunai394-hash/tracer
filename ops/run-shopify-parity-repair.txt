@@ -1,0 +1,2 @@
+dry-run
+# First line "apply" drafts the products listed by the same run's dry-run. Anything else is read-only.

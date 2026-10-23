@@ -1,0 +1,107 @@
+name: TRACER Shopify parity repair (draft only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/run-shopify-parity-repair.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Draft the products listed by this run's dry-run (never deletes)"
+        required: false
+        type: boolean
+        default: false
+      max_drafts:
+        description: "Refuse to apply when the dry-run plans more drafts than this"
+        required: false
+        type: number
+        default: 60
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-shopify-parity-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ops
+      - name: Wait until production serves this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then echo "Production serves $TARGET_SHA"; exit 0; fi
+            sleep 15
+          done
+          echo "Production does not serve target SHA; refusing to run."
+          exit 1
+      - name: Dry-run, then optionally draft and verify
+        env:
+          # A push applies only when the ops file's first line is exactly "apply".
+          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply || 'from-file' }}
+          MAX_DRAFTS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_drafts || 60 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$APPLY" = "from-file" ]; then
+            first="$(head -n1 ops/run-shopify-parity-repair.txt 2>/dev/null | tr -d '[:space:]' || true)"
+            if [ "$first" = "apply" ]; then APPLY=true; else APPLY=false; fi
+          fi
+          export APPLY
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, { headers: { Authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+          if (!tokenResponse.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + tokenResponse.status);
+          const { value: token } = await tokenResponse.json();
+          if (typeof token !== "string" || !token) throw new Error("OIDC_TOKEN_MISSING");
+          const endpoint = audience + "/api/admin/shopify/parity-repair";
+          const post = async (body) => {
+            const response = await fetch(endpoint, { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(115000) });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.ok !== true) { console.log(JSON.stringify({ status: response.status, ...result }, null, 2)); throw new Error("PARITY_REPAIR_FAILED:" + response.status); }
+            return result;
+          };
+          const dryRun = await post({ apply: false });
+          await writeFile("shopify-parity-dry-run.json", JSON.stringify(dryRun, null, 2));
+          console.log(JSON.stringify(dryRun, null, 2));
+          const planned = dryRun.actions.filter((a) => a.action === "draft").map((a) => a.shopifyProductId);
+          const out = { apply: process.env.APPLY === "true", dryRunSummary: dryRun.summary, planned, batches: [] };
+          if (out.apply) {
+            const max = Math.max(1, Number(process.env.MAX_DRAFTS) || 60);
+            if (planned.length > max) throw new Error("PARITY_REPAIR_TOO_MANY_DRAFTS:" + planned.length + ">" + max);
+            for (let i = 0; i < planned.length; i += 25) {
+              const applied = await post({ apply: true, productIds: planned.slice(i, i + 25), limit: 25 });
+              out.batches.push(applied);
+              console.log(JSON.stringify(applied, null, 2));
+            }
+            const after = await post({ apply: false });
+            out.afterSummary = after.summary;
+            out.afterActions = after.actions;
+          }
+          await writeFile("shopify-parity-repair.json", JSON.stringify(out, null, 2));
+          await writeFile(process.env.GITHUB_STEP_SUMMARY, ["# Shopify parity repair", "", "Mode: " + (out.apply ? "apply" : "dry-run"), "", "```json", JSON.stringify({ dryRunSummary: out.dryRunSummary, afterSummary: out.afterSummary ?? null, planned }, null, 2), "```", ""].join("\n"));
+          NODE
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-parity-repair-${{ github.run_id }}
+          path: shopify-parity-*.json
+          if-no-files-found: ignore
+          retention-days: 30
