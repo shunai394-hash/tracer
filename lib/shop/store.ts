@@ -226,7 +226,7 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
     const titleKey = listing.title.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
     const imageKey = listing.imageUrl?.trim() ?? "";
     const duplicateKey = !listing.manualInventory && titleKey && imageKey
-      ? ["visible-product", titleKey, imageKey, String(listing.sellingPrice ?? ""), listing.currency?.trim().toUpperCase() ?? ""].join(":")
+      ? ["visible-product", titleKey, imageKey, listing.currency?.trim().toUpperCase() ?? ""].join(":")
       : `listing:${listing.id}`;
     if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
   }
