@@ -1285,3 +1285,12 @@ test("Shopify retries transient HTTP failures only for read-only GraphQL queries
   assert.match(admin, /Never replay a mutation after a 5xx/);
   assert.match(admin, /shopifyGraphQL<T>\(query, variables, throttleRetryAttempt, httpReadRetryAttempt \+ 1\)/);
 });
+
+test("storefront deduplicates exact supplier variants without collapsing distinct color/style variants by shared title and image", async () => {
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  assert.match(store, /supplierProductId\?\.trim\(\)/);
+  assert.match(store, /supplierVariantId\?\.trim\(\)/);
+  assert.match(store, /\["supplier-variant", listing\.supplierName\?\.trim\(\)\.toLowerCase\(\) \?\? "", supplierProductId, supplierVariantId\]/);
+  assert.doesNotMatch(store, /const titleKey = listing\.title\.normalize/);
+  assert.doesNotMatch(store, /const imageKey = listing\.imageUrl/);
+});

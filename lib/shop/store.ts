@@ -218,16 +218,18 @@ export async function listPublishedShopListings(): Promise<ShopListing[]> {
   }
   for (const listing of canonicalListings) if (listing.shopifyVariantId) byVariant.set(listing.shopifyVariantId, listing);
   const listings = [...byVariant.values()];
-  // De-duplicate identical customer-facing cards across supplier records.
-  // Do not use title alone: generic titles can represent different products.
-  // Keep one original listing identity for checkout and procurement.
+  // De-duplicate only exact supplier variants. A shared title/image is not proof
+  // of duplication: CJ often reuses a parent image for distinct color/style variants.
+  // Keeping those variants separate preserves their supplier identity, price, and order path.
   const storefrontProducts = new Map<string, ShopListing>();
   for (const listing of listings) {
-    const titleKey = listing.title.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
-    const imageKey = listing.imageUrl?.trim() ?? "";
-    const duplicateKey = !listing.manualInventory && titleKey && imageKey
-      ? ["visible-product", titleKey, imageKey, listing.currency?.trim().toUpperCase() ?? ""].join(":")
-      : `listing:${listing.id}`;
+    const supplierProductId = listing.supplierProductId?.trim() ?? "";
+    const supplierVariantId = listing.supplierVariantId?.trim() ?? "";
+    const duplicateKey = !listing.manualInventory && supplierProductId && supplierVariantId
+      ? ["supplier-variant", listing.supplierName?.trim().toLowerCase() ?? "", supplierProductId, supplierVariantId].join(":")
+      : listing.shopifyVariantId
+        ? ["shopify-variant", listing.shopifyVariantId].join(":")
+        : `listing:${listing.id}`;
     if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
   }
   return [...storefrontProducts.values()]
