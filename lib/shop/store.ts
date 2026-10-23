@@ -285,7 +285,6 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
   // until live supplier ordering/payment readiness is verified.
   // UUID product-page liveness checks must query one variant, not rebuild the full catalog.
   const supabase = createSupabaseAdminClient();
-  const freshAfter = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   let channelQuery = supabase
     .from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,external_sku,published_url,status,channel,updated_at")
@@ -327,7 +326,6 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .eq("tracking_supported", true)
         .eq("ship_to", "JP")
         .gt("inventory", 0)
-        .gte("last_checked_at", freshAfter),
       supabase.from("commerce_prices")
         .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
         .in("variant_id", batch)
