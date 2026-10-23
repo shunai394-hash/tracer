@@ -325,7 +325,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .eq("source_status", "verified")
         .eq("tracking_supported", true)
         .eq("ship_to", "JP")
-        .gt("inventory", 0)
+        .gt("inventory", 0),
       supabase.from("commerce_prices")
         .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
         .in("variant_id", batch)
