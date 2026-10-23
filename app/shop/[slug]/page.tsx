@@ -4,10 +4,11 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { getShopifyConfig } from "@/lib/config/env";
-import { getShopListingBySlug, recordShopFunnelEvent } from "@/lib/shop/store";
-import { listEvidenceForProduct } from "@/lib/market/evidence-ledger";
+import { getShopListingBySlug, listPublishedShopListings, recordShopFunnelEvent, type ShopListing } from "@/lib/shop/store";
+import { ProductCard } from "@/components/product-card";
+import { ProductImage } from "@/components/product-image";
+import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct, variantFamily } from "@/lib/shop/storefront-display";
 import { formatMoney } from "@/lib/intelligence/format-display";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ async function loadShopProduct(slug: string) {
   try {
     const listing = await getShopListingBySlug(slug);
     if (!listing) {
-      return { listing: null, evidence: [], bestseller: null, configError: false } as const;
+      return { listing: null, configError: false } as const;
     }
 
     const isLivenessCheck = (await headers()).get("x-tracer-liveness-check") === "1";
@@ -64,20 +65,10 @@ async function loadShopProduct(slug: string) {
       await recordShopFunnelEvent({ listingId: listing.id, eventType: "view" });
     }
 
-    const evidence = listing.productId ? await listEvidenceForProduct(listing.productId) : [];
-    const supabase = createSupabaseAdminClient();
-    const { data: bestseller } = listing.bestsellerId
-      ? await supabase
-          .from("marketplace_bestsellers")
-          .select("marketplace, rank, source, product_url, fetched_at")
-          .eq("id", listing.bestsellerId)
-          .maybeSingle()
-      : { data: null };
-
-    return { listing, evidence, bestseller, configError: false } as const;
+    return { listing, configError: false } as const;
   } catch (error) {
     if (error instanceof SupabaseConfigError) {
-      return { listing: null, evidence: [], bestseller: null, configError: true } as const;
+      return { listing: null, configError: true } as const;
     }
     throw error;
   }
@@ -89,12 +80,12 @@ export default async function ShopProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { listing, evidence, bestseller, configError } = await loadShopProduct(slug);
+  const { listing, configError } = await loadShopProduct(slug);
 
   if (configError) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-16">
-        <div role="alert" className="border border-amber-400/20 bg-amber-400/5 px-5 py-4 text-sm text-amber-200">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
           商品情報を読み込めません。時間をおいてもう一度お試しください。
         </div>
       </main>
@@ -124,91 +115,61 @@ export default async function ShopProductPage({
     } : undefined,
   };
 
+  let related: ShopListing[] = [];
+  try {
+    const family = variantFamily(listing.title);
+    const category = categoryOf(listing.title);
+    related = pickDistinct(
+      (await listPublishedShopListings()).filter((item) => item.id !== listing.id && categoryOf(item.title) === category && variantFamily(item.title) !== family),
+      4,
+    );
+  } catch {
+    // Related items are optional; the product itself must still render.
+  }
+  const category = STOREFRONT_CATEGORIES.find((item) => item.slug === categoryOf(listing.title));
+
   return (
-    <main className="min-h-screen w-full flex-1 bg-zinc-950 text-zinc-100">
-      <div className="relative mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 sm:py-12">
+    <main className="min-h-screen w-full flex-1 bg-[#FBF6F1] text-[#3B241A]">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] overflow-hidden" aria-hidden="true">
-        <div className="absolute -left-40 top-12 h-80 w-80 rounded-full bg-cyan-400/[0.06] blur-3xl" />
-        <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-amber-300/[0.04] blur-3xl" />
-      </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
+        <nav aria-label="パンくず" className="mb-5 flex flex-wrap items-center gap-2 text-xs text-[#9A6B5B] sm:mb-8">
+          <Link href="/" className="hover:underline">ホーム</Link>
+          <span aria-hidden="true">/</span>
+          <Link href="/shop" className="hover:underline">商品一覧</Link>
+          {category ? (
+            <>
+              <span aria-hidden="true">/</span>
+              <Link href={`/shop?cat=${category.slug}`} className="hover:underline">{category.label}</Link>
+            </>
+          ) : null}
+        </nav>
 
-      <nav aria-label="パンくず" className="relative mb-8 flex items-center gap-2 text-[11px] text-zinc-600">
-        <Link href="/shop" className="transition hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
-          商品一覧
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span className="text-zinc-400">商品詳細</span>
-      </nav>
-
-      <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)] lg:gap-12">
-        <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="relative overflow-hidden border border-white/10 bg-zinc-950/70 shadow-2xl shadow-black/30">
-            <div className="absolute left-4 top-4 z-10 flex items-center gap-2 border border-white/10 bg-black/60 px-3 py-2 text-[9px] font-mono uppercase tracking-[0.18em] text-zinc-300 backdrop-blur">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-hidden="true" />
-セレクト商品
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
+          <div className="md:sticky md:top-24 md:self-start">
+            <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
+              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-square w-full object-cover" />
             </div>
-            {listing.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={listing.imageUrl}
-                alt={listing.title}
-                className="aspect-square w-full object-cover transition duration-700 motion-safe:hover:scale-[1.015]"
-              />
-            ) : (
-              <div className="flex aspect-square items-center justify-center bg-zinc-900 text-sm text-zinc-600">
-                商品画像を準備中です
-              </div>
-            )}
           </div>
 
-        </div>
+          <div>
+            {category ? <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{category.label}</p> : null}
+            <h1 className="mt-2 font-serif text-2xl leading-snug sm:text-[28px]">{listing.title}</h1>
 
-        <div className="relative lg:pt-2">
-          <div className="flex flex-wrap gap-2 text-[10px] font-mono uppercase tracking-[0.2em]">
-            <span className="border border-cyan-300/20 bg-cyan-300/5 px-2.5 py-1.5 text-cyan-200">セレクト商品</span>
-            {bestseller ? (
-              <span className="border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-zinc-400">市場で注目</span>
-            ) : null}
-          </div>
-
-          <h1 className="mt-5 max-w-2xl text-[clamp(2rem,4vw,3.7rem)] font-medium leading-[1.08] tracking-[-0.035em] text-zinc-50">
-            {listing.title}
-          </h1>
-
-          {listing.description ? (
-            <p className="mt-6 max-w-xl text-sm leading-7 text-zinc-300 sm:text-base">{listing.description}</p>
-          ) : null}
-
-
-          {bestseller ? (
-            <div className="mt-6 flex items-center justify-between border border-white/10 bg-white/[0.025] px-4 py-3">
-              <div>
-                <p className="text-xs text-zinc-500">市場での注目情報</p>
-                <p className="mt-1 text-xs text-zinc-300">{bestseller.marketplace}で確認された候補</p>
-              </div>
-              <p className="text-lg font-medium text-cyan-200">#{bestseller.rank}</p>
+            <div className="mt-5 flex items-baseline gap-2">
+              <p className="text-[28px] font-semibold tracking-tight">{formatMoney(listing.sellingPrice, listing.currency)}</p>
+              <span className="text-xs text-neutral-500">税込・送料込み</span>
             </div>
-          ) : null}
+            <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
+              {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
+            </p>
 
-          <div className="mt-8 border border-white/10 bg-zinc-950/75 p-5 sm:p-6">
-            <div className="flex items-end justify-between gap-5">
-              <div>
-                <p className="text-sm text-zinc-400">価格</p>
-                <p className="mt-1 text-3xl font-medium tracking-[-0.03em] text-zinc-50">
-                  {formatMoney(listing.sellingPrice, listing.currency)}
-                </p>
-              </div>
-              <span className="pb-1 text-[10px] text-zinc-600">税込表示価格</span>
-            </div>
-
-            <div className="mt-5">
+            <div className="mt-6">
               {shopifyProductUrl ? (
                 <a
                   href={shopifyProductUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex w-full items-center justify-center rounded-sm bg-cyan-300 px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100"
+                  className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"
                 >
                   Shopifyで購入する
                 </a>
@@ -222,52 +183,60 @@ export default async function ShopProductPage({
                   imageUrl={listing.imageUrl}
                 />
               )}
+              <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
+                ご購入手続きはTRACER公式ストア（Shopify）で安全に行われます。
+              </p>
             </div>
-            <p className="mt-3 text-center text-[11px] leading-5 text-zinc-600">
-              在庫と購入手続きは販売先の最新情報をご確認ください。
-            </p>
-          </div>
 
-          <div className="mt-6 border-l border-cyan-300/30 pl-4">
-            <p className="text-xs font-medium text-zinc-200">掲載理由を、隠さない。</p>
-            <p className="mt-2 text-xs leading-6 text-zinc-500">
-              サイズ・素材・カラー・仕様は、購入前に商品画像と販売先の最新情報をご確認ください。
-            </p>
+            <ul className="mt-6 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#5C4035] sm:text-xs">
+              <li className="rounded-xl bg-white/70 px-2 py-3">送料込み<br />の価格表示</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">追跡番号付き<br />で発送</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">在庫確認済み<br />の商品のみ掲載</li>
+            </ul>
+
+            {listing.description ? (
+              <section aria-labelledby="description-heading" className="mt-8 border-t border-[#EADBD3] pt-6">
+                <h2 id="description-heading" className="font-serif text-lg">商品説明</h2>
+                <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[#5C4035]">{listing.description}</p>
+              </section>
+            ) : null}
+
+            <div className="mt-6 divide-y divide-[#EADBD3] border-y border-[#EADBD3] text-sm">
+              <details className="group py-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+                  サイズ・素材・カラー
+                  <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
+                </summary>
+                <p className="mt-3 leading-7 text-[#5C4035]">
+                  サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。商品画像はモニター環境により実物と色味が異なって見える場合があります。
+                </p>
+              </details>
+              <details className="group py-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+                  配送・送料・返品について
+                  <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
+                </summary>
+                <p className="mt-3 leading-7 text-[#5C4035]">
+                  在庫・配送日数・送料・返品条件は商品や配送先によって異なります。表示価格には日本国内への送料が含まれています。詳しくはご購入画面でご確認ください。
+                </p>
+              </details>
+            </div>
           </div>
         </div>
+
+        {related.length > 0 ? (
+          <section aria-labelledby="related-heading" className="mt-16 sm:mt-24">
+            <div className="flex items-end justify-between gap-4">
+              <h2 id="related-heading" className="font-serif text-xl sm:text-2xl">あわせて見たい{category ? category.label : "アイテム"}</h2>
+              {category ? <Link href={`/shop?cat=${category.slug}`} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">もっと見る →</Link> : null}
+            </div>
+            <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-5">
+              {related.map((item) => <ProductCard key={item.id} listing={item} />)}
+            </div>
+          </section>
+        ) : null}
+        <div className="pb-10" />
       </div>
-
-      <section aria-labelledby="why-heading" className="relative mt-20 border-t border-white/10 pt-10 sm:mt-24">
-        <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:gap-16">
-          <div>
-            <p className="text-xs tracking-wide text-cyan-300/70">この商品について</p>
-            <h2 id="why-heading" className="mt-3 max-w-sm text-2xl font-medium tracking-tight text-zinc-100 sm:text-3xl">
-              商品情報を確認してから購入する。
-            </h2>
-            <p className="mt-4 max-w-sm text-sm leading-7 text-zinc-500">
-              サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。
-            </p>
-          </div>
-
-          <div className="grid gap-px overflow-hidden border border-white/10 bg-white/10 sm:grid-cols-2">
-            <div className="bg-zinc-950/70 p-6 sm:p-7">
-              <p className="text-xs text-zinc-500">掲載情報</p>
-              <p className="mt-4 text-base font-medium text-zinc-200">TRACERの商品データ</p>
-              <p className="mt-2 text-sm leading-7 text-zinc-500">
-                商品名・画像・価格は登録された掲載情報を表示しています。詳細は販売先の商品ページでもご確認ください。
-              </p>
-            </div>
-            <div className="bg-zinc-950/70 p-6 sm:p-7">
-              <p className="text-xs text-zinc-500">購入前の確認</p>
-              <p className="mt-4 text-base font-medium text-zinc-200">販売先の最新情報</p>
-              <p className="mt-2 text-sm leading-7 text-zinc-500">
-                在庫・配送日数・送料・返品条件は商品や配送先によって異なります。購入手続きの前に販売先でご確認ください。
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
     </main>
   );
 }
