@@ -1,0 +1,106 @@
+name: TRACER product title refresh (shared names only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/run-title-refresh.txt"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Rename the products listed by this run's dry-run (never deletes)"
+        required: false
+        type: boolean
+        default: false
+      max_renames:
+        description: "Refuse to apply when the dry-run plans more renames than this"
+        required: false
+        type: number
+        default: 160
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-title-refresh
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ops
+      - name: Wait until production serves this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then echo "Production serves $TARGET_SHA"; exit 0; fi
+            sleep 15
+          done
+          echo "Production does not serve target SHA; refusing to run."
+          exit 1
+      - name: Dry-run, then optionally rename and re-sync
+        env:
+          # A push applies only when the ops file's first line is exactly "apply".
+          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply || 'from-file' }}
+          MAX_RENAMES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_renames || 160 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$APPLY" = "from-file" ]; then
+            first="$(head -n1 ops/run-title-refresh.txt 2>/dev/null | tr -d '[:space:]' || true)"
+            if [ "$first" = "apply" ]; then APPLY=true; else APPLY=false; fi
+          fi
+          export APPLY
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const tokenResponse = await fetch(tokenUrl, { headers: { Authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+          if (!tokenResponse.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + tokenResponse.status);
+          const { value: token } = await tokenResponse.json();
+          if (typeof token !== "string" || !token) throw new Error("OIDC_TOKEN_MISSING");
+          const endpoint = audience + "/api/admin/commerce/title-refresh";
+          const post = async (body) => {
+            const response = await fetch(endpoint, { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(295000) });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.ok !== true) { console.log(JSON.stringify({ status: response.status, ...result }, null, 2)); throw new Error("TITLE_REFRESH_FAILED:" + response.status); }
+            return result;
+          };
+          const dryRun = await post({ apply: false });
+          await writeFile("title-refresh-dry-run.json", JSON.stringify(dryRun, null, 2));
+          console.log(JSON.stringify(dryRun, null, 2));
+          const planned = dryRun.plan.map((item) => item.productId);
+          const out = { apply: process.env.APPLY === "true", renames: dryRun.renames, sharedTitleGroupsBefore: dryRun.sharedTitleGroupsBefore, sharedTitleGroupsAfter: dryRun.sharedTitleGroupsAfter, batches: [] };
+          if (out.apply) {
+            const max = Math.max(1, Number(process.env.MAX_RENAMES) || 160);
+            if (planned.length > max) throw new Error("TITLE_REFRESH_TOO_MANY:" + planned.length + ">" + max);
+            for (let i = 0; i < planned.length; i += 10) {
+              const applied = await post({ apply: true, productIds: planned.slice(i, i + 10), limit: 10 });
+              out.batches.push({ renamed: applied.renamed, failed: applied.failed, sync: applied.sync, results: applied.results.map((r) => ({ productId: r.productId, to: r.to, ok: r.ok, error: r.error })) });
+              console.log(JSON.stringify(out.batches.at(-1)));
+            }
+            const after = await post({ apply: false });
+            out.after = { renames: after.renames, sharedTitleGroups: after.sharedTitleGroupsBefore };
+          }
+          await writeFile("title-refresh-result.json", JSON.stringify(out, null, 2));
+          await writeFile(process.env.GITHUB_STEP_SUMMARY, ["# Title refresh", "", "Mode: " + (out.apply ? "apply" : "dry-run"), "", "```json", JSON.stringify({ renames: out.renames, before: out.sharedTitleGroupsBefore, plannedAfter: out.sharedTitleGroupsAfter, after: out.after ?? null }, null, 2), "```", ""].join("\n"));
+          NODE
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: title-refresh-${{ github.run_id }}
+          path: title-refresh-*.json
+          if-no-files-found: ignore
+          retention-days: 30
