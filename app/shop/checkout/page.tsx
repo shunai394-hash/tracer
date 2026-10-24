@@ -23,13 +23,13 @@ export default function CheckoutPage() {
           <div className="mt-5 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
             <div className="tracer-reveal tracer-reveal-delay-1">
               <h1 className="text-4xl tracking-[-0.055em] text-[#3B241A] sm:text-6xl">最後の確認。</h1>
-              <p className="mt-5 max-w-2xl text-sm leading-7 text-[#3B241A]0 sm:text-base sm:leading-8">
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-[#5C4035] sm:text-base sm:leading-8">
                 配送先とお支払い方法を入力して、注文内容を確定します。必要な情報だけを、落ち着いて確認できます。
               </p>
             </div>
             <div className="tracer-reveal tracer-reveal-delay-2 hidden border-l border-[#EADBD3] pl-6 text-right lg:block">
               <p className="text-[9px] font-mono uppercase tracking-[0.24em] text-[#9A6B5B]">Checkout</p>
-              <p className="mt-2 text-xs text-[#3B241A]0">04 / Final check</p>
+              <p className="mt-2 text-xs text-[#5C4035]">04 / Final check</p>
             </div>
           </div>
           <div className="tracer-reveal tracer-reveal-delay-3 mt-10 grid max-w-2xl grid-cols-4 gap-2" aria-label="購入手続きの進行状況">
