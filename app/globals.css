@@ -4,6 +4,7 @@
   --background: #ffffff;
   --foreground: #171717;
   --selection: #e5e5e5;
+  --focus-ring: #3b241a;
 }
 
 @theme inline {
@@ -35,12 +36,29 @@ body {
   color: #171717;
 }
 
+/* A high-contrast, consistent keyboard focus treatment across store and account flows. */
 :focus-visible {
-  outline: 2px solid #525252;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
 a,
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Respect system motion preferences without changing the default art direction. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
