@@ -42,7 +42,7 @@ export function categoryOf(title: string): StorefrontCategory["slug"] {
 
 // Title without the trailing colour/variant in parentheses, e.g. "…バッグ（ピンク）".
 export function variantFamily(title: string): string {
-  return title.normalize("NFKC").replace(/\s*\([^()]*\)\s*$/, "").trim().toLocaleLowerCase();
+  return title.normalize("NFKC").replace(/\s*[（(]\s*(?:ブラック|黒|ホワイト|白|アイボリー|ベージュ|ブラウン|茶|グレー|灰色|グレージュ|ネイビー|紺|ブルー|青|ライトブルー|グリーン|緑|カーキ|レッド|赤|ピンク|パープル|紫|オレンジ|イエロー|黄|シルバー|銀|ゴールド|金|black|white|ivory|beige|brown|gray|grey|navy|blue|green|khaki|red|pink|purple|orange|yellow|silver|gold)\s*[）)]\s*$/i, "").trim().toLocaleLowerCase();
 }
 
 // Pick up to `limit` listings with images, showing one colour per product family
