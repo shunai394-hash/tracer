@@ -24,7 +24,7 @@ test("product detail avoids unsupported shipping and fulfillment promises", () =
 });
 
 test("product metadata uses whitespace normalization and absolute encoded URLs", () => {
-  assert.ok(productPage.includes(String.raw`replace(/\\s+/g, " ")`));
+  assert.ok(productPage.includes(String.raw`replace(/\s+/g, " ")`));
   assert.ok(productPage.includes('new URL(`/shop/${encodeURIComponent(listing.slug)}`, siteUrl).toString()'));
   assert.ok(productPage.includes("aspect-[4/5] w-full object-cover"));
 });
