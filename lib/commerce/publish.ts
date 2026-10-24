@@ -624,7 +624,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
     // SEO snippet is derived from the real product copy; never invent specifications.
     const seoTitle = `${title.slice(0, 62 - " | TRACER".length).trim()} | TRACER`.slice(0, 70);
-    const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 300);
+    const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
