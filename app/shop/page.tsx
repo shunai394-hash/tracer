@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
@@ -6,17 +5,46 @@ import { ProductCard } from "@/components/product-card";
 import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
-export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
+
+const CATEGORY_SEO: Record<string, { title: string; description: string }> = {
+  bags: { title: "バッグ｜ハンドバッグ・ショルダーバッグ", description: "毎日の通勤や休日のお出かけに合わせやすいハンドバッグ・ショルダーバッグをチェック。価格と在庫を商品ページで確認できます。" },
+  hair: { title: "ヘアアクセサリー｜ヘアクリップ・まとめ髪アイテム", description: "まとめ髪や日々のスタイリングに使えるヘアクリップなどのヘアアクセサリー。商品ごとの価格と在庫をご確認いただけます。" },
+  makeup: { title: "メイク小物｜ブラシ収納・お手入れ用品", description: "メイクブラシの収納やお手入れに役立つメイク小物をチェック。各商品の仕様・価格・在庫をご確認いただけます。" },
+  other: { title: "ライフスタイル小物", description: "日々の暮らしに取り入れやすい小物をセレクト。商品ごとの仕様・価格・在庫をご確認いただけます。" },
+};
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const query = await searchParams;
-  const hasFilters = ["cat", "q", "sort", "page"].some((key) => {
-    const value = query[key];
-    return Array.isArray(value) ? value.some((item) => item.trim()) : Boolean(value?.trim());
-  });
+  const cat = param(query.cat);
+  const q = param(query.q);
+  const sort = param(query.sort);
+  const page = param(query.page);
+  const category = STOREFRONT_CATEGORIES.find((item) => item.slug === cat);
+  const seo = category ? CATEGORY_SEO[category.slug] : null;
+  const canonical = category ? `/shop?cat=${encodeURIComponent(category.slug)}` : "/shop";
+  const title = seo?.title ?? "商品一覧｜バッグ・ヘアアクセサリー・メイク小物";
+  const description = seo?.description ?? "バッグ、ヘアアクセサリー、メイク小物など、日々の装いに取り入れやすいアイテムを探せるTRACERのセレクトショップ。商品ごとの価格と在庫をご確認いただけます。";
+  const isFilteredSearch = Boolean(q || sort || page);
   return {
-    title: "バッグ・ヘアアクセサリー・メイク小物の商品一覧",
-    description: "毎日に取り入れやすいバッグ、ヘアアクセサリー、メイク小物をセレクト。価格・在庫・商品仕様を確認してお選びいただけます。",
-    alternates: { canonical: "/shop" },
-    ...(hasFilters ? { robots: { index: false, follow: true } } : {}),
+    title,
+    description,
+    alternates: { canonical },
+    ...(isFilteredSearch ? { robots: { index: false, follow: true } } : {}),
+    openGraph: {
+      type: "website" as const,
+      locale: "ja_JP",
+      siteName: "TRACER",
+      title,
+      description,
+      url: new URL(canonical, SITE_URL).toString(),
+    },
+    twitter: { card: "summary_large_image" as const, title, description },
   };
 }
 
@@ -82,6 +110,11 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
       <div className="mx-auto max-w-6xl px-5 py-8 sm:py-12">
         <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">TRACER ONLINE STORE</p>
         <h1 className="mt-2 font-serif text-3xl">{activeCategory ? activeCategory.label : "すべての商品"}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5C4035]">
+          {activeCategory
+            ? CATEGORY_SEO[activeCategory.slug].description
+            : "バッグ・ヘアアクセサリー・メイク小物をカテゴリや価格から比較。商品ページで価格・在庫・商品情報を確認してお選びいただけます。"}
+        </p>
 
         <form action="/shop" className="mt-6 flex max-w-xl gap-2">
           {activeCategory ? <input type="hidden" name="cat" value={activeCategory.slug} /> : null}
