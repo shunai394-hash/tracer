@@ -188,20 +188,33 @@ export async function persistCjSupplyIntelligence(args: PersistCjSupplyIntellige
   const existingListing = await supabase.from("supplier_listings").select("metadata,product_id,verification_status,shipping_status,configured,price_confirmed,inventory_confirmed,api_available,orderable,tracking_available,inventory,cost,shipping_cost,ship_to,supplier_product_id,supplier_variant_id,verification_error,last_verified_at").eq("id", args.supplierListingId).maybeSingle();
   if (existingListing.error) throw new Error(`CJ supplier listing read failed: ${existingListing.error.message}`);
   if (existingListing.data?.metadata && typeof existingListing.data.metadata === "object" && !Array.isArray(existingListing.data.metadata)) existingListingMetadata = existingListing.data.metadata as Record<string, unknown>;
-  const nativeIdentityKey = `cj:${args.supplierProductId}:${args.supplierVariantId}`;
+  // Historical TRACER discovery and sales-test paths used two deterministic
+  // identity_key encodings for the same exact CJ product+variant. Accept both,
+  // but only when they resolve to one unique internal product row.
+  const nativeIdentityKeys = [
+    `cj:${args.supplierProductId}:${args.supplierVariantId}`,
+    `cj:product:${args.supplierProductId}:variant:${args.supplierVariantId}`,
+  ];
   let nativeCandidateProductId: string | null = null;
   {
-    // A supplier-native candidate may use only the internal product row whose
-    // identity_key exactly encodes this CJ product+variant pair. Never reuse an
-    // arbitrary UUID supplied by a caller as a substitute for product identity.
-    const exactNativeProduct = await supabase
+    const exactNativeProducts = await supabase
       .from("products")
       .select("id,identity_key")
-      .eq("identity_key", nativeIdentityKey)
-      .maybeSingle();
-    if (exactNativeProduct.error) throw new Error(`CJ native product identity lookup failed: ${exactNativeProduct.error.message}`);
-    if (exactNativeProduct.data && exactNativeProduct.data.identity_key === nativeIdentityKey) {
-      nativeCandidateProductId = String(exactNativeProduct.data.id);
+      .in("identity_key", nativeIdentityKeys)
+      .limit(3);
+    if (exactNativeProducts.error) throw new Error(`CJ native product identity lookup failed: ${exactNativeProducts.error.message}`);
+    const exactIds = [...new Set((exactNativeProducts.data ?? [])
+      .filter((row) => nativeIdentityKeys.includes(String(row.identity_key ?? "")) && String(row.id ?? "").trim())
+      .map((row) => String(row.id)))];
+    // If the legacy and labelled encodings both exist as different product
+    // rows, fail closed instead of silently choosing one.
+    if (exactIds.length === 1) nativeCandidateProductId = exactIds[0];
+    else if (exactIds.length > 1) {
+      console.warn("[cj-supply-identity] duplicate native identity keys; product association withheld", {
+        supplierProductId: args.supplierProductId,
+        supplierVariantId: args.supplierVariantId,
+        candidateCount: exactIds.length,
+      });
     }
   }
 
