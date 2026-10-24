@@ -1,4 +1,15 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^portable plush handbag for women(?:\s*\(.*\))?$/i, "ぬいぐるみ風素材 レディースハンドバッグ"],
+  [/^fashion woven handbag for women(?:\s*\(.*\))?$/i, "編み込みデザイン レディースハンドバッグ"],
+  [/^women patent leather flower handbag(?:\s*\(.*\))?$/i, "花モチーフ エナメル調ハンドバッグ"],
+  [/^woven hanging handbag women embroidery fashion(?:\s*\(.*\))?$/i, "刺繍入り 編み込みハンドバッグ"],
+  [/^large capacity suede handbag for women(?:\s*\(.*\))?$/i, "スエード調 大容量ハンドバッグ"],
+  [/^retro textured shoulder bag women underarm(?:\s*\(.*\))?$/i, "レトロ型押し アンダーアームバッグ"],
+  [/^single shoulder messenger tote bag women(?:\s*\(.*\))?$/i, "ワンショルダー メッセンジャートート"],
+  [/^retro matte shoulder bag for women(?:\s*\(.*\))?$/i, "マット調 レトロショルダーバッグ"],
+  [/^children'?s hair ornaments cartoon fruit hair clips women'?s colorful quicksand(?:\s*\(.*\))?$/i, "フルーツ柄 カラフルヘアクリップ"],
+  [/^love handmade bow hair clips accessories(?:\s*\(.*\))?$/i, "リボンモチーフ ヘアクリップ"],
+  [/^electric brush cleaner makeup brush tool for automatic cleaning(?:\s*\(.*\))?$/i, "電動メイクブラシクリーナー"],
   [/solid color casual shoulder.*women bag|women.*solid color casual shoulder.*bag/i, "レディース ショルダーバッグ（カラー・仕様は商品選択画面で確認）"],
   [/^purple sand flower pot rectangular(?:\\s*\\(.*\\))?$/i, "長方形の紫砂植木鉢（紫泥・約35×22.8×8.5cm）"],
   [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "ミニサンゴ風 水槽用デコレーション（ホワイト）"],
@@ -332,6 +343,14 @@ const CATEGORY_ONLY_TITLES = new Set([
   "ペット用品",
   "バスルームマット",
   "トレンド・seeded_dueアイテム",
+  "レディース ハンドバッグ",
+  "レディース ショルダーバッグ",
+  "ハンドバッグ",
+  "ショルダーバッグ",
+  "ヘアクリップ",
+  "メイクブラシ",
+  "ヘアアクセサリー",
+  "レディース ヘアアクセサリー",
 ]);
 
 const TITLE_REPLACEMENTS: Array<[RegExp, string]> = [
