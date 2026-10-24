@@ -28,7 +28,7 @@
     },
     {
       "path": "/api/cron/commerce-cj-import",
-      "schedule": "0,30 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/commerce-base-orders",
