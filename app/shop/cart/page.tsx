@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useShopCart } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
+import { ProductImage } from "@/components/product-image";
 
 export default function CartPage() {
   const cart = useShopCart();
@@ -60,15 +61,10 @@ export default function CartPage() {
                 <span className="text-xs text-[#5C4035]">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
               </div>
               <div className="divide-y divide-[#EADBD3]">
-                {cart.items.map((item, index) => (
+                {cart.items.map((item) => (
                   <article key={item.listingId} className="group grid gap-5 px-5 py-6 transition-colors hover:bg-[#FBF6F1] sm:grid-cols-[72px_1fr_auto] sm:items-center sm:px-6">
                     <div className="relative flex h-[72px] w-[72px] items-center justify-center overflow-hidden border border-[#EADBD3] bg-[#F4ECE6]">
-                      {item.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-                      ) : (
-                        <span className="text-[9px] font-mono text-[#9A6B5B]">0{index + 1}</span>
-                      )}
+                      <ProductImage src={item.imageUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                     </div>
                     <div>
                       <p className="text-sm leading-6 text-[#3B241A]">{item.title}</p>
