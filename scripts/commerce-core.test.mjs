@@ -693,7 +693,9 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
   assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const titleRepair = await readFile(new URL("../app/api/cron/commerce-japanese-title-repair/route.ts", import.meta.url), "utf8");
   assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
+  assert.match(titleRepair, /description_ja: japaneseCommerceDescription\(entry\.title\)/, "source-grounded title repair must refresh the matching product description too");
   for (const title of [
     "ダイヤモンド風アルファベット付きパーティーヘアバンド",
     "柄デザインのレディース斜めがけバッグ",
@@ -702,6 +704,8 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   ]) assert.ok(importer.includes(title), "specific source title mapping missing: " + title);
   assert.match(japaneseCommerceDescription("柄デザインのレディース斜めがけバッグ"), /斜めがけバッグ/);
   assert.match(japaneseCommerceDescription("ウェーブ編みデザインのニットハンドバッグ"), /ウェーブ状の編みデザイン/);
+  assert.match(japaneseCommerceDescription("大容量 レディースハンドバッグ"), /寸法、素材、開口部、ポケット構成、収納量/);
+  assert.doesNotMatch(japaneseCommerceDescription("大容量 レディースハンドバッグ"), /毎日の外出やお出かけに合わせやすいレディースハンドバッグ/);
 });
 
 
