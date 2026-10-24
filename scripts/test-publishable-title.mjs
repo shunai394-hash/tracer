@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "../lib/catalog/publishable-title.ts";
-import { localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
+import { isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "../lib/intelligence/japanese-product.ts";
 import { womenProductPriority } from "../lib/intelligence/womens-priority.ts";
 
 const cases = [
@@ -54,6 +54,20 @@ assert.equal(localizeProductTitle("Portable Transparent Shoulder Crossbody Bag T
 assert.equal(localizeProductTitle("Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap (Crossbody Bag Vegan Leather Women Retro Small Saddle Satchel Shoulder Bag With Long Adjustable Strap Black)"), "レトロデザイン ヴィーガンレザーショルダーバッグ");
 assert.equal(localizeProductTitle("Summer Woven Hollowed Handbag For Women"), "透かし編み サマーハンドバッグ");
 assert.equal(localizeProductTitle("New Large Capacity Laptop Handbag (New Large Capacity Laptop Handbag Black 12inch)"), "大容量 ノートPC収納対応 レディースハンドバッグ");
+assert.equal(localizeProductTitle("Portable Plush Handbag For Women"), "ぬいぐるみ風素材 レディースハンドバッグ");
+assert.equal(localizeProductTitle("Fashion Woven Handbag For Women"), "編み込みデザイン レディースハンドバッグ");
+assert.equal(localizeProductTitle("Women Patent Leather Flower Handbag"), "花モチーフ エナメル調ハンドバッグ");
+assert.equal(localizeProductTitle("Woven Hanging Handbag Women Embroidery Fashion"), "刺繍入り 編み込みハンドバッグ");
+assert.equal(localizeProductTitle("Large Capacity Suede Handbag For Women"), "スエード調 大容量ハンドバッグ");
+assert.equal(localizeProductTitle("Retro Textured Shoulder Bag Women Underarm"), "レトロ型押し アンダーアームバッグ");
+assert.equal(localizeProductTitle("Single Shoulder Messenger Tote Bag Women"), "ワンショルダー メッセンジャートート");
+assert.equal(localizeProductTitle("Retro Matte Shoulder Bag For Women"), "マット調 レトロショルダーバッグ");
+assert.equal(localizeProductTitle("Children's Hair Ornaments Cartoon Fruit Hair Clips Women's Colorful Quicksand"), "フルーツ柄 カラフルヘアクリップ");
+assert.equal(localizeProductTitle("Love Handmade Bow Hair Clips Accessories"), "リボンモチーフ ヘアクリップ");
+assert.equal(localizeProductTitle("Electric Brush Cleaner Makeup Brush Tool For Automatic Cleaning"), "電動メイクブラシクリーナー");
+for (const title of ["レディース ハンドバッグ", "レディース ショルダーバッグ", "ヘアクリップ", "メイクブラシ"]) {
+  assert.equal(isSpecificJapaneseProductTitle(title), false, title);
+}
 assert.equal(localizeProductTitle("6 Pack Headbands For Women, Boho Wide Head Bands Hair Accessories"), "ボヘミアン風 幅広ヘアバンド 6本セット");
 assert.equal(localizeProductTitle("PU Leather Headband Gel Women Ponytail Clip Decoration Hair Accessories"), "レザー調ヘッドバンド付きポニーテールクリップ");
 assert.equal(localizeProductTitle("Unrecognized Supplier Model 4839", "women handbag"), null, "do not fabricate a title from the search query");
