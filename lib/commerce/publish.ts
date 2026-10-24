@@ -622,6 +622,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const storefrontDescription = supplierShippingKnown
       ? shippingInclusiveDescription(description)
       : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
+    // SEO snippet is derived from the real product copy; never invent specifications.
+    const seoTitle = `${title.slice(0, 62 - " | TRACER".length).trim()} | TRACER`.slice(0, 70);
+    const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 300);
     const sku = "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase();
     let baseCreateIdNeedsRecovery: string | null = null;
     try {
@@ -763,6 +766,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const updateWithHandleCollisionRecovery = async (input: {
           productId: string; title: string; descriptionHtml: string; handle: string;
           price: number; variantId: string; sku: string; imageUrl: null;
+          seoTitle: string; seoDescription: string;
         }) => {
           try {
             return await updateShopifyProduct(input);
@@ -781,10 +785,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           }
         };
         const productResult = productId && variantId
-          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
+          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null, seoTitle, seoDescription })
           : recoveredProduct && recoveredVariantId
-            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
-            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl });
+            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null, seoTitle, seoDescription })
+            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");
