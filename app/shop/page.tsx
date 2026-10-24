@@ -68,14 +68,14 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     });
   }
 
-  const href = (next: { cat?: string; sort?: string }) => {
+  const href = (next: { cat?: string; sort?: string; all?: boolean }) => {
     const params = new URLSearchParams();
     const nextCat = next.cat ?? cat;
     const nextSort = next.sort ?? sort;
     if (nextCat) params.set("cat", nextCat);
     if (q) params.set("q", q);
     if (nextSort) params.set("sort", nextSort);
-    if (showAll) params.set("all", "1");
+    if (next.all ?? showAll) params.set("all", "1");
     const text = params.toString();
     return text ? `/shop?${text}` : "/shop";
   };
@@ -114,7 +114,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {duplicateCandidateCount > 0 ? (
-              <Link href={showAll ? href({}) : `/shop?${new URLSearchParams({ ...(cat ? { cat } : {}), ...(q ? { q } : {}), ...(sort ? { sort } : {}), all: "1" }).toString()}`} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
+              <Link href={showAll ? href({ all: false }) : href({ all: true })} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
                 {showAll ? "重複候補をまとめる" : "色違い・重複候補も表示"}
               </Link>
             ) : null}
