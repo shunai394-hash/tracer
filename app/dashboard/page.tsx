@@ -106,6 +106,9 @@ export default async function DashboardPage() {
         <a href="/dashboard/analytics" className="inline-flex items-center border border-white/15 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/5">
           売上・売れ筋分析を見る <span className="ml-2" aria-hidden="true">→</span>
         </a>
+        <a href="/dashboard/product-performance" className="inline-flex items-center border border-emerald-300/30 bg-emerald-300/5 px-4 py-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-300/10">
+          売れた商品・販売数を確認 <span className="ml-2" aria-hidden="true">→</span>
+        </a>
       </div>
       {error ? <p className="mt-8 text-sm text-amber-300">{error}</p> : null}
 

@@ -8,6 +8,7 @@ type OrderRow = {
   payment_status: string | null;
   order_status: string | null;
   created_at: string;
+  base_order_key: string | null;
 };
 
 type OrderItemRow = {
@@ -16,6 +17,14 @@ type OrderItemRow = {
   qty: number | null;
   unit_price: number | string | null;
 };
+
+type CommerceOrderRow = { id: string; channel: string | null; external_order_id: string | null; total_amount: number | string | null; payment_status: string | null; fulfillment_status: string | null; created_at: string };
+
+type CommerceLineRow = { order_id: string; variant_id: string; quantity: number | null; unit_price: number | string | null };
+
+type CommerceVariantRow = { id: string; product_id: string; title_ja: string | null };
+
+type CommerceProductRow = { id: string; title_ja: string | null };
 
 type BestsellerRow = {
   id: string;
@@ -47,6 +56,11 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 export default async function SalesAnalyticsPage() {
   let dbError: string | null = null;
   let orders: OrderRow[] = [];
+  let commerceOrders: CommerceOrderRow[] = [];
+  let commerceLines: CommerceLineRow[] = [];
+  let commerceVariants: CommerceVariantRow[] = [];
+  let commerceProducts: CommerceProductRow[] = [];
+  let commerceLoadError: string | null = null;
   let items: OrderItemRow[] = [];
   let listings: Array<{ id: string; title: string | null; published: boolean | null; selling_price: number | null; product_url: string | null }> = [];
   let bestsellerRows: BestsellerRow[] = [];
@@ -55,34 +69,63 @@ export default async function SalesAnalyticsPage() {
   try {
     const supabase = createSupabaseAdminClient();
     const results = await Promise.all([
-      supabase.from("shop_orders").select("id,total,payment_status,order_status,created_at").order("created_at", { ascending: false }).limit(500),
+      supabase.from("shop_orders").select("id,total,payment_status,order_status,created_at,base_order_key").order("created_at", { ascending: false }).limit(500),
       supabase.from("shop_order_items").select("order_id,title,qty,unit_price").limit(3000),
       supabase.from("shop_listings").select("id,title,published,selling_price,product_url").order("created_at", { ascending: false }).limit(500),
       supabase.from("marketplace_bestsellers").select("id,title,marketplace,category,rank,price,currency,review_count,product_url,image_url,fetched_at").order("fetched_at", { ascending: false }).limit(200),
       supabase.from("demand_sales_learning").select("product_id,demand_query,actual_units,orders,revenue,demand_score,demand_trend,created_at").order("created_at", { ascending: false }).limit(500),
+      supabase.from("commerce_orders").select("id,channel,external_order_id,total_amount,payment_status,fulfillment_status,created_at").order("created_at", { ascending: false }).limit(1000),
+      supabase.from("commerce_order_lines").select("order_id,variant_id,quantity,unit_price").limit(10000),
+      supabase.from("commerce_variants").select("id,product_id,title_ja").limit(10000),
+      supabase.from("commerce_products").select("id,title_ja").limit(10000),
     ]);
-    const errorResult = results.find((result) => result.error);
+    const errorResult = results.slice(0, 5).find((result) => result.error);
     if (errorResult?.error) throw new Error(errorResult.error.message);
     orders = results[0].data ?? [];
     items = results[1].data ?? [];
     listings = results[2].data ?? [];
     bestsellerRows = results[3].data ?? [];
     learningRows = results[4].data ?? [];
+    const commerceError = results.slice(5).find((result) => result.error);
+    if (commerceError?.error) {
+      commerceLoadError = commerceError.error.message;
+    } else {
+      commerceOrders = results[5].data ?? [];
+      commerceLines = results[6].data ?? [];
+      commerceVariants = results[7].data ?? [];
+      commerceProducts = results[8].data ?? [];
+    }
   } catch (error) {
     dbError = error instanceof Error ? error.message : "管理データを読み込めませんでした。";
   }
 
-  const paidOrders = orders.filter((order) => order.payment_status === "paid");
-  const paidOrderIds = new Set(paidOrders.map((order) => order.id));
+  const paidOrders = orders.filter((order) => order.payment_status === "paid" && order.order_status !== "cancelled" && order.order_status !== "refunded");
+  const paidCommerceOrders = commerceOrders.filter((order) => order.payment_status === "paid");
+  const canonicalBaseOrderKeys = new Set(paidCommerceOrders.filter((order) => order.channel === "base").map((order) => String(order.external_order_id ?? "")).filter(Boolean));
+  const uniqueLegacyPaidOrders = paidOrders.filter((order) => !order.base_order_key || !canonicalBaseOrderKeys.has(order.base_order_key));
+  const paidOrderIds = new Set(uniqueLegacyPaidOrders.map((order) => order.id));
   const paidItems = items.filter((item) => paidOrderIds.has(item.order_id));
-  const revenue = paidOrders.reduce((sum, order) => sum + Number(order.total ?? 0), 0);
+  const paidCommerceOrderIds = new Set(paidCommerceOrders.map((order) => order.id));
+  const legacyRevenue = uniqueLegacyPaidOrders.reduce((sum, order) => sum + Number(order.total ?? 0), 0);
+  const commerceRevenue = paidCommerceOrders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
+  const revenue = legacyRevenue + commerceRevenue;
+  const variantById = new Map(commerceVariants.map((variant) => [variant.id, variant]));
+  const productTitleById = new Map(commerceProducts.map((product) => [product.id, product.title_ja]));
   const sold = new Map<string, { title: string; quantity: number; revenue: number }>();
-  for (const item of paidItems) {
-    const title = item.title?.trim() || "商品名未記録";
+  const addSold = (titleValue: string | null | undefined, quantityValue: number | null, priceValue: number | string | null) => {
+    const title = titleValue?.trim() || "商品名未記録";
     const current = sold.get(title) ?? { title, quantity: 0, revenue: 0 };
-    current.quantity += Number(item.qty ?? 0);
-    current.revenue += Number(item.qty ?? 0) * Number(item.unit_price ?? 0);
+    const quantity = Number(quantityValue ?? 0);
+    current.quantity += quantity;
+    current.revenue += quantity * Number(priceValue ?? 0);
     sold.set(title, current);
+  };
+  for (const item of paidItems) addSold(item.title, item.qty, item.unit_price);
+  for (const line of commerceLines) {
+    if (!paidCommerceOrderIds.has(line.order_id)) continue;
+    const variant = variantById.get(line.variant_id);
+    const title = variant ? productTitleById.get(variant.product_id) || variant.title_ja : null;
+    addSold(title, line.quantity, line.unit_price);
   }
   const topSold = [...sold.values()].sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue).slice(0, 10);
   const activeListings = listings.filter((listing) => listing.published === true);
@@ -108,11 +151,12 @@ export default async function SalesAnalyticsPage() {
       </div>
 
       {dbError ? <p role="alert" className="mt-8 border border-amber-400/30 bg-amber-400/5 p-4 text-sm text-amber-200">データ取得エラー：{dbError}</p> : null}
+      {commerceLoadError ? <p role="alert" className="mt-3 border border-amber-400/30 bg-amber-400/5 p-4 text-sm text-amber-200">正規注文台帳の取得に失敗したため、Shopify等の実績はこの集計に含まれていません：{commerceLoadError}</p> : null}
 
       <section className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="売上概要">
-        <Metric label="実注文数" value={String(orders.length)} note="直近500件の注文レコード" />
-        <Metric label="決済済み注文" value={String(paidOrders.length)} note="payment_status = paid" />
-        <Metric label="決済済み売上" value={yen(revenue)} note="決済済み注文の合計金額" />
+        <Metric label="旧注文台帳の注文" value={String(orders.length)} note="BASE等の旧 shop_orders 台帳（正規台帳との重複を売上集計から除外）" />
+        <Metric label="正規台帳の決済済み注文" value={String(paidCommerceOrders.length)} note="Shopify等の commerce_orders 台帳" />
+        <Metric label="集計した決済済み売上" value={yen(revenue)} note="旧台帳＋正規台帳。台帳別件数も確認してください" />
         <Metric label="公開中の商品" value={String(activeListings.length)} note={`登録商品 ${listings.length}件を確認`} />
       </section>
 
@@ -134,7 +178,7 @@ export default async function SalesAnalyticsPage() {
         ) : (
           <div className="mt-5 border border-white/8 bg-white/[0.02] p-6">
             <p className="font-medium text-zinc-200">現在、TRACERのDBに決済済み販売明細がありません。</p>
-            <p className="mt-2 text-sm leading-6 text-zinc-400">そのため「売れた商品ランキング」はまだ算出できません。売上ゼロと断定するのではなく、まずBASE・Shopifyの実注文取込と明細保存を接続する必要があります。</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">現在参照できる決済済み台帳に商品明細がありません。販売ゼロと断定せず、各販売チャネルの注文取込状態を確認してください。</p>
           </div>
         )}
       </section>
@@ -176,9 +220,9 @@ export default async function SalesAnalyticsPage() {
         <article className="border border-white/10 p-5 sm:p-6">
           <h2 className="text-lg font-semibold text-zinc-100">次に必要な接続</h2>
           <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-6 text-zinc-400">
-            <li>BASE・Shopifyの実注文を定期取得する</li>
-            <li>注文の商品ID・SKUをTRACER商品へ正確に紐付ける</li>
-            <li>決済・キャンセル・返金を反映し、実売上と利益を再集計する</li>
+            <li>旧注文台帳と正規注文台帳の件数・売上を別々に照合する</li>
+            <li>商品明細のSKU・variant IDをTRACER商品へ正確に紐付ける</li>
+            <li>キャンセル・返金・重複注文を除外し、チャネル別の実売上と利益を再集計する</li>
           </ul>
         </article>
       </section>
