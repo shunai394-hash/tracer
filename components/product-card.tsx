@@ -35,7 +35,7 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
           <p className="text-base font-semibold tracking-tight text-[#3B241A] sm:text-lg">
             {formatMoney(listing.sellingPrice, listing.currency)}
           </p>
-          <span className="text-[10px] text-[#7D675D]">税込・送料込み</span>
+          <span className="text-[10px] text-[#7D675D]">表示価格</span>
         </div>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
           <span className="text-[11px] tracking-[0.04em] text-[#9A6B5B]">TRACER SELECT</span>
