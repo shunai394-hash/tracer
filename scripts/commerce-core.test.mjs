@@ -702,6 +702,8 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   ]) assert.ok(importer.includes(title), "specific source title mapping missing: " + title);
   assert.match(japaneseCommerceDescription("柄デザインのレディース斜めがけバッグ"), /斜めがけバッグ/);
   assert.match(japaneseCommerceDescription("ウェーブ編みデザインのニットハンドバッグ"), /ウェーブ状の編みデザイン/);
+  assert.match(japaneseCommerceDescription("大容量 レディースハンドバッグ"), /寸法、素材、開口部、ポケット構成、収納量/);
+  assert.doesNotMatch(japaneseCommerceDescription("大容量 レディースハンドバッグ"), /毎日の外出やお出かけに合わせやすいレディースハンドバッグ/);
 });
 
 
