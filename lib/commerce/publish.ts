@@ -40,6 +40,42 @@ function shippingInclusiveDescription(description: string): string {
     .join("\n\n");
 }
 
+async function addBaseImageWithFormatFallback(input: {
+  db: ReturnType<typeof createSupabaseAdminClient>;
+  variantId: string;
+  itemId: string;
+  imageUrl: string;
+}): Promise<void> {
+  try {
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: input.imageUrl });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message)) throw error;
+    // BASE can reject a supplier-hosted image despite a URL ending in .jpg.
+    // If this variant already has a Shopify product, reuse Shopify's accepted CDN
+    // image. Never create a second listing or silently suppress other upload errors.
+    const { data: shopifyListing, error: listingError } = await input.db.from("channel_listings")
+      .select("external_product_id")
+      .eq("variant_id", input.variantId)
+      .eq("channel", "shopify")
+      .not("external_product_id", "is", null)
+      .maybeSingle();
+    if (listingError || !shopifyListing?.external_product_id) throw error;
+    const shopifyProductId = toShopifyGid("Product", String(shopifyListing.external_product_id));
+    if (!shopifyProductId) throw error;
+    const result = await shopifyGraphQL<{
+      product: { featuredImage: { url: string } | null } | null;
+    }>(
+      `query BaseCompatibleProductImage($id: ID!) { product(id: $id) { featuredImage { url } } }`,
+      { id: shopifyProductId },
+    );
+    const fallbackUrl = result.product?.featuredImage?.url;
+    if (!fallbackUrl || fallbackUrl === input.imageUrl || !safeUrl(fallbackUrl)) throw error;
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: fallbackUrl });
+  }
+}
+
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
@@ -652,7 +688,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           if (saveCreatedIdError) throw new Error("base_created_item_id_save_failed:" + saveCreatedIdError.message);
           baseCreateIdNeedsRecovery = null;
         }
-        await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
+        await addBaseImageWithFormatFallback({ db, variantId: candidate.id, itemId: externalProductId, imageUrl });
         // Only make the item visible after the external ID and image are saved.
         const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
@@ -724,10 +760,30 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const recoveredVariants = recoveredProduct?.variants.nodes ?? [];
         const recoveredVariantId = recoveredVariants.find((variant) => variant.sku === sku)?.id
           ?? (recoveredVariants.length === 1 && !recoveredVariants[0]?.sku ? recoveredVariants[0].id : null);
+        const updateWithHandleCollisionRecovery = async (input: {
+          productId: string; title: string; descriptionHtml: string; handle: string;
+          price: number; variantId: string; sku: string; imageUrl: null;
+        }) => {
+          try {
+            return await updateShopifyProduct(input);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // A handle can be claimed by an older/orphaned Shopify product even when
+            // this listing already has a valid external product ID. Retry only that
+            // specific conflict with a stable per-product suffix; never create a
+            // second product as a fallback and never mask unrelated API failures.
+            if (!/handle.{0,80}already in use|already in use.{0,80}handle/i.test(message)) throw error;
+            const productSuffix = String(input.productId).split("/").pop()?.replace(/[^a-z0-9]/gi, "").slice(-10).toLowerCase()
+              || candidate.id.replace(/-/g, "").slice(-10);
+            const fallbackHandle = safeSlug(handlePrefix + "-" + candidate.id.replace(/-/g, "") + "-p" + productSuffix);
+            if (fallbackHandle === input.handle) throw error;
+            return await updateShopifyProduct({ ...input, handle: fallbackHandle });
+          }
+        };
         const productResult = productId && variantId
-          ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
+          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
-            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
+            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
             : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];

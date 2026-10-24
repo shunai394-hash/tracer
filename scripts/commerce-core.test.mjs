@@ -1307,3 +1307,21 @@ test("storefront deduplicates exact supplier variants without collapsing distinc
   assert.doesNotMatch(store, /const titleKey = listing\.title\.normalize/);
   assert.doesNotMatch(store, /const imageKey = listing\.imageUrl/);
 });
+
+test("Shopify existing-product handle collisions retry with a stable product-specific handle without creating duplicates", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /updateWithHandleCollisionRecovery/);
+  assert.match(publish, /handle\.\{0,80\}already in use\|already in use\.\{0,80\}handle/i);
+  assert.match(publish, /const fallbackHandle = safeSlug\(handlePrefix \+ "-" \+ candidate\.id\.replace\(\/-\/g, ""\) \+ "-p" \+ productSuffix\)/);
+  assert.match(publish, /return await updateShopifyProduct\(\{ \.\.\.input, handle: fallbackHandle \}\)/);
+  assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createShopifyProduct\(\{ title, descriptionHtml: storefrontDescription, handle: fallbackHandle/);
+});
+
+test("BASE image format rejection retries with the existing Shopify CDN image only", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /addBaseImageWithFormatFallback/);
+  assert.match(publish, /このファイル形式はご利用できません\|file format/);
+  assert.match(publish, /BaseCompatibleProductImage/);
+  assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
+  assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
+});
