@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:tracer-core": "node --test scripts/tracer-core.test.mjs scripts/tracer-auth-contract.test.mjs scripts/order-reconcile-failures.test.mjs scripts/gemini-circuit-breaker.test.mjs",
+    "test:storefront-display": "node --experimental-strip-types --no-warnings scripts/test-storefront-display.mjs",
     "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
     "test:order-status-write-failures": "node --experimental-strip-types --no-warnings scripts/test-order-status-write-failures.mjs",
     "test:catalog-count-safety-check": "node --experimental-strip-types --no-warnings scripts/test-catalog-count-safety-check.mjs",
