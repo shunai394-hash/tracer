@@ -68,7 +68,7 @@
     },
     {
       "path": "/api/cron/commerce-channel-parity-repair",
-      "schedule": "3 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
