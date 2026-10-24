@@ -78,7 +78,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           {sort ? <input type="hidden" name="sort" value={sort} /> : null}
           <label htmlFor="shop-search" className="sr-only">商品を検索</label>
           <input id="shop-search" name="q" defaultValue={q} placeholder="商品名で検索（例：ショルダー、ピンク）" className="min-w-0 flex-1 rounded-full border border-[#EADBD3] bg-white px-5 py-2.5 text-sm outline-none focus:border-[#9A6B5B] focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" />
-          <button type="submit" className="rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">検索</button>
+          <button type="submit" className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">検索</button>
         </form>
 
         <nav aria-label="カテゴリ" className="mt-6 flex flex-wrap gap-2">
@@ -97,7 +97,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {SORTS.map((option) => (
               <Link key={option.value} href={href({ sort: option.value })} aria-current={sort === option.value ? "page" : undefined}
-                className={sort === option.value ? "rounded-sm font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" : "rounded-sm text-[#5C4035] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"}>
+                className={sort === option.value ? "inline-flex min-h-11 items-center rounded-sm px-1 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" : "inline-flex min-h-11 items-center rounded-sm px-1 text-[#5C4035] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"}>
                 {option.label}
               </Link>
             ))}
@@ -137,6 +137,6 @@ const PAGE_SIZE = 48;
 
 function chip(active: boolean): string {
   return active
-    ? "rounded-full bg-[#3B241A] px-4 py-1.5 text-sm text-white"
-    : "rounded-full border border-[#EADBD3] bg-white px-4 py-1.5 text-sm text-[#5C4035] hover:border-[#9A6B5B]";
+    ? "inline-flex min-h-11 items-center rounded-full bg-[#3B241A] px-4 py-1.5 text-sm text-white"
+    : "inline-flex min-h-11 items-center rounded-full border border-[#EADBD3] bg-white px-4 py-1.5 text-sm text-[#5C4035] hover:border-[#9A6B5B]";
 }
