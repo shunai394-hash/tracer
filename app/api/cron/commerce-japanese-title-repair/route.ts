@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSpecificJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { syncCommerceListings } from "@/lib/commerce/publish";
+import { japaneseCommerceDescription } from "@/lib/commerce/japanese-copy.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
   // enforced by syncCommerceListings; a failed external sync is reported separately.
   for (const entry of byProduct.values()) {
     const { error: productUpdateError } = await db.from("commerce_products")
-      .update({ title_ja: entry.title, updated_at: new Date().toISOString() })
+      .update({ title_ja: entry.title, description_ja: japaneseCommerceDescription(entry.title), updated_at: new Date().toISOString() })
       .eq("id", entry.product.id);
     if (productUpdateError) throw new Error("title_repair_product_save_failed:" + productUpdateError.message);
     for (const variant of entry.variants) {
