@@ -140,7 +140,7 @@ export default async function ShopProductPage({
           {category ? (
             <>
               <span aria-hidden="true">/</span>
-              <Link href={`/shop?cat=${category.slug}`} className="hover:underline">{category.label}</Link>
+              <Link href={`/shop/category/${category.slug}`} className="hover:underline">{category.label}</Link>
             </>
           ) : null}
         </nav>
@@ -229,7 +229,7 @@ export default async function ShopProductPage({
           <section aria-labelledby="related-heading" className="mt-16 sm:mt-24">
             <div className="flex items-end justify-between gap-4">
               <h2 id="related-heading" className="font-serif text-xl sm:text-2xl">あわせて見たい{category ? category.label : "アイテム"}</h2>
-              {category ? <Link href={`/shop?cat=${category.slug}`} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">もっと見る →</Link> : null}
+              {category ? <Link href={`/shop/category/${category.slug}`} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">もっと見る →</Link> : null}
             </div>
             <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-5">
               {related.map((item) => <ProductCard key={item.id} listing={item} />)}
