@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useShopCart } from "@/components/shop-cart";
+import { useShopカート } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
 
-export default function CartPage() {
-  const cart = useShopCart();
+export default function カートPage() {
+  const cart = useShopカート();
   const total = cart.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
   const currency = cart.items[0]?.currency ?? null;
 
@@ -16,7 +16,7 @@ export default function CartPage() {
         <div className="relative mx-auto max-w-[1200px] px-5 py-14 sm:px-8 sm:py-20 lg:px-10">
           <div className="flex items-end justify-between gap-8">
             <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.32em] text-[#9A6B5B]">01 / Cart</p>
+              <p className="text-[10px] font-mono uppercase tracking-[0.32em] text-[#9A6B5B]">01 / カート</p>
               <h1 className="mt-3 text-4xl tracking-[-0.05em] text-[#3B241A] sm:text-5xl">カート</h1>
               <p className="mt-4 max-w-xl text-sm leading-7 text-[#5C4035]">
                 選んだ商品を確認して、次のステップへ進みます。販売条件が確認できた商品のみ購入できます。
@@ -28,11 +28,11 @@ export default function CartPage() {
           </div>
           <div className="mt-8 flex max-w-md items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] text-[#9A6B5B]" aria-label="購入手続きの進行状況">
             <span className="h-px flex-1 bg-[#3B241A]/50" />
-            <span className="text-[#9A6B5B]">Cart</span>
+            <span className="text-[#9A6B5B]">カート</span>
             <span className="h-px flex-1 bg-white/10" />
-            <span>Checkout</span>
+            <span>お手続き</span>
             <span className="h-px flex-1 bg-white/10" />
-            <span>Done</span>
+            <span>完了</span>
           </div>
         </div>
       </section>
@@ -42,7 +42,7 @@ export default function CartPage() {
           <div className="relative overflow-hidden border border-[#EADBD3] bg-white/80 px-6 py-16 text-center sm:px-10">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#9A6B5B]/40 to-transparent" aria-hidden="true" />
             <span className="mx-auto flex h-12 w-12 items-center justify-center border border-[#EADBD3] text-lg text-[#9A6B5B]" aria-hidden="true">＋</span>
-            <p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-[#9A6B5B]">Nothing selected yet</p>
+            <p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-[#9A6B5B]">商品が選択されていません</p>
             <h2 className="mt-3 text-xl text-[#3B241A]">まだ商品がありません。</h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#5C4035]">TRACERが確認した商品から、気になるものをひとつ選んでみてください。</p>
             <Link href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-[#3B241A] px-6 text-xs font-semibold tracking-[0.08em] text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B]">
@@ -54,7 +54,7 @@ export default function CartPage() {
             <div className="border border-[#EADBD3] bg-white/80">
               <div className="flex items-center justify-between border-b border-[#EADBD3] px-5 py-4 sm:px-6">
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#7D675D]">Selected items</span>
+                  <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#7D675D]">選択中の商品</span>
                   <p className="mt-1 text-xs text-[#9A6B5B]">確認済みの商品だけを次へ進めます。</p>
                 </div>
                 <span className="text-xs text-[#5C4035]">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
@@ -81,7 +81,7 @@ export default function CartPage() {
             </div>
 
             <aside className="border border-[#EADBD3] bg-white/80 p-6 sm:p-7 lg:sticky lg:top-24" aria-label="注文概要">
-              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#9A6B5B]">Order summary</p>
+              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#9A6B5B]">注文概要</p>
               <div className="mt-7 flex items-end justify-between border-b border-[#EADBD3] pb-5">
                 <span className="text-sm text-[#5C4035]">合計</span>
                 <span className="text-2xl tracking-[-0.03em] text-[#3B241A]">{formatMoney(total, currency)}</span>
