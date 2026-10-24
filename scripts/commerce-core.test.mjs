@@ -693,7 +693,9 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
   assert.match(japaneseCommerceDescription("メイク用ファンブラシ"), /ファン型のメイクブラシ/);
   assert.doesNotMatch(japaneseCommerceDescription("レディースハンドバッグ"), /仕入先の最新情報に基づき確認してください/);
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const titleRepair = await readFile(new URL("../app/api/cron/commerce-japanese-title-repair/route.ts", import.meta.url), "utf8");
   assert.match(importer, /descriptionJa: japaneseCommerceDescription\(title\)/);
+  assert.match(titleRepair, /description_ja: japaneseCommerceDescription\(entry\.title\)/, "source-grounded title repair must refresh the matching product description too");
   for (const title of [
     "ダイヤモンド風アルファベット付きパーティーヘアバンド",
     "柄デザインのレディース斜めがけバッグ",
