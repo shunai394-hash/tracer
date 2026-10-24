@@ -101,18 +101,22 @@ export default async function ShopProductPage({
     ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
     : null;
 
+  const storefrontBaseUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
+  const productUrl = new URL(`/shop/${encodeURIComponent(listing.slug)}`, storefrontBaseUrl).toString();
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: listing.title,
     description: listing.description ?? undefined,
     image: listing.imageUrl ? [listing.imageUrl] : undefined,
+    mainEntityOfPage: productUrl,
+    url: productUrl,
     offers: listing.sellingPrice && listing.currency ? {
       "@type": "Offer",
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "")).toString(),
+      url: productUrl,
     } : undefined,
   };
 
@@ -128,10 +132,27 @@ export default async function ShopProductPage({
     // Related items are optional; the product itself must still render.
   }
   const category = STOREFRONT_CATEGORIES.find((item) => item.slug === categoryOf(listing.title));
+  const breadcrumbItems = [
+    { name: "ホーム", item: `${storefrontBaseUrl}/` },
+    { name: "商品一覧", item: `${storefrontBaseUrl}/shop` },
+    ...(category ? [{ name: category.label, item: `${storefrontBaseUrl}/shop/category/${category.slug}` }] : []),
+    { name: listing.title, item: productUrl },
+  ];
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: breadcrumbItems.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: item.item,
+    })),
+  };
 
   return (
     <main className="min-h-screen w-full flex-1 bg-[#FBF6F1] text-[#3B241A]">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         <nav aria-label="パンくず" className="mb-5 flex flex-wrap items-center gap-2 text-xs text-[#9A6B5B] sm:mb-8">
           <Link href="/" className="hover:underline">ホーム</Link>
