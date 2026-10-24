@@ -38,6 +38,7 @@ test("category pages have distinct Japanese SEO metadata and filtered search is 
   assert.match(shopPage, /メイク小物｜ブラシ収納・お手入れ用品/);
   assert.match(shopPage, /robots: \{ index: false, follow: true \}/);
   assert.match(shopPage, /alternates: \{ canonical \}/);
+  assert.ok(shopPage.includes("CATEGORY_SEO[activeCategory.slug].description"));
 });
 
 test("sitemap includes category landing URLs only for categories with live products", () => {
