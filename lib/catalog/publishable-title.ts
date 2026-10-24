@@ -30,6 +30,14 @@ const GENERIC_CATALOG_TITLES = new Set([
   "インテリア照明",
   "レジャー用品",
   "電動シェーバー",
+  // A category name alone is not a product identity; require a distinguishing
+  // material, motif, size, feature, model, or set count before publication.
+  "レディース ハンドバッグ",
+  "レディース ショルダーバッグ",
+  "ハンドバッグ",
+  "ショルダーバッグ",
+  "ヘアクリップ",
+  "メイクブラシ",
 ]);
 
 /**
