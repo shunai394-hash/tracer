@@ -24,7 +24,7 @@ export async function generateMetadata({
 
     const title = listing.title.trim();
     const description = (listing.description ?? `${title}の商品情報・価格・在庫をご確認いただけます。`)
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .slice(0, 155);
     const url = `/shop/${encodeURIComponent(listing.slug)}`;
     return {
@@ -111,7 +111,7 @@ export default async function ShopProductPage({
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: `/shop/${listing.slug}`,
+      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").toString(),
     } : undefined,
   };
 
@@ -133,13 +133,13 @@ export default async function ShopProductPage({
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         <nav aria-label="パンくず" className="mb-5 flex flex-wrap items-center gap-2 text-xs text-[#9A6B5B] sm:mb-8">
-          <Link href="/" className="hover:underline">ホーム</Link>
+          <Link href="/" className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">ホーム</Link>
           <span aria-hidden="true">/</span>
-          <Link href="/shop" className="hover:underline">商品一覧</Link>
+          <Link href="/shop" className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">商品一覧</Link>
           {category ? (
             <>
               <span aria-hidden="true">/</span>
-              <Link href={`/shop?cat=${category.slug}`} className="hover:underline">{category.label}</Link>
+              <Link href={`/shop?cat=${category.slug}`} className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">{category.label}</Link>
             </>
           ) : null}
         </nav>
@@ -184,13 +184,13 @@ export default async function ShopProductPage({
                 />
               )}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                ご購入手続きはTRACER公式ストア（Shopify）で安全に行われます。
+                {shopifyProductUrl ? "Shopifyの購入画面に移動します。価格と配送条件を確認してからご注文ください。" : "カートに追加後、配送先とお支払い方法を入力してご注文いただけます。"}
               </p>
             </div>
 
             <ul className="mt-6 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#5C4035] sm:text-xs">
               <li className="rounded-xl bg-white/70 px-2 py-3">送料込み<br />の価格表示</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">追跡番号付き<br />で発送</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">配送状況を<br />確認できる発送</li>
               <li className="rounded-xl bg-white/70 px-2 py-3">在庫確認済み<br />の商品のみ掲載</li>
             </ul>
 
@@ -203,7 +203,7 @@ export default async function ShopProductPage({
 
             <div className="mt-6 divide-y divide-[#EADBD3] border-y border-[#EADBD3] text-sm">
               <details className="group py-4">
-                <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+                <summary className="flex cursor-pointer list-none items-center justify-between rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">
                   サイズ・素材・カラー
                   <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
                 </summary>
