@@ -94,10 +94,11 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   const observedFx = await getObservedUsdToJpyRate();
   if (productIds.length === 0 || limit <= 0) return { published: 0, publishedListingIds: [], selectedListingIds: [], considered: 0, rejectedCount: 0, rejectionCounts: {}, rejected: [] };
   const uniqueProductIds = Array.from(new Set(productIds));
-  // Supply-first items have their own TRACER products, but intentionally keep
-  // supplier_listings.product_id null until marketplace identity is proven.
-  // Resolve that internal association through deterministic source_ref /
-  // products.identity_key without writing a canonical marketplace link.
+  // Supply-first items have their own TRACER products. A supplier row may point
+  // to that product only after its exact CJ product+variant identity key is
+  // verified; this native association is not a marketplace identity claim.
+  // Resolve the deterministic source_ref / products.identity_key without
+  // promoting identity_status or writing marketplace evidence.
   const { data: productIdentityRows, error: productIdentityError } = await supabase
     .from("products")
     .select("id,identity_key")

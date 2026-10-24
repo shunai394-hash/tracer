@@ -39,6 +39,9 @@ const identityAuditRouteExactTuple = await readFile(new URL("../app/api/admin/sh
 assert.match(identityAuditRouteExactTuple, /internal_product_id_mismatch/);
 assert.match(identityAuditRouteExactTuple, /supplier_product_id_mismatch/);
 assert.match(identityAuditRouteExactTuple, /supplier_variant_id_mismatch/);
+assert.match(persist, /const nativeIdentityKeys = \[[\s\S]{0,200}`cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`[\s\S]{0,200}`cj:product:\$\{args\.supplierProductId\}:variant:\$\{args\.supplierVariantId\}`/, "native CJ identity lookup must support both historical exact key formats");
+assert.match(persist, /\.in\("identity_key", nativeIdentityKeys\)/, "native identity lookup must query only exact deterministic CJ keys");
+assert.match(persist, /if \(exactIds\.length === 1\)[\s\S]{0,160}else if \(exactIds\.length > 1\)/, "duplicate exact native keys must fail closed instead of choosing an arbitrary product");
 assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(priorVerificationError && priorVerificationError !== "no_unique_canonical_child_variant_match" \? priorVerificationError : "supplier_native_evidence_pending"\)/, "only fresh, fully verified native supplier evidence may clear the old configuration error; marketplace identity is not required");
 assert.match(persist, /shipping_status: Number\.isFinite\(args\.shippingCost\) && args\.shippingCost > 0[\s\S]{0,100}"verified"/, "a fresh positive Japan freight quote must be persisted as verified shipping evidence independently of orderability");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
@@ -101,7 +104,7 @@ assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence mus
 assert.match(persist, /identity_status: "supply_discovered"/, "CJ supplier-native identity must remain distinct from cross-marketplace identity");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
 assert.match(persist, /catalog_stage: "candidate"/, "unmatched supplier supply must be retained as a catalog candidate");
-assert.ok(persist.includes('const nativeIdentityKey = `cj:${args.supplierProductId}:${args.supplierVariantId}`;'), "native candidate linkage must be grounded in the exact CJ product+variant identity key");
+assert.ok(persist.includes('`cj:${args.supplierProductId}:${args.supplierVariantId}`') && persist.includes('`cj:product:${args.supplierProductId}:variant:${args.supplierVariantId}`'), "native candidate linkage must support both exact CJ product+variant key formats");
 assert.doesNotMatch(persist, /\[existingProductId, discoveredProductId\]\.find/, "native candidate persistence must not trust an arbitrary caller-supplied UUID");
 assert.match(persist, /purchasable: nativeEvidenceFresh/, "unmatched supply becomes purchasable only when fresh native supplier evidence passes");
 assert.match(persist, /const offerPayload = \{ product_id: canonicalProductId, seller_name: "CJdropshipping"/, "supplier-native CJ supply must persist an offer without requiring marketplace identity");
