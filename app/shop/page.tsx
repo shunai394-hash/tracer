@@ -96,7 +96,8 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {SORTS.map((option) => (
-              <Link key={option.value} href={href({ sort: option.value })} aria-current={sort === option.value ? "page" : undefined}\n                className={sort === option.value ? "rounded-sm font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" : "rounded-sm text-[#5C4035] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"}>
+              <Link key={option.value} href={href({ sort: option.value })} aria-current={sort === option.value ? "page" : undefined}
+                className={sort === option.value ? "rounded-sm font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" : "rounded-sm text-[#5C4035] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"}>
                 {option.label}
               </Link>
             ))}
