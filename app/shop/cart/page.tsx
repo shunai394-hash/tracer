@@ -18,11 +18,11 @@ export default function CartPage() {
             <div>
               <p className="text-[10px] font-mono uppercase tracking-[0.32em] text-[#9A6B5B]">01 / Cart</p>
               <h1 className="mt-3 text-4xl tracking-[-0.05em] text-[#3B241A] sm:text-5xl">カート</h1>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-[#3B241A]0">
+              <p className="mt-4 max-w-xl text-sm leading-7 text-[#5C4035]">
                 選んだ商品を確認して、次のステップへ進みます。販売条件が確認できた商品のみ購入できます。
               </p>
             </div>
-            <Link href="/shop" className="hidden text-xs tracking-[0.12em] text-[#3B241A]0 transition hover:text-[#9A6B5B] sm:inline-flex">
+            <Link href="/shop" className="hidden text-xs tracking-[0.12em] text-[#5C4035] transition hover:text-[#9A6B5B] sm:inline-flex">
               ← 商品一覧へ
             </Link>
           </div>
@@ -44,7 +44,7 @@ export default function CartPage() {
             <span className="mx-auto flex h-12 w-12 items-center justify-center border border-[#EADBD3] text-lg text-[#9A6B5B]" aria-hidden="true">＋</span>
             <p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-[#9A6B5B]">Nothing selected yet</p>
             <h2 className="mt-3 text-xl text-[#3B241A]">まだ商品がありません。</h2>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#3B241A]0">TRACERが確認した商品から、気になるものをひとつ選んでみてください。</p>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#5C4035]">TRACERが確認した商品から、気になるものをひとつ選んでみてください。</p>
             <Link href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-[#3B241A] px-6 text-xs font-semibold tracking-[0.08em] text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B]">
               商品を見る <span className="ml-4" aria-hidden="true">→</span>
             </Link>
@@ -57,7 +57,7 @@ export default function CartPage() {
                   <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#7D675D]">Selected items</span>
                   <p className="mt-1 text-xs text-[#9A6B5B]">確認済みの商品だけを次へ進めます。</p>
                 </div>
-                <span className="text-xs text-[#3B241A]0">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
+                <span className="text-xs text-[#5C4035]">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
               </div>
               <div className="divide-y divide-[#EADBD3]">
                 {cart.items.map((item, index) => (
@@ -83,7 +83,7 @@ export default function CartPage() {
             <aside className="border border-[#EADBD3] bg-white/80 p-6 sm:p-7 lg:sticky lg:top-24" aria-label="注文概要">
               <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#9A6B5B]">Order summary</p>
               <div className="mt-7 flex items-end justify-between border-b border-[#EADBD3] pb-5">
-                <span className="text-sm text-[#3B241A]0">合計</span>
+                <span className="text-sm text-[#5C4035]">合計</span>
                 <span className="text-2xl tracking-[-0.03em] text-[#3B241A]">{formatMoney(total, currency)}</span>
               </div>
               <p className="mt-5 text-xs leading-5 text-[#7D675D]">次の画面で配送先と支払い方法を確認します。</p>
