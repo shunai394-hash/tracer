@@ -83,7 +83,7 @@ export default async function HomePage() {
               {categories.map((category) => {
                 const cover = category.items.find((item) => item.imageUrl);
                 return (
-                  <Link key={category.slug} href={`/shop?cat=${category.slug}`} className="group relative overflow-hidden rounded-2xl bg-[#F4ECE6] outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">
+                  <Link key={category.slug} href={`/shop/category/${category.slug}`} className="group relative overflow-hidden rounded-2xl bg-[#F4ECE6] outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">
                     <ProductImage src={cover?.imageUrl ?? null} alt="" className="aspect-[4/5] w-full object-cover transition duration-700 ease-out group-hover:scale-[1.04] group-focus-visible:scale-[1.025] motion-reduce:transition-none" />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#3B241A]/90 via-[#3B241A]/60 to-transparent p-4 pt-16 text-white">
                       <p className="font-serif text-lg">{category.label}</p>
