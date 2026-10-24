@@ -12,7 +12,10 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
       aria-label={`${listing.title}、${formatMoney(listing.sellingPrice, listing.currency)}、${listing.inventory > 0 ? (listing.inventory <= 5 ? "残りわずか" : "在庫あり") : "在庫切れ"}、商品詳細を見る`}
       className="group block rounded-2xl outline-none transition-transform duration-300 focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 focus-visible:ring-offset-[#FBF6F1] motion-reduce:transition-none"
     >
-      <div className="relative overflow-hidden rounded-2xl bg-[#F4ECE6]">\n        {listing.inventory <= 0 ? (\n          <span className="absolute left-3 top-3 z-10 rounded-full bg-[#3B241A]/90 px-3 py-1.5 text-[11px] font-medium tracking-wide text-white">在庫切れ</span>\n        ) : null}
+      <div className="relative overflow-hidden rounded-2xl bg-[#F4ECE6]">
+        {listing.inventory <= 0 ? (
+          <span className="absolute left-3 top-3 z-10 rounded-full bg-[#3B241A]/90 px-3 py-1.5 text-[11px] font-medium tracking-wide text-white">在庫切れ</span>
+        ) : null}
         <ProductImage
           src={listing.imageUrl}
           alt={listing.title}
