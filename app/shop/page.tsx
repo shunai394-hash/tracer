@@ -68,14 +68,14 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     });
   }
 
-  const href = (next: { cat?: string; sort?: string }) => {
+  const href = (next: { cat?: string; sort?: string; all?: boolean }) => {
     const params = new URLSearchParams();
     const nextCat = next.cat ?? cat;
     const nextSort = next.sort ?? sort;
     if (nextCat) params.set("cat", nextCat);
     if (q) params.set("q", q);
     if (nextSort) params.set("sort", nextSort);
-    if (showAll) params.set("all", "1");
+    if (next.all ?? showAll) params.set("all", "1");
     const text = params.toString();
     return text ? `/shop?${text}` : "/shop";
   };
@@ -90,14 +90,14 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           {activeCategory ? <input type="hidden" name="cat" value={activeCategory.slug} /> : null}
           {sort ? <input type="hidden" name="sort" value={sort} /> : null}
           <label htmlFor="shop-search" className="sr-only">商品を検索</label>
-          <input id="shop-search" name="q" defaultValue={q} placeholder="商品名で検索（例：ショルダー、ピンク）" className="min-w-0 flex-1 rounded-full border border-[#EADBD3] bg-white px-5 py-2.5 text-sm outline-none focus:border-[#9A6B5B]" />
-          <button type="submit" className="rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035]">検索</button>
+          <input id="shop-search" name="q" defaultValue={q} placeholder="商品名で検索（例：ショルダー、ピンク）" className="min-w-0 flex-1 rounded-full border border-[#EADBD3] bg-white px-5 py-2.5 text-sm outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9A6B5B] focus:border-[#9A6B5B]" />
+          <button type="submit" className="rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9A6B5B]">検索</button>
         </form>
 
         <nav aria-label="カテゴリ" className="mt-6 flex flex-wrap gap-2">
-          <Link href={href({ cat: "" })} className={chip(!activeCategory)}>すべて <span className="opacity-70">{listings.length}</span></Link>
+          <Link href={href({ cat: "" })} aria-current={!activeCategory ? "page" : undefined} className={chip(!activeCategory)}>すべて <span className="opacity-70">{listings.length}</span></Link>
           {STOREFRONT_CATEGORIES.filter((category) => counts.get(category.slug)).map((category) => (
-            <Link key={category.slug} href={href({ cat: category.slug })} className={chip(activeCategory?.slug === category.slug)}>
+            <Link key={category.slug} href={href({ cat: category.slug })} aria-current={activeCategory?.slug === category.slug ? "page" : undefined} className={chip(activeCategory?.slug === category.slug)}>
               {category.label} <span className="opacity-70">{counts.get(category.slug)}</span>
             </Link>
           ))}
@@ -114,7 +114,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {duplicateCandidateCount > 0 ? (
-              <Link href={showAll ? href({}) : `/shop?${new URLSearchParams({ ...(cat ? { cat } : {}), ...(q ? { q } : {}), ...(sort ? { sort } : {}), all: "1" }).toString()}`} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
+              <Link href={showAll ? href({ all: false }) : href({ all: true })} className="rounded-full border border-[#9A6B5B]/40 bg-white px-4 py-2 text-xs font-medium text-[#5C4035] hover:bg-[#F6E2E0]/60">
                 {showAll ? "重複候補をまとめる" : "色違い・重複候補も表示"}
               </Link>
             ) : null}
@@ -149,6 +149,6 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
 
 function chip(active: boolean): string {
   return active
-    ? "rounded-full bg-[#3B241A] px-4 py-1.5 text-sm text-white"
-    : "rounded-full border border-[#EADBD3] bg-white px-4 py-1.5 text-sm text-[#5C4035] hover:border-[#9A6B5B]";
+    ? "rounded-full bg-[#3B241A] px-4 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9A6B5B]"
+    : "rounded-full border border-[#EADBD3] bg-white px-4 py-1.5 text-sm text-[#5C4035] hover:border-[#9A6B5B] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9A6B5B]";
 }

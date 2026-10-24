@@ -16,17 +16,33 @@ export const STOREFRONT_CATEGORIES: StorefrontCategory[] = [
   { slug: "other", label: "その他", lead: "暮らしに寄り添うアイテム" },
 ];
 
-// Bags are checked first: some bag titles also mention "メイク".
+// Classify by product intent, not incidental words. In particular, beauty tools
+// often contain "クリップ" or "ピンセット"; these must not leak into hair goods.
+// Keep the order explicit because supplier titles are inconsistent and Japanese
+// product names frequently combine several category keywords.
 export function categoryOf(title: string): StorefrontCategory["slug"] {
-  if (/バッグ|ショルダー|クロスボディ|トート|ポーチ|リュック/.test(title)) return "bags";
-  if (/ヘア|クリップ|バレッタ|シュシュ|カチューシャ/.test(title)) return "hair";
-  if (/メイク|ブラシ|コスメ/.test(title)) return "makeup";
+  const normalized = title.normalize("NFKC").toLocaleLowerCase();
+
+  // Beauty and grooming tools take precedence over generic "クリップ"/"ポーチ".
+  if (
+    /ニキビ|毛穴|角栓|ピンセット|毛抜き|ビューラー|アイラッシュ|まつげ|アイブロウ|眉毛|ネイル|化粧|メイク|コスメ|メイクブラシ|化粧ブラシ|メイクスポンジ|パフ|ファンデーション|コンシーラー|美容ツール|フェイスローラー|かみそり|シェーバー/.test(normalized)
+  ) return "makeup";
+
+  if (/ハンドバッグ|ショルダーバッグ|クロスボディ|トートバッグ|リュック|バックパック|バッグ|かばん|鞄/.test(normalized)) return "bags";
+
+  if (
+    /ヘアアクセサリー|ヘアクリップ|バンスクリップ|髪留め|髪飾り|ヘアピン|ヘアゴム|バレッタ|シュシュ|カチューシャ|ヘアバンド|ヘアコーム|ヘアブラシ|ヘアアイロン|カールアイロン|ストレートアイロン|ドライヤー|かんざし|簪|まとめ髪/.test(normalized)
+  ) return "hair";
+
+  // A plain pouch is a bag only when it is not clearly a beauty tool (handled above).
+  if (/ポーチ/.test(normalized)) return "bags";
+  if (/ブラシ|コスメ|メイク|化粧/.test(normalized)) return "makeup";
   return "other";
 }
 
 // Title without the trailing colour/variant in parentheses, e.g. "…バッグ（ピンク）".
 export function variantFamily(title: string): string {
-  return title.normalize("NFKC").replace(/\s*\([^()]*\)\s*$/, "").trim().toLocaleLowerCase();
+  return title.normalize("NFKC").replace(/\s*[（(]\s*(?:ブラック|黒|ホワイト|白|アイボリー|ベージュ|ブラウン|茶|グレー|灰色|グレージュ|ネイビー|紺|ブルー|青|ライトブルー|グリーン|緑|カーキ|レッド|赤|ピンク|パープル|紫|オレンジ|イエロー|黄|シルバー|銀|ゴールド|金|black|white|ivory|beige|brown|gray|grey|navy|blue|green|khaki|red|pink|purple|orange|yellow|silver|gold)\s*[）)]\s*$/i, "").trim().toLocaleLowerCase();
 }
 
 // Pick up to `limit` listings with images, showing one colour per product family
