@@ -1,5 +1,5 @@
 name: TRACER repair BASE products in Japanese and verify live readback
-# Triggered for the user's requested production BASE Japanese-copy repair on 2026-10-21.
+# Verified SEO/copy sweep: only Japanese title and description are edited; price, stock, identifiers and visibility are checked unchanged.
 # A commit message containing [run-base-japanese-copy] reruns the bounded, readback-verified sweep.
 
 on:
