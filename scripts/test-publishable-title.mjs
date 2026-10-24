@@ -65,6 +65,12 @@ assert.equal(localizeProductTitle("Retro Matte Shoulder Bag For Women"), "マッ
 assert.equal(localizeProductTitle("Children's Hair Ornaments Cartoon Fruit Hair Clips Women's Colorful Quicksand"), "フルーツ柄 カラフルヘアクリップ");
 assert.equal(localizeProductTitle("Love Handmade Bow Hair Clips Accessories"), "リボンモチーフ ヘアクリップ");
 assert.equal(localizeProductTitle("Electric Brush Cleaner Makeup Brush Tool For Automatic Cleaning"), "電動メイクブラシクリーナー");
+assert.equal(localizeProductTitle("Women's Pure Cotton Handbag"), "コットン素材 レディースハンドバッグ");
+assert.equal(localizeProductTitle("Zero Makeup Brush Suit Internet Hot Beauty Makeup Tools"), "メイクブラシセット");
+assert.equal(localizeProductTitle("Shoulder Bag Women Pattern Handbag"), "柄デザイン レディースショルダーバッグ");
+for (const title of ["バッグ・収納アイテム", "美容・メイクアイテム"]) {
+  assert.equal(isSpecificJapaneseProductTitle(title), false, title);
+}
 for (const title of ["レディース ハンドバッグ", "レディース ショルダーバッグ", "ヘアクリップ", "メイクブラシ"]) {
   assert.equal(isSpecificJapaneseProductTitle(title), false, title);
 }
