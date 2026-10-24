@@ -104,7 +104,7 @@ assert.match(persist, /bestseller_id: null/, "supplier-native CJ persistence mus
 assert.match(persist, /identity_status: "supply_discovered"/, "CJ supplier-native identity must remain distinct from cross-marketplace identity");
 assert.doesNotMatch(persist, /orderable: false, tracking_available: false, api_available: false/, "identity recheck must not erase existing supplier order-path evidence");
 assert.match(persist, /catalog_stage: "candidate"/, "unmatched supplier supply must be retained as a catalog candidate");
-assert.ok(persist.includes('const nativeIdentityKey = `cj:${args.supplierProductId}:${args.supplierVariantId}`;'), "native candidate linkage must be grounded in the exact CJ product+variant identity key");
+assert.ok(persist.includes('`cj:${args.supplierProductId}:${args.supplierVariantId}`') && persist.includes('`cj:product:${args.supplierProductId}:variant:${args.supplierVariantId}`'), "native candidate linkage must support both exact CJ product+variant key formats");
 assert.doesNotMatch(persist, /\[existingProductId, discoveredProductId\]\.find/, "native candidate persistence must not trust an arbitrary caller-supplied UUID");
 assert.match(persist, /purchasable: nativeEvidenceFresh/, "unmatched supply becomes purchasable only when fresh native supplier evidence passes");
 assert.match(persist, /const offerPayload = \{ product_id: canonicalProductId, seller_name: "CJdropshipping"/, "supplier-native CJ supply must persist an offer without requiring marketplace identity");
