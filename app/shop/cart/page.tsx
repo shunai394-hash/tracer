@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useShopCart } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
+import { ProductImage } from "@/components/product-image";
 
 export default function CartPage() {
   const cart = useShopCart();
@@ -10,28 +11,28 @@ export default function CartPage() {
   const currency = cart.items[0]?.currency ?? null;
 
   return (
-    <main className="flex-1 bg-[#07090b]">
-      <section className="relative overflow-hidden border-b border-white/8">
-        <div className="pointer-events-none absolute right-0 top-0 h-full w-[38%] bg-[radial-gradient(circle_at_70%_20%,rgba(34,211,238,0.08),transparent_55%)]" aria-hidden="true" />
+    <main className="flex-1 bg-[#FBF6F1] text-[#3B241A]">
+      <section className="relative overflow-hidden border-b border-[#EADBD3]">
+        <div className="pointer-events-none absolute right-0 top-0 h-full w-[38%] bg-[radial-gradient(circle_at_70%_20%,rgba(154,107,91,0.12),transparent_55%)]" aria-hidden="true" />
         <div className="relative mx-auto max-w-[1200px] px-5 py-14 sm:px-8 sm:py-20 lg:px-10">
           <div className="flex items-end justify-between gap-8">
             <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.32em] text-cyan-300/70">01 / Cart</p>
-              <h1 className="mt-3 text-4xl tracking-[-0.05em] text-zinc-50 sm:text-5xl">カート</h1>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-zinc-500">
+              <p className="text-[10px] font-mono uppercase tracking-[0.32em] text-[#9A6B5B]">01 / Cart</p>
+              <h1 className="mt-3 text-4xl tracking-[-0.05em] text-[#3B241A] sm:text-5xl">カート</h1>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-[#5C4035]">
                 選んだ商品を確認して、次のステップへ進みます。販売条件が確認できた商品のみ購入できます。
               </p>
             </div>
-            <Link href="/shop" className="hidden text-xs tracking-[0.12em] text-zinc-500 transition hover:text-cyan-200 sm:inline-flex">
+            <Link href="/shop" className="hidden text-xs tracking-[0.12em] text-[#5C4035] transition hover:text-[#9A6B5B] sm:inline-flex">
               ← 商品一覧へ
             </Link>
           </div>
-          <div className="mt-8 flex max-w-md items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] text-zinc-700" aria-label="購入手続きの進行状況">
-            <span className="h-px flex-1 bg-cyan-300/50" />
-            <span className="text-cyan-200/80">Cart</span>
-            <span className="h-px flex-1 bg-white/10" />
+          <div className="mt-8 flex max-w-md items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] text-[#9A6B5B]" aria-label="購入手続きの進行状況">
+            <span className="h-px flex-1 bg-[#9A6B5B]/50" />
+            <span className="text-[#9A6B5B]">Cart</span>
+            <span className="h-px flex-1 bg-[#EADBD3]" />
             <span>Checkout</span>
-            <span className="h-px flex-1 bg-white/10" />
+            <span className="h-px flex-1 bg-[#EADBD3]" />
             <span>Done</span>
           </div>
         </div>
@@ -39,58 +40,53 @@ export default function CartPage() {
 
       <section className="mx-auto max-w-[1200px] px-5 py-10 sm:px-8 sm:py-14 lg:px-10">
         {cart.items.length === 0 ? (
-          <div className="relative overflow-hidden border border-white/10 bg-[#0a0d10] px-6 py-16 text-center sm:px-10">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent" aria-hidden="true" />
-            <span className="mx-auto flex h-12 w-12 items-center justify-center border border-cyan-300/20 text-lg text-cyan-200" aria-hidden="true">＋</span>
-            <p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-zinc-700">Nothing selected yet</p>
-            <h2 className="mt-3 text-xl text-zinc-100">まだ商品がありません。</h2>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">TRACERが確認した商品から、気になるものをひとつ選んでみてください。</p>
-            <Link href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-cyan-300 px-6 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
+          <div className="relative overflow-hidden border border-[#EADBD3] bg-white px-6 py-16 text-center sm:px-10">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#9A6B5B]/30 to-transparent" aria-hidden="true" />
+            <span className="mx-auto flex h-12 w-12 items-center justify-center border border-[#EADBD3] text-lg text-[#9A6B5B]" aria-hidden="true">＋</span>
+            <p className="mt-6 text-[9px] font-mono uppercase tracking-[0.3em] text-[#9A6B5B]">Nothing selected yet</p>
+            <h2 className="mt-3 text-xl text-[#3B241A]">まだ商品がありません。</h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#5C4035]">TRACERが確認した商品から、気になるものをひとつ選んでみてください。</p>
+            <Link href="/shop" className="mt-7 inline-flex min-h-11 items-center bg-[#3B241A] px-6 text-xs font-semibold tracking-[0.08em] text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B]">
               商品を見る <span className="ml-4" aria-hidden="true">→</span>
             </Link>
           </div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-start">
-            <div className="border border-white/10 bg-[#0a0d10]">
-              <div className="flex items-center justify-between border-b border-white/8 px-5 py-4 sm:px-6">
+            <div className="border border-[#EADBD3] bg-white">
+              <div className="flex items-center justify-between border-b border-[#EADBD3] px-5 py-4 sm:px-6">
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-600">Selected items</span>
-                  <p className="mt-1 text-xs text-zinc-700">確認済みの商品だけを次へ進めます。</p>
+                  <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#9A6B5B]">Selected items</span>
+                  <p className="mt-1 text-xs text-[#9A6B5B]">確認済みの商品だけを次へ進めます。</p>
                 </div>
-                <span className="text-xs text-zinc-500">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
+                <span className="text-xs text-[#5C4035]">{cart.items.length} item{cart.items.length === 1 ? "" : "s"}</span>
               </div>
-              <div className="divide-y divide-white/7">
-                {cart.items.map((item, index) => (
-                  <article key={item.listingId} className="group grid gap-5 px-5 py-6 transition-colors hover:bg-white/[0.015] sm:grid-cols-[72px_1fr_auto] sm:items-center sm:px-6">
-                    <div className="relative flex h-[72px] w-[72px] items-center justify-center overflow-hidden border border-white/8 bg-black/20">
-                      {item.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-                      ) : (
-                        <span className="text-[9px] font-mono text-zinc-700">0{index + 1}</span>
-                      )}
+              <div className="divide-y divide-[#EADBD3]">
+                {cart.items.map((item) => (
+                  <article key={item.listingId} className="group grid gap-5 px-5 py-6 transition-colors hover:bg-[#FBF6F1] sm:grid-cols-[72px_1fr_auto] sm:items-center sm:px-6">
+                    <div className="relative flex h-[72px] w-[72px] items-center justify-center overflow-hidden border border-[#EADBD3] bg-[#F4ECE6]">
+                      <ProductImage src={item.imageUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                     </div>
                     <div>
-                      <p className="text-sm leading-6 text-zinc-100">{item.title}</p>
-                      <p className="mt-1 text-xs text-zinc-600">数量 {item.qty} · 商品価格 {formatMoney(item.unitPrice, item.currency)}</p>
+                      <p className="text-sm leading-6 text-[#3B241A]">{item.title}</p>
+                      <p className="mt-1 text-xs text-[#9A6B5B]">数量 {item.qty} · 商品価格 {formatMoney(item.unitPrice, item.currency)}</p>
                     </div>
-                    <p className="text-sm font-medium text-zinc-100 sm:text-right">{formatMoney(item.unitPrice * item.qty, item.currency)}</p>
+                    <p className="text-sm font-medium text-[#3B241A] sm:text-right">{formatMoney(item.unitPrice * item.qty, item.currency)}</p>
                   </article>
                 ))}
               </div>
             </div>
 
-            <aside className="border border-cyan-300/15 bg-[#0a0d10] p-6 sm:p-7 lg:sticky lg:top-24" aria-label="注文概要">
-              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-300/60">Order summary</p>
-              <div className="mt-7 flex items-end justify-between border-b border-white/8 pb-5">
-                <span className="text-sm text-zinc-500">合計</span>
-                <span className="text-2xl tracking-[-0.03em] text-zinc-50">{formatMoney(total, currency)}</span>
+            <aside className="border border-[#EADBD3] bg-white p-6 sm:p-7 lg:sticky lg:top-24" aria-label="注文概要">
+              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#9A6B5B]">Order summary</p>
+              <div className="mt-7 flex items-end justify-between border-b border-[#EADBD3] pb-5">
+                <span className="text-sm text-[#5C4035]">合計</span>
+                <span className="text-2xl tracking-[-0.03em] text-[#3B241A]">{formatMoney(total, currency)}</span>
               </div>
-              <p className="mt-5 text-xs leading-5 text-zinc-600">次の画面で配送先と支払い方法を確認します。</p>
-              <Link href="/shop/checkout" className="group mt-6 flex min-h-12 w-full items-center justify-between bg-cyan-300 px-5 text-xs font-semibold tracking-[0.08em] text-zinc-950 transition duration-300 hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">
+              <p className="mt-5 text-xs leading-5 text-[#9A6B5B]">次の画面で配送先と支払い方法を確認します。</p>
+              <Link href="/shop/checkout" className="group mt-6 flex min-h-12 w-full items-center justify-between bg-[#3B241A] px-5 text-xs font-semibold tracking-[0.08em] text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B]">
                 購入手続きへ <span className="text-lg transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">→</span>
               </Link>
-              <Link href="/shop" className="mt-4 flex justify-center text-[11px] text-zinc-600 transition hover:text-zinc-300 sm:hidden">商品一覧へ戻る</Link>
+              <Link href="/shop" className="mt-4 flex justify-center text-[11px] text-[#9A6B5B] transition hover:text-[#3B241A] sm:hidden">商品一覧へ戻る</Link>
             </aside>
           </div>
         )}

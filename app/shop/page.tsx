@@ -8,6 +8,20 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "商品一覧",
   description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
+  alternates: { canonical: "/shop" },
+  openGraph: {
+    title: "商品一覧 | TRACER",
+    description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
+    url: "/shop",
+    siteName: "TRACER",
+    type: "website",
+    locale: "ja_JP",
+  },
+  twitter: {
+    card: "summary",
+    title: "商品一覧 | TRACER",
+    description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
+  },
 };
 
 const SORTS = [
