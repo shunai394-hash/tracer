@@ -111,7 +111,7 @@ export default async function ShopProductPage({
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: `/shop/${listing.slug}`,
+      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, "https://tracer-pied-alpha.vercel.app").toString(),
     } : undefined,
   };
 
