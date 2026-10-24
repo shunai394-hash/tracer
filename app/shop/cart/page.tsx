@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useShopカート } from "@/components/shop-cart";
+import { useShopCart } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
 
-export default function カートPage() {
-  const cart = useShopカート();
+export default function CartPage() {
+  const cart = useShopCart();
   const total = cart.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
   const currency = cart.items[0]?.currency ?? null;
 
