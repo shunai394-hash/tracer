@@ -24,7 +24,7 @@ export async function generateMetadata({
 
     const title = listing.title.trim();
     const description = (listing.description ?? `${title}の商品情報・価格・在庫をご確認いただけます。`)
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .slice(0, 155);
     const url = `/shop/${encodeURIComponent(listing.slug)}`;
     return {
@@ -111,7 +111,7 @@ export default async function ShopProductPage({
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: `/shop/${listing.slug}`,
+      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").toString(),
     } : undefined,
   };
 
