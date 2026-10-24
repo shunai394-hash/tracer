@@ -16,11 +16,27 @@ export const STOREFRONT_CATEGORIES: StorefrontCategory[] = [
   { slug: "other", label: "その他", lead: "暮らしに寄り添うアイテム" },
 ];
 
-// Bags are checked first: some bag titles also mention "メイク".
+// Classify by product intent, not incidental words. In particular, beauty tools
+// often contain "クリップ" or "ピンセット"; these must not leak into hair goods.
+// Keep the order explicit because supplier titles are inconsistent and Japanese
+// product names frequently combine several category keywords.
 export function categoryOf(title: string): StorefrontCategory["slug"] {
-  if (/バッグ|ショルダー|クロスボディ|トート|ポーチ|リュック/.test(title)) return "bags";
-  if (/ヘア|クリップ|バレッタ|シュシュ|カチューシャ/.test(title)) return "hair";
-  if (/メイク|ブラシ|コスメ/.test(title)) return "makeup";
+  const normalized = title.normalize("NFKC").toLocaleLowerCase();
+
+  // Beauty and grooming tools take precedence over generic "クリップ"/"ポーチ".
+  if (
+    /ニキビ|毛穴|角栓|ピンセット|毛抜き|ビューラー|アイラッシュ|まつげ|アイブロウ|眉毛|ネイル|化粧|メイク|コスメ|メイクブラシ|化粧ブラシ|メイクスポンジ|パフ|ファンデーション|コンシーラー|美容ツール|フェイスローラー|かみそり|シェーバー/.test(normalized)
+  ) return "makeup";
+
+  if (/ハンドバッグ|ショルダーバッグ|クロスボディ|トートバッグ|リュック|バックパック|バッグ|かばん|鞄/.test(normalized)) return "bags";
+
+  if (
+    /ヘアアクセサリー|ヘアクリップ|バンスクリップ|髪留め|髪飾り|ヘアピン|ヘアゴム|バレッタ|シュシュ|カチューシャ|ヘアバンド|ヘアコーム|かんざし|簪|まとめ髪/.test(normalized)
+  ) return "hair";
+
+  // A plain pouch is a bag only when it is not clearly a beauty tool (handled above).
+  if (/ポーチ/.test(normalized)) return "bags";
+  if (/ブラシ|コスメ|メイク|化粧/.test(normalized)) return "makeup";
   return "other";
 }
 
@@ -49,5 +65,5 @@ export function pickDistinct(listings: ShopListing[], limit: number): ShopListin
 export const STOREFRONT_IMAGES = {
   heroWide: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/9ea6d5ac-c832-4373-9907-393ddf2b61d9.webp",
   heroTall: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/c2d036f8-19df-4a74-9e99-1841a92606a9.webp",
-  lifestyle: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/72bf7497-f78e-48b8-a2eb-401478ac8998.webp",
+  lifestyle: "https://d2ol7oe51mr4n1VMC05NhTNVQsVbou/72bf7497-f78e-48b8-a2eb-401478ac8998.webp",
 };
