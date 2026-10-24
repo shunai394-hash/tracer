@@ -1,8 +1,8 @@
-import { ご注文Form } from "@/components/checkout-form";
+import { CheckoutForm } from "@/components/checkout-form";
 
 export const metadata = { title: "ご注文手続き", robots: { index: false, follow: false } };
 
-export default function ご注文Page() {
+export default function CheckoutPage() {
   const steps = [
     ["01", "連絡先"],
     ["02", "配送先"],
@@ -46,7 +46,7 @@ export default function ご注文Page() {
         </div>
       </section>
       <section className="mx-auto max-w-[1200px] px-5 py-10 sm:px-8 sm:py-14 lg:px-10">
-        <ご注文Form />
+        <CheckoutForm />
       </section>
     </main>
   );
