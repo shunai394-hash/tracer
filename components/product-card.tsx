@@ -4,25 +4,42 @@ import { formatMoney } from "@/lib/intelligence/format-display";
 import { ProductImage } from "@/components/product-image";
 
 export function ProductCard({ listing, priority = false }: { listing: ShopListing; priority?: boolean }) {
+  const lowStock = listing.inventory > 0 && listing.inventory <= 5;
+
   return (
-    <Link href={`/shop/${listing.id}`} className="group block">
-      <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
+    <Link
+      href={`/shop/${listing.id}`}
+      aria-label={`${listing.title}、${formatMoney(listing.sellingPrice, listing.currency)}、商品詳細を見る`}
+      className="group block rounded-2xl outline-none transition-transform duration-300 focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 focus-visible:ring-offset-[#FBF6F1] motion-reduce:transition-none"
+    >
+      <div className="relative overflow-hidden rounded-2xl bg-[#F4ECE6]">
         <ProductImage
           src={listing.imageUrl}
           alt={listing.title}
           eager={priority}
-          className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+          className="aspect-[4/5] w-full object-cover transition duration-700 ease-out group-hover:scale-[1.045] group-focus-visible:scale-[1.025] motion-reduce:transition-none"
         />
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-[#2C1B15]/55 to-transparent px-3 pb-3 pt-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+          <span className="text-[11px] font-medium tracking-[0.08em] text-white">VIEW ITEM</span>
+          <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-full border border-white/70 text-white">↗</span>
+        </div>
       </div>
-      <div className="px-1 pt-3">
-        <h3 className="line-clamp-2 text-[13px] leading-5 text-neutral-800 group-hover:underline sm:text-sm">{listing.title}</h3>
-        <p className="mt-1.5 text-base font-semibold text-[#3B241A]">
-          {formatMoney(listing.sellingPrice, listing.currency)}
-          <span className="ml-1 text-[10px] font-normal text-neutral-500">税込</span>
-        </p>
-        <p className={listing.inventory <= 5 ? "mt-0.5 text-xs text-[#B84A62]" : "mt-0.5 text-xs text-neutral-500"}>
-          {listing.inventory <= 5 ? "残りわずか" : "在庫あり"}
-        </p>
+      <div className="px-1.5 pb-2 pt-3.5">
+        <h3 className="line-clamp-2 min-h-10 text-[13px] leading-5 text-[#3B241A] transition-colors group-hover:text-[#8A5948] group-focus-visible:text-[#8A5948] sm:text-sm">
+          {listing.title}
+        </h3>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <p className="text-base font-semibold tracking-tight text-[#3B241A] sm:text-lg">
+            {formatMoney(listing.sellingPrice, listing.currency)}
+          </p>
+          <span className="text-[10px] text-[#7D675D]">税込・送料込み</span>
+        </div>
+        <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
+          <span className="text-[10px] tracking-[0.08em] text-[#9A6B5B]">TRACER SELECT</span>
+          <span className={lowStock ? "text-[11px] font-medium text-[#A33E50]" : "text-[11px] text-[#7D675D]"}>
+            {lowStock ? "残りわずか" : listing.inventory > 0 ? "在庫あり" : "在庫切れ"}
+          </span>
+        </div>
       </div>
     </Link>
   );
