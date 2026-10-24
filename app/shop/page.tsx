@@ -125,7 +125,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           <nav aria-label="ページ" className="mt-12 flex items-center justify-center gap-4 text-sm">
             {page > 1 ? <Link href={href({ page: page - 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">← 前へ</Link> : null}
             <span className="text-[#5C4035]">{page} / {pageCount}ページ</span>
-            {page < pageCount ? <Link href={href({ page: page + 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B]">次へ →</Link> : null}
+            {page < pageCount ? <Link href={href({ page: page + 1 })} className="inline-flex min-h-11 items-center rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">次へ →</Link> : null}
           </nav>
         ) : null}
       </div>
