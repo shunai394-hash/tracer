@@ -29,9 +29,9 @@ export default function CartPage() {
           <div className="mt-8 flex max-w-md items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] text-[#9A6B5B]" aria-label="購入手続きの進行状況">
             <span className="h-px flex-1 bg-[#3B241A]/50" />
             <span className="text-[#9A6B5B]">カート</span>
-            <span className="h-px flex-1 bg-white/10" />
+            <span className="h-px flex-1 bg-[#EADBD3]" />
             <span>お手続き</span>
-            <span className="h-px flex-1 bg-white/10" />
+            <span className="h-px flex-1 bg-[#EADBD3]" />
             <span>完了</span>
           </div>
         </div>
