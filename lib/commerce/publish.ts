@@ -40,6 +40,42 @@ function shippingInclusiveDescription(description: string): string {
     .join("\n\n");
 }
 
+async function addBaseImageWithFormatFallback(input: {
+  db: ReturnType<typeof createSupabaseAdminClient>;
+  variantId: string;
+  itemId: string;
+  imageUrl: string;
+}): Promise<void> {
+  try {
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: input.imageUrl });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message)) throw error;
+    // BASE can reject a supplier-hosted image despite a URL ending in .jpg.
+    // If this variant already has a Shopify product, reuse Shopify's accepted CDN
+    // image. Never create a second listing or silently suppress other upload errors.
+    const { data: shopifyListing, error: listingError } = await input.db.from("channel_listings")
+      .select("external_product_id")
+      .eq("variant_id", input.variantId)
+      .eq("channel", "shopify")
+      .not("external_product_id", "is", null)
+      .maybeSingle();
+    if (listingError || !shopifyListing?.external_product_id) throw error;
+    const shopifyProductId = toShopifyGid("Product", String(shopifyListing.external_product_id));
+    if (!shopifyProductId) throw error;
+    const result = await shopifyGraphQL<{
+      product: { featuredImage: { url: string } | null } | null;
+    }>(
+      `query BaseCompatibleProductImage($id: ID!) { product(id: $id) { featuredImage { url } } }`,
+      { id: shopifyProductId },
+    );
+    const fallbackUrl = result.product?.featuredImage?.url;
+    if (!fallbackUrl || fallbackUrl === input.imageUrl || !safeUrl(fallbackUrl)) throw error;
+    await addBaseItemImage({ itemId: input.itemId, imageNo: 1, imageUrl: fallbackUrl });
+  }
+}
+
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
   const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
@@ -652,7 +688,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           if (saveCreatedIdError) throw new Error("base_created_item_id_save_failed:" + saveCreatedIdError.message);
           baseCreateIdNeedsRecovery = null;
         }
-        await addBaseItemImage({ itemId: externalProductId, imageNo: 1, imageUrl });
+        await addBaseImageWithFormatFallback({ db, variantId: candidate.id, itemId: externalProductId, imageUrl });
         // Only make the item visible after the external ID and image are saved.
         const visibleResponse = await editBaseItem({ itemId: externalProductId, title, detail: storefrontDescription, price: Number(price.selling_price), stock: storefrontStock, visible: true });
         publishedUrl = resolveBasePublicUrl(visibleResponse, externalProductId, basePublicShopUrl)
