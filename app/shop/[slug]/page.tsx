@@ -218,7 +218,7 @@ export default async function ShopProductPage({
                   <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
                 </summary>
                 <p className="mt-3 leading-7 text-[#5C4035]">
-                  在庫・配送日数・送料・返品条件は商品や配送先によって異なります。表示価格には日本国内への送料が含まれています。詳しくはご購入画面でご確認ください。
+                  在庫・配送日数・送料・返品条件は商品や配送先によって異なります。送料・配送条件は購入手続き画面でご確認ください。
                 </p>
               </details>
             </div>
