@@ -18,13 +18,13 @@ test("reduced-motion preference disables smooth scrolling and minimizes transiti
 });
 
 test("product detail avoids unsupported shipping and fulfillment promises", () => {
-  assert.match(productPage, /<span className="text-xs text-neutral-500">表示価格<\\/span>/);
+  assert.ok(productPage.includes('<span className="text-xs text-neutral-500">表示価格</span>'));
   assert.doesNotMatch(productPage, /税込・送料込み|送料込みの価格表示|送料が含まれています|追跡番号付き/);
-  assert.match(productPage, /送料・配送条件は購入手続き画面でご確認ください。/);
+  assert.ok(productPage.includes("送料・配送条件は購入手続き画面でご確認ください。"));
 });
 
 test("product metadata uses whitespace normalization and absolute encoded URLs", () => {
-  assert.match(productPage, /\\.replace\\(\/\\s\\+\/g, " ")/);
-  assert.match(productPage, /new URL\\(\`\/shop\/\$\\{encodeURIComponent\\(listing\\.slug\\)\\}\`, siteUrl\\)/);
-  assert.match(productPage, /aspect-\\[4\\/5\\] w-full object-cover/);
+  assert.ok(productPage.includes('.replace(/\\\\s+/g, " ")'));
+  assert.ok(productPage.includes('new URL(`/shop/${encodeURIComponent(listing.slug)}`, siteUrl).toString()'));
+  assert.ok(productPage.includes("aspect-[4/5] w-full object-cover"));
 });
