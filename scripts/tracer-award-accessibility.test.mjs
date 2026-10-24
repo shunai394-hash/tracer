@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+const shopPage = await readFile(new URL("../app/shop/page.tsx", import.meta.url), "utf8");
+const sitemap = await readFile(new URL("../app/sitemap.ts", import.meta.url), "utf8");
 
 test("global focus indicator uses a clear 3px dark ring", () => {
   assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--focus-ring\)/s);
@@ -27,4 +29,19 @@ test("product metadata uses whitespace normalization and absolute encoded URLs",
   assert.ok(productPage.includes(String.raw`replace(/\s+/g, " ")`));
   assert.ok(productPage.includes('new URL(`/shop/${encodeURIComponent(listing.slug)}`, siteUrl).toString()'));
   assert.ok(productPage.includes("aspect-[4/5] w-full object-cover"));
+});
+
+
+test("category pages have distinct Japanese SEO metadata and filtered search is noindex", () => {
+  assert.match(shopPage, /バッグ｜ハンドバッグ・ショルダーバッグ/);
+  assert.match(shopPage, /ヘアアクセサリー｜ヘアクリップ・まとめ髪アイテム/);
+  assert.match(shopPage, /メイク小物｜ブラシ収納・お手入れ用品/);
+  assert.match(shopPage, /robots: \{ index: false, follow: true \}/);
+  assert.match(shopPage, /alternates: \{ canonical \}/);
+  assert.ok(shopPage.includes("CATEGORY_SEO[activeCategory.slug].description"));
+});
+
+test("sitemap includes category landing URLs only for categories with live products", () => {
+  assert.match(sitemap, /availableCategories = new Set\(listings\.map\(\(item\) => categoryOf\(item\.title\)\)\)/);
+  assert.match(sitemap, /\/shop\?cat=\$\{encodeURIComponent\(category\.slug\)\}/);
 });
