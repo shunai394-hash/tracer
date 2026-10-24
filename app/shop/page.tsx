@@ -110,6 +110,11 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
       <div className="mx-auto max-w-6xl px-5 py-8 sm:py-12">
         <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">TRACER ONLINE STORE</p>
         <h1 className="mt-2 font-serif text-3xl">{activeCategory ? activeCategory.label : "すべての商品"}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5C4035]">
+          {activeCategory
+            ? CATEGORY_SEO[activeCategory.slug].description
+            : "バッグ・ヘアアクセサリー・メイク小物をカテゴリや価格から比較。商品ページで価格・在庫・商品情報を確認してお選びいただけます。"}
+        </p>
 
         <form action="/shop" className="mt-6 flex max-w-xl gap-2">
           {activeCategory ? <input type="hidden" name="cat" value={activeCategory.slug} /> : null}
