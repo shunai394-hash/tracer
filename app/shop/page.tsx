@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
@@ -5,10 +6,19 @@ import { ProductCard } from "@/components/product-card";
 import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
-export const metadata = {
-  title: "商品一覧",
-  description: "バッグ、ヘアアクセサリー、メイク小物など、価格と在庫を確認した商品一覧。",
-};
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  const query = await searchParams;
+  const hasFilters = ["cat", "q", "sort", "page"].some((key) => {
+    const value = query[key];
+    return Array.isArray(value) ? value.some((item) => item.trim()) : Boolean(value?.trim());
+  });
+  return {
+    title: "バッグ・ヘアアクセサリー・メイク小物の商品一覧",
+    description: "毎日に取り入れやすいバッグ、ヘアアクセサリー、メイク小物をセレクト。価格・在庫・商品仕様を確認してお選びいただけます。",
+    alternates: { canonical: "/shop" },
+    ...(hasFilters ? { robots: { index: false, follow: true } } : {}),
+  };
+}
 
 const SORTS = [
   { value: "", label: "おすすめ順" },
