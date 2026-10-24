@@ -6,7 +6,7 @@ import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display
 
 export const dynamic = "force-dynamic";
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\\/$/, "");
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
 
 const CATEGORY_SEO: Record<string, { title: string; description: string }> = {
   bags: { title: "バッグ｜ハンドバッグ・ショルダーバッグ", description: "毎日の通勤や休日のお出かけに合わせやすいハンドバッグ・ショルダーバッグをチェック。価格と在庫を商品ページで確認できます。" },
