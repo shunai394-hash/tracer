@@ -39,6 +39,9 @@ const identityAuditRouteExactTuple = await readFile(new URL("../app/api/admin/sh
 assert.match(identityAuditRouteExactTuple, /internal_product_id_mismatch/);
 assert.match(identityAuditRouteExactTuple, /supplier_product_id_mismatch/);
 assert.match(identityAuditRouteExactTuple, /supplier_variant_id_mismatch/);
+assert.match(persist, /const nativeIdentityKeys = \[[\s\S]{0,200}`cj:\$\{args\.supplierProductId\}:\$\{args\.supplierVariantId\}`[\s\S]{0,200}`cj:product:\$\{args\.supplierProductId\}:variant:\$\{args\.supplierVariantId\}`/, "native CJ identity lookup must support both historical exact key formats");
+assert.match(persist, /\.in\("identity_key", nativeIdentityKeys\)/, "native identity lookup must query only exact deterministic CJ keys");
+assert.match(persist, /if \(exactIds\.length === 1\)[\s\S]{0,160}else if \(exactIds\.length > 1\)/, "duplicate exact native keys must fail closed instead of choosing an arbitrary product");
 assert.match(persist, /verification_error: nativeEvidenceFresh \? null : \(priorVerificationError && priorVerificationError !== "no_unique_canonical_child_variant_match" \? priorVerificationError : "supplier_native_evidence_pending"\)/, "only fresh, fully verified native supplier evidence may clear the old configuration error; marketplace identity is not required");
 assert.match(persist, /shipping_status: Number\.isFinite\(args\.shippingCost\) && args\.shippingCost > 0[\s\S]{0,100}"verified"/, "a fresh positive Japan freight quote must be persisted as verified shipping evidence independently of orderability");
 assert.match(discoverCJ, /identity_status: "supply_discovered", identity_confidence: 0/, "supply discovery without canonical identity must not claim perfect identity confidence");
