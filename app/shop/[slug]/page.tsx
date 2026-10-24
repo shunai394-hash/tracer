@@ -24,9 +24,10 @@ export async function generateMetadata({
 
     const title = listing.title.trim();
     const description = (listing.description ?? `${title}の商品情報・価格・在庫をご確認いただけます。`)
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .slice(0, 155);
-    const url = `/shop/${encodeURIComponent(listing.slug)}`;
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
+    const url = new URL(`/shop/${encodeURIComponent(listing.slug)}`, siteUrl).toString();
     return {
       title,
       description,
@@ -111,7 +112,7 @@ export default async function ShopProductPage({
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: `/shop/${listing.slug}`,
+      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "")).toString(),
     } : undefined,
   };
 
@@ -147,7 +148,7 @@ export default async function ShopProductPage({
         <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
           <div className="md:sticky md:top-24 md:self-start">
             <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-square w-full object-cover" />
+              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-[4/5] w-full object-cover" />
             </div>
           </div>
 
@@ -157,7 +158,7 @@ export default async function ShopProductPage({
 
             <div className="mt-5 flex items-baseline gap-2">
               <p className="text-[28px] font-semibold tracking-tight">{formatMoney(listing.sellingPrice, listing.currency)}</p>
-              <span className="text-xs text-neutral-500">税込・送料込み</span>
+              <span className="text-xs text-neutral-500">表示価格</span>
             </div>
             <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
               {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
@@ -184,14 +185,14 @@ export default async function ShopProductPage({
                 />
               )}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                ご購入手続きはTRACER公式ストア（Shopify）で安全に行われます。
+                注文内容・配送条件は、購入手続き画面でご確認ください。
               </p>
             </div>
 
             <ul className="mt-6 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#5C4035] sm:text-xs">
-              <li className="rounded-xl bg-white/70 px-2 py-3">送料込み<br />の価格表示</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">追跡番号付き<br />で発送</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">在庫確認済み<br />の商品のみ掲載</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">価格・配送条件を<br />購入前に確認</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">配送情報を<br />購入前に確認</li>
+              <li className="rounded-xl bg-white/70 px-2 py-3">商品情報を<br />掲載前に確認</li>
             </ul>
 
             {listing.description ? (
