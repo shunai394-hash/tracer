@@ -1,4 +1,7 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^women'?s pure cotton handbag$/i, "コットン素材 レディースハンドバッグ"],
+  [/^zero makeup brush suit internet hot beauty makeup tools$/i, "メイクブラシセット"],
+  [/^shoulder bag women pattern handbag$/i, "柄デザイン レディースショルダーバッグ"],
   [/^portable plush handbag for women(?:\s*\(.*\))?$/i, "ぬいぐるみ風素材 レディースハンドバッグ"],
   [/^fashion woven handbag for women(?:\s*\(.*\))?$/i, "編み込みデザイン レディースハンドバッグ"],
   [/^women patent leather flower handbag(?:\s*\(.*\))?$/i, "花モチーフ エナメル調ハンドバッグ"],
@@ -351,6 +354,8 @@ const CATEGORY_ONLY_TITLES = new Set([
   "メイクブラシ",
   "ヘアアクセサリー",
   "レディース ヘアアクセサリー",
+  "バッグ・収納アイテム",
+  "美容・メイクアイテム",
 ]);
 
 const TITLE_REPLACEMENTS: Array<[RegExp, string]> = [
