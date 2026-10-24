@@ -724,10 +724,30 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const recoveredVariants = recoveredProduct?.variants.nodes ?? [];
         const recoveredVariantId = recoveredVariants.find((variant) => variant.sku === sku)?.id
           ?? (recoveredVariants.length === 1 && !recoveredVariants[0]?.sku ? recoveredVariants[0].id : null);
+        const updateWithHandleCollisionRecovery = async (input: {
+          productId: string; title: string; descriptionHtml: string; handle: string;
+          price: number; variantId: string; sku: string; imageUrl: null;
+        }) => {
+          try {
+            return await updateShopifyProduct(input);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // A handle can be claimed by an older/orphaned Shopify product even when
+            // this listing already has a valid external product ID. Retry only that
+            // specific conflict with a stable per-product suffix; never create a
+            // second product as a fallback and never mask unrelated API failures.
+            if (!/handle.{0,80}already in use|already in use.{0,80}handle/i.test(message)) throw error;
+            const productSuffix = String(input.productId).split("/").pop()?.replace(/[^a-z0-9]/gi, "").slice(-10).toLowerCase()
+              || candidate.id.replace(/-/g, "").slice(-10);
+            const fallbackHandle = safeSlug(handlePrefix + "-" + candidate.id.replace(/-/g, "") + "-p" + productSuffix);
+            if (fallbackHandle === input.handle) throw error;
+            return await updateShopifyProduct({ ...input, handle: fallbackHandle });
+          }
+        };
         const productResult = productId && variantId
-          ? await updateShopifyProduct({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
+          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null })
           : recoveredProduct && recoveredVariantId
-            ? await updateShopifyProduct({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
+            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null })
             : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
