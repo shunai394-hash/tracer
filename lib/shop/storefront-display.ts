@@ -65,5 +65,5 @@ export function pickDistinct(listings: ShopListing[], limit: number): ShopListin
 export const STOREFRONT_IMAGES = {
   heroWide: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/9ea6d5ac-c832-4373-9907-393ddf2b61d9.webp",
   heroTall: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/c2d036f8-19df-4a74-9e99-1841a92606a9.webp",
-  lifestyle: "https://d2ol7oe51mr4n1VMC05NhTNVQsVbou/72bf7497-f78e-48b8-a2eb-401478ac8998.webp",
+  lifestyle: "https://d2ol7oe51mr4n9.cloudfront.net/user_3L5iapCiBz1VMC05NhTNVQsVbou/72bf7497-f78e-48b8-a2eb-401478ac8998.webp",
 };
