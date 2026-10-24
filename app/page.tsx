@@ -50,8 +50,8 @@ export default async function HomePage() {
             バッグ、ヘアアクセサリー、メイク小物。<br />いつもの装いに寄り添うアイテムを集めました。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035]">すべての商品を見る</Link>
-            <Link href="/shop?cat=bags" className="rounded-full border border-[#3B241A]/30 bg-white/70 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white">バッグを見る</Link>
+            <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">すべての商品を見る</Link>
+            <Link href="/shop?cat=bags" className="rounded-full border border-[#3B241A]/30 bg-white/70 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
           </div>
         </div>
       </section>
@@ -83,8 +83,8 @@ export default async function HomePage() {
               {categories.map((category) => {
                 const cover = category.items.find((item) => item.imageUrl);
                 return (
-                  <Link key={category.slug} href={`/shop?cat=${category.slug}`} className="group relative overflow-hidden rounded-2xl bg-[#F4ECE6]">
-                    <ProductImage src={cover?.imageUrl ?? null} alt="" className="aspect-[4/5] w-full object-cover transition duration-500 group-hover:scale-[1.04]" />
+                  <Link key={category.slug} href={`/shop?cat=${category.slug}`} className="group relative overflow-hidden rounded-2xl bg-[#F4ECE6] outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">
+                    <ProductImage src={cover?.imageUrl ?? null} alt="" className="aspect-[4/5] w-full object-cover transition duration-700 ease-out group-hover:scale-[1.04] group-focus-visible:scale-[1.025] motion-reduce:transition-none" />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#3B241A]/90 via-[#3B241A]/60 to-transparent p-4 pt-16 text-white">
                       <p className="font-serif text-lg">{category.label}</p>
                       <p className="mt-1 text-[11px] leading-4 text-white/85">{category.lead}</p>
@@ -112,7 +112,7 @@ export default async function HomePage() {
                 <p className="mt-5 text-sm leading-7 text-[#5C4035]">
                   通勤にも休日にも合わせやすいバッグや、まとめ髪を上品に仕上げるヘアアクセサリーなど、毎日使えるアイテムを選んでいます。価格と在庫を確認できた商品だけを掲載しています。
                 </p>
-                <Link href="/shop" className="mt-7 inline-block rounded-full border border-[#3B241A]/30 px-7 py-3 text-sm font-medium transition hover:bg-white">商品一覧へ</Link>
+                <Link href="/shop" className="mt-7 inline-block rounded-full border border-[#3B241A]/30 px-7 py-3 text-sm font-medium transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">商品一覧へ</Link>
               </div>
             </div>
           </section>
@@ -139,7 +139,7 @@ function SectionHeading({ eyebrow, title, link }: { eyebrow: string; title: stri
         <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{eyebrow}</p>
         <h2 className="mt-2 font-serif text-2xl sm:text-[28px]">{title}</h2>
       </div>
-      {link ? <Link href={link.href} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">{link.label} →</Link> : null}
+      {link ? <Link href={link.href} className="shrink-0 rounded-sm text-sm text-[#5C4035] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">{link.label} →</Link> : null}
     </div>
   );
 }
