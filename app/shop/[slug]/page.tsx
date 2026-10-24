@@ -111,7 +111,7 @@ export default async function ShopProductPage({
       price: listing.sellingPrice,
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      url: `/shop/${listing.slug}`,
+      url: new URL(`/shop/${encodeURIComponent(listing.slug)}`, "https://tracer-pied-alpha.vercel.app").toString(),
     } : undefined,
   };
 
@@ -147,7 +147,7 @@ export default async function ShopProductPage({
         <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
           <div className="md:sticky md:top-24 md:self-start">
             <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-square w-full object-cover" />
+              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-[4/5] w-full object-cover" />
             </div>
           </div>
 
