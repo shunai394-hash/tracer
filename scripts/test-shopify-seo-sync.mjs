@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
+const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
 
 assert.match(admin, /function shopifySeoInput\(/, "Shopify product sync must build SEO metadata");
 assert.match(admin, /slice\(0, 70\)/, "SEO title must respect the 70-character limit");
@@ -17,3 +18,11 @@ assert.match(admin, /seo\?\.title == null && expected\.title === data\.product\?
 
 console.log("Shopify SEO write, bounds, and readback guards are present.");
 
+
+
+assert.match(publish, /const seoTitle =/, "publishing must build a bounded branded SEO title");
+assert.match(publish, /const seoDescription = storefrontDescription/, "SEO description must come from actual product copy");
+assert.ok(publish.includes("updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null, seoTitle, seoDescription }"), "update path must pass SEO metadata");
+assert.ok(publish.includes("createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription })"), "create path must pass SEO metadata");
+
+console.log("Shopify SEO publish inputs are wired.");
