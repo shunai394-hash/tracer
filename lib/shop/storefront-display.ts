@@ -31,7 +31,7 @@ export function categoryOf(title: string): StorefrontCategory["slug"] {
   if (/ハンドバッグ|ショルダーバッグ|クロスボディ|トートバッグ|リュック|バックパック|バッグ|かばん|鞄/.test(normalized)) return "bags";
 
   if (
-    /ヘアアクセサリー|ヘアクリップ|バンスクリップ|髪留め|髪飾り|ヘアピン|ヘアゴム|バレッタ|シュシュ|カチューシャ|ヘアバンド|ヘアコーム|かんざし|簪|まとめ髪/.test(normalized)
+    /ヘアアクセサリー|ヘアクリップ|バンスクリップ|髪留め|髪飾り|ヘアピン|ヘアゴム|バレッタ|シュシュ|カチューシャ|ヘアバンド|ヘアコーム|ヘアブラシ|ヘアアイロン|カールアイロン|ストレートアイロン|ドライヤー|かんざし|簪|まとめ髪/.test(normalized)
   ) return "hair";
 
   // A plain pouch is a bag only when it is not clearly a beauty tool (handled above).
