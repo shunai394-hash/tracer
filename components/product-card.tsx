@@ -9,10 +9,10 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
   return (
     <Link
       href={`/shop/${listing.id}`}
-      aria-label={`${listing.title}、${formatMoney(listing.sellingPrice, listing.currency)}、商品詳細を見る`}
+      aria-label={`${listing.title}、${formatMoney(listing.sellingPrice, listing.currency)}、${listing.inventory > 0 ? (listing.inventory <= 5 ? "残りわずか" : "在庫あり") : "在庫切れ"}、商品詳細を見る`}
       className="group block rounded-2xl outline-none transition-transform duration-300 focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 focus-visible:ring-offset-[#FBF6F1] motion-reduce:transition-none"
     >
-      <div className="relative overflow-hidden rounded-2xl bg-[#F4ECE6]">
+      <div className="relative overflow-hidden rounded-2xl bg-[#F4ECE6]">\n        {listing.inventory <= 0 ? (\n          <span className="absolute left-3 top-3 z-10 rounded-full bg-[#3B241A]/90 px-3 py-1.5 text-[11px] font-medium tracking-wide text-white">在庫切れ</span>\n        ) : null}
         <ProductImage
           src={listing.imageUrl}
           alt={listing.title}
@@ -20,7 +20,7 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
           className="aspect-[4/5] w-full object-cover transition duration-700 ease-out group-hover:scale-[1.045] group-focus-visible:scale-[1.025] motion-reduce:transition-none"
         />
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-[#2C1B15]/55 to-transparent px-3 pb-3 pt-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
-          <span className="text-[11px] font-medium tracking-[0.08em] text-white">VIEW ITEM</span>
+          <span className="text-[11px] font-medium tracking-[0.08em] text-white">商品を見る</span>
           <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-full border border-white/70 text-white">↗</span>
         </div>
       </div>
@@ -35,7 +35,7 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
           <span className="text-[10px] text-[#7D675D]">税込・送料込み</span>
         </div>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <span className="text-[10px] tracking-[0.08em] text-[#9A6B5B]">TRACER SELECT</span>
+          <span className="text-[11px] tracking-[0.04em] text-[#9A6B5B]">TRACER SELECT</span>
           <span className={lowStock ? "text-[11px] font-medium text-[#A33E50]" : "text-[11px] text-[#7D675D]"}>
             {lowStock ? "残りわずか" : listing.inventory > 0 ? "在庫あり" : "在庫切れ"}
           </span>
