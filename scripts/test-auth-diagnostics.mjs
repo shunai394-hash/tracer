@@ -5,6 +5,7 @@ const base = await readFile(new URL("../app/api/channels/base/diagnostics/route.
 const shopify = await readFile(new URL("../app/api/admin/shopify/auth-check/route.ts", import.meta.url), "utf8");
 const workflow = await readFile(new URL("../.github/workflows/tracer-shopify-auth-check.yml", import.meta.url), "utf8");
 const baseClient = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+const tenCycleWorkflow = await readFile(new URL("../.github/workflows/tracer-reach-500-now.yml", import.meta.url), "utf8");
 
 assert.match(base, /requireAutomationAuth/);
 assert.match(base, /TRACER BASE AUTH PROBE/);
@@ -57,4 +58,11 @@ assert.doesNotMatch(workflow, /baseIdentityRepair[^\n]*(?:baseItemId|listingId)/
 assert.match(workflow, /BASE_APPLY=false[\s\S]*?github\.event_name[^\n]*workflow_dispatch[\s\S]*?apply_exact_base_links/, "BASE identity repair must require an explicit manual opt-in");
 assert.doesNotMatch(workflow, /github\.event_name[^\n]*push[^\n]*BASE_APPLY=true/, "push-triggered audits must never enable BASE writes");
 assert.match(workflow, /Automatic triggers are read-only/, "diagnostic report must state the automatic trigger write policy");
-console.log("Read-only channel auth diagnostics: 33 assertions passed");
+assert.match(tenCycleWorkflow, /run_preflight shopify_auth/, "ten-cycle live publishing must verify Shopify auth before any writes");
+assert.match(tenCycleWorkflow, /run_preflight base_identity/, "ten-cycle live publishing must verify BASE identity before any writes");
+assert.match(tenCycleWorkflow, /visibleItemsWithoutDbMapping/);
+assert.match(tenCycleWorkflow, /visibleItemsWithAmbiguousDbMapping/);
+assert.match(tenCycleWorkflow, /itemIdMissingCount/);
+assert.match(tenCycleWorkflow, /duplicateItemCount/);
+assert.match(tenCycleWorkflow, /Offer freshness is reported separately/, "freshness must be reported separately from identity mapping");
+console.log("Read-only channel auth diagnostics and ten-cycle preflight: 40 assertions passed");
