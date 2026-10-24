@@ -37,21 +37,21 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#FBF6F1] text-[#3B241A]">
-      <section className="relative overflow-hidden">
+      <section aria-labelledby="home-hero-title" className="relative isolate overflow-hidden">
         <picture>
           <source media="(min-width: 768px)" srcSet={STOREFRONT_IMAGES.heroWide} />
-          <img src={STOREFRONT_IMAGES.heroTall} alt="窓辺で小ぶりのバッグを持つ女性" fetchPriority="high" className="h-[78vh] max-h-[760px] min-h-[520px] w-full object-cover object-bottom md:h-[70vh] md:object-center" />
+          <img src={STOREFRONT_IMAGES.heroTall} alt="窓辺で小ぶりのバッグを持つ女性" fetchPriority="high" className="h-[min(78svh,760px)] min-h-[500px] w-full object-cover object-[58%_center] sm:min-h-[560px] md:h-[min(76svh,820px)] md:object-center" />
         </picture>
         <div className="absolute inset-0 bg-gradient-to-b from-[#FBF6F1]/85 via-[#FBF6F1]/30 to-transparent md:bg-gradient-to-r md:from-[#FBF6F1]/90 md:via-[#FBF6F1]/40 md:to-transparent" />
-        <div className="absolute inset-0 mx-auto flex max-w-6xl flex-col justify-start px-6 pt-12 md:justify-center md:pt-0">
-          <p className="text-xs tracking-[0.3em] text-[#9A6B5B]">TRACER SELECT</p>
-          <h1 className="mt-4 font-serif text-[34px] leading-tight sm:text-5xl">毎日を、<br />少しだけ上品に。</h1>
-          <p className="mt-5 max-w-sm text-sm leading-7 text-[#5C4035]">
+        <div className="absolute inset-0 mx-auto flex max-w-6xl flex-col justify-start px-6 pb-10 pt-10 sm:px-8 sm:pt-14 md:justify-center md:pb-0 md:pt-0">
+          <p className="text-[11px] font-medium tracking-[0.32em] text-[#835447] sm:text-xs">TRACER SELECT <span aria-hidden="true" className="ml-2 inline-block h-px w-8 align-middle bg-[#9A6B5B]/70" /></p>
+          <h1 id="home-hero-title" className="mt-4 max-w-[11ch] text-balance font-serif text-[clamp(2.15rem,7.2vw,3.75rem)] leading-[1.22] tracking-[0.015em] sm:mt-5 sm:leading-[1.2]">毎日を、<br />少しだけ上品に。</h1>
+          <p className="mt-4 max-w-sm text-pretty text-[13px] leading-7 text-[#4D352C] sm:mt-5 sm:text-sm">
             バッグ、ヘアアクセサリー、メイク小物。<br />いつもの装いに寄り添うアイテムを集めました。
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035]">すべての商品を見る</Link>
-            <Link href="/shop?cat=bags" className="rounded-full border border-[#3B241A]/30 bg-white/70 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white">バッグを見る</Link>
+          <div className="mt-6 flex w-full max-w-[25rem] flex-col gap-3 sm:mt-8 sm:w-auto sm:flex-row">
+            <Link href="/shop" className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white shadow-[0_8px_24px_rgba(59,36,26,0.12)] transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">すべての商品を見る</Link>
+            <Link href="/shop?cat=bags" className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#3B241A]/35 bg-[#FBF6F1]/85 px-7 py-3 text-sm font-medium backdrop-blur-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
           </div>
         </div>
       </section>
