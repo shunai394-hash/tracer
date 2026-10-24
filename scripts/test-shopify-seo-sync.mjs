@@ -20,9 +20,9 @@ console.log("Shopify SEO write, bounds, and readback guards are present.");
 
 
 
-test("commerce publishing sends bounded SEO title and description to Shopify create and update", () => {
-  assert.match(publish, /const seoTitle =/);
-  assert.match(publish, /const seoDescription = storefrontDescription/);
-  assert.match(publish, /updateWithHandleCollisionRecovery\(\{[^}]*seoTitle, seoDescription/s);
-  assert.match(publish, /createShopifyProduct\(\{[^}]*seoTitle, seoDescription/s);
-});
+assert.match(publish, /const seoTitle =/, "publishing must build a bounded branded SEO title");
+assert.match(publish, /const seoDescription = storefrontDescription/, "SEO description must come from actual product copy");
+assert.match(publish, /updateWithHandleCollisionRecovery\\(\\{[^}]*seoTitle, seoDescription/s, "update path must pass SEO metadata");
+assert.match(publish, /createShopifyProduct\\(\\{[^}]*seoTitle, seoDescription/s, "create path must pass SEO metadata");
+
+console.log("Shopify SEO publish inputs are wired.");
