@@ -1316,3 +1316,12 @@ test("Shopify existing-product handle collisions retry with a stable product-spe
   assert.match(publish, /return await updateShopifyProduct\(\{ \.\.\.input, handle: fallbackHandle \}\)/);
   assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createShopifyProduct\(\{ title, descriptionHtml: storefrontDescription, handle: fallbackHandle/);
 });
+
+test("BASE image format rejection retries with the existing Shopify CDN image only", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /addBaseImageWithFormatFallback/);
+  assert.match(publish, /このファイル形式はご利用できません\|file format/);
+  assert.match(publish, /BaseCompatibleProductImage/);
+  assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
+  assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
+});
