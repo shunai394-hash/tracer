@@ -77,14 +77,14 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           {activeCategory ? <input type="hidden" name="cat" value={activeCategory.slug} /> : null}
           {sort ? <input type="hidden" name="sort" value={sort} /> : null}
           <label htmlFor="shop-search" className="sr-only">商品を検索</label>
-          <input id="shop-search" name="q" defaultValue={q} placeholder="商品名で検索（例：ショルダー、ピンク）" className="min-w-0 flex-1 rounded-full border border-[#EADBD3] bg-white px-5 py-2.5 text-sm outline-none focus:border-[#9A6B5B]" />
-          <button type="submit" className="rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035]">検索</button>
+          <input id="shop-search" name="q" defaultValue={q} placeholder="商品名で検索（例：ショルダー、ピンク）" className="min-w-0 flex-1 rounded-full border border-[#EADBD3] bg-white px-5 py-2.5 text-sm outline-none focus:border-[#9A6B5B] focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" />
+          <button type="submit" className="rounded-full bg-[#3B241A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">検索</button>
         </form>
 
         <nav aria-label="カテゴリ" className="mt-6 flex flex-wrap gap-2">
-          <Link href={href({ cat: "" })} className={chip(!activeCategory)}>すべて <span className="opacity-70">{listings.length}</span></Link>
+          <Link href={href({ cat: "" })} aria-current={!activeCategory ? "page" : undefined} className={chip(!activeCategory)}>すべて <span className="opacity-70">{listings.length}</span></Link>
           {STOREFRONT_CATEGORIES.filter((category) => counts.get(category.slug)).map((category) => (
-            <Link key={category.slug} href={href({ cat: category.slug })} className={chip(activeCategory?.slug === category.slug)}>
+            <Link key={category.slug} href={href({ cat: category.slug })} aria-current={activeCategory?.slug === category.slug ? "page" : undefined} className={chip(activeCategory?.slug === category.slug)}>
               {category.label} <span className="opacity-70">{counts.get(category.slug)}</span>
             </Link>
           ))}
@@ -96,7 +96,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {SORTS.map((option) => (
-              <Link key={option.value} href={href({ sort: option.value })} className={sort === option.value ? "font-semibold underline underline-offset-4" : "text-[#5C4035] hover:underline"}>
+              <Link key={option.value} href={href({ sort: option.value })} aria-current={sort === option.value ? "page" : undefined}\n                className={sort === option.value ? "rounded-sm font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2" : "rounded-sm text-[#5C4035] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"}>
                 {option.label}
               </Link>
             ))}
@@ -122,7 +122,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
 
         {!error && pageCount > 1 ? (
           <nav aria-label="ページ" className="mt-12 flex items-center justify-center gap-4 text-sm">
-            {page > 1 ? <Link href={href({ page: page - 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B]">← 前へ</Link> : null}
+            {page > 1 ? <Link href={href({ page: page - 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">← 前へ</Link> : null}
             <span className="text-[#5C4035]">{page} / {pageCount}ページ</span>
             {page < pageCount ? <Link href={href({ page: page + 1 })} className="rounded-full border border-[#EADBD3] bg-white px-5 py-2 hover:border-[#9A6B5B]">次へ →</Link> : null}
           </nav>
