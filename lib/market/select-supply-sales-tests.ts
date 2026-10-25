@@ -122,7 +122,7 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
   // those bounded scalar-query results after reconstructing their exact identity.
   const heldProductIds = new Set((heldRows ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
 
-  const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now").in("product_id", uniqueProductIds);
+  const { data: intelligenceRows, error: intelligenceError } = await supabase.from("opportunity_intelligence").select("product_id,demand_score,search_fit_score,market_gap_score,competition_score,creative_score,selection_score,overall_confidence,selection_eligible,sellability_state,filter_state,profit_state,recommendation_summary,why_now,market_price,competitor_price_min,competitor_count").in("product_id", uniqueProductIds);
   if (intelligenceError) throw new Error(intelligenceError.message);
   const { data: intelligenceBase, error: intelligenceBaseError } = await supabase.from("product_intelligence").select("product_id,normalized_title,image_url,currency,current_price,metadata").in("product_id", uniqueProductIds);
   if (intelligenceBaseError) throw new Error(intelligenceBaseError.message);
@@ -247,6 +247,13 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
       continue;
     }
     const reasons: string[] = []; const intelligence = intelligenceByProduct.get(productId) ?? { product_id: productId, demand_score: null, search_fit_score: null, market_gap_score: null, competition_score: null, creative_score: null, selection_score: null, overall_confidence: null, selection_eligible: false, sellability_state: null, filter_state: null, profit_state: null, recommendation_summary: null, why_now: null }; const observedBase = baseByProduct.get(productId); const listing = listingByProduct.get(productId) ?? observedListingByProduct.get(productId);
+    // Fail closed: a margin formula alone does not prove a product can sell. Require observed competitor pricing before any supply-first listing is published.
+    const competitorCount = num(intelligence.competitor_count) ?? 0;
+    const competitorMin = num(intelligence.competitor_price_min);
+    if (competitorCount < 1 || competitorMin === null || competitorMin <= 0) {
+      rejected.push({ productId, reasons: ["competitor_price_evidence_missing"], title: typeof listing?.title === "string" ? listing.title : undefined, supplier: typeof listing?.supplier === "string" ? listing.supplier : undefined });
+      continue;
+    }
     // Supplier-native products may not have a product_intelligence row yet.
     // When the exact supplier listing already carries its own title and image,
     // use that evidence as a local catalog fallback instead of rejecting it
