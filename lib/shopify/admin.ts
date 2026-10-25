@@ -500,14 +500,14 @@ export async function updateShopifyProduct(input: { productId: string; title: st
     let imageFailed = false;
     for (let attempt = 0; attempt < 7; attempt += 1) {
       const mediaReadback = await shopifyGraphQL<{
-        product: { media: { nodes: Array<{ mediaContentType: string; status?: string; image?: { url: string } | null }> } } | null;
+        product: { media: { nodes: Array<{ id?: string; mediaContentType: string; status?: string; alt?: string | null; image?: { url: string } | null }> } } | null;
       }>(
         `query VerifyUpdatedProductImage($id: ID!) {
           product(id: $id) {
             media(first: 10) {
               nodes {
                 mediaContentType
-                ... on MediaImage { status image { url } }
+                ... on MediaImage { id status alt image { url } }
               }
             }
           }
@@ -517,7 +517,29 @@ export async function updateShopifyProduct(input: { productId: string; title: st
       const images = (mediaReadback.product?.media.nodes ?? []).filter((media) => media.mediaContentType === "IMAGE");
       imageFailed = images.some((media) => media.status === "FAILED");
       imageReady = images.some((media) => media.status === "READY" && Boolean(media.image?.url));
-      if (imageReady || imageFailed) break;
+      if (imageReady || imageFailed) {
+        if (imageFailed) {
+          // Keep diagnostics actionable without logging source URLs, which may contain signed query parameters.
+          const imageDiagnostics = images.map((media) => ({
+            id: media.id ?? null,
+            status: media.status ?? "UNKNOWN",
+            hasImageUrl: Boolean(media.image?.url),
+            alt: (media.alt ?? "").slice(0, 120),
+          }));
+          console.error("Shopify product image processing failed", {
+            phase: "product_update_image_readback",
+            productId: input.productId,
+            imageSourceHost: (() => {
+              try { return input.imageUrl ? new URL(input.imageUrl).hostname : null; } catch { return null; }
+            })(),
+            imageCount: images.length,
+            images: imageDiagnostics,
+            deployment: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+            commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+          });
+        }
+        break;
+      }
       if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 1_500));
     }
     if (imageFailed) throw new Error("shopify_image_processing_failed");
