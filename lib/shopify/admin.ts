@@ -491,6 +491,39 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
+
+  // Shopify processes externally hosted images asynchronously. A successful
+  // productUpdate response can still have a null preview while media is
+  // PROCESSING, so verify a fresh read before reporting the sync as successful.
+  if (mediaToAdd.length > 0) {
+    let imageReady = false;
+    let imageFailed = false;
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      const mediaReadback = await shopifyGraphQL<{
+        product: { media: { nodes: Array<{ mediaContentType: string; status?: string; image?: { url: string } | null }> } } | null;
+      }>(
+        `query VerifyUpdatedProductImage($id: ID!) {
+          product(id: $id) {
+            media(first: 10) {
+              nodes {
+                mediaContentType
+                ... on MediaImage { status image { url } }
+              }
+            }
+          }
+        }`,
+        { id: input.productId },
+      );
+      const images = (mediaReadback.product?.media.nodes ?? []).filter((media) => media.mediaContentType === "IMAGE");
+      imageFailed = images.some((media) => media.status === "FAILED");
+      imageReady = images.some((media) => media.status === "READY" && Boolean(media.image?.url));
+      if (imageReady || imageFailed) break;
+      if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+    if (imageFailed) throw new Error("shopify_image_processing_failed");
+    if (!imageReady) throw new Error("shopify_image_processing_not_ready_after_readback");
+  }
+
   const expectedSeo = shopifySeoInput(input);
   await verifyPersistedShopifySeo(product.id, input.title, expectedSeo, "update");
   const variantResolution = resolveShopifyVariantIdentity(
