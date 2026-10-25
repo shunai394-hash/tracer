@@ -52,7 +52,7 @@ export function BaseOperationsPanel({ configured, listings, loadError }: Props) 
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400/80">BASE Operations</p>
           <h2 className="mt-2 text-lg text-zinc-100">販売チャネル状態</h2>
-          <p className="mt-2 text-sm leading-6 text-zinc-400">
+          <p className="mt-2 text-sm leading-6 text-zinc-300">
             TRACERを商品マスターとして、BASE公開条件と実行結果を確認します。認証情報は表示しません。
           </p>
         </div>
@@ -75,7 +75,7 @@ export function BaseOperationsPanel({ configured, listings, loadError }: Props) 
               ["失敗", failed.length],
             ].map(([label, value]) => (
               <div key={String(label)} className="border border-white/5 p-4">
-                <p className="text-xs text-zinc-500">{label}</p>
+                <p className="text-xs text-zinc-300">{label}</p>
                 <p className="mt-2 text-2xl text-zinc-100">{value}</p>
               </div>
             ))}
@@ -97,12 +97,12 @@ export function BaseOperationsPanel({ configured, listings, loadError }: Props) 
 
           {blocked.length > 0 ? (
             <div className="mt-6">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500">Blocked</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-300">Blocked</p>
               <div className="mt-3 space-y-2">
                 {blocked.slice(0, 10).map((item) => (
                   <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border border-white/5 p-3">
                     <p className="text-sm text-zinc-200">{item.title ?? item.id}</p>
-                    <p className="text-xs text-zinc-500">{reason(item)}</p>
+                    <p className="text-xs text-zinc-300">{reason(item)}</p>
                   </div>
                 ))}
               </div>
