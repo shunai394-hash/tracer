@@ -11,9 +11,21 @@ test("saved variant ID and SKU corroborate the same color variant", () => {
   });
 });
 
-test("refuses to update a saved variant whose SKU identifies another color", () => {
+test("recovers to the unique exact-SKU variant when a saved ID points to another color", () => {
   assert.deepEqual(resolveShopifyVariantIdentity([red, blue], "TRC-blue", red.id), {
+    ok: true, variant: blue, matchedBy: "exact_sku",
+  });
+});
+
+test("fails closed when a saved variant SKU differs and no exact SKU match exists", () => {
+  assert.deepEqual(resolveShopifyVariantIdentity([red, { ...blue, sku: "TRC-other" }], "TRC-blue", red.id), {
     ok: false, reason: "saved_variant_sku_mismatch",
+  });
+});
+
+test("uses a unique exact SKU if the saved variant ID is stale", () => {
+  assert.deepEqual(resolveShopifyVariantIdentity([red, blue], "TRC-blue", "gid://shopify/ProductVariant/999"), {
+    ok: true, variant: blue, matchedBy: "exact_sku",
   });
 });
 
@@ -23,6 +35,13 @@ test("uses the saved variant ID to safely repair a missing SKU on that exact var
   });
   assert.deepEqual(resolveShopifyVariantIdentity([{ id: red.id, sku: "  " }], "TRC-red", red.id), {
     ok: true, variant: { id: red.id, sku: "  " }, matchedBy: "saved_id",
+  });
+});
+
+test("prefers a unique exact SKU over a different saved variant with a blank SKU", () => {
+  const blankRed = { id: red.id, sku: null };
+  assert.deepEqual(resolveShopifyVariantIdentity([blankRed, blue], "TRC-blue", red.id), {
+    ok: true, variant: blue, matchedBy: "exact_sku",
   });
 });
 
@@ -39,7 +58,10 @@ test("uses only a unique exact SKU when the saved variant ID is absent", () => {
 });
 
 test("fails closed for duplicate SKU and ambiguous multi-variant products", () => {
-  assert.equal(resolveShopifyVariantIdentity([red, { ...blue, id: "gid://shopify/ProductVariant/103", sku: "TRC-red" }], "TRC-red").ok, false);
+  assert.deepEqual(
+    resolveShopifyVariantIdentity([red, { ...blue, id: "gid://shopify/ProductVariant/103", sku: "TRC-red" }], "TRC-red"),
+    { ok: false, reason: "variant_sku_ambiguous" },
+  );
   assert.deepEqual(resolveShopifyVariantIdentity([red, blue], "TRC-missing"), {
     ok: false, reason: "variant_identity_ambiguous",
   });
