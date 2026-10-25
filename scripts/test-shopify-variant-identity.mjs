@@ -17,9 +17,16 @@ test("recovers to the unique exact-SKU variant when a saved ID points to another
   });
 });
 
-test("fails closed when a saved variant SKU differs and no exact SKU match exists", () => {
+test("fails closed when a saved variant SKU differs in a multi-variant product and no exact SKU match exists", () => {
   assert.deepEqual(resolveShopifyVariantIdentity([red, { ...blue, sku: "TRC-other" }], "TRC-blue", red.id), {
     ok: false, reason: "saved_variant_sku_mismatch",
+  });
+});
+
+test("allows SKU repair when the saved ID is the only variant in the exact Shopify product", () => {
+  const legacy = { id: "gid://shopify/ProductVariant/105", sku: "TRC-bae83f35-78d0-4a7e-a556-03127bdaf9db" };
+  assert.deepEqual(resolveShopifyVariantIdentity([legacy], "TRC-AF3718DF72B54BACA639024C", legacy.id), {
+    ok: true, variant: legacy, matchedBy: "saved_id",
   });
 });
 

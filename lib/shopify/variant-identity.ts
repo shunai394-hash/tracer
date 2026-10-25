@@ -30,14 +30,21 @@ export function resolveShopifyVariantIdentity(
       }
 
       // A unique exact SKU match is stronger evidence than a stale ID or a
-      // blank SKU on a different saved variant. This avoids changing another
-      // color/size while still recovering stale mappings safely.
+      // blank/mismatched saved SKU. Never switch variants on SKU evidence alone
+      // when that SKU is duplicated within this product.
       if (skuMatches.length === 1) {
         return { ok: true, variant: skuMatches[0], matchedBy: "exact_sku" };
       }
 
-      // A direct saved ID with a blank SKU can be repaired only when no other
-      // variant already claims the expected SKU.
+      // A saved ID is a direct identity. If the live product has exactly one
+      // variant, there is no sibling color/size to accidentally overwrite;
+      // allow the caller to repair a stale/legacy SKU on that exact variant.
+      if (variants.length === 1) {
+        return { ok: true, variant: saved, matchedBy: "saved_id" };
+      }
+
+      // A blank SKU can be repaired by ID only when the product has multiple
+      // variants but no other variant claims the expected SKU.
       if (!saved.sku?.trim()) {
         return { ok: true, variant: saved, matchedBy: "saved_id" };
       }
