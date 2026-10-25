@@ -28,18 +28,18 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
         </div>
       </div>
       <div className="px-1.5 pb-2 pt-3.5">
-        <h3 className="line-clamp-2 min-h-10 text-[13px] leading-5 text-[#3B241A] transition-colors group-hover:text-[#8A5948] group-focus-visible:text-[#8A5948] sm:text-sm">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-[#2D1B14] transition-colors group-hover:text-[#8A5948] group-focus-visible:text-[#8A5948] sm:text-sm">
           {listing.title}
         </h3>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <p className="text-base font-semibold tracking-tight text-[#3B241A] sm:text-lg">
             {formatMoney(listing.sellingPrice, listing.currency)}
           </p>
-          <span className="text-[10px] text-[#7D675D]">表示価格</span>
+          <span className="text-[11px] font-medium text-[#594238]">表示価格</span>
         </div>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <span className="text-[11px] tracking-[0.04em] text-[#9A6B5B]">TRACER SELECT</span>
-          <span className={lowStock ? "text-[11px] font-medium text-[#A33E50]" : "text-[11px] text-[#7D675D]"}>
+          <span className="text-[11px] font-semibold tracking-[0.04em] text-[#75402F]">TRACER SELECT</span>
+          <span className={lowStock ? "text-[11px] font-medium text-[#A33E50]" : "text-[11px] font-medium text-[#594238]"}>
             {lowStock ? "残りわずか" : listing.inventory > 0 ? "在庫あり" : "在庫切れ"}
           </span>
         </div>
