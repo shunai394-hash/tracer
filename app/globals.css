@@ -3,7 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --selection: #e5e5e5;
+  --selection: #d6b7a8;
   --focus-ring: #3b241a;
 }
 
@@ -28,7 +28,7 @@ body {
   color: #171717;
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 
 ::selection {
