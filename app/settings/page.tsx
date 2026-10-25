@@ -32,11 +32,11 @@ export default async function SettingsPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
-      <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">
+      <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-300">
         Settings
       </p>
       <h1 className="mt-3 text-3xl text-zinc-50">規則・注文・接続設定</h1>
-      <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
+      <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-300">
         商品選定フィルターと注文モードをここで設定します。APIキーなどの接続秘密情報そのものは、この画面では編集しません。
       </p>
       <div className="mt-5 flex flex-wrap gap-3">
@@ -46,7 +46,7 @@ export default async function SettingsPage() {
       <div className="mt-10 max-w-xl">
         <ConnectionPanel status={status} />
       </div>
-      <section className="mt-8 max-w-xl text-sm leading-7 text-zinc-500">
+      <section className="mt-8 max-w-xl text-sm leading-7 text-zinc-300">
         <p>必要な変数:</p>
         <p>NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY</p>
         <p>GEMINI_API_KEY / GEMINI_MODEL</p>
@@ -55,10 +55,10 @@ export default async function SettingsPage() {
 
       <section className="mt-12 grid gap-8 lg:grid-cols-2">
         <article className="border border-cyan-500/15 p-5">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400">
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-300">
             Default filters
           </h2>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-zinc-300">
             空欄は判定に使いません。初期値を固定ハードコードしません。
           </p>
           {settingsError ? (
@@ -70,10 +70,10 @@ export default async function SettingsPage() {
           )}
         </article>
         <article className="border border-cyan-500/15 p-5">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400">
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-300">
             Ordering
           </h2>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-zinc-300">
             初期モードは APPROVAL です。AUTO は全 Gate 通過時のみ。
           </p>
           {settingsError ? (
