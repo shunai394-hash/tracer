@@ -515,8 +515,12 @@ export async function updateShopifyProduct(input: { productId: string; title: st
         { id: input.productId },
       );
       const images = (mediaReadback.product?.media.nodes ?? []).filter((media) => media.mediaContentType === "IMAGE");
-      imageFailed = images.some((media) => media.status === "FAILED");
       imageReady = images.some((media) => media.status === "READY" && Boolean(media.image?.url));
+      // A product may retain an older failed media item while a valid image is
+      // already READY. Treat the product image as failed only when no usable
+      // READY image exists; otherwise a stale failed media item can repeatedly
+      // flip a correctly published listing back to error.
+      imageFailed = !imageReady && images.some((media) => media.status === "FAILED");
       if (imageReady || imageFailed) break;
       if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 1_500));
     }
