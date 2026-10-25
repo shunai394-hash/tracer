@@ -278,6 +278,14 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
 
   if (error) throw new Error(error.message);
   if (!data) {
+    // The sitemap and storefront grid use the merged public catalog (legacy +
+    // canonical commerce listings). Resolve misses through that same source of
+    // truth so every published sitemap slug can also be opened as a detail page.
+    // This fallback is only used when the direct indexed lookup misses.
+    const published = await listPublishedShopListings();
+    const matched = published.find((listing) => listing.slug === slug);
+    if (matched) return matched;
+
     if (!isListingId) return null;
     const canonical = await loadCanonicalCommerceListings({ variantIds: [slug] });
     return canonical.find((listing) => listing.id === slug) ?? null;
