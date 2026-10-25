@@ -84,7 +84,7 @@ export default async function ProductPerformancePage() {
     current.revenue += Number(line.quantity ?? 0) * Number(line.unit_price ?? 0);
     const order = commerceOrders.find((o) => o.id === line.order_id);
     if (order?.channel) current.channels.add(order.channel);
-    if (order?.received_at && (!current.lastSold || order.created_at > current.lastSold)) current.lastSold = order.created_at;
+    if (order?.received_at && (!current.lastSold || order.received_at > current.lastSold)) current.lastSold = order.received_at;
     soldProducts.set(key, current);
   }
   const canonicalRevenue = paidCanonical.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
