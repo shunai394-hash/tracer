@@ -176,7 +176,7 @@ export async function GET(request: Request) {
       // A quota failure must not starve listings that can be safely localized offline.
       const priority = (item: (typeof snapshot.items)[number]) => {
         const itemId = text(item.item_id);
-        if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(itemId)) return 0;
+        if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198", "160573729", "160573827"].includes(itemId)) return 0;
         const title = localizeProductTitle(text(item.title));
         const detail = localizeProductDescription(text(item.title));
         if (
@@ -267,7 +267,7 @@ export async function GET(request: Request) {
   // offline-safe repairs and immediately hit Gemini's exhausted quota again.
   const offlineCandidates = requestedItemId ? [] : candidatePool.filter((item) => {
     const itemId = text(item.item_id);
-    if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(itemId)) return true;
+    if (["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198", "160573729", "160573827"].includes(itemId)) return true;
     const localizedTitle = localizeProductTitle(text(item.title));
     const localizedDetail = localizeProductDescription(text(item.title));
     return isSpecificJapaneseProductTitle(localizedTitle) &&
@@ -330,7 +330,7 @@ export async function GET(request: Request) {
           typeof candidateDetail === "string" &&
           isJapaneseProductDescription(candidateDetail) &&
           hasUsableJapaneseCopy(candidateDetail, "detail");
-        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(candidateId)) {
+        if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198", "160573729", "160573827"].includes(candidateId)) {
           results.push({ itemId, sourceTitlePreview: text(candidate.title).slice(0, 120), sourceDetailPreview: text(candidate.detail).slice(0, 240), outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
           continue;
         }
@@ -392,6 +392,14 @@ export async function GET(request: Request) {
           "160454198": {
             title: "紫砂風の長方形植木鉢（紫泥色・35×22.8×8.5cm）",
             detail: "紫泥色の長方形タイプの植木鉢です。商品名には「Purple Clay」と35×22.8×8.5cmのサイズ表記があります。素材の正確な組成、排水穴の有無、屋内外での使用可否は商品名だけでは確認できないため、購入前に商品画像と仕入先の仕様をご確認ください。",
+          },
+          "160573729": {
+            title: "USB Type-C対応 ポータブルストレージ（ブラック・8TB表記）",
+            detail: "Type-C接続に対応すると表記された、ブラックのポータブルストレージです。容量は仕入先の商品名に8TBと記載されています。実際の容量・転送速度・対応機器は未検証のため、ご購入前に販売元の仕様と接続互換性をご確認ください。",
+          },
+          "160573827": {
+            title: "ショルダーストラップ付き iPhoneケース＆ウォレット（ピンク・XS／XS Max表記）",
+            detail: "ピンクのショルダーストラップ付きスマートフォンケース兼ウォレットです。仕入先の商品名ではiPhone XS／XS Max対応と表記されています。対応機種・素材・収納寸法・ストラップの仕様は、ご購入前に販売元の情報をご確認ください。",
           },
         };
         const copy: JapaneseCopy = fixedCopyByItemId[itemId] ??
