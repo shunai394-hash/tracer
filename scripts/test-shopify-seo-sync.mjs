@@ -30,4 +30,9 @@ assert.match(admin, /shopify_image_processing_failed/, "failed Shopify image pro
 assert.match(admin, /shopify_image_processing_not_ready_after_readback/, "pending Shopify image processing must not be reported as successful");
 assert.ok(publish.includes("createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription })"), "create path must pass SEO metadata");
 
+const shopifySync = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
+assert.match(shopifySync, /hasImageMedia: \(node\.product\?\.media\.nodes \?\? \[\]\)\.some\(\(media\) => media\.mediaContentType === "IMAGE"\)/, "live Shopify product media must be checked during reconciliation");
+assert.match(shopifySync, /!liveState\.hasImageMedia/, "already-synced products without image media must be selected for repair");
+assert.match(shopifySync, /imageUrl: existing\.media\?\.nodes\?\.some\(\(media\) => media\.mediaContentType === "IMAGE"\) \? null : row\.image_url/, "existing Shopify products without image media must receive the canonical image URL");
+assert.match(shopifySync, /imageUrl: exactFallback\.media\?\.nodes\?\.some\(\(media\) => media\.mediaContentType === "IMAGE"\) \? null : row\.image_url/, "recovered Shopify products without image media must receive the canonical image URL");
 console.log("Shopify SEO publish inputs are wired.");
