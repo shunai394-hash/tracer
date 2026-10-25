@@ -1,5 +1,5 @@
 name: TRACER backfill Shopify SEO metadata from canonical listings
-# Verified SEO-only sweep: preserve product title, description, price, inventory, status and publication; require fresh Shopify readback.
+# Verified SEO-only sweep: improve search-result product metadata from canonical Japanese copy; preserve product title, description, price, inventory, status and publication; require fresh Shopify readback.
 
 on:
   workflow_dispatch:
