@@ -17,22 +17,43 @@ export function resolveShopifyVariantIdentity(
 
   if (!targetSku) return { ok: false, reason: "expected_sku_missing" };
 
+  // SKU is a recovery path only when it identifies exactly one variant in the
+  // same Shopify product. Duplicate SKUs are never safe to update automatically.
+  const skuMatches = variants.filter((variant) => String(variant.sku ?? "").trim() === targetSku);
+  if (skuMatches.length > 1) return { ok: false, reason: "variant_sku_ambiguous" };
+
   if (preferredId) {
     const saved = variants.find((variant) => variant.id === preferredId);
-    if (!saved) return { ok: false, reason: "saved_variant_id_not_found" };
-    // The saved Shopify variant ID is already an exact identity within the fetched
-    // product. If its SKU is blank, the caller can safely repair that SKU on this
-    // same variant; do not block recovery merely because the repair target is blank.
-    if (!saved.sku?.trim()) return { ok: true, variant: saved, matchedBy: "saved_id" };
-    if (saved.sku.trim() !== targetSku) {
+    if (saved) {
+      if (saved.sku?.trim() === targetSku) {
+        return { ok: true, variant: saved, matchedBy: "saved_id" };
+      }
+
+      // A unique exact SKU match is stronger evidence than a stale ID or a
+      // blank SKU on a different saved variant. This avoids changing another
+      // color/size while still recovering stale mappings safely.
+      if (skuMatches.length === 1) {
+        return { ok: true, variant: skuMatches[0], matchedBy: "exact_sku" };
+      }
+
+      // A direct saved ID with a blank SKU can be repaired only when no other
+      // variant already claims the expected SKU.
+      if (!saved.sku?.trim()) {
+        return { ok: true, variant: saved, matchedBy: "saved_id" };
+      }
+
       return { ok: false, reason: "saved_variant_sku_mismatch" };
     }
-    return { ok: true, variant: saved, matchedBy: "saved_id" };
+
+    // The saved ID may be stale, but a unique exact SKU within this same
+    // product still provides a deterministic recovery path.
+    if (skuMatches.length === 1) {
+      return { ok: true, variant: skuMatches[0], matchedBy: "exact_sku" };
+    }
+    return { ok: false, reason: "saved_variant_id_not_found" };
   }
 
-  const skuMatches = variants.filter((variant) => String(variant.sku ?? "").trim() === targetSku);
   if (skuMatches.length === 1) return { ok: true, variant: skuMatches[0], matchedBy: "exact_sku" };
-  if (skuMatches.length > 1) return { ok: false, reason: "variant_sku_ambiguous" };
 
   if (variants.length === 1 && variants[0]?.id) {
     return { ok: true, variant: variants[0], matchedBy: "single_variant" };
