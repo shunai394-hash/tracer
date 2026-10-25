@@ -41,7 +41,7 @@ export default function AdminOperationsPage() {
     <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-16">
       <p className="font-mono text-xs uppercase tracking-[0.35em] text-cyan-400">TRACER Control Center</p>
       <h1 className="mt-3 text-3xl text-zinc-50">管理センター</h1>
-      <p className="mt-4 max-w-3xl text-sm leading-6 text-zinc-400">
+      <p className="mt-4 max-w-3xl text-sm leading-6 text-zinc-300">
         商品、運用規則、自動処理への入口をまとめています。ここに表示するスケジュールは vercel.json の設定値であり、BOTの直近実行成功を意味しません。
       </p>
 
@@ -49,7 +49,7 @@ export default function AdminOperationsPage() {
         {cards.map((card) => (
           <article key={card.title} className="flex flex-col border border-cyan-300/20 bg-[#0a0d10] p-5">
             <h2 className="text-lg text-zinc-100">{card.title}</h2>
-            <p className="mt-3 flex-1 text-sm leading-6 text-zinc-400">{card.description}</p>
+            <p className="mt-3 flex-1 text-sm leading-6 text-zinc-300">{card.description}</p>
             <a href={card.href} className="mt-5 inline-flex w-fit border border-cyan-300/30 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-300/10">
               {card.action} →
             </a>
@@ -62,9 +62,9 @@ export default function AdminOperationsPage() {
       <section className="mt-10 border border-white/10 bg-[#0a0d10] p-5 sm:p-7" aria-labelledby="bots-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-300/70">Scheduled automation</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-200">Scheduled automation</p>
             <h2 id="bots-heading" className="mt-2 text-xl text-zinc-100">BOT・自動処理一覧</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
               スケジュールが登録されている処理です。実行結果・失敗理由はVercelのLogs / Functionsで確認してください。ここからの停止操作はまだ提供していません。
             </p>
           </div>
@@ -75,7 +75,7 @@ export default function AdminOperationsPage() {
         <div className="mt-6 overflow-x-auto">
           <table className="w-full min-w-[680px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs text-zinc-500">
+              <tr className="border-b border-white/10 text-xs text-zinc-300">
                 <th className="px-3 py-3 font-normal">処理</th>
                 <th className="px-3 py-3 font-normal">設定スケジュール</th>
                 <th className="px-3 py-3 font-normal">役割</th>
@@ -86,20 +86,20 @@ export default function AdminOperationsPage() {
                 <tr key={path} className="border-b border-white/5 align-top">
                   <td className="px-3 py-3 font-mono text-xs text-cyan-200">{path}</td>
                   <td className="px-3 py-3 whitespace-nowrap text-zinc-300">{schedule}</td>
-                  <td className="px-3 py-3 text-zinc-400">{role}</td>
+                  <td className="px-3 py-3 text-zinc-300">{role}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-4 text-xs leading-5 text-zinc-500">
+        <p className="mt-4 text-xs leading-5 text-zinc-300">
           注意：スケジュール登録と正常稼働は別です。外部サービスの認証エラー、在庫・仕入先条件、公開条件によって処理が失敗または保留になることがあります。
         </p>
       </section>
 
       <section className="mt-8 border border-amber-300/20 p-5" aria-labelledby="missing-controls-heading">
         <h2 id="missing-controls-heading" className="text-base text-amber-200">まだ追加が必要な管理機能</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-zinc-400">
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-zinc-300">
           <li>安全確認付きのBOT停止・再開操作と、変更履歴</li>
           <li>公開・仕入れ・利益率ルールを一元管理し、どの処理がそのルールを使うかを表示する画面</li>
         </ul>
