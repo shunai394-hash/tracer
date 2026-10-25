@@ -13,7 +13,7 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/^olive dripping blood lotus wood carving core bodhi polishing head.*$/i, "木彫り・研磨用ロータリービット"],
   [/^s925 sterling silver handmade diy bracelet accessories.*$/i, "S925表記 ハンドメイドブレスレット用パーツ"],
   [/private soap bath essential oil handmade cold process soap.*/i, "ハンドメイド製法と表記された石けん"],
-  [/micron soft toothbrush.*/i, "ソフトタイプ 歯ブラシ"],
+  [/micron soft toothbrush.*/i, "Micron ソフト歯ブラシ"],
   [/simple household disposable toilet brush sponge head.*/i, "交換用スポンジヘッド トイレブラシ"],
   [/microfiber printed bath towel bath towel blanket.*/i, "マイクロファイバー バスタオル"],
   [/sea cute peach salt fizzer children's essential oil bubble bath salt.*/i, "ピーチ風 バスソルト・発泡入浴料"],
