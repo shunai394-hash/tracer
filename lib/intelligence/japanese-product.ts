@@ -336,16 +336,16 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズ付き ウィンドチャイム"],
   [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式 ワイヤレス充電器"],
 
-  [/^women's colorful mascara waterproof super long(?:\\s*\\(.*\\))?$/i, "ウォータープルーフ ロングマスカラ（ブラック）"],
+  [/^women's colorful mascara waterproof super long(?:\s*\(.*\))?$/i, "ウォータープルーフ ロングマスカラ（ブラック）"],
   [/^crafts gardening creative ceramic ornaments purple sand small flower pot$/i, "紫砂風 セラミック製ミニ植木鉢"],
   [/^fashion personality hand-painted landscape tea basin$/i, "手描き風 山水画デザインの茶盤"],
-  [/^creative fashion white pattern light plate(?:\\s*\\(.*\\))?$/i, "白地模様の装飾プレート（ゴールド梅柄）"],
-  [/^fashion personality french white ceramic plate(?:\\s*\\(.*\\))?$/i, "フレンチスタイル 白いセラミックプレート"],
+  [/^creative fashion white pattern light plate(?:\s*\(.*\))?$/i, "白地模様の装飾プレート（ゴールド梅柄）"],
+  [/^fashion personality french white ceramic plate(?:\s*\(.*\))?$/i, "フレンチスタイル 白いセラミックプレート"],
   [/^fashion personality new 304 stainless teapot$/i, "304ステンレス製 ティーポット（ブラック）"],
   [/^acacia mangium semi-automatic coffee grounds container storage device$/i, "アカシア材風 コーヒー粉収納容器"],
-  [/^creative strange shape western ceramic meal plate(?:\\s*\\(.*\\))?$/i, "変形デザイン セラミックディナープレート（ホワイト）"],
-  [/^irregular with personality ceramic bowl dish plate retro tableware(?:\\s*\\(.*\\))?$/i, "レトロデザイン 不規則形セラミックプレート"],
-  [/^batana oil conditioner moisturizing repair(?:\\s*\\(.*\\))?$/i, "バタナオイル配合 コンディショナー（30ml）"],
+  [/^creative strange shape western ceramic meal plate(?:\s*\(.*\))?$/i, "変形デザイン セラミックディナープレート（ホワイト）"],
+  [/^irregular with personality ceramic bowl dish plate retro tableware(?:\s*\(.*\))?$/i, "レトロデザイン 不規則形セラミックプレート"],
+  [/^batana oil conditioner moisturizing repair(?:\s*\(.*\))?$/i, "バタナオイル配合 コンディショナー（30ml）"],
 ];
 
 const CATEGORY_ONLY_TITLES = new Set([
