@@ -8,7 +8,7 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
 
   return (
     <Link
-      href={`/shop/${listing.id}`}
+      href={`/shop/${encodeURIComponent(listing.slug)}`}
       aria-label={`${listing.title}、${formatMoney(listing.sellingPrice, listing.currency)}、${listing.inventory > 0 ? (listing.inventory <= 5 ? "残りわずか" : "在庫あり") : "在庫切れ"}、商品詳細を見る`}
       className="group block rounded-2xl outline-none transition-transform duration-300 focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 focus-visible:ring-offset-[#FBF6F1] motion-reduce:transition-none"
     >
