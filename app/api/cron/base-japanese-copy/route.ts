@@ -335,10 +335,12 @@ export async function GET(request: Request) {
           continue;
         }
       }
+      let originalTitle = "";
+      let originalDetail = "";
       try {
         const before = await getBaseItemDetail(itemId);
-        const originalTitle = text(before.title);
-        const originalDetail = text(before.detail);
+        originalTitle = text(before.title);
+        originalDetail = text(before.detail);
         const price = numberValue(before.price);
         const stock = numberValue(before.stock);
         const visible = visibleOf(before.visible);
