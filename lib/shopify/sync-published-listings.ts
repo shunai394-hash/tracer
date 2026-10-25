@@ -56,7 +56,7 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-type LiveShopifyVariantState = { quantity: number; price: number; sku: string | null };
+type LiveShopifyVariantState = { quantity: number; price: number; sku: string | null; hasImageMedia: boolean };
 
 async function getLiveShopifyVariantState(variantIds: string[]): Promise<Map<string, LiveShopifyVariantState>> {
   const requestedIds = [...new Set(variantIds)];
@@ -68,7 +68,7 @@ async function getLiveShopifyVariantState(variantIds: string[]): Promise<Map<str
   const batchSize = 100;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
-    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null; price: string | null; sku: string | null } | null> }>(
+    const data = await shopifyGraphQL<{ nodes: Array<{ id: string; inventoryQuantity: number | null; price: string | null; sku: string | null; product?: { media: { nodes: Array<{ mediaContentType: string }> } } | null } | null> }>(
       `query LiveVariantState($ids: [ID!]!) {
         nodes(ids: $ids) {
           ... on ProductVariant {
@@ -76,6 +76,9 @@ async function getLiveShopifyVariantState(variantIds: string[]): Promise<Map<str
             inventoryQuantity
             price
             sku
+            product {
+              media(first: 10) { nodes { mediaContentType } }
+            }
           }
         }
       }`,
@@ -87,7 +90,7 @@ async function getLiveShopifyVariantState(variantIds: string[]): Promise<Map<str
       const price = asNumber(node.price);
       if (quantity === null) throw new Error("shopify_live_stock_quantity_unknown");
       if (price === null || price <= 0) throw new Error("shopify_live_variant_price_unknown");
-      liveState.set(node.id, { quantity: Math.max(0, Math.floor(quantity)), price, sku: node.sku ?? null });
+      liveState.set(node.id, { quantity: Math.max(0, Math.floor(quantity)), price, sku: node.sku ?? null, hasImageMedia: (node.product?.media.nodes ?? []).some((media) => media.mediaContentType === "IMAGE") });
     }
     if (batch.some((id) => !liveState.has(id))) {
       throw new Error("shopify_live_variant_response_incomplete");
@@ -313,6 +316,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           const expectedPrice = asNumber(row.selling_price);
           const staleWorkflowCopy = /商品アイデンティティが未確定|選定対象外|観測された需要と供給データに基づいて販売テスト候補になる|sales_test_gate_not_passed|identity_pending/i.test(String(row.description ?? ""));
           return staleWorkflowCopy
+            || !liveState.hasImageMedia
             || liveState.quantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap())
             || expectedPrice === null
             || liveState.price !== expectedPrice
@@ -599,7 +603,7 @@ async function syncListingRows(
           // Otherwise use an exact SKU recovery match, which admin.ts verifies against the SKU.
           variantId: existingById?.id === existing.id ? (row.shopify_variant_id || null) : recoveredVariantId,
           sku: productInput.sku,
-          imageUrl: existing.media?.nodes?.length ? null : row.image_url,
+          imageUrl: existing.media?.nodes?.some((media) => media.mediaContentType === "IMAGE") ? null : row.image_url,
         });
       } else {
         try {
@@ -630,7 +634,7 @@ async function syncListingRows(
                 price: productInput.price,
                 variantId: null,
                 sku: productInput.sku,
-                imageUrl: exactFallback.media?.nodes?.length ? null : row.image_url,
+                imageUrl: exactFallback.media?.nodes?.some((media) => media.mediaContentType === "IMAGE") ? null : row.image_url,
               })
             : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
         }
