@@ -785,7 +785,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           }
         };
         const productResult = productId && variantId
-          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null, seoTitle, seoDescription })
+          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl, seoTitle, seoDescription })
           : recoveredProduct && recoveredVariantId
             ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null, seoTitle, seoDescription })
             : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription });
