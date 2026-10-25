@@ -333,6 +333,17 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別 スマートフォンケース"],
   [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズ付き ウィンドチャイム"],
   [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式 ワイヤレス充電器"],
+
+  [/^women's colorful mascara waterproof super long(?:\\s*\\(.*\\))?$/i, "ウォータープルーフ ロングマスカラ（ブラック）"],
+  [/^crafts gardening creative ceramic ornaments purple sand small flower pot$/i, "紫砂風 セラミック製ミニ植木鉢"],
+  [/^fashion personality hand-painted landscape tea basin$/i, "手描き風 山水画デザインの茶盤"],
+  [/^creative fashion white pattern light plate(?:\\s*\\(.*\\))?$/i, "白地模様の装飾プレート（ゴールド梅柄）"],
+  [/^fashion personality french white ceramic plate(?:\\s*\\(.*\\))?$/i, "フレンチスタイル 白いセラミックプレート"],
+  [/^fashion personality new 304 stainless teapot$/i, "304ステンレス製 ティーポット（ブラック）"],
+  [/^acacia mangium semi-automatic coffee grounds container storage device$/i, "アカシア材風 コーヒー粉収納容器"],
+  [/^creative strange shape western ceramic meal plate(?:\\s*\\(.*\\))?$/i, "変形デザイン セラミックディナープレート（ホワイト）"],
+  [/^irregular with personality ceramic bowl dish plate retro tableware(?:\\s*\\(.*\\))?$/i, "レトロデザイン 不規則形セラミックプレート"],
+  [/^batana oil conditioner moisturizing repair(?:\\s*\\(.*\\))?$/i, "バタナオイル配合 コンディショナー（30ml）"],
 ];
 
 const CATEGORY_ONLY_TITLES = new Set([
@@ -573,6 +584,17 @@ export function localizeProductDescription(value: unknown): string | null {
     [/compatible with apple.*mobile phone case|mobile phone case.*compatible with apple|mobile phone case.*iphone|iphone.*mobile phone case/i, "対応機種別のスマートフォンケースです。対応モデル・素材・付属品は商品バリエーションと販売元の仕様をご確認ください。"],
     [/wind chimes.*wall pendant|wall pendant.*dream catcher/i, "装飾ビーズをあしらったウィンドチャイムです。寸法・素材・屋内外の設置条件は販売元の仕様をご確認ください。"],
     [/wireless charger.*foldable|foldable.*wireless charger/i, "折りたたみ式のワイヤレス充電器です。対応機種・出力・給電方式は販売元の仕様をご確認ください。"],
+
+    [/^women's colorful mascara waterproof super long/i, "ウォータープルーフ仕様をうたうロングタイプのマスカラです。カラーは商品名・バリエーション表記をご確認ください。耐水性・仕上がり・成分・使用上の注意は販売元の最新仕様をご確認ください。"],
+    [/^crafts gardening creative ceramic ornaments purple sand small flower pot/i, "園芸やインテリアに使う、紫砂風デザインのセラミック製ミニ植木鉢です。寸法・素材・排水穴の有無・セット内容は販売元の仕様をご確認ください。"],
+    [/^fashion personality hand-painted landscape tea basin/i, "山水画風の絵柄をあしらった茶盤です。寸法・素材・排水構造・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/^creative fashion white pattern light plate/i, "白地に模様をあしらった装飾プレートです。原文にはゴールドと梅柄の表記があります。直径・素材・食品への使用可否・電子レンジ対応は販売元の仕様をご確認ください。"],
+    [/^fashion personality french white ceramic plate/i, "フレンチスタイルを意識した白いセラミックプレートです。直径・素材・食品への使用可否・食洗機や電子レンジへの対応は販売元の仕様をご確認ください。"],
+    [/^fashion personality new 304 stainless teapot/i, "304ステンレス製と表記されたティーポットです。カラーはブラックのバリエーション表記があります。容量・寸法・茶こしの有無・耐熱仕様は販売元の仕様をご確認ください。"],
+    [/^acacia mangium semi-automatic coffee grounds container storage device/i, "コーヒー粉の収納に使う容器です。商品名にはアカシアマンギウム材と半自動式の表記がありますが、材質の正確な組成や機構は商品画像と販売元の仕様をご確認ください。"],
+    [/^creative strange shape western ceramic meal plate/i, "変形デザインのセラミック製ディナープレートです。商品名にはホワイトと13インチの表記があります。実寸・素材・食品への使用可否・食洗機や電子レンジへの対応は販売元の仕様をご確認ください。"],
+    [/^irregular with personality ceramic bowl dish plate retro tableware/i, "不規則な形状のレトロデザイン食器です。商品名には平皿タイプの表記があります。寸法・素材・食品への使用可否・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/^batana oil conditioner moisturizing repair/i, "バタナオイル配合と表記されたコンディショナーです。商品名には30mlの容量表記があります。全成分・使用方法・髪質との相性・使用上の注意は販売元の表示をご確認ください。"],
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
 }
