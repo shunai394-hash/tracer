@@ -42,21 +42,21 @@ export default async function HomePage() {
           <source media="(min-width: 768px)" srcSet={STOREFRONT_IMAGES.heroWide} />
           <img src={STOREFRONT_IMAGES.heroTall} alt="窓辺で小ぶりのバッグを持つ女性" fetchPriority="high" className="h-[78vh] max-h-[760px] min-h-[520px] w-full object-cover object-bottom md:h-[70vh] md:object-center" />
         </picture>
-        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF6F1]/85 via-[#FBF6F1]/30 to-transparent md:bg-gradient-to-r md:from-[#FBF6F1]/90 md:via-[#FBF6F1]/40 md:to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF6F1]/65 via-[#FBF6F1]/15 to-transparent md:bg-gradient-to-r md:from-[#FBF6F1]/78 md:via-[#FBF6F1]/20 md:to-transparent" />
         <div className="absolute inset-0 mx-auto flex max-w-6xl flex-col justify-start px-6 pt-12 md:justify-center md:pt-0">
-          <p className="text-xs tracking-[0.3em] text-[#9A6B5B]">TRACER SELECT</p>
+          <p className="text-xs font-semibold tracking-[0.3em] text-[#75402F]">TRACER SELECT</p>
           <h1 className="mt-4 font-serif text-[34px] leading-tight sm:text-5xl">毎日を、<br />少しだけ上品に。</h1>
-          <p className="mt-5 max-w-sm text-sm leading-7 text-[#5C4035]">
+          <p className="mt-5 max-w-sm text-sm font-medium leading-7 text-[#4A2C21]">
             バッグ、ヘアアクセサリー、メイク小物。<br />いつもの装いに寄り添うアイテムを集めました。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">すべての商品を見る</Link>
-            <Link href="/shop?cat=bags" className="rounded-full border border-[#3B241A]/30 bg-white/70 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
+            <Link href="/shop?cat=bags" className="rounded-full border-2 border-[#3B241A]/50 bg-white/90 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
           </div>
         </div>
       </section>
 
-      <section aria-label="お買い物のご案内" className="border-y border-[#EADBD3] bg-white/60">
+      <section aria-label="お買い物のご案内" className="border-y border-[#EADBD3] bg-white">
         <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-2 px-6 py-4 text-center text-xs text-[#5C4035] sm:grid-cols-3 sm:text-sm">
           <li>価格はすべて税込表示</li>
           <li>在庫を確認できた商品だけを掲載</li>
@@ -107,9 +107,9 @@ export default async function HomePage() {
             <div className="mx-auto grid max-w-6xl items-center gap-8 px-6 py-14 md:grid-cols-2 md:gap-14 md:py-20">
               <img src={STOREFRONT_IMAGES.lifestyle} alt="リネンの上に置かれたピンクのバッグ、ヘアクリップ、メイクブラシ" loading="lazy" className="aspect-[4/3] w-full rounded-2xl object-cover" />
               <div>
-                <p className="text-xs tracking-[0.3em] text-[#9A6B5B]">OUR STORY</p>
+                <p className="text-xs font-semibold tracking-[0.3em] text-[#75402F]">OUR STORY</p>
                 <h2 className="mt-3 font-serif text-2xl leading-snug sm:text-3xl">いつもの毎日に、<br />小さなときめきを。</h2>
-                <p className="mt-5 text-sm leading-7 text-[#5C4035]">
+                <p className="mt-5 text-sm font-medium leading-7 text-[#4A2C21]">
                   通勤にも休日にも合わせやすいバッグや、まとめ髪を上品に仕上げるヘアアクセサリーなど、毎日使えるアイテムを選んでいます。価格と在庫を確認できた商品だけを掲載しています。
                 </p>
                 <Link href="/shop" className="mt-7 inline-block rounded-full border border-[#3B241A]/30 px-7 py-3 text-sm font-medium transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">商品一覧へ</Link>
