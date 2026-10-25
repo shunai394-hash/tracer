@@ -463,6 +463,20 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
 }
 
 export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
+  // Repair products that were previously created without media, while avoiding
+  // adding another copy of the same image on every routine catalog sync.
+  const existingMedia = await shopifyGraphQL<{
+    product: { media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> } } | null;
+  }>(
+    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { media(first: 10) { nodes { mediaContentType preview { image { url } } } } } }",
+    { id: input.productId },
+  );
+  const hasProductImage = (existingMedia.product?.media.nodes ?? []).some((media) =>
+    media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
+  );
+  const mediaToAdd = !hasProductImage && input.imageUrl
+    ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }]
+    : [];
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
@@ -472,7 +486,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
         userErrors { field message }
       }
     }`,
-    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, seo: shopifySeoInput(input), status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: input.imageUrl ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }] : [] },
+    { input: { id: input.productId, title: input.title, descriptionHtml: input.descriptionHtml, handle: input.handle, seo: shopifySeoInput(input), status: "ACTIVE", vendor: "TRACER", productType: "TRACER Selection", tags: TRACER_TAGS }, media: mediaToAdd },
   );
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
