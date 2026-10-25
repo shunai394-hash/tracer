@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\\/$/, "");
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const fixed: MetadataRoute.Sitemap = [
