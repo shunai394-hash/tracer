@@ -331,7 +331,7 @@ export async function GET(request: Request) {
           isJapaneseProductDescription(candidateDetail) &&
           hasUsableJapaneseCopy(candidateDetail, "detail");
         if (!offlineSafe && !["160447301", "160447305", "160447306", "160447308", "160447348", "160454016", "160454198"].includes(candidateId)) {
-          results.push({ itemId, outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
+          results.push({ itemId, sourceTitlePreview: text(candidate.title).slice(0, 120), sourceDetailPreview: text(candidate.detail).slice(0, 240), outcome: "deferred_ai_provider_unavailable", reason: "Gemini quota/capacity unavailable; item left unchanged" });
           continue;
         }
       }
