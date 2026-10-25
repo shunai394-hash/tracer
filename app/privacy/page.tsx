@@ -3,6 +3,8 @@ import Link from "next/link";
 export const metadata = {
   title: "プライバシーポリシー",
   description: "TRACERが取り扱う情報、利用目的、第三者サービスとの連携について。",
+  alternates: { canonical: "/privacy" },
+  openGraph: { title: "プライバシーポリシー", description: "TRACERのプライバシーポリシー", url: "https://tracer-pied-alpha.vercel.app/privacy", locale: "ja_JP", type: "article" },
 };
 
 export default function PrivacyPage() {
