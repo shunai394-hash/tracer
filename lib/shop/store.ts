@@ -261,12 +261,21 @@ async function loadPublishedShopListings(): Promise<ShopListing[]> {
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
+  // Normalize percent-encoded slugs as well as the decoded value Next.js normally
+  // supplies. This keeps product URLs resolvable if a proxy/channel double-encodes
+  // non-ASCII path segments.
+  let normalizedSlug = slug;
+  try {
+    normalizedSlug = decodeURIComponent(slug);
+  } catch {
+    // Keep the original segment; the lookup will safely return no match.
+  }
   const supabase = createSupabaseAdminClient();
   const baseQuery = supabase.from("shop_listings").select(STOREFRONT_SELECT);
   // Stable UUID paths avoid URL-encoding ambiguity for Japanese product slugs
   // when external channels validate a public sales link.
-  const isListingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
-  const listingQuery = isListingId ? baseQuery.eq("id", slug) : baseQuery.eq("slug", slug);
+  const isListingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedSlug);
+  const listingQuery = isListingId ? baseQuery.eq("id", normalizedSlug) : baseQuery.eq("slug", normalizedSlug);
   const { data, error } = await listingQuery
     .is("archived_at", null)
     .eq("published", true)
@@ -283,12 +292,12 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     // truth so every published sitemap slug can also be opened as a detail page.
     // This fallback is only used when the direct indexed lookup misses.
     const published = await listPublishedShopListings();
-    const matched = published.find((listing) => listing.slug === slug);
+    const matched = published.find((listing) => listing.slug === normalizedSlug || listing.slug === slug);
     if (matched) return matched;
 
     if (!isListingId) return null;
-    const canonical = await loadCanonicalCommerceListings({ variantIds: [slug] });
-    return canonical.find((listing) => listing.id === slug) ?? null;
+    const canonical = await loadCanonicalCommerceListings({ variantIds: [normalizedSlug] });
+    return canonical.find((listing) => listing.id === normalizedSlug) ?? null;
   }
 
   const listing = mapListing(data as Record<string, unknown>);
