@@ -668,6 +668,10 @@ export function localizeProductDescription(value: unknown): string | null {
     [/^acacia mangium semi-automatic coffee grounds container storage device/i, "コーヒー粉の収納に使う容器です。商品名にはアカシアマンギウム材と半自動式の表記がありますが、材質の正確な組成や機構は商品画像と販売元の仕様をご確認ください。"],
     [/^creative strange shape western ceramic meal plate/i, "変形デザインのセラミック製ディナープレートです。商品名にはホワイトと13インチの表記があります。実寸・素材・食品への使用可否・食洗機や電子レンジへの対応は販売元の仕様をご確認ください。"],
     [/^irregular with personality ceramic bowl dish plate retro tableware/i, "不規則な形状のレトロデザイン食器です。商品名には平皿タイプの表記があります。寸法・素材・食品への使用可否・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/^nordic human body ceramics vases home decoration accessories office dining table flower arrangement container dried flow/i, "人物モチーフを取り入れたセラミック製の花瓶です。仕入先の表記ではホワイト・Sサイズとされています。寸法・重量・素材の詳細・実際の色味は販売元の仕様をご確認ください。"],
+    [/^usb type-c対応 ポータブルssd（ブラック・8tb表記）$/i, "Type-C接続に対応すると表記された、ブラックのポータブルストレージです。容量は仕入先表記で8TBです。実際の容量・転送速度・対応機器は未検証のため、購入前に販売元の仕様と接続互換性をご確認ください。"],
+    [/^ショルダーストラップ付き iphoneケース＆ウォレット（ピンク・iphone xs／xs max表記）$/i, "ピンクのショルダーストラップ付きスマートフォンケース兼ウォレットです。仕入先表記の対応機種はiPhone XS／XS Maxです。対応機種・ストラップの着脱仕様・素材・収納寸法は購入前に販売元の情報をご確認ください。"],
+    [/^beauty formula チョコレート風味プロテイン 300g$/i, "チョコレート風味と表記されたプロテインパウダーです。内容量は300gです。栄養成分・原材料・アレルゲン・摂取目安は商品ラベルと販売元の表示を確認してください。効果や品質を独自に保証するものではありません。"],
     [/^batana oil conditioner moisturizing repair/i, "バタナオイル配合と表記されたコンディショナーです。商品名には30mlの容量表記があります。全成分・使用方法・髪質との相性・使用上の注意は販売元の表示をご確認ください。"],
   ];
   return rules.find(([pattern]) => pattern.test(source))?.[1] ?? null;
