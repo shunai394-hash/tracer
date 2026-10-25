@@ -10,7 +10,7 @@ type Listing = {
 };
 type LegacyItem = { order_id: string; listing_id: string | null; product_id: string | null; title: string | null; qty: number | string | null; unit_price: number | string | null };
 type LegacyOrder = { id: string; payment_status: string | null; order_status: string | null; created_at: string };
-type CommerceOrder = { id: string; channel: string | null; external_order_id: string | null; total_amount: number | string | null; payment_status: string | null; fulfillment_status: string | null; created_at: string };
+type CommerceOrder = { id: string; channel: string | null; external_order_id: string | null; total_amount: number | string | null; payment_status: string | null; fulfillment_status: string | null; received_at: string };
 type CommerceLine = { order_id: string; variant_id: string; quantity: number | null; unit_price: number | string | null };
 type Variant = { id: string; product_id: string; title_ja: string | null };
 type Product = { id: string; title_ja: string | null };
@@ -34,7 +34,7 @@ export default async function ProductPerformancePage() {
       db.from("shop_listings").select("id,title,published,selling_price,inventory,source_cost,shipping_cost,contribution_profit,supplier_name,orderable,pipeline_status,pipeline_reason,product_url,created_at").order("created_at", { ascending: false }).limit(5000),
       db.from("shop_order_items").select("order_id,listing_id,product_id,title,qty,unit_price").limit(20000),
       db.from("shop_orders").select("id,payment_status,order_status,created_at").limit(10000),
-      db.from("commerce_orders").select("id,channel,external_order_id,total_amount,payment_status,fulfillment_status,created_at").order("created_at", { ascending: false }).limit(10000),
+      db.from("commerce_orders").select("id,channel,external_order_id,total_amount,payment_status,fulfillment_status,received_at").order("received_at", { ascending: false }).limit(10000),
       db.from("commerce_order_lines").select("order_id,variant_id,quantity,unit_price").limit(30000),
       db.from("commerce_variants").select("id,product_id,title_ja").limit(10000),
       db.from("commerce_products").select("id,title_ja").limit(10000),
@@ -84,7 +84,7 @@ export default async function ProductPerformancePage() {
     current.revenue += Number(line.quantity ?? 0) * Number(line.unit_price ?? 0);
     const order = commerceOrders.find((o) => o.id === line.order_id);
     if (order?.channel) current.channels.add(order.channel);
-    if (order?.created_at && (!current.lastSold || order.created_at > current.lastSold)) current.lastSold = order.created_at;
+    if (order?.received_at && (!current.lastSold || order.received_at > current.lastSold)) current.lastSold = order.received_at;
     soldProducts.set(key, current);
   }
   const canonicalRevenue = paidCanonical.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
@@ -92,7 +92,7 @@ export default async function ProductPerformancePage() {
     channel, orders: commerceOrders.filter((o) => o.channel === channel).length,
     paid: paidCanonical.filter((o) => o.channel === channel).length,
     revenue: paidCanonical.filter((o) => o.channel === channel).reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0),
-    latest: commerceOrders.filter((o) => o.channel === channel).map((o) => o.created_at).sort().at(-1) ?? null,
+    latest: commerceOrders.filter((o) => o.channel === channel).map((o) => o.received_at).sort().at(-1) ?? null,
   }));
   const rows = listings.map((p) => {
     const s = legacyByListing.get(p.id);
