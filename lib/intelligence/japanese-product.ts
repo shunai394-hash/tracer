@@ -1,4 +1,18 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^handmade crochet colorful tulip potted ornament.*$/i, "手編み風 カラフルチューリップの鉢植えオーナメント"],
+  [/^makkitt diploma frame$/i, "MAKKITT ディプロマフレーム"],
+  [/^purple sand vintage boutique rectangular indoor desktop flower pot.*$/i, "紫砂風 長方形デスクトップ植木鉢"],
+  [/^upgraded 10-generation double-layer cockroach removal artifact.*$/i, "二層構造 ゴキブリ対策用品"],
+  [/^tungsten steel rotary file hard alloy.*$/i, "タングステン鋼 超硬ロータリーバー"],
+  [/^vortex fan motor violent fan dust blowing gun.*$/i, "強力送風モーター式 ダストブロワー"],
+  [/^women's fashion pearl pure desire ins manicure.*$/i, "パール装飾 ネイルチップ（デザインはバリエーションで確認）"],
+  [/^mini colorful acrylic photo frame table.*$/i, "ミニサイズ カラフルアクリルフォトフレーム"],
+  [/^easter egg decoration coloring kit.*$/i, "イースターエッグ デコレーション・着色キット"],
+  [/^fruit baller scoop melon baller scoop.*$/i, "フルーツボーラー メロンくり抜きスプーン"],
+  [/^women's outdoor tungsten steel head self-defense tactical pen.*$/i, "タングステン鋼ヘッド付きペン"],
+  [/^olive dripping blood lotus wood carving core bodhi polishing head.*$/i, "木彫り・研磨用ロータリービット"],
+  [/^s925 sterling silver handmade diy bracelet accessories.*$/i, "S925表記 ハンドメイドブレスレット用パーツ"],
+
   [/^portable plush handbag for women(?:\s*\(.*\))?$/i, "ぬいぐるみ風素材 レディースハンドバッグ"],
   [/^fashion woven handbag for women(?:\s*\(.*\))?$/i, "編み込みデザイン レディースハンドバッグ"],
   [/^women patent leather flower handbag(?:\s*\(.*\))?$/i, "花モチーフ エナメル調ハンドバッグ"],
@@ -460,6 +474,20 @@ export function localizeProductDescription(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const source = value.normalize("NFKC");
   const rules: Array<[RegExp, string]> = [
+    [/^handmade crochet colorful tulip potted ornament/i, "チューリップをモチーフにした鉢植え風オーナメントです。色・寸法・素材・セット内容は商品画像と仕入先の最新仕様をご確認ください。"],
+    [/^makkitt diploma frame$/i, "ディプロマや証書の掲示に使うフレームです。対応用紙サイズ・外寸・素材・壁掛け方法は販売元の仕様をご確認ください。"],
+    [/^purple sand vintage boutique rectangular indoor desktop flower pot/i, "室内の卓上で使う長方形の植木鉢です。素材・寸法・排水穴の有無・色は商品画像と仕入先の最新仕様をご確認ください。"],
+    [/^upgraded 10-generation double-layer cockroach removal artifact/i, "ゴキブリ対策用品です。使用方法・設置場所・成分や安全上の注意・対象害虫は、商品画像と販売元の表示を確認してからご使用ください。"],
+    [/^tungsten steel rotary file hard alloy/i, "タングステン鋼・超硬合金と表記された回転工具用ビットです。軸径・形状・対応工具・使用条件は販売元の仕様をご確認ください。"],
+    [/^vortex fan motor violent fan dust blowing gun/i, "送風による清掃用途のブロワーです。風量・電源方式・付属品・安全上の注意は販売元の仕様をご確認ください。"],
+    [/^women's fashion pearl pure desire ins manicure/i, "パール装飾デザインのネイル用品です。種類・サイズ・素材・セット内容は選択したバリエーションと販売元の仕様をご確認ください。"],
+    [/^mini colorful acrylic photo frame table/i, "卓上で写真などを飾るミニサイズのアクリルフレームです。色・寸法・設置方法は商品画像と販売元の仕様をご確認ください。"],
+    [/^easter egg decoration coloring kit/i, "イースターエッグの装飾や着色に使うキットです。対象年齢・内容物・使用方法・安全上の注意は販売元の表示をご確認ください。"],
+    [/^fruit baller scoop melon baller scoop/i, "果物を丸くくり抜くためのキッチン用スプーンです。寸法・素材・お手入れ方法は販売元の仕様をご確認ください。"],
+    [/^women's outdoor tungsten steel head self-defense tactical pen/i, "タングステン鋼ヘッド付きと表記されたペンです。素材・用途・寸法・携帯や使用に関する法令・安全上の注意は購入前に販売元の表示をご確認ください。"],
+    [/^olive dripping blood lotus wood carving core bodhi polishing head/i, "木彫りや研磨作業に使うロータリービットです。軸径・対応工具・材質・使用条件は販売元の仕様をご確認ください。"],
+    [/^s925 sterling silver handmade diy bracelet accessories/i, "ハンドメイドのブレスレット制作向けアクセサリーパーツです。S925表記の真偽・素材組成・寸法・セット内容は販売元の仕様をご確認ください。"],
+
     [/solid color casual shoulder.*women bag|women.*solid color casual shoulder.*bag/i, "レディース向けショルダーバッグです。色・素材・寸法・収納仕様・付属品は、購入前に商品画像と仕入先の最新商品仕様をご確認ください。"],
     [/^purple sand flower pot rectangular(?:\\s*\\(.*\\))?$/i, "長方形の紫砂製植木鉢です。仕入先表記では素材はPurple Clay、サイズは約35×22.8×8.5cmです。色・寸法・素材・セット内容は購入前に商品画像と仕入先の最新仕様をご確認ください。"],
     [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "水槽のレイアウトに使うサンゴ風デコレーションです。商品名には「No.9 ホワイト」と記載されています。素材・寸法・水槽内での使用可否・セット内容は、購入前に商品画像と仕入先の最新情報をご確認ください。"],
