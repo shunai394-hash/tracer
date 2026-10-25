@@ -10,7 +10,7 @@ type Listing = {
 };
 type LegacyItem = { order_id: string; listing_id: string | null; product_id: string | null; title: string | null; qty: number | string | null; unit_price: number | string | null };
 type LegacyOrder = { id: string; payment_status: string | null; order_status: string | null; created_at: string };
-type CommerceOrder = { id: string; channel: string | null; external_order_id: string | null; total_amount: number | string | null; payment_status: string | null; fulfillment_status: string | null; created_at: string };
+type CommerceOrder = { id: string; channel: string | null; external_order_id: string | null; total_amount: number | string | null; payment_status: string | null; fulfillment_status: string | null; received_at: string };
 type CommerceLine = { order_id: string; variant_id: string; quantity: number | null; unit_price: number | string | null };
 type Variant = { id: string; product_id: string; title_ja: string | null };
 type Product = { id: string; title_ja: string | null };
@@ -34,7 +34,7 @@ export default async function ProductPerformancePage() {
       db.from("shop_listings").select("id,title,published,selling_price,inventory,source_cost,shipping_cost,contribution_profit,supplier_name,orderable,pipeline_status,pipeline_reason,product_url,created_at").order("created_at", { ascending: false }).limit(5000),
       db.from("shop_order_items").select("order_id,listing_id,product_id,title,qty,unit_price").limit(20000),
       db.from("shop_orders").select("id,payment_status,order_status,created_at").limit(10000),
-      db.from("commerce_orders").select("id,channel,external_order_id,total_amount,payment_status,fulfillment_status,created_at").order("created_at", { ascending: false }).limit(10000),
+      db.from("commerce_orders").select("id,channel,external_order_id,total_amount,payment_status,fulfillment_status,received_at").order("received_at", { ascending: false }).limit(10000),
       db.from("commerce_order_lines").select("order_id,variant_id,quantity,unit_price").limit(30000),
       db.from("commerce_variants").select("id,product_id,title_ja").limit(10000),
       db.from("commerce_products").select("id,title_ja").limit(10000),
@@ -84,7 +84,7 @@ export default async function ProductPerformancePage() {
     current.revenue += Number(line.quantity ?? 0) * Number(line.unit_price ?? 0);
     const order = commerceOrders.find((o) => o.id === line.order_id);
     if (order?.channel) current.channels.add(order.channel);
-    if (order?.created_at && (!current.lastSold || order.created_at > current.lastSold)) current.lastSold = order.created_at;
+    if (order?.received_at && (!current.lastSold || order.created_at > current.lastSold)) current.lastSold = order.created_at;
     soldProducts.set(key, current);
   }
   const canonicalRevenue = paidCanonical.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
@@ -92,7 +92,7 @@ export default async function ProductPerformancePage() {
     channel, orders: commerceOrders.filter((o) => o.channel === channel).length,
     paid: paidCanonical.filter((o) => o.channel === channel).length,
     revenue: paidCanonical.filter((o) => o.channel === channel).reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0),
-    latest: commerceOrders.filter((o) => o.channel === channel).map((o) => o.created_at).sort().at(-1) ?? null,
+    latest: commerceOrders.filter((o) => o.channel === channel).map((o) => o.received_at).sort().at(-1) ?? null,
   }));
   const rows = listings.map((p) => {
     const s = legacyByListing.get(p.id);
@@ -111,21 +111,21 @@ export default async function ProductPerformancePage() {
       </div>
       {error ? <p role="alert" className="mt-6 border border-amber-400/30 p-4 text-sm text-amber-200">データ取得エラー：{error}</p> : null}
       <section className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">BASE注文（全状態）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{canonicalByChannel.find((x) => x.channel === "base")?.orders ?? "未取得"}</p><p className="mt-1 text-xs text-zinc-500">支払済 {canonicalByChannel.find((x) => x.channel === "base")?.paid ?? "—"}</p></article>
-        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">Shopify注文（全状態）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{canonicalByChannel.find((x) => x.channel === "shopify")?.orders ?? "未取得"}</p><p className="mt-1 text-xs text-zinc-500">支払済 {canonicalByChannel.find((x) => x.channel === "shopify")?.paid ?? "—"}</p></article>
-        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">支払済売上（注文台帳）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{yen(canonicalRevenue)}</p><p className="mt-1 text-xs text-zinc-500">正規台帳・二重計上を避けるため旧台帳分は別集計</p></article>
+        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">BASE注文（全状態）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{commerceError ? "未取得" : canonicalByChannel.find((x) => x.channel === "base")?.orders ?? 0}</p><p className="mt-1 text-xs text-zinc-500">支払済 {commerceError ? "未取得" : canonicalByChannel.find((x) => x.channel === "base")?.paid ?? 0}</p></article>
+        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">Shopify注文（全状態）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{commerceError ? "未取得" : canonicalByChannel.find((x) => x.channel === "shopify")?.orders ?? 0}</p><p className="mt-1 text-xs text-zinc-500">支払済 {commerceError ? "未取得" : canonicalByChannel.find((x) => x.channel === "shopify")?.paid ?? 0}</p></article>
+        <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">支払済売上（注文台帳）</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{commerceError ? "未取得" : yen(canonicalRevenue)}</p><p className="mt-1 text-xs text-zinc-500">正規台帳・二重計上を避けるため旧台帳分は別集計</p></article>
         <article className="border border-white/10 p-5"><p className="text-xs text-zinc-400">管理対象商品</p><p className="mt-2 text-2xl font-semibold text-zinc-50">{listings.length}</p><p className="mt-1 text-xs text-zinc-500">公開中・販売数ゼロ {publishedNoSales.length}件（未確認 {publishedWithNoSalesData.length}件）</p></article>
       </section>
       {commerceError ? <p role="alert" className="mt-4 border border-amber-400/30 p-4 text-sm text-amber-200">正規注文台帳を取得できませんでした。商品別の正規実績は未確認です：{commerceError}</p> : null}
       <section className="mt-8 border border-white/10 p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-zinc-100">販売先別・注文同期の状態</h2>
         <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs text-zinc-500"><tr>{["販売先","注文数","支払済","支払済売上","最終注文記録"].map((h) => <th key={h} className="border-b border-white/10 px-3 py-3">{h}</th>)}</tr></thead>
-          <tbody>{canonicalByChannel.map((x) => <tr key={x.channel} className="border-b border-white/5"><td className="px-3 py-3 text-zinc-100">{x.channel === "base" ? "BASE" : "Shopify"}</td><td className="px-3 py-3 tabular-nums">{x.orders}</td><td className="px-3 py-3 tabular-nums">{x.paid}</td><td className="px-3 py-3 tabular-nums">{yen(x.revenue)}</td><td className="px-3 py-3 text-zinc-400">{x.latest ? new Date(x.latest).toLocaleString("ja-JP") : "記録なし"}</td></tr>)}</tbody></table></div>
+          <tbody>{canonicalByChannel.map((x) => <tr key={x.channel} className="border-b border-white/5"><td className="px-3 py-3 text-zinc-100">{x.channel === "base" ? "BASE" : "Shopify"}</td><td className="px-3 py-3 tabular-nums">{commerceError ? "未取得" : x.orders}</td><td className="px-3 py-3 tabular-nums">{commerceError ? "未取得" : x.paid}</td><td className="px-3 py-3 tabular-nums">{commerceError ? "未取得" : yen(x.revenue)}</td><td className="px-3 py-3 text-zinc-400">{commerceError ? "未取得" : x.latest ? new Date(x.latest).toLocaleString("ja-JP") : "記録なし"}</td></tr>)}</tbody></table></div>
       </section>
       <section className="mt-8 border border-white/10 p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-zinc-100">正規注文台帳：売れた商品</h2>
         <p className="mt-2 text-sm text-zinc-400">支払済みの commerce_orders / commerce_order_lines から集計。注文が0件なら販売実績も0件です。</p>
-        {soldProducts.size === 0 ? <p className="mt-4 border border-white/10 p-4 text-sm text-zinc-400">正規台帳に支払済みの商品明細はありません。これは「注文台帳上で実績なし」を示し、販売先管理画面の注文数を直接保証するものではありません。</p> :
+        {soldProducts.size === 0 ? <p className="mt-4 border border-white/10 p-4 text-sm text-zinc-400">{commerceError ? "正規台帳の取得に失敗したため、商品別売上を判定できません。" : "正規台帳に支払済みの商品明細はありません。これは「注文台帳上で実績なし」を示し、販売先管理画面の注文数を直接保証するものではありません。"}</p> :
           <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="text-xs text-zinc-500"><tr>{["商品","販売数","商品売上","販売先","最終販売"].map((h) => <th key={h} className="border-b border-white/10 px-3 py-3">{h}</th>)}</tr></thead><tbody>{[...soldProducts.values()].sort((a,b) => b.quantity-a.quantity).map((p,i) => <tr key={p.title + i} className="border-b border-white/5"><td className="px-3 py-3 text-zinc-100">{p.title}</td><td className="px-3 py-3 tabular-nums">{p.quantity}</td><td className="px-3 py-3 tabular-nums">{yen(p.revenue)}</td><td className="px-3 py-3">{[...p.channels].join(", ")}</td><td className="px-3 py-3 text-zinc-400">{p.lastSold ? new Date(p.lastSold).toLocaleDateString("ja-JP") : "—"}</td></tr>)}</tbody></table></div>}
       </section>
       <section className="mt-8 border border-white/10 p-4 sm:p-6">
