@@ -1,6 +1,10 @@
 name: TRACER targeted Shopify SKU recovery (3 variants)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-targeted-shopify-sku-recovery.yml"
   workflow_dispatch:
 
 permissions:
