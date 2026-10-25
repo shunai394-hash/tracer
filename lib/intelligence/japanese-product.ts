@@ -10,6 +10,8 @@ const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
   [/^children'?s hair ornaments cartoon fruit hair clips women'?s colorful quicksand(?:\s*\(.*\))?$/i, "フルーツ柄 カラフルヘアクリップ"],
   [/^love handmade bow hair clips accessories(?:\s*\(.*\))?$/i, "リボンモチーフ ヘアクリップ"],
   [/^electric brush cleaner makeup brush tool for automatic cleaning(?:\s*\(.*\))?$/i, "電動メイクブラシクリーナー"],
+  [/^cosmetic brush cleaner$/i, "メイクブラシクリーナー"],
+  [/3 in 1 silicone makeup brush cleaner bowl.*cleaning mat|silicone makeup brush cleaner bowl.*cleaning mat/i, "シリコン製 メイクブラシ洗浄ボウル＆マット"],
   [/solid color casual shoulder.*women bag|women.*solid color casual shoulder.*bag/i, "レディース ショルダーバッグ（カラー・仕様は商品選択画面で確認）"],
   [/^purple sand flower pot rectangular(?:\\s*\\(.*\\))?$/i, "長方形の紫砂植木鉢（紫泥・約35×22.8×8.5cm）"],
   [/^mini coral fish tank decoration diy ornaments(?:\s*\(.*\))?$/i, "ミニサンゴ風 水槽用デコレーション（ホワイト）"],
