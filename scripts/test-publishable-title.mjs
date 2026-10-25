@@ -252,6 +252,7 @@ for (const [source, expected] of [
 }
 
 assert.equal(localizeProductTitle("Cosmetic Brush Cleaner"), "メイクブラシクリーナー", "mixed-language cosmetic brush cleaner title must localize specifically");
+assert.equal(localizeProductTitle("Micron Soft Toothbrush"), "Micron ソフト歯ブラシ", "brand-specific toothbrush title must win over generic toothbrush rules");
 assert.equal(localizeProductTitle("3 In 1 Silicone Makeup Brush Cleaner Bowl And Cleaning Mat, Reusable Makeup Brush Washing Tool, Khaki"), "シリコン製 メイクブラシ洗浄ボウル＆マット", "silicone bowl-and-mat product must localize specifically");
 
 console.log(`Catalog title/description quality tests: ${cases.length} cases + 20 channel wiring/title-quality checks passed.`);
