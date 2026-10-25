@@ -22,7 +22,9 @@ console.log("Shopify SEO write, bounds, and readback guards are present.");
 
 assert.match(publish, /const seoTitle =/, "publishing must build a bounded branded SEO title");
 assert.match(publish, /const seoDescription = storefrontDescription/, "SEO description must come from actual product copy");
-assert.ok(publish.includes("updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl: null, seoTitle, seoDescription }"), "update path must pass SEO metadata");
+assert.ok(publish.includes("updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl, seoTitle, seoDescription }"), "update path must pass source image and SEO metadata");
+assert.match(admin, /query TracerProductImagePreflight/ , "update must check existing media before adding a missing image");
+assert.match(admin, /const mediaToAdd = !hasProductImage && input\.imageUrl/ , "existing products without images should receive the source image without duplicating media");
 assert.ok(publish.includes("createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription })"), "create path must pass SEO metadata");
 
 console.log("Shopify SEO publish inputs are wired.");
