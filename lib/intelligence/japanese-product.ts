@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^micron soft toothbrush$/i, "Micron ソフト歯ブラシ"],
   [/^portable plush handbag for women(?:\s*\(.*\))?$/i, "ぬいぐるみ風素材 レディースハンドバッグ"],
   [/^fashion woven handbag for women(?:\s*\(.*\))?$/i, "編み込みデザイン レディースハンドバッグ"],
   [/^women patent leather flower handbag(?:\s*\(.*\))?$/i, "花モチーフ エナメル調ハンドバッグ"],
