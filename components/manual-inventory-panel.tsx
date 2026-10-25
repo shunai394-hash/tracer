@@ -127,9 +127,9 @@ export function ManualInventoryPanel() {
     <section className="mt-10 border border-cyan-300/20 bg-[#0a0d10] p-5 text-zinc-100 sm:p-7" aria-labelledby="manual-inventory-heading">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/70">TRACER Store Management</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-200">TRACER Store Management</p>
           <h2 id="manual-inventory-heading" className="mt-2 text-xl">商品登録・在庫・公開管理</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
             ここで追加・編集・非公開化できます。対象は手動管理商品です。仕入先連携済み商品を誤って壊さないよう、削除は完全削除ではなくアーカイブします。BASE・Shopifyへの掲載操作とは別です。
           </p>
         </div>
@@ -137,7 +137,7 @@ export function ManualInventoryPanel() {
       </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <label className="flex-1 text-xs text-zinc-400">
+        <label className="flex-1 text-xs text-zinc-300">
           管理トークン
           <input
             type="password"
@@ -156,21 +156,21 @@ export function ManualInventoryPanel() {
       <form onSubmit={save} className="mt-7 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-2">
         <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-medium">{form.id ? "商品を編集" : "新しい商品を登録"}</h3>
-          {form.id ? <button type="button" onClick={() => setForm(emptyForm)} className="text-xs text-zinc-400 underline">新規登録に切り替え</button> : null}
+          {form.id ? <button type="button" onClick={() => setForm(emptyForm)} className="text-xs text-zinc-300 underline">新規登録に切り替え</button> : null}
         </div>
-        <label className="text-xs text-zinc-400">商品名 *
+        <label className="text-xs text-zinc-300">商品名 *
           <input required maxLength={180} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400">販売価格（円）*
+        <label className="text-xs text-zinc-300">販売価格（円）*
           <input required type="number" min="0" step="1" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">商品説明 *
+        <label className="text-xs text-zinc-300 sm:col-span-2">商品説明 *
           <textarea required maxLength={10000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">商品画像URL（HTTPS）*
+        <label className="text-xs text-zinc-300 sm:col-span-2">商品画像URL（HTTPS）*
           <input required type="url" value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
         </label>
-        <label className="text-xs text-zinc-400">手動管理する在庫数 *
+        <label className="text-xs text-zinc-300">手動管理する在庫数 *
           <input required type="number" min="0" max="1000000" step="1" value={form.inventory} onChange={(event) => setForm({ ...form, inventory: event.target.value })} className="mt-2 w-full border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white" />
         </label>
         <label className="flex items-center gap-3 self-end border border-white/10 p-3 text-sm">
@@ -179,7 +179,7 @@ export function ManualInventoryPanel() {
         </label>
         <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
           <button type="submit" disabled={loading} className="bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-40">{loading ? "保存中…" : form.published ? "保存して公開" : "非公開で保存"}</button>
-          <p className="text-xs leading-5 text-zinc-500">公開には商品名・説明・HTTPS画像・1個以上の在庫・正の販売価格が必要です。</p>
+          <p className="text-xs leading-5 text-zinc-300">公開には商品名・説明・HTTPS画像・1個以上の在庫・正の販売価格が必要です。</p>
         </div>
       </form>
 
@@ -188,12 +188,12 @@ export function ManualInventoryPanel() {
       {loaded ? (
         <div className="mt-7 space-y-2">
           <h3 className="mb-3 text-sm font-medium">手動管理商品（{listings.length}件）</h3>
-          {listings.length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-500">まだ商品はありません。上のフォームから登録できます。</p> : listings.map((listing) => (
+          {listings.length === 0 ? <p className="border border-white/10 p-4 text-sm text-zinc-300">まだ商品はありません。上のフォームから登録できます。</p> : listings.map((listing) => (
             <article key={listing.id} className="flex flex-col gap-3 border border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm">{listing.title}</p>
-                <p className="mt-1 text-xs text-zinc-500">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.published ? "公開中" : "非公開"}</p>
-                <p className="mt-1 break-all font-mono text-[10px] text-zinc-600">{listing.id}</p>
+                <p className="mt-1 text-xs text-zinc-300">¥{Number(listing.selling_price ?? 0).toLocaleString("ja-JP")} · 在庫 {listing.inventory ?? 0} · {listing.published ? "公開中" : "非公開"}</p>
+                <p className="mt-1 break-all font-mono text-[10px] text-zinc-300">{listing.id}</p>
               </div>
               <div className="flex shrink-0 gap-2">
                 <a href={`/shop/${listing.slug}`} target="_blank" rel="noreferrer" className="border border-white/15 px-3 py-2 text-xs text-zinc-300">商品ページ ↗</a>

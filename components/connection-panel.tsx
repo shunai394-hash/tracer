@@ -24,7 +24,7 @@ export function ConnectionPanel({ status }: { status: FoundationStatus }) {
         Foundation
       </p>
       <h2 className="mt-2 text-lg text-zinc-100">接続状態</h2>
-      <p className="mt-2 text-sm leading-6 text-zinc-400">
+      <p className="mt-2 text-sm leading-6 text-zinc-300">
         キーの有無だけを表示します。秘密情報は出しません。未設定の接続を、稼働中には見せません。
       </p>
       <div className="mt-4">

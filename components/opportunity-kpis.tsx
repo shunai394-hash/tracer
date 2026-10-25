@@ -9,7 +9,7 @@ function Kpi({
 }) {
   return (
     <div className="border border-cyan-500/15 bg-black/40 px-4 py-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-300">
         {label}
       </p>
       <p className="mt-2 text-xl text-zinc-50">{value}</p>
@@ -68,7 +68,7 @@ export function OpportunityKpis({ kpis }: { kpis: OpportunityKpis }) {
       </div>
       {failureEntries.length > 0 ? (
         <div className="border border-cyan-500/15 bg-black/40 px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-300">
             Failure reason distribution
           </p>
           <ul className="mt-2 space-y-1 text-sm text-zinc-300">
@@ -80,7 +80,7 @@ export function OpportunityKpis({ kpis }: { kpis: OpportunityKpis }) {
           </ul>
         </div>
       ) : (
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-600">
+        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-300">
           Failure learning: unknown
         </p>
       )}

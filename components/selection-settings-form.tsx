@@ -156,7 +156,7 @@ export function SelectionSettingsForm({
       >
         {busy ? "Saving…" : "Save filters"}
       </button>
-      {message ? <p className="text-xs text-zinc-400">{message}</p> : null}
+      {message ? <p className="text-xs text-zinc-300">{message}</p> : null}
     </form>
   );
 }
