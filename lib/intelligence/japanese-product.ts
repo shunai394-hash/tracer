@@ -1,4 +1,5 @@
 const SPECIFIC_TITLE_RULES: Array<[RegExp, string]> = [
+  [/^micron soft toothbrush$/i, "Micron ソフト歯ブラシ"],
   [/^handmade crochet colorful tulip potted ornament.*$/i, "手編み風 カラフルチューリップの鉢植えオーナメント"],
   [/^makkitt diploma frame$/i, "MAKKITT ディプロマフレーム"],
   [/^purple sand vintage boutique rectangular indoor desktop flower pot.*$/i, "紫砂風 長方形デスクトップ植木鉢"],
