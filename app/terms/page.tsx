@@ -3,6 +3,8 @@ import Link from "next/link";
 export const metadata = {
   title: "利用規約",
   description: "TRACERの利用条件、商品情報、第三者サービスに関する規約。",
+  alternates: { canonical: "/terms" },
+  openGraph: { title: "利用規約", description: "TRACERの利用規約", url: "https://tracer-pied-alpha.vercel.app/terms", locale: "ja_JP", type: "article" },
 };
 
 export default function TermsPage() {
