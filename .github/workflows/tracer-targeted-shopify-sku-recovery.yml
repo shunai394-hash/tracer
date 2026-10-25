@@ -1,0 +1,77 @@
+name: TRACER targeted Shopify SKU recovery (3 variants)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-targeted-shopify-sku-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tracer-targeted-shopify-sku-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait until production includes this workflow commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          ready=0
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 10 "$BASE/api/health" || true)"
+            sha="$(python3 -c 'import json; d=json.load(open("/tmp/health.json")); print(d.get("gitCommitSha") or "")' 2>/dev/null || true)"
+            if [[ "$code" == "200" && "$sha" == "$GITHUB_SHA" ]]; then
+              ready=1
+              break
+            fi
+            if [[ "$code" == "200" && -n "$sha" ]]; then
+              git init repo-check
+              git -C repo-check remote add origin https://github.com/shunai394-hash/tracer.git
+              git -C repo-check fetch --quiet --depth=100 origin main
+              if git -C repo-check cat-file -e "$sha^{commit}" 2>/dev/null && git -C repo-check merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+                ready=1
+                break
+              fi
+            fi
+            sleep 10
+          done
+          [[ "$ready" == "1" ]] || { echo "Production does not yet include this commit; refusing to sync."; exit 1; }
+
+      - name: Publish/sync only the three verified single-variant Shopify listings
+        shell: bash
+        env:
+          VARIANT_IDS: af3718df-72b5-4bac-a639-024cbb1102b3,c2a049ad-f354-403a-b958-0d2023a05cca,a34d6a5c-fb9b-4708-8a72-3b7d016f34bd
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o response.json -w "%{http_code}" --max-time 300 \
+            -H "Authorization: Bearer $token" \
+            "$BASE/api/cron/commerce-publish-shopify?limit=3&onlyUnpublished=false&variantIds=$VARIANT_IDS" || true)"
+          echo "Targeted Shopify sync HTTP=$code"
+          python3 - <<'PY'
+          import json, pathlib, sys
+          p=pathlib.Path("response.json")
+          try:
+              data=json.loads(p.read_text())
+          except Exception:
+              print(p.read_text()[:3000] if p.exists() else "No response body")
+              sys.exit(1)
+          print(json.dumps(data, ensure_ascii=False, indent=2)[:12000])
+          if not isinstance(data, dict) or data.get("error") or data.get("errors"):
+              sys.exit(1)
+          PY
+          [[ "$code" == "200" || "$code" == "207" ]] || exit 1
