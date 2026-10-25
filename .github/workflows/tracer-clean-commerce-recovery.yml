@@ -164,5 +164,6 @@ jobs:
 # 2026-10-18: TRACER_CLEAN_COMMERCE_RECOVERY after #1344 newest-first supplier offer scan is live; reconcile prices and publish bounded eligible backlog.
 # 2026-10-20: one-shot rerun after production deploy #1694 removed timestamp-only listing blocks; recheck actual eligibility and bounded channel recovery.
 # 2026-10-20: TRACER_CLEAN_COMMERCE_RECOVERY rerun with single-batch repricing so eligible channel publication starts promptly.
+# 2026-10-25: TRACER_CLEAN_COMMERCE_RECOVERY after PR #1952 added source-grounded Japanese titles for two verified brush-cleaning products.
 
 # 2026-10-20: TRACER_CLEAN_COMMERCE_RECOVERY trigger after PR #1709 separated fatal repricing errors from remaining storefront backlog.
