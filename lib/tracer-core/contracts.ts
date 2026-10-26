@@ -31,18 +31,17 @@ export function resolveProductIdentity(
   return { status: "matched", internalProductId: ids[0], evidence: supplierEvidence ? "supplier_variant" : "channel_product" };
 }
 
-/**
- * Listing eligibility is intentionally separate from order execution.
- * A product does not need to pass a sales experiment or have live inventory
- * confirmed merely to be listed. It does need a Japanese listing and a
- * verified supplier variant, with known positive unit economics.
- */
+/** Publication and order execution are separate, but listing safety still requires a sellable, fulfillable offer. */
 export type PublicationEvidence = {
   japaneseTitleValid: boolean;
   descriptionValid: boolean;
   imageVerified: boolean;
   supplierIdentityVerified: boolean;
   supplierVariantVerified: boolean;
+  inventoryKnown: boolean;
+  inventoryAvailable: number | null;
+  orderable: boolean;
+  trackingAvailable: boolean;
   sellingPrice: number | null;
   landedCost: number | null;
   channelFees: number | null;
@@ -56,6 +55,10 @@ export function evaluatePublication(e: PublicationEvidence): PublicationDecision
   if (!e.imageVerified) blockers.push("image_not_verified");
   if (!e.supplierIdentityVerified) blockers.push("supplier_identity_unverified");
   if (!e.supplierVariantVerified) blockers.push("supplier_variant_unverified");
+  if (!e.inventoryKnown || e.inventoryAvailable === null || !Number.isFinite(e.inventoryAvailable)) blockers.push("inventory_unknown");
+  else if (e.inventoryAvailable <= 0) blockers.push("inventory_unavailable");
+  if (!e.orderable) blockers.push("supplier_not_orderable");
+  if (!e.trackingAvailable) blockers.push("tracking_unavailable");
   const values = [e.sellingPrice, e.landedCost, e.channelFees, e.shippingCost];
   if (values.some((v) => v === null || !Number.isFinite(v))) blockers.push("cost_or_price_unknown");
   else if ((e.sellingPrice as number) <= 0 || (e.landedCost as number) < 0 || (e.channelFees as number) < 0 || (e.shippingCost as number) < 0) blockers.push("cost_or_price_invalid");
