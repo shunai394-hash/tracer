@@ -76,9 +76,9 @@ export default function MyPage() {
       <div className="relative mx-auto w-full max-w-6xl px-5 py-12 sm:px-8 sm:py-16 lg:px-10">
         <div className="flex flex-col justify-between gap-6 border-b border-white/20 pb-8 sm:flex-row sm:items-end">
           <div>
-            <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">TRACER / MY PAGE</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">あなたのTRACER。</h1>
-            <p className="mt-3 text-base text-zinc-200">{email ?? "認証情報を確認中…"}</p>
+            <p className="font-mono text-sm font-bold uppercase tracking-[0.16em] text-white">TRACER / MY PAGE</p>
+            <h1 className="mt-4 text-4xl font-bold tracking-[-0.03em] text-white sm:text-5xl">あなたのTRACER。</h1>
+            <p className="mt-3 text-lg font-semibold text-white">{email ?? "認証情報を確認中…"}</p>
           </div>
           <button type="button" onClick={() => void signOut()} className="min-h-11 border border-white/30 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/10">ログアウト</button>
         </div>
