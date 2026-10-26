@@ -40,9 +40,12 @@ export async function GET(request: Request) {
 
     if (error) throw new Error(error.message);
 
+    const hasJapaneseText = (value: unknown): value is string =>
+      typeof value === "string" && /[\u3040-\u30ff\u3400-\u9fff]/u.test(value);
+
     const products = (data ?? [])
       .filter((row) =>
-        typeof row.title === "string" &&
+        hasJapaneseText(row.title) &&
         row.title.trim().length > 0 &&
         typeof row.selling_price === "number" &&
         Number.isFinite(row.selling_price) &&
@@ -54,7 +57,7 @@ export async function GET(request: Request) {
       .map((row) => ({
         id: String(row.id),
         title: String(row.title).trim(),
-        description: typeof row.description === "string" ? row.description : null,
+        description: hasJapaneseText(row.description) ? row.description.trim() : null,
         sellingPrice: Number(row.selling_price),
         currency: typeof row.currency === "string" && row.currency.trim()
           ? row.currency
