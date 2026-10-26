@@ -5,15 +5,101 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const ELEVEN_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+const ELEVEN_TTD_WS_URL = "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input";
 const MODEL_ID = "eleven_v4_turbo";
+const OUTPUT_FORMAT = "mp3_44100_128";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+const PROVIDER_TIMEOUT_MS = 25_000;
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
     status,
     headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+  });
+}
+
+async function synthesizeDialogue(apiKey: string, voiceId: string, text: string): Promise<Uint8Array> {
+  const url = new URL(ELEVEN_TTD_WS_URL);
+  url.searchParams.set("model_id", MODEL_ID);
+  url.searchParams.set("output_format", OUTPUT_FORMAT);
+
+  return await new Promise<Uint8Array>((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let settled = false;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try {
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
+      } catch {
+        // Ignore close errors after the result has been settled.
+      }
+      if (error) {
+        reject(error);
+      } else {
+        resolve(new Uint8Array(Buffer.concat(chunks, totalBytes)));
+      }
+    };
+
+    const timeout = setTimeout(() => finish(new Error("provider_timeout")), PROVIDER_TIMEOUT_MS);
+
+    socket.addEventListener("open", () => {
+      // v4 Turbo is only supported by Text to Dialogue WebSocket. Register
+      // exactly one authorized voice, then submit the short clip and flush.
+      socket.send(JSON.stringify({ voices: [voiceId], xi_api_key: apiKey }));
+      socket.send(JSON.stringify({
+        inputs: [{ text, voice_id: voiceId, new_turn: true }],
+      }));
+      socket.send(JSON.stringify({ close_socket: true }));
+    });
+
+    socket.addEventListener("message", async (event: MessageEvent) => {
+      try {
+        const raw = typeof event.data === "string"
+          ? event.data
+          : await (event.data as Blob).text();
+        const message: unknown = JSON.parse(raw);
+        if (!message || typeof message !== "object") return;
+        const record = message as Record<string, unknown>;
+
+        if (record.error) {
+          finish(new Error("provider_rejected_request"));
+          return;
+        }
+
+        if (typeof record.audio === "string") {
+          const chunk = Buffer.from(record.audio, "base64");
+          totalBytes += chunk.byteLength;
+          if (totalBytes > MAX_AUDIO_BYTES) {
+            finish(new Error("audio_size_limit_exceeded"));
+            return;
+          }
+          chunks.push(chunk);
+        }
+
+        if (record.is_final === true) {
+          if (totalBytes === 0) {
+            finish(new Error("empty_audio_response"));
+          } else {
+            finish();
+          }
+        }
+      } catch {
+        finish(new Error("invalid_provider_message"));
+      }
+    });
+
+    socket.addEventListener("error", () => finish(new Error("websocket_error")));
+    socket.addEventListener("close", () => {
+      if (!settled) finish(new Error("connection_closed_before_final_audio"));
+    });
   });
 }
 
@@ -64,66 +150,11 @@ export async function POST(request: Request) {
     }, 400);
   }
 
-  // Model and output format are fixed server-side to avoid caller-selected
-  // models, formats, or unbounded generation settings.
-  const payload = {
-    text,
-    model_id: MODEL_ID,
-    apply_text_normalization: "auto",
-  };
-
   try {
-    const upstream = await fetch(
-      `${ELEVEN_TTS_URL}/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify(payload),
-        cache: "no-store",
-        signal: AbortSignal.timeout(25_000),
-      },
-    );
-
-    if (!upstream.ok) {
-      // Do not expose raw provider response bodies, which can contain account details.
-      let providerMessage = "ElevenLabs could not generate this clip.";
-      try {
-        const errorBody: unknown = await upstream.json();
-        if (errorBody && typeof errorBody === "object") {
-          const record = errorBody as Record<string, unknown>;
-          const detail = record.detail;
-          if (typeof detail === "string") providerMessage = detail.slice(0, 300);
-          else if (detail && typeof detail === "object") {
-            const nested = detail as Record<string, unknown>;
-            if (typeof nested.message === "string") providerMessage = nested.message.slice(0, 300);
-          }
-        }
-      } catch {
-        // Keep a generic message for non-JSON provider errors.
-      }
-      return json({
-        ok: false,
-        error: "elevenlabs_request_failed",
-        message: providerMessage,
-        generationStarted: false,
-      }, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502);
-    }
-
-    const contentType = upstream.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("audio/")) {
-      return json({ ok: false, error: "unexpected_audio_response" }, 502);
-    }
-
-    const bytes = new Uint8Array(await upstream.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_AUDIO_BYTES) {
-      return json({ ok: false, error: "audio_size_out_of_range" }, 502);
-    }
-
-    return new NextResponse(bytes, {
+    const bytes = await synthesizeDialogue(apiKey, voiceId, text);
+    const responseBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(responseBuffer).set(bytes);
+    return new NextResponse(responseBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
@@ -134,11 +165,20 @@ export async function POST(request: Request) {
         "X-AI-Voice-Model": MODEL_ID,
       },
     });
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "";
+    const status = reason === "provider_rejected_request" ? 502 : 502;
     return json({
       ok: false,
-      error: "elevenlabs_unavailable",
-      message: "The request failed or timed out. It was not automatically retried.",
-    }, 502);
+      error: reason === "provider_timeout"
+        ? "elevenlabs_timeout"
+        : reason === "audio_size_limit_exceeded"
+          ? "audio_size_out_of_range"
+          : "elevenlabs_unavailable",
+      message: reason === "provider_timeout"
+        ? "The request timed out. It was not automatically retried."
+        : "ElevenLabs could not complete the audio request. It was not automatically retried.",
+      generationStarted: true,
+    }, status);
   }
 }

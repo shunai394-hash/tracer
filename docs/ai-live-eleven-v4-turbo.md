@@ -17,18 +17,22 @@ Request JSON:
 
 ```json
 {
-  "text": "[warm, friendly] こんにちは。こちらはTRACERの音声テストです。[excited] 今日はおすすめ商品をご紹介します！",
+  "text": "こんにちは。こちらはTRACERの音声テストです。今日はおすすめ商品をご紹介します！",
   "voiceId": "YOUR_AUTHORIZED_VOICE_ID"
 }
 ```
 
-Returns MP3 audio on success. Maximum input is 1,200 characters; requests time out after 25 seconds and are not automatically retried. The model and output format are fixed server-side. The endpoint accepts a voice ID, not an arbitrary model ID.
+Returns MP3 audio on success. Maximum input is 1,200 characters; the provider connection times out after 25 seconds and is not automatically retried. The model and output format are fixed server-side. The endpoint accepts a voice ID, not an arbitrary model ID.
+
+## Transport
+
+`eleven_v4_turbo` must use ElevenLabs' Text to Dialogue WebSocket, not the regular `/v1/text-to-speech/{voice_id}` REST endpoint. The WebSocket registers one voice, accepts dialogue inputs, and emits base64 audio chunks. The route should collect chunks until the final response before returning an MP3.
 
 ## Cost and safety
 
 - This API call can incur usage charges. Check the current account plan, credit balance, model availability, and current pricing before the first request.
 - No automatic generation, background job, retry, or fallback is enabled. Each POST is an explicit generation request.
 - The server does not log the text, voice ID, or audio. API credentials stay server-side.
-- The endpoint is not yet connected to the AI avatar UI or real-time comment pipeline.
-- Test one short Japanese sample first; compare pronunciation, emotion-tag behavior, time to first audio, and actual credits consumed against browser speech and Fish Audio Drama 3.
-- ElevenLabs' documented model guidance describes `eleven_v4_turbo` as a real-time expressive TTS option. Reported model inference latency does not include network and application latency.
+- The endpoint is not connected to the AI avatar UI or real-time comment pipeline.
+- Test one short Japanese sample first; compare pronunciation, emotion-tag behavior, time to audio, and actual credits consumed against browser speech and Fish Audio Drama 3.
+- Model inference latency does not include network and application latency.
