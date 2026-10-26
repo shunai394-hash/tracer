@@ -77,7 +77,7 @@ These are pilot budget targets, not vendor quotes or a guarantee of zero charges
 
 ## TikTok Japan: preflight gate before public streaming
 
-Public TikTok LIVE is a separate milestone from the local POC. Rules and available features can vary by account, age, region, and product surface. Before enabling a public stream, verify the account itself in TikTok and review the current official policy pages below; do not assume that access to LIVE automatically grants access to LIVE Studio, an automated comment feed, or a public API.
+Public TikTok LIVE is a separate milestone from the local POC. LIVE hosts generally need to be at least 18, and follower/access thresholds and available features can vary by account, age, region, and product surface. Treat this as a planning baseline, not account-specific approval: confirm eligibility in the Japanese TikTok app and review the current official policy pages below. Do not assume that access to LIVE automatically grants access to LIVE Studio, an automated comment feed, or a public API.
 
 - LIVE eligibility and account requirements: [TikTok Support — TikTok LIVE](https://support.tiktok.com/ja/live-gifts-wallet/tiktok-live/what-is-tiktok-live)
 - AI-generated content labels and restrictions: [TikTok Support — AI-generated content](https://support.tiktok.com/ja/safety-hc/account-and-user-safety/ai-generated-content)
