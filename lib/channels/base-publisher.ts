@@ -117,6 +117,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // always ordered first and occupied every limited batch.
     query = query.or([
       "and(published.eq.true,base_publication_status.is.null)",
+      // Reconcile already-published BASE items whose stored title still contains Latin text.
+      // The exact BASE item ID is retained; ensureJapaneseCatalogCopy translates and edits it in place.
+      "and(published.eq.true,base_item_id.not.is.null,title.match.[A-Za-z]{3})",
       "and(published.eq.true,base_publication_status.neq.published)",
       // Re-check stale hidden markers even when the denormalized publication
       // status says published; the canonical supplier helper below decides
