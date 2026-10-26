@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRACER × Fish Audio Drama 3 ローカル音声テスト</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111827;color:#f3f4f6}*{box-sizing:border-box}body{margin:0;padding:24px;display:grid;place-items:center;min-height:100vh}main{width:min(760px,100%);padding:28px;border:1px solid #475569;border-radius:20px;background:#1f2937}.tag{color:#99f6e4;font-size:.8rem;letter-spacing:.08em}h1{font-size:1.6rem}.muted{color:#cbd5e1;line-height:1.7}label{display:block;margin:16px 0 8px}textarea,select{width:100%;padding:12px;border-radius:10px;border:1px solid #64748b;background:#0f172a;color:#f8fafc;font:inherit}textarea{min-height:120px}button{border:0;border-radius:10px;padding:11px 14px;margin:4px;font:inherit;font-weight:650;cursor:pointer;background:#99f6e4;color:#102027}button.alt{background:#475569;color:white}button:disabled{opacity:.45}.row{display:flex;flex-wrap:wrap;gap:4px}.answer{padding:14px;background:#0f172a;border-radius:12px;margin:14px 0;white-space:pre-wrap}.status{min-height:48px;padding:12px;background:#0f172a;border-radius:10px;margin-top:14px}small{color:#cbd5e1}
+</style></head><body><main>
+<div class="tag">LOCALHOST ONLY · FISH AUDIO DRAMA 3</div><h1>TRACER AIアバター音声接続テスト</h1>
+<p class="muted">Fish Audio Drama 3 APIをローカルの中継サーバー経由で呼び出します。APIキーはブラウザに渡しません。商品情報・DB・販売システム・TikTokには接続しません。利用する音声・声の権利と商用ライセンスを事前に確認してください。</p>
+<label for="direction">演技指示</label><select id="direction"><option value="[warm, friendly Japanese narration]">親しみやすく自然に</option><option value="[excited, energetic Japanese narration]">明るく元気に</option><option value="[calm, reassuring Japanese narration]">落ち着いて安心感を出す</option><option value="[gentle, slightly playful Japanese narration]">やさしく少し楽しげに</option><option value="[whispering softly]">ささやき声</option></select>
+<label for="text">読み上げる文章</label><textarea id="text" maxlength="1200">こんにちは。TRACERのAIアバターです。今日は商品の特徴を、わかりやすくご紹介します。</textarea>
+<div class="row"><button id="speak">Drama 3で生成して再生</button><button id="stop" class="alt">停止</button><button id="fallback" class="alt">ブラウザ音声で再生</button></div>
+<div id="answer" class="answer">ここに状態と生成結果が表示されます。</div><audio id="player" controls></audio>
+<div id="status" class="status" role="status" aria-live="polite">待機中。APIキーを環境変数に設定し、ローカルサーバーを起動してください。</div>
+<small>APIキーはサーバー環境変数 FISH_AUDIO_API_KEY からのみ読み込みます。生成音声は外部APIに送信したテキストに基づきます。</small>
+</main><script>
+(()=>{const $=s=>document.querySelector(s);let objectUrl=null;const status=$('#status'),speak=$('#speak'),player=$('#player');
+$('#speak').addEventListener('click',async()=>{const text=$('#text').value.trim();if(!text||text.length>1200){status.textContent='文章は1〜1200文字で入力してください。';return;}speak.disabled=true;status.textContent='Drama 3で音声を生成中…';try{const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:$('#direction').value+' '+text})});if(!r.ok){const msg=await r.text();throw new Error(msg||('HTTP '+r.status));}const blob=await r.blob();if(!blob.size)throw new Error('音声データが空です');if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);player.src=objectUrl;await player.play();$('#answer').textContent='Drama 3 音声を生成しました。';status.textContent='再生中。API応答: '+blob.size.toLocaleString()+' bytes';}catch(e){status.textContent='生成に失敗: '+String(e.message||e)+'。APIキー、通信、利用枠を確認してください。';}finally{speak.disabled=false;}});
+$('#stop').addEventListener('click',()=>{player.pause();player.currentTime=0;if('speechSynthesis'in window)speechSynthesis.cancel();status.textContent='停止しました。';});
+$('#fallback').addEventListener('click',()=>{if(!('speechSynthesis'in window)){status.textContent='このブラウザは音声合成に対応していません。';return;}speechSynthesis.cancel();const u=new SpeechSynthesisUtterance($('#text').value);u.lang='ja-JP';speechSynthesis.speak(u);status.textContent='ブラウザ標準音声で再生中。Drama 3 APIは使用していません。';});
+window.addEventListener('beforeunload',()=>{if(objectUrl)URL.revokeObjectURL(objectUrl);if('speechSynthesis'in window)speechSynthesis.cancel();});
+})();
+</script></body></html>
