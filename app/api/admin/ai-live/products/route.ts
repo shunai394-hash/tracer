@@ -33,6 +33,8 @@ export async function GET(request: Request) {
       .eq("tracking_available", true)
       .gt("inventory", 0)
       .is("archived_at", null)
+      .not("base_item_id", "is", null)
+      .eq("base_publication_status", "published")
       .order("updated_at", { ascending: false })
       .limit(limit);
 
