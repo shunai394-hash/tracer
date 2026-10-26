@@ -235,6 +235,11 @@ export async function GET(request: Request) {
       const eligibleRows = (listings ?? []).filter((row) => {
         if (row.channel !== channel) return false;
         const variantId = String(row.variant_id);
+        // Only active product variants can be processed by syncCommerceListings.
+        // Exclude inactive/missing variants from the backlog calculation too, or
+        // they remain permanently eligible and make every reprice run report an
+        // undrainable queue even when all actionable listings have been synced.
+        if (!activeVariantIds.has(variantId)) return false;
         const canonicalPrice = canonicalPriceByVariant.get(variantId);
         const productUpdatedAt = productUpdatedAtByVariant.get(variantId);
         const contentNeedsSync = Boolean(productUpdatedAt) &&
