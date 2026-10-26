@@ -56,7 +56,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <section>
 <h2>模擬コメントに回答</h2>
 <label for="voice">音声</label>
-<select id="voice"><option value="">ブラウザの既定音声</option></select>
+<select id="voice"><option value="">自動選択（自然な日本語音声を優先）</option></select>
 <div class="controls" style="margin-top:14px">
 <button data-type="price">「いくら？」</button>
 <button data-type="features">「どんな商品？」</button>
@@ -82,14 +82,42 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     purchase: '購入先の表示テストです。実際の商品ではありませんので、購入はできません。',
     delivery: 'お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。'
   };
+  function japaneseVoices() {
+    return (synth ? synth.getVoices() : []).filter(v =>
+      v.lang && v.lang.toLowerCase().startsWith('ja')
+    );
+  }
+  function voiceScore(voice) {
+    const name = voice.name.toLowerCase();
+    let score = 0;
+    if (/natural|online/.test(name)) score += 100;
+    if (/nanami/.test(name)) score += 35;
+    if (/google.*日本語|日本語.*google/.test(name)) score += 30;
+    if (/kyoko|haruka|keita|otoya/.test(name)) score += 20;
+    if (/microsoft/.test(name)) score += 10;
+    if (voice.default) score += 1;
+    return score;
+  }
+  function preferredJapaneseVoice() {
+    return japaneseVoices().sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null;
+  }
   function loadVoices() {
     const old = voiceSelect.value;
-    voiceSelect.replaceChildren(new Option('ブラウザの既定音声', ''));
-    const voices = synth ? synth.getVoices() : [];
-    voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('ja')).forEach(v => {
-      voiceSelect.add(new Option(v.name + ' (' + v.lang + ')', v.name));
+    const voices = japaneseVoices().sort((a, b) => voiceScore(b) - voiceScore(a));
+    voiceSelect.replaceChildren(new Option('自動選択（自然な日本語音声を優先）', ''));
+    voices.forEach((v, index) => {
+      const suffix = index === 0 ? ' — おすすめ' : '';
+      voiceSelect.add(new Option(v.name + ' (' + v.lang + ')' + suffix, v.name));
     });
-    if ([...voiceSelect.options].some(o => o.value === old)) voiceSelect.value = old;
+    if ([...voiceSelect.options].some(o => o.value === old)) {
+      voiceSelect.value = old;
+    } else {
+      const preferred = preferredJapaneseVoice();
+      voiceSelect.value = preferred ? preferred.name : '';
+    }
+    if (voices.length === 0) {
+      status.textContent = '日本語音声が見つかりません。Microsoft Edgeの日本語音声を追加するか、ブラウザの音声設定を確認してください。';
+    }
   }
   function speak(text) {
     if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
@@ -99,13 +127,20 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ja-JP';
-    utterance.rate = 1;
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
     const selected = voiceSelect.value;
-    const voice = synth.getVoices().find(v => v.name === selected);
-    if (voice) utterance.voice = voice;
-    utterance.onstart = () => { avatar.classList.add('speaking'); status.textContent = '読み上げ中'; };
-    utterance.onend = () => { avatar.classList.remove('speaking'); status.textContent = '読み上げ完了'; };
-    utterance.onerror = () => { avatar.classList.remove('speaking'); status.textContent = '音声再生に失敗しました。ブラウザの音声設定を確認してください。'; };
+    const voice = japaneseVoices().find(v => v.name === selected) || preferredJapaneseVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || 'ja-JP';
+    } else {
+      status.textContent = '利用できる日本語音声がありません。ブラウザの日本語音声を追加してください。';
+      return;
+    }
+    utterance.onstart = () => { avatar.classList.add('speaking'); status.textContent = '読み上げ中（' + voice.name + '）'; };
+    utterance.onend = () => { avatar.classList.remove('speaking'); status.textContent = '読み上げ完了（' + voice.name + '）'; };
+    utterance.onerror = () => { avatar.classList.remove('speaking'); status.textContent = '音声再生に失敗しました。別の日本語音声を選択してください。'; };
     synth.speak(utterance);
   }
   document.getElementById('intro').addEventListener('click', () => {
