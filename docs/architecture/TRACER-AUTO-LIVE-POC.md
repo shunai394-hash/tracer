@@ -66,3 +66,18 @@ TikTok Shop Japan's AIGC guidance surfaced during planning says AIGC is permitte
 ## First implementation task
 
 Inspect the existing TRACER read-only listing/product routes and authentication contracts. Select the safest existing read path and document its exact safe fields. If no suitable path exists, propose a protected read-only route behind existing automation/user authentication and tests; do not implement until its auth contract is clear.
+
+
+## Local avatar preview (implemented)
+
+Open `scripts/ai-live-avatar-preview.html` directly in a modern desktop browser (Chrome or Edge). No build, API key, account connection, or server is required.
+
+- The avatar is a lightweight CSS illustration with mouth movement during browser speech synthesis.
+- Japanese speech uses the browser's built-in `SpeechSynthesisUtterance` with `ja-JP`; voice availability and quality depend on the OS/browser.
+- The product and comments are explicitly fictional test fixtures.
+- Four simulated comment buttons cover price, features, stock, and delivery. Unknown delivery details are not invented.
+- The Stop button cancels current speech; leaving the page also cancels speech.
+- The preview contains no network calls, external assets, DB reads, credentials, product feed connection, or public streaming.
+- This preview is not yet a production-grade 3D avatar, lip-sync engine, real-time AI conversation, TikTok adapter, or 30–60 minute endurance test.
+
+Run the contract checks with `npm run test:ai-live-local-demo`. The test checks the mock runner and verifies the preview's speech controls, disclosure, simulated prompts, and no-network contract. Browser-specific speech quality still needs a manual check.
