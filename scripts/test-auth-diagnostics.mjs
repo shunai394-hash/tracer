@@ -14,7 +14,10 @@ assert.doesNotMatch(base, /error:\s*error instanceof Error\s*\?\s*error\.message
 assert.doesNotMatch(base, /unique_key/);
 assert.match(base, /probeBaseReadOnly/);
 assert.match(base, /createSupabaseAdminClient/);
-assert.match(base, /getLinkedSupplierListingIds/);
+assert.match(base, /getPublishableSupplierListingStatuses/, "BASE audit must use the same publication-safe supplier identity predicate as the publisher");
+assert.match(base, /supplier_product_id,supplier_variant_id/, "legacy listing audit must load the exact supplier tuple");
+assert.match(base, /supplierStatuses\.has\(String\(legacyMatches\[0\]\.id\)\)/, "native verified CJ offers may pass without marketplace identity promotion");
+assert.doesNotMatch(base, /getLinkedSupplierListingIds/, "audit must not treat supply_discovered as automatically unfulfillable");
 assert.match(base, /visibleItemsUnlinked/);
 assert.match(base, /visibleItemsWithoutDbMapping/);
 assert.match(base, /visibleItemsWithAmbiguousDbMapping/);
