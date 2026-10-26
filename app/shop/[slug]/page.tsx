@@ -96,7 +96,7 @@ export default async function ShopProductPage({
   if (!listing) notFound();
 
   const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
-  const shopifyDomain = rawShopifyDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const shopifyDomain = (rawShopifyDomain || "ieufrg-tb.myshopify.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
   const shopifyProductUrl = listing.shopifySyncStatus === "synced" && listing.shopifyHandle && shopifyDomain
     ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
     : null;
