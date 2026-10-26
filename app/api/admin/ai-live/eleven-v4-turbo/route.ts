@@ -152,7 +152,9 @@ export async function POST(request: Request) {
 
   try {
     const bytes = await synthesizeDialogue(apiKey, voiceId, text);
-    return new NextResponse(bytes, {
+    const responseBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(responseBuffer).set(bytes);
+    return new NextResponse(responseBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
