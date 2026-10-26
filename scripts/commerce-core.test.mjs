@@ -414,7 +414,7 @@ test("Shopify fulfillment tracking sync runs automatically after procurement", a
   const route = await readFile(new URL("../app/api/cron/shopify-fulfillment/route.ts", import.meta.url), "utf8");
   assert.match(route, /syncShopifyFulfillments\(25\)/);
 });
-test("clean commerce cron schedule preserves canonical routes and the required thirty-minute storefront publishing and five-minute patrol", async () => {
+test("clean commerce cron schedule preserves canonical routes and the required thirty-minute storefront publishing and fifteen-minute patrol", async () => {
   const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const schedules = new Map(config.crons.map((job) => [job.path, job.schedule]));
   assert.equal(schedules.get("/api/cron/commerce-cj-import"), "0,30 * * * *");
@@ -423,7 +423,7 @@ test("clean commerce cron schedule preserves canonical routes and the required t
   assert.equal(schedules.get("/api/cron/commerce-base-orders"), "1,31 * * * *");
   assert.equal(schedules.get("/api/cron/commerce-procurement"), "13,43 * * * *");
   assert.equal(schedules.get("/api/cron/shopify-publish"), "*/30 * * * *", "Shopify published-listing reconciliation must run every thirty minutes");
-  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/5 * * * *", "the existing patrol must remain enabled every five minutes");
+  assert.equal(schedules.get("/api/cron/patrol-ai"), "*/15 * * * *", "patrol is intentionally reduced to every fifteen minutes to lower scheduled execution cost");
   assert.equal(schedules.has("/api/cron/market-sourcing"), false, "supplier-native pipeline must not schedule marketplace sourcing observation");
   assert.equal(schedules.has("/api/cron/orosy-bulk-import"), false);
   assert.equal(schedules.has("/api/cron/supply-first"), false);
@@ -903,7 +903,7 @@ test("existing supplier offers are repriced from database evidence without consu
   assert.match(route, /price\.calculated_at[^\n]*offer\.updated_at/);
   const cronEntries = JSON.parse(schedule).crons;
   assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/commerce-reprice-existing" && entry.schedule === "4,34 * * * *"));
-  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/5 * * * *"));
+  assert.ok(cronEntries.some((entry) => entry.path === "/api/cron/patrol-ai" && entry.schedule === "*/15 * * * *"));
 });
 
 test("BASE paid orders never procure a mapped subset when any non-cancelled line is unmapped", async () => {
