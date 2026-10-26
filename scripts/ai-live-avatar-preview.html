@@ -44,6 +44,12 @@ button{cursor:pointer;border:1px solid #4d6c9a;background:#243c5d;color:white;bo
       <p>これは画面・音声の動作確認用サンプルです。実際のTRACER商品、価格、在庫を示していません。</p>
       <div class="muted">購入URL・実データ取得・外部API接続：無効</div>
       <div class="actions"><button id="intro">商品紹介を話す</button><button id="stop" class="secondary">音声停止</button></div>
+      <div class="actions" aria-label="連続動作テスト">
+        <button id="soak30" class="secondary">30分テスト開始</button>
+        <button id="soak60" class="secondary">60分テスト開始</button>
+        <button id="stopSoak" class="secondary">連続テスト終了</button>
+      </div>
+      <div class="status" id="soakStatus" role="status">連続テスト未実行</div>
       <div class="eyebrow" style="margin-top:24px">SIMULATED COMMENTS</div>
       <div class="comments">
         <button class="comment" data-type="price">価格はいくら？<small>架空データで価格を回答</small></button>
@@ -112,7 +118,62 @@ button{cursor:pointer;border:1px solid #4d6c9a;background:#243c5d;color:white;bo
   document.querySelectorAll("[data-type]").forEach((button) => {
     button.addEventListener("click", () => speak(responses[button.dataset.type]));
   });
+  let soakTimer = null;
+  let soakInterval = null;
+  let soakStartedAt = 0;
+  let soakDurationMs = 0;
+  let soakCount = 0;
+  const soakStatus = document.getElementById("soakStatus");
+  const soakComments = ["price", "features", "stock", "delivery"];
+  function stopSoak(message) {
+    if (soakTimer) clearTimeout(soakTimer);
+    if (soakInterval) clearInterval(soakInterval);
+    soakTimer = null;
+    soakInterval = null;
+    document.getElementById("soak30").disabled = false;
+    document.getElementById("soak60").disabled = false;
+    if (message) soakStatus.textContent = message;
+  }
+  function startSoak(minutes) {
+    stopSoak();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    soakStartedAt = Date.now();
+    soakDurationMs = minutes * 60 * 1000;
+    soakCount = 0;
+    document.getElementById("soak30").disabled = true;
+    document.getElementById("soak60").disabled = true;
+    status.textContent = "連続動作テスト中。実商品・外部APIは使いません。";
+    const tick = () => {
+      const elapsed = Date.now() - soakStartedAt;
+      const remaining = Math.max(0, soakDurationMs - elapsed);
+      soakStatus.textContent = minutes + "分テスト: " + Math.floor(elapsed / 60000) + "分" + Math.floor((elapsed % 60000) / 1000) + "秒経過 / 応答 " + soakCount + "回";
+      if (remaining <= 0) stopSoak(minutes + "分テスト完了。模擬応答 " + soakCount + "回。ブラウザを閉じると記録は保持されません。");
+    };
+    const speakNext = () => {
+      if (Date.now() - soakStartedAt >= soakDurationMs) return;
+      const type = soakComments[soakCount % soakComments.length];
+      soakCount += 1;
+      speak(responses[type]);
+      tick();
+    };
+    speakNext();
+    soakInterval = setInterval(speakNext, 45000);
+    soakTimer = setTimeout(() => {
+      stopSoak(minutes + "分テスト完了。模擬応答 " + soakCount + "回。ブラウザを閉じると記録は保持されません。");
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      stage.classList.remove("talking");
+    }, soakDurationMs);
+    tick();
+  }
+  document.getElementById("soak30").addEventListener("click", () => startSoak(30));
+  document.getElementById("soak60").addEventListener("click", () => startSoak(60));
+  document.getElementById("stopSoak").addEventListener("click", () => {
+    stopSoak("連続テストを手動停止。模擬応答 " + soakCount + "回。");
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    stage.classList.remove("talking");
+  });
   window.addEventListener("pagehide", () => {
+    stopSoak();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   });
 })();
