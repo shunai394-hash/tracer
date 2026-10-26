@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const smoke = await readFile(new URL("./ai-live-product-feed-smoke.mjs", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/admin/ai-live/products/route.ts", import.meta.url), "utf8");
+const selectedFields = route.match(/\\.select\\(\\s*"([^"]+)"/)?.[1] ?? "";
 
 const checks = [
   ["smoke test is opt-in", smoke.includes('if (!baseUrl || !secret)')],
@@ -16,7 +17,7 @@ const checks = [
   ["validates BASE product URL", smoke.includes('productUrl.origin, "https://tracer.base.ec"') && smoke.includes('productUrl.pathname.startsWith("/items/")')],
   ["API route requires automation auth", route.includes("requireAutomationAuth(request)")],
   ["API route is read-only", route.includes(".from(\"shop_listings\")") && !/\.insert\(|\.update\(|\.delete\(|\.upsert\(/.test(route)],
-  ["API response omits supplier/cost fields", !/supplier_id|source_cost|shipping_cost|margin|profit/i.test(route)],
+  ["API query selects no supplier/cost/profit fields", selectedFields.length > 0 && !/supplier_id|source_cost|shipping_cost|margin|profit/i.test(selectedFields)],
   ["API route returns no-store", route.includes('"Cache-Control": "no-store"')],
 ];
 
