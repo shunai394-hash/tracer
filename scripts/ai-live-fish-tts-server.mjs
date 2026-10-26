@@ -64,12 +64,22 @@ const server = createServer(async (req, res) => {
       res.end(`Fish Audio API error (${upstream.status}): ${detail}`);
       return;
     }
-    const audio = Buffer.from(await upstream.arrayBuffer());
-    if (!audio.length || audio.length > 25 * 1024 * 1024) {
+    const maxAudioBytes = 25 * 1024 * 1024;
+    const chunks = [];
+    let audioBytes = 0;
+    for await (const chunk of upstream.body) {
+      audioBytes += chunk.byteLength;
+      if (audioBytes > maxAudioBytes) {
+        throw new Error("AUDIO_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+    if (audioBytes === 0) {
       res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("音声データが空か、サイズ上限を超えています。");
+      res.end("音声データが空です。");
       return;
     }
+    const audio = Buffer.concat(chunks, audioBytes);
     res.writeHead(200, { "Content-Type": upstream.headers.get("content-type") || "audio/mpeg", "Content-Length": audio.length });
     res.end(audio);
   } catch (error) {
