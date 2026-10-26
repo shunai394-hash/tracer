@@ -78,6 +78,7 @@ Open `scripts/ai-live-avatar-preview.html` directly in a modern desktop browser 
 - Four simulated comment buttons cover price, features, stock, and delivery. Unknown delivery details are not invented.
 - The Stop button cancels current speech; leaving the page also cancels speech.
 - The preview contains no network calls, external assets, DB reads, credentials, product feed connection, or public streaming.
-- This preview is not yet a production-grade 3D avatar, lip-sync engine, real-time AI conversation, TikTok adapter, or 30–60 minute endurance test.
+- The 30-minute and 60-minute buttons run a local simulated endurance session, speaking one canned comment response every 45 seconds. Stop ends the session; elapsed time and response count are visible but not persisted. This checks browser continuity only, not API reliability or real-time AI latency.
+- This preview is not a production-grade 3D avatar, lip-sync engine, real-time AI conversation, or TikTok adapter.
 
 Run the contract checks with `npm run test:ai-live-local-demo`. The test checks the mock runner and verifies the preview's speech controls, disclosure, simulated prompts, and no-network contract. Browser-specific speech quality still needs a manual check.
