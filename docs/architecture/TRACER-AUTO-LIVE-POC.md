@@ -83,3 +83,15 @@ After this PR is merged and deployed, open `/ai-live-preview.html` in a modern d
 - This preview is not a production-grade 3D avatar, lip-sync engine, real-time AI conversation, or TikTok adapter.
 
 Run the contract checks with `npm run test:ai-live-local-demo`. The test checks the mock runner and verifies the preview's speech controls, disclosure, simulated prompts, and no-network contract. Browser-specific speech quality still needs a manual check.
+
+
+## Fish Audio Drama 3 voice connection (local-only)
+
+An optional local rehearsal page can generate Japanese speech through Fish Audio's `drama-3` TTS API. It is separate from the TRACER product feed and does not connect to TikTok LIVE or modify commerce data.
+
+1. Set `FISH_AUDIO_API_KEY` in your local shell; do not put it in browser code or commit it.
+2. Run `node scripts/ai-live-fish-tts-server.mjs`.
+3. Open `http://127.0.0.1:8787`, enter a short Japanese line, and select the desired delivery style.
+4. Stop the server with Ctrl+C when finished.
+
+The proxy binds only to `127.0.0.1`, uses a 60-second request timeout and bounded text/body/audio sizes. Calls to Fish Audio may incur provider charges. Verify current provider terms and license for the intended use. Actual audio generation and playback require a local manual test. This integration is opt-in and must not be deployed publicly as-is.
