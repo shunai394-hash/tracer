@@ -213,6 +213,12 @@ assert.match(supplySelector, /if \(!isPublishableCatalogDescription\(item\.descr
 assert.doesNotMatch(supplySelector, /\?\? String\(item\.base\.normalized_title \?\? \("TRACER product "/, "generic generated title fallback must not bypass title validation");
 assert.match(localizeProductDescription("Bohemian Beach Vacation Flower Hair Clip For Women"), /花モチーフのヘアクリップ/);
  
+const titleRepairRoute = await readFile(new URL("../app/api/cron/commerce-japanese-title-repair/route.ts", import.meta.url), "utf8");
+assert.match(titleRepairRoute, /metadata\.sourceTitle, metadata\.source_title, metadata\.originalTitle/);
+assert.match(titleRepairRoute, /raw\.title_ja, product\.title_ja/, "legacy title repair must fall back to persisted title fields when metadata is absent");
+assert.match(titleRepairRoute, /sourceCandidates[\s\S]*?\.map\(\(sourceTitle\) => localizeProductTitle\(sourceTitle\)\)/);
+assert.match(titleRepairRoute, /isSpecificJapaneseProductTitle\(title\) && !hasEnglishWords\(title\)/, "fallback titles must pass the same Japanese-specificity gate");
+
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
