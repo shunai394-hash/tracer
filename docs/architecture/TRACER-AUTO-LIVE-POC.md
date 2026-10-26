@@ -73,6 +73,7 @@ Inspect the existing TRACER read-only listing/product routes and authentication 
 Open `scripts/ai-live-avatar-preview.html` directly in a modern desktop browser (Chrome or Edge). No build, API key, account connection, or server is required.
 
 - The avatar is a lightweight CSS illustration with mouth movement during browser speech synthesis.
+- A voice selector lists installed Japanese voices when the browser exposes them; if none are available, the page shows a fallback warning.
 - Japanese speech uses the browser's built-in `SpeechSynthesisUtterance` with `ja-JP`; voice availability and quality depend on the OS/browser.
 - The product and comments are explicitly fictional test fixtures.
 - Four simulated comment buttons cover price, features, stock, and delivery. Unknown delivery details are not invented.
