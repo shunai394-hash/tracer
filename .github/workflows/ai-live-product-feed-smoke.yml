@@ -59,7 +59,8 @@ jobs:
             (.count == (.products | length)) and
             all(.products[];
               (.id | type == "string") and
-              (.title | type == "string" and length > 0) and
+              (.title | type == "string" and length > 0 and test("[\\u3040-\\u30ff\\u3400-\\u9fff]")) and
+              ((.description == null) or (.description | type == "string" and test("[\\u3040-\\u30ff\\u3400-\\u9fff]"))) and
               (.sellingPrice | type == "number" and . > 0) and
               (.inStock == true) and
               (.productUrl | type == "string" and startswith("https://tracer.base.ec/items/"))
