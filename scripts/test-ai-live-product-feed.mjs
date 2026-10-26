@@ -19,6 +19,8 @@ for (const gate of [
   /\.eq\("tracking_available", true\)/,
   /\.gt\("inventory", 0\)/,
   /\.is\("archived_at", null\)/,
+  /\.not\("base_item_id", "is", null\)/,
+  /\.eq\("base_publication_status", "published"\)/,
   /row\.base_publication_status === "published"/,
   /row\.productUrl !== null/,
 ]) assert.match(route, gate);
@@ -40,4 +42,4 @@ for (const forbidden of [
 assert.match(route, /sellingPrice:/);
 assert.match(route, /productUrl:/);
 assert.match(route, /inStock: true/);
-console.log("AI-live product feed safety contract: 19 assertions passed");
+console.log("AI-live product feed safety contract: 21 assertions passed");
