@@ -35,6 +35,15 @@ test("CJ catalog repair replaces generic category titles with source-specific Ja
   assert.match(route, /電動クリーナー/);
 });
 
+test("CJ stale supplier evidence refresh runs every ten minutes with a bounded larger batch", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const vercel = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(route, /url\.searchParams\.get\("limit"\) \|\| 6/);
+  assert.match(route, /Math\.min\(8, Math\.max\(1, Number\(url\.searchParams\.get\("variantLimit"\) \|\| 8\)\)\)/);
+  assert.match(route, /Math\.min\(10, Math\.max\(4, limit \* 2\)\)/);
+  assert.match(vercel, /"path": "\/api\/cron\/commerce-cj-import",\s*"schedule": "\*\/10 \* \* \* \*"/);
+});
+
 test("CJ import prioritizes supplier refreshes for existing BASE/Shopify publication failures", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   assert.match(route, /from\("channel_listings"\)\.select\("variant_id,channel,last_error"\)/);
@@ -1235,7 +1244,7 @@ test("Shopify inventory sync retries stale changeFromQuantity conflicts with a f
 
 test("CJ evidence recovery uses a bounded adaptive retry cap and four-variant batches", async () => {
   const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  assert.match(importer, /const retryVariantLimit = Math\.min\(8, Math\.max\(4, limit \* 2\)\)/);
+  assert.match(importer, /const retryVariantLimit = Math\.min\(10, Math\.max\(4, limit \* 2\)\)/);
   assert.match(importer, /group\.variantIds\.slice\(0, 4\)/);
   assert.match(importer, /variantIds\.slice\(0, 4\)/);
 });

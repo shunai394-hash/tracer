@@ -488,8 +488,8 @@ export async function GET(request: Request) {
   const page = Math.min(1000, Math.max(1, Number(url.searchParams.get("page") || (discoveryBucket % 10) + 1)));
   // Process multiple new parents and child variants per 10-minute slot by default.
   // The per-run caps remain bounded to respect CJ rate limits and the 300-second function timeout.
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 3)));
-  const variantBatchLimit = Math.min(6, Math.max(1, Number(url.searchParams.get("variantLimit") || 6)));
+  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get("limit") || 6)));
+  const variantBatchLimit = Math.min(8, Math.max(1, Number(url.searchParams.get("variantLimit") || 8)));
   const variantRunSlot = Math.floor(Date.now() / 600_000);
   const fx = await getObservedUsdToJpyRate();
   if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) {
@@ -677,7 +677,7 @@ export async function GET(request: Request) {
         .slice(0, limit)
         .map(([id, group]) => ({ id, title: "", retryVariantIds: group.variantIds }));
       // Increase stale/blocked evidence recovery while keeping each run bounded.
-      const retryVariantLimit = Math.min(8, Math.max(4, limit * 2));
+      const retryVariantLimit = Math.min(10, Math.max(4, limit * 2));
       const evidenceRetryByParent = new Map<string, string[]>();
       let evidenceRetryCount = 0;
       const evidenceCutoff = Date.now() - 24 * 60 * 60_000;
