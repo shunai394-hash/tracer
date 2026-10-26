@@ -83,3 +83,24 @@ After this PR is merged and deployed, open `/ai-live-preview.html` in a modern d
 - This preview is not a production-grade 3D avatar, lip-sync engine, real-time AI conversation, or TikTok adapter.
 
 Run the contract checks with `npm run test:ai-live-local-demo`. The test checks the mock runner and verifies the preview's speech controls, disclosure, simulated prompts, and no-network contract. Browser-specific speech quality still needs a manual check.
+
+
+## Fish Audio Drama 3 voice connection (local-only)
+
+The separate local integration at `scripts/ai-live-fish-session.html` connects the preview UI to Fish Audio Drama 3 through `scripts/ai-live-fish-tts-server.mjs`. The proxy binds only to `127.0.0.1`, reads `FISH_AUDIO_API_KEY` from the server environment, enforces request-size and text-length limits, and never sends the API key to browser JavaScript. It does not read TRACER products, access the database, write commerce data, or connect to TikTok.
+
+### Run locally
+
+1. Create a Fish Audio API key and check the current API pricing and applicable license terms.
+2. In a terminal in the repository, set the key as an environment variable (do not paste it into source code or browser devtools):
+   - macOS/Linux: `export FISH_AUDIO_API_KEY='your-key'`
+   - PowerShell: `$env:FISH_AUDIO_API_KEY='your-key'`
+3. Run `node scripts/ai-live-fish-tts-server.mjs`.
+4. Open `http://127.0.0.1:8787` and choose an acting direction, enter a short Japanese line, and press **Drama 3で生成して再生**.
+5. Stop the server with Ctrl+C when finished. The server does not run on Vercel.
+
+The integration uses `POST https://api.fish.audio/v1/tts` with the `model: drama-3` header and MP3 output. It uses a cloud API, so audio generation is not offline and API charges may apply. The browser-speech fallback remains available. No real product data is used in this first audio connection.
+
+Drama 3 open weights are separate from API access. The official project notes that Drama 3 requires an NVIDIA GPU and substantial memory for self-hosting; the API is the lower-friction initial test. Check the official license before commercial use or redistribution. Word-level editing/inpainting API availability should not be assumed.
+
+Contract test: `npm run test:ai-live-fish-tts`. This static test does not make a paid API call; a real audio test still requires a configured API key and should be done manually.
