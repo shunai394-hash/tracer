@@ -282,6 +282,14 @@ export async function shopifyGraphQL<T>(
   const requestId = response.headers.get("x-request-id");
   const responseText = await response.text();
 
+  // Retry only transient transport/server responses. Mutations use the same
+  // idempotent GraphQL request and are retried at most three times; permission,
+  // validation, and business-logic failures still fail immediately.
+  if ([429, 500, 502, 503, 504].includes(response.status) && throttleRetryAttempt < 3) {
+    await new Promise((resolve) => setTimeout(resolve, 500 * (throttleRetryAttempt + 1)));
+    return shopifyGraphQL<T>(query, variables, throttleRetryAttempt + 1);
+  }
+
   // Never log the raw HTTP error body.
   if (!response.ok) {
     const diagnostic = {
