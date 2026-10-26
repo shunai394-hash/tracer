@@ -275,6 +275,18 @@ test("BASE listing URLs resolve from the authenticated shop profile when API edi
   assert.match(publish, /getBasePublicShopUrl\(\)/);
   assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
 });
+test("parent variant grouping planner keeps mixed-price or ambiguous groups separate", async () => {
+  const planner = await readFile(new URL("../lib/commerce/parent-variant-plan.ts", import.meta.url), "utf8");
+  assert.match(planner, /export function planBaseVariantGroups/);
+  assert.match(planner, /kind: "groupable"/);
+  assert.match(planner, /kind: "keep_separate"/);
+  assert.match(planner, /"mixed_prices"/);
+  assert.match(planner, /"ambiguous_variant_identity"/);
+  assert.match(planner, /"invalid_input"/);
+  assert.match(planner, /Number\\.isSafeInteger\\(price\\)/);
+  assert.match(planner, /sellingPrice: Number\\(variants\\[0\\]\\.sellingPrice\\)/);
+  assert.match(planner, /never decides which existing external product should be retained/);
+});
 test("product dashboard displays the canonical commerce catalog instead of legacy zero counts", async () => {
   const page = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.match(page, /from\("commerce_products"\)/);
