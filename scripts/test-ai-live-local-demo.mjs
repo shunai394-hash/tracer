@@ -31,31 +31,6 @@ for (const result of report.results) {
 }
 assert.match(report.results.find((item) => item.commentType === "unknown").answer, /確認できません/);
 
-const preview = readFileSync(new URL("./ai-live-avatar-preview.html", import.meta.url), "utf8");
-assert.match(preview, /<html lang="ja">/);
-assert.match(preview, /MOCK DATA · NO NETWORK/);
-assert.match(preview, /SpeechSynthesisUtterance/);
-assert.match(preview, /id="voiceSelect"/);
-assert.match(preview, /getVoices\(\)/);
-assert.match(preview, /voiceURI === voiceSelect\.value/);
-assert.match(preview, /日本語音声が見つかりません/);
-assert.match(preview, /speechSynthesis\.speak/);
-assert.match(preview, /speechSynthesis\.cancel/);
-assert.match(preview, /data-type="price"/);
-assert.match(preview, /data-type="features"/);
-assert.match(preview, /data-type="stock"/);
-assert.match(preview, /data-type="delivery"/);
-assert.match(preview, /aria-live="polite"/);
-assert.match(preview, /id="stop"/);
-assert.match(preview, /id="soak30"/);
-assert.match(preview, /id="soak60"/);
-assert.match(preview, /id="stopSoak"/);
-assert.match(preview, /setInterval\(speakNext, 45000\)/);
-assert.match(preview, /minutes \* 60 \* 1000/);
-assert.match(preview, /連続テストを手動停止/);
-assert.match(preview, /実際の在庫を確認していません/);
-assert.doesNotMatch(preview, /fetch\s*\(|WebSocket|EventSource|https?:\/\//);
-assert.doesNotMatch(preview, /src=["']https?:/);
 const deployedPreview = readFileSync(new URL("../public/ai-live-preview.html", import.meta.url), "utf8");
 assert.match(deployedPreview, /<meta name="robots" content="noindex,nofollow">/);
 assert.match(deployedPreview, /架空のデモデータ/);
@@ -66,4 +41,4 @@ assert.match(deployedPreview, /setInterval\\(speakNext, 45000\\)/);
 assert.match(deployedPreview, /minutes \\* 60 \\* 1000/);
 assert.match(deployedPreview, /連続テストを手動停止/);
 assert.doesNotMatch(deployedPreview, /fetch\\s*\\(|WebSocket|EventSource|https?:\\/\\//);
-console.log("AI-live local rehearsal and both preview safety contracts: 54 assertions passed");
+console.log("AI-live local rehearsal and canonical preview safety contracts: 39 assertions passed");
