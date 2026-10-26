@@ -45,6 +45,12 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <button class="primary" id="intro">商品紹介を読み上げる</button>
 <button id="stop">音声停止</button>
 </div>
+<div class="controls" aria-label="連続動作テスト" style="margin-top:10px">
+<button id="soak30">30分テスト開始</button>
+<button id="soak60">60分テスト開始</button>
+<button id="stopSoak">連続テスト終了</button>
+</div>
+<p class="status" id="soakStatus" role="status">連続テスト未実行</p>
 <p class="status" id="status" role="status">待機中。音声はお使いのブラウザの日本語音声を使用します。</p>
 </section>
 <section>
@@ -114,6 +120,55 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     const text = replies[button.dataset.type];
     answer.textContent = text; speak(text);
   }));
+  let soakTimer = null;
+  let soakInterval = null;
+  let soakStartedAt = 0;
+  let soakDurationMs = 0;
+  let soakCount = 0;
+  const soakStatus = document.getElementById('soakStatus');
+  const soakTypes = ['price', 'features', 'stock', 'delivery'];
+  function stopSoak(message) {
+    if (soakTimer) clearTimeout(soakTimer);
+    if (soakInterval) clearInterval(soakInterval);
+    soakTimer = null; soakInterval = null;
+    document.getElementById('soak30').disabled = false;
+    document.getElementById('soak60').disabled = false;
+    if (message) soakStatus.textContent = message;
+  }
+  function startSoak(minutes) {
+    stopSoak();
+    if (synth) synth.cancel();
+    soakStartedAt = Date.now(); soakDurationMs = minutes * 60 * 1000; soakCount = 0;
+    document.getElementById('soak30').disabled = true;
+    document.getElementById('soak60').disabled = true;
+    const tick = () => {
+      const elapsed = Date.now() - soakStartedAt;
+      soakStatus.textContent = minutes + '分テスト: ' + Math.floor(elapsed / 60000) + '分' + Math.floor((elapsed % 60000) / 1000) + '秒経過 / 応答 ' + soakCount + '回';
+    };
+    const speakNext = () => {
+      if (Date.now() - soakStartedAt >= soakDurationMs) return;
+      const text = replies[soakTypes[soakCount % soakTypes.length]];
+      soakCount += 1; answer.textContent = text; speak(text); tick();
+    };
+    speakNext();
+    soakInterval = setInterval(speakNext, 45000);
+    soakTimer = setTimeout(() => {
+      stopSoak(minutes + '分テスト完了。模擬応答 ' + soakCount + '回。ブラウザを閉じると記録は保持されません。');
+      if (synth) synth.cancel();
+      avatar.classList.remove('speaking');
+    }, soakDurationMs);
+  }
+  document.getElementById('soak30').addEventListener('click', () => startSoak(30));
+  document.getElementById('soak60').addEventListener('click', () => startSoak(60));
+  document.getElementById('stopSoak').addEventListener('click', () => {
+    stopSoak('連続テストを手動停止。模擬応答 ' + soakCount + '回。');
+    if (synth) synth.cancel();
+    avatar.classList.remove('speaking');
+  });
+  window.addEventListener('pagehide', () => {
+    stopSoak();
+    if (synth) synth.cancel();
+  });
   if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
   else status.textContent = 'このブラウザは音声合成に対応していません。';
 })();
