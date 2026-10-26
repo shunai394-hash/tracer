@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { routeAiLiveComment } from "@/lib/ai-live/comment-router";
+import { buildAiLiveReply } from "@/lib/ai-live/reply-from-facts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,9 +10,9 @@ export const maxDuration = 15;
 
 /**
  * Authenticated, read-only bridge for a livestream comment adapter.
- * Classifies one comment and, when a matching sale-ready product is supplied,
- * returns only current approved listing facts. It never reads customer orders,
- * calls an LLM, posts comments, or mutates commerce data.
+ * Returns a suggested spoken reply only when it can be built from current,
+ * approved listing facts. It never reads customer orders, calls an LLM,
+ * posts comments, or mutates commerce data.
  */
 export async function POST(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!body || typeof body !== "object") {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json(
       { ok: false, error: "invalid_request" },
       { status: 400, headers: { "Cache-Control": "no-store" } },
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
       ? { category: route.category, action: "human_handoff" as const, reason: "product_context_required" }
       : route;
     return NextResponse.json(
-      { ok: true, readOnly: true, route: safeRoute, productFacts: null },
+      { ok: true, readOnly: true, route: safeRoute, productFacts: null, suggestedReply: null },
       { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } },
     );
   }
@@ -97,16 +98,20 @@ export async function POST(request: Request) {
         }
       : null;
 
+    const reply = productFacts ? buildAiLiveReply(route.category, productFacts) : null;
+    const responseRoute = !productFacts
+      ? { category: route.category, action: "human_handoff" as const, reason: "no_verified_sale_ready_product" }
+      : reply?.action === "human_handoff"
+        ? { category: route.category, action: "human_handoff" as const, reason: reply.reason }
+        : route;
+
     return NextResponse.json(
       {
         ok: true,
         readOnly: true,
-        route: productFacts ? route : {
-          category: route.category,
-          action: "human_handoff",
-          reason: "no_verified_sale_ready_product",
-        },
+        route: responseRoute,
         productFacts,
+        suggestedReply: reply?.action === "speak_verified_reply" ? reply.text : null,
       },
       { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } },
     );
