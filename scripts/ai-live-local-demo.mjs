@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 /**
  * Local-only AI-live rehearsal. No network, credentials, DB, or commerce writes.
- * Uses a clearly synthetic product fixture and canned grounded responses.
+ * Uses the same deterministic router and reply builder as the protected API,
+ * with a clearly synthetic product fixture.
  */
+import { routeAiLiveComment } from "../lib/ai-live/comment-router.ts";
+import { buildAiLiveReply } from "../lib/ai-live/reply-from-facts.ts";
+
 const product = Object.freeze({
   id: "LOCAL-DEMO-001",
   title: "デモ商品（架空データ）",
@@ -24,31 +28,40 @@ const comments = [
 ];
 
 function answerFor(comment, item) {
-  switch (comment.type) {
-    case "price":
-      return `こちらは動作確認用の架空商品で、表示価格は${item.sellingPrice.toLocaleString("ja-JP")}円です。`;
-    case "features":
-      return item.description;
-    case "availability":
-      return "このデモでは在庫ありとして応答しています。実商品の在庫状況は確認していません。";
-    case "purchase":
-      return `購入先の表示例はこちらです。${item.productUrl}`;
-    default:
-      return "お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。";
-  }
+  const route = routeAiLiveComment(comment.text);
+  const reply = buildAiLiveReply(route.category, {
+    title: item.title,
+    description: item.description,
+    sellingPrice: item.sellingPrice,
+    currency: item.currency,
+    inStock: item.inStock,
+    productUrl: item.productUrl,
+  });
+  return {
+    route,
+    answer: reply.action === "speak_verified_reply"
+      ? reply.text
+      : "お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。",
+    replyAction: reply.action,
+    replyReason: reply.action === "human_handoff" ? reply.reason : null,
+  };
 }
 
 const startedAt = Date.now();
 const results = comments.map((comment) => {
   const before = Date.now();
-  const answer = answerFor(comment, product);
+  const result = answerFor(comment, product);
   return {
     commentType: comment.type,
     comment: comment.text,
-    answer,
+    category: result.route.category,
+    routeAction: result.route.action,
+    replyAction: result.replyAction,
+    replyReason: result.replyReason,
+    answer: result.answer,
     simulatedLatencyMs: Date.now() - before,
     spokenAudio: false,
-    note: "音声合成・アバター駆動は未接続",
+    note: "共有ルーターと返信生成を使用。音声合成・アバター駆動・公開配信は未接続",
   };
 });
 
@@ -59,6 +72,7 @@ const report = {
   databaseAccess: false,
   commerceWrites: false,
   publicStreaming: false,
+  sharedProductionLogic: true,
   product,
   commentCount: results.length,
   elapsedMs: Date.now() - startedAt,

@@ -11,7 +11,7 @@
     "test:ai-live-product-feed": "node scripts/test-ai-live-product-feed.mjs",
     "test:ai-live-comment-router": "node --experimental-strip-types --no-warnings scripts/test-ai-live-comment-router.mjs",
     "test:ai-live-reply-from-facts": "node --experimental-strip-types --no-warnings scripts/test-ai-live-reply-from-facts.mjs",
-    "test:ai-live-local-demo": "node scripts/test-ai-live-local-demo.mjs",
+    "test:ai-live-local-demo": "node --experimental-strip-types --no-warnings scripts/test-ai-live-local-demo.mjs",
     "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
     "test:order-status-write-failures": "node --experimental-strip-types --no-warnings scripts/test-order-status-write-failures.mjs",
     "test:catalog-count-safety-check": "node --experimental-strip-types --no-warnings scripts/test-catalog-count-safety-check.mjs",
