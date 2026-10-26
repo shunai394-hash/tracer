@@ -10,7 +10,7 @@ assert.match(script, /commerceWrites: false/);
 assert.match(script, /publicStreaming: false/);
 assert.doesNotMatch(script, /fetch\s*\(|https?\.request|createSupabaseAdminClient|process\.env/);
 
-const run = spawnSync(process.execPath, ["scripts/ai-live-local-demo.mjs"], {
+const run = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "scripts/ai-live-local-demo.mjs"], {
   cwd: process.cwd(),
   encoding: "utf8",
 });
