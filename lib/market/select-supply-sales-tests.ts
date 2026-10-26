@@ -441,6 +441,23 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     if (womenB.bonus !== womenA.bonus) return womenB.bonus - womenA.bonus;
     return b.quality - a.quality;
   });
+  // A supplier parent product can appear repeatedly when discovery uses different
+  // search queries/pages. Keep one storefront candidate per supplier + parent
+  // product; variant-level supplier IDs remain attached to the chosen offer.
+  // This prevents parent-product duplicates without treating title similarity
+  // as proof that two different supplier products are the same.
+  const seenSupplierParents = new Set<string>();
+  const deduplicatedEligible = eligible.filter((item) => {
+    const supplier = String(item.listing.supplier ?? "").trim().toLowerCase();
+    const supplierProductId = String(item.listing.supplier_product_id ?? "").trim();
+    if (!supplier || !supplierProductId) return true;
+    const key = supplier + ":" + supplierProductId;
+    if (seenSupplierParents.has(key)) return false;
+    seenSupplierParents.add(key);
+    return true;
+  });
+  eligible.splice(0, eligible.length, ...deduplicatedEligible);
+
   const rejectedSamples = rejected.slice(0, 50);
   if (options.dryRun) return {
     published: 0,
@@ -478,10 +495,25 @@ export async function selectAndPublishSupplySalesTests(productIds: string[], lim
     })),
   };
   const eligibleProductIds = eligible.map((item) => item.productId);
-  const { data: liveListings, error: liveListingsError } = await supabase.from("shop_listings").select("product_id").in("product_id", eligibleProductIds).eq("published", true).in("pipeline_status", ["published"]);
+  const { data: liveListings, error: liveListingsError } = await supabase.from("shop_listings").select("product_id,supplier_name,supplier_product_id").eq("published", true).in("pipeline_status", ["published"]);
   if (liveListingsError) throw new Error(liveListingsError.message);
   const liveProductIds = new Set((liveListings ?? []).map((row) => String(row.product_id ?? "")).filter(Boolean));
-  const chosen = eligible.filter((item) => !liveProductIds.has(item.productId)).slice(0, limit); const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
+  const liveSupplierParents = new Set((liveListings ?? []).map((row) => {
+    const supplier = String(row.supplier_name ?? "").trim().toLowerCase();
+    const supplierProductId = String(row.supplier_product_id ?? "").trim();
+    return supplier && supplierProductId ? supplier + ":" + supplierProductId : "";
+  }).filter(Boolean));
+  const chosen: typeof eligible = [];
+  for (const item of eligible) {
+    const supplier = String(item.listing.supplier ?? "").trim().toLowerCase();
+    const supplierProductId = String(item.listing.supplier_product_id ?? "").trim();
+    const parentKey = supplier && supplierProductId ? supplier + ":" + supplierProductId : "";
+    if (liveProductIds.has(item.productId) || (parentKey && liveSupplierParents.has(parentKey))) continue;
+    chosen.push(item);
+    if (parentKey) liveSupplierParents.add(parentKey);
+    if (chosen.length >= limit) break;
+  }
+  const publishedListingIds: string[] = []; const selectedListingIds: string[] = [];
   for (const item of chosen) {
     const title = localizeProductTitle(String(item.listing.title ?? item.base.normalized_title ?? ""), metadataCategory(item.base.metadata)) ?? "";
     // Final fail-closed guard: generated fallback names must not bypass the
