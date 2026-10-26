@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const localized = sourceCandidates
       .map((sourceTitle) => localizeProductTitle(sourceTitle))
-      .find((title) => Boolean(title && isSpecificJapaneseProductTitle(title) && !hasEnglishWords(title)) ?? false) ?? null;
+      .find((title) => Boolean(title && isSpecificJapaneseProductTitle(title) && !hasEnglishWords(title))) ?? null;
     if (!localized) {
       unmapped.push(raw.product_id);
       continue;
