@@ -22,12 +22,17 @@ assert.equal(report.networkAccess, false);
 assert.equal(report.databaseAccess, false);
 assert.equal(report.commerceWrites, false);
 assert.equal(report.publicStreaming, false);
+assert.equal(report.sharedProductionLogic, true);
 assert.equal(report.commentCount, 5);
 assert.equal(report.results.length, 5);
 for (const result of report.results) {
   assert.equal(typeof result.answer, "string");
   assert.ok(result.answer.length > 0);
   assert.equal(result.spokenAudio, false);
+  assert.equal(typeof result.category, "string");
+  assert.equal(typeof result.routeAction, "string");
+  assert.equal(typeof result.replyAction, "string");
+  assert.ok(result.note.includes("共有ルーター"));
 }
 assert.match(report.results.find((item) => item.commentType === "unknown").answer, /確認できません/);
 
