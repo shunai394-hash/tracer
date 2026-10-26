@@ -84,8 +84,11 @@ const server = createServer(async (req, res) => {
     res.end(audio);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end(message.includes("JSON") ? "JSON形式が不正です。" : "要求を処理できませんでした。");
+    const statusCode = message === "AUDIO_TOO_LARGE" ? 502 : 400;
+    res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(message === "AUDIO_TOO_LARGE"
+      ? "音声データがサイズ上限を超えています。"
+      : message.includes("JSON") ? "JSON形式が不正です。" : "要求を処理できませんでした。");
   }
 });
 server.listen(PORT, HOST, () => {
