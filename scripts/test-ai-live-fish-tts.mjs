@@ -6,4 +6,4 @@ for (const pattern of [/127\.0\.0\.1/,/FISH_AUDIO_API_KEY/,/api\.fish\.audio\/v1
 for (const pattern of [/lang="ja"/,/fetch\('\/api\/tts'/,/Drama 3で生成して再生/,/ブラウザ音声で再生/,/maxlength="1200"/,/beforeunload/]) assert.match(html, pattern);
 assert.doesNotMatch(html, /Bearer\s+[A-Za-z0-9_-]{12,}/);
 assert.doesNotMatch(server, /0\.0\.0\.0/);
-console.log("AI-live Fish Audio local integration contract: 20 assertions passed");
+console.log("AI-live Fish Audio local integration contract: 21 assertions passed");
