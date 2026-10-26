@@ -69,21 +69,21 @@ export default function MyPage() {
   }
 
   return (
-    <main className="relative flex-1 overflow-hidden text-white">
+    <main className="relative flex-1 overflow-hidden bg-slate-50 text-slate-950">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="absolute right-0 top-0 h-96 w-96 rounded-full bg-cyan-400/[0.04] blur-3xl" />
       </div>
       <div className="relative mx-auto w-full max-w-6xl px-5 py-12 sm:px-8 sm:py-16 lg:px-10">
-        <div className="flex flex-col justify-between gap-6 border-b border-white/20 pb-8 sm:flex-row sm:items-end">
+        <div className="flex flex-col justify-between gap-6 border-b-2 border-slate-300 pb-8 sm:flex-row sm:items-end">
           <div>
-            <p className="font-mono text-sm font-bold uppercase tracking-[0.16em] text-white">TRACER / MY PAGE</p>
-            <h1 className="mt-4 text-4xl font-bold tracking-[-0.03em] text-white sm:text-5xl">あなたのTRACER。</h1>
-            <p className="mt-3 text-lg font-semibold text-white">{email ?? "認証情報を確認中…"}</p>
+            <p className="font-mono text-sm font-bold uppercase tracking-[0.16em] text-slate-900">TRACER / MY PAGE</p>
+            <h1 className="mt-4 text-4xl font-bold tracking-[-0.03em] text-slate-950 sm:text-5xl">あなたのTRACER。</h1>
+            <p className="mt-3 text-lg font-semibold text-slate-900">{email ?? "認証情報を確認中…"}</p>
           </div>
-          <button type="button" onClick={() => void signOut()} className="min-h-11 border border-white/30 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/10">ログアウト</button>
+          <button type="button" onClick={() => void signOut()} className="min-h-11 rounded-md border-2 border-slate-900 bg-slate-900 px-5 text-base font-bold text-white transition hover:border-slate-700 hover:bg-slate-700">ログアウト</button>
         </div>
 
-        {error ? <p role="alert" className="mt-8 border border-amber-300/40 bg-amber-300/10 p-4 text-sm font-medium text-amber-100">{error}</p> : null}
+        {error ? <p role="alert" className="mt-8 rounded-md border-2 border-amber-700 bg-amber-50 p-4 text-base font-semibold text-amber-950">{error}</p> : null}
 
         <section className="mt-10 grid gap-5 lg:grid-cols-[1fr_320px]" aria-labelledby="orders-heading">
           <div className="rounded-lg border-2 border-slate-300 bg-white p-5 text-slate-950 shadow-sm sm:p-7">
@@ -98,7 +98,7 @@ export default function MyPage() {
             )}
           </div>
 
-          <aside className="border border-cyan-300/25 bg-[#0a0d10] p-5 sm:p-7">
+          <aside className="rounded-lg border-2 border-slate-900 bg-slate-950 p-5 text-white shadow-sm sm:p-7">
             <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">Account</p>
             <h2 className="mt-3 text-xl font-semibold text-white">アカウント</h2>
             <dl className="mt-7 divide-y divide-white/20 border-y border-white/20"><div className="py-4"><dt className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-300">Email</dt><dd className="mt-2 break-all text-base text-white">{email ?? "—"}</dd></div><div className="py-4"><dt className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-300">Identity</dt><dd className="mt-2 text-base font-semibold text-cyan-200">Verified account</dd></div></dl>
