@@ -30,7 +30,9 @@ const reverify = await readFile(new URL("../lib/suppliers/reverify-cj-identity.t
 assert.match(reverify, /const MAX_CANDIDATE_SCAN = 500/);
 assert.match(reverify, /\.limit\(MAX_CANDIDATE_SCAN\)/);
 assert.match(reverify, /buildCandidateQuery\(\)\.gt\("id", priorCursor\)/);
-assert.match(reverify, /result\.nextCursor = item\.supplierListingId/, "reverify cursor advances only after an actual candidate is processed");
+assert.match(reverify, /const boundedRows = allRows\s*\.slice\(\)\s*\.sort\(\(a, b\) => String\(a\.id\)\.localeCompare\(String\(b\.id\)\)\)\s*\.slice\(0, limit\)/, "cursor-safe bounded window is selected in ascending ID order");
+assert.match(reverify, /result\.nextCursor = String\(boundedRows\[boundedRows\.length - 1\]\.id\)/, "reverify cursor advances to the end of the complete bounded ID window");
+assert.match(reverify, /if \(quotaExhausted \|\| circuitBlocked \|\| targetSupplierListingIds\.length > 0\) \{\s*result\.nextCursor = priorCursor;/, "quota blocks and targeted runs preserve the prior cursor");
 assert.match(reverify, /sort\(\(a, b\) => String\(a\.id\)\.localeCompare\(String\(b\.id\)\)\)/, "cursor batches must be ordered to avoid skipping unprocessed supplier rows");
 const collector = await readFile(new URL("../lib/market/collect-bestsellers.ts", import.meta.url), "utf8");
 const activeSourceStart = collector.indexOf("export const MARKETPLACE_SOURCES");
