@@ -34,6 +34,10 @@ export async function GET(request: Request) {
       visibleItemsUnlinked: 0,
       visibleItemsWithoutDbMapping: 0,
       visibleItemsWithAmbiguousDbMapping: 0,
+      // Distinguish missing fulfilment evidence from stale evidence age. This is
+      // read-only diagnostics only; it does not change publication or unpublish policy.
+      commerceFulfillmentBlockReasons: {} as Record<string, number>,
+      commerceEvidenceStaleCount: 0,
       itemIdentifierPresentCount: probe.items.entries.filter((entry) => Boolean(entry.identifier)).length,
       stableTracerIdentifierCount: probe.items.entries.filter((entry) => /^TRC-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.identifier ?? "")).length,
       itemIdMissingCount: probe.items.entries.filter((entry) => !entry.itemId).length,
@@ -173,12 +177,26 @@ export async function GET(request: Request) {
               const checkedAt = typeof offer?.last_checked_at === "string" ? Date.parse(offer.last_checked_at) : Number.NaN;
               const fresh = Number.isFinite(checkedAt) && checkedAt <= Date.now() + 5 * 60_000 && Date.now() - checkedAt <= 24 * 60 * 60_000;
               const exactVariant = Boolean(variant && offer && String(variant.source_variant_key) === String(offer.supplier_variant_id));
-              const fulfillable = Boolean(
-                listing.status === "published" && exactVariant &&
-                offer?.source_status === "verified" && offer?.tracking_supported === true &&
-                offer?.ship_to === "JP" && Number(offer?.inventory) > 0 && fresh &&
-                Number(price?.selling_price) > 0 && Number(price?.expected_profit) > 0
-              );
+              const blockers: string[] = [];
+              if (listing.status !== "published") blockers.push("channel_listing_not_published");
+              if (!variant) blockers.push("commerce_variant_missing");
+              if (!price) blockers.push("commerce_price_missing");
+              if (!offer) blockers.push("supplier_offer_missing");
+              if (offer && !exactVariant) blockers.push("supplier_variant_mismatch");
+              if (offer && offer.source_status !== "verified") blockers.push("supplier_offer_not_verified");
+              if (offer && offer.tracking_supported !== true) blockers.push("tracking_unsupported");
+              if (offer && offer.ship_to !== "JP") blockers.push("ship_to_not_jp");
+              if (offer && (!Number.isFinite(Number(offer.inventory)) || Number(offer.inventory) <= 0)) blockers.push("inventory_unknown_or_zero");
+              if (price && (!Number.isFinite(Number(price.selling_price)) || Number(price.selling_price) <= 0)) blockers.push("selling_price_invalid");
+              if (price && (!Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) <= 0)) blockers.push("profit_non_positive_or_unknown");
+              if (!fresh) {
+                mappingAudit.commerceEvidenceStaleCount += 1;
+                blockers.push("evidence_stale");
+              }
+              for (const reason of blockers) {
+                mappingAudit.commerceFulfillmentBlockReasons[reason] = (mappingAudit.commerceFulfillmentBlockReasons[reason] ?? 0) + 1;
+              }
+              const fulfillable = blockers.length === 0;
               if (fulfillable) mappingAudit.visibleItemsLinked += 1;
               else mappingAudit.visibleItemsUnlinked += 1;
               continue;
@@ -289,6 +307,8 @@ export async function GET(request: Request) {
       visibleItemsUnlinked: mappingAudit.visibleItemsUnlinked,
       visibleItemsWithoutDbMapping: mappingAudit.visibleItemsWithoutDbMapping,
       visibleItemsWithAmbiguousDbMapping: mappingAudit.visibleItemsWithAmbiguousDbMapping,
+      commerceFulfillmentBlockReasons: mappingAudit.commerceFulfillmentBlockReasons,
+      commerceEvidenceStaleCount: mappingAudit.commerceEvidenceStaleCount,
       itemIdentifierPresentCount: mappingAudit.itemIdentifierPresentCount,
       stableTracerIdentifierCount: mappingAudit.stableTracerIdentifierCount,
       itemIdMissingCount: mappingAudit.itemIdMissingCount,
