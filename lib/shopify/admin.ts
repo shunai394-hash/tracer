@@ -466,14 +466,27 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   // Repair products that were previously created without media, while avoiding
   // adding another copy of the same image on every routine catalog sync.
   const existingMedia = await shopifyGraphQL<{
-    product: { media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> } } | null;
+    product: {
+      featuredImage?: { url: string } | null;
+      media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
+    } | null;
   }>(
-    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { media(first: 10) { nodes { mediaContentType preview { image { url } } } } } }",
+    `query TracerProductImagePreflight($id: ID!) {
+      product(id: $id) {
+        featuredImage { url }
+        media(first: 10) { nodes { mediaContentType preview { image { url } } } }
+      }
+    }`,
     { id: input.productId },
   );
-  const hasProductImage = (existingMedia.product?.media.nodes ?? []).some((media) =>
-    media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
-  );
+  // Prefer Shopify's persisted featuredImage readback. Some products expose a
+  // valid image through featuredImage/images while media preview is null; using
+  // preview alone incorrectly treats those products as image-less and attempts
+  // to upload the same image again.
+  const hasProductImage = Boolean(existingMedia.product?.featuredImage?.url)
+    || (existingMedia.product?.media.nodes ?? []).some((media) =>
+      media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
+    );
   const mediaToAdd = !hasProductImage && input.imageUrl
     ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }]
     : [];
