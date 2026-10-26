@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const route = readFileSync(new URL("../app/api/admin/ai-live/speak-reply/route.ts", import.meta.url), "utf8");
+assert.match(route, /requireAutomationAuth\(request\)/u);
+assert.match(route, /routeAiLiveComment\(input\.comment\)/u);
+assert.match(route, /buildAiLiveReply\(route\.category, product\)/u);
+assert.match(route, /\.eq\("published", true\)/u);
+assert.match(route, /\.eq\("orderable", true\)/u);
+assert.match(route, /\.eq\("tracking_available", true\)/u);
+assert.match(route, /\.gt\("inventory", 0\)/u);
+assert.match(route, /\.eq\("base_publication_status", "published"\)/u);
+assert.match(route, /process\.env\.FISH_API_KEY/u);
+assert.match(route, /process\.env\.AI_LIVE_FISH_REFERENCE_ID/u);
+assert.match(route, /model: "drama-3"/u);
+assert.match(route, /AbortSignal\.timeout\(25_000\)/u);
+assert.match(route, /MAX_AUDIO_BYTES/u);
+assert.match(route, /No automatic retry|never retry automatically|never retry automatically/iu);
+assert.match(route, /human_or_moderation/u);
+assert.doesNotMatch(route, /\.from\(["']orders["']\)/u);
+assert.doesNotMatch(route, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/u);
+assert.doesNotMatch(route, /console\.(log|error)\(/u);
+console.log("AI-live verified speech route safety contract passed (18 assertions).");
