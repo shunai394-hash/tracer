@@ -1,0 +1,61 @@
+name: TRACER Unit Economics (read-only)
+
+# Prints break-even ROAS and maximum ad spend per purchase for every priced
+# variant, from production. GET only; no writes and no customer data.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-unit-economics-readonly.yml"
+      - "app/api/admin/commerce/unit-economics/route.ts"
+      - "lib/commerce/unit-economics.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-unit-economics-readonly
+  cancel-in-progress: false
+
+jobs:
+  economics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout commit history for deployment ancestry check
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for production deployment
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production is not at this commit or a descendant of it."
+          exit 1
+      - name: Unit economics (read-only)
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o economics.json -w "%{http_code}" --max-time 70 -H "Authorization: Bearer $token" "$BASE/api/admin/commerce/unit-economics" || true)"
+          echo "=== unit economics HTTP $code ==="
+          python3 -c 'import json; print(json.dumps(json.load(open("economics.json")), ensure_ascii=False, indent=1))' || echo "response was not JSON"
+          [[ "$code" =~ ^2 ]]
