@@ -191,7 +191,11 @@ export async function POST(request: Request) {
     const result = asObject(job.result);
     const outputs = Array.isArray(result.outputs) ? result.outputs : [];
     const firstOutput = asObject(outputs[0]);
-    const outputUrl = typeof firstOutput.url === "string" ? firstOutput.url : null;
+    const variants = Array.isArray(firstOutput.variants) ? firstOutput.variants : [];
+    const firstVariant = asObject(variants[0]);
+    const files = asObject(firstVariant.files);
+    const videoFile = asObject(files.video);
+    const outputUrl = typeof videoFile.url === "string" ? videoFile.url : null;
 
     return json({
       ok: true,
@@ -241,13 +245,17 @@ export async function GET(request: Request) {
     const result = asObject(job.result);
     const outputs = Array.isArray(result.outputs) ? result.outputs : [];
     const firstOutput = asObject(outputs[0]);
+    const variants = Array.isArray(firstOutput.variants) ? firstOutput.variants : [];
+    const firstVariant = asObject(variants[0]);
+    const files = asObject(firstVariant.files);
+    const videoFile = asObject(files.video);
 
     return json({
       ok: true,
       jobId,
       status: typeof job.status === "string" ? job.status : "unknown",
       creditsCharged: Number(job.credits) || 0,
-      resultUrl: typeof firstOutput.url === "string" ? firstOutput.url : null,
+      resultUrl: typeof videoFile.url === "string" ? videoFile.url : null,
       jobUrl: typeof urls.self === "string" ? urls.self : null,
     });
   } catch {
