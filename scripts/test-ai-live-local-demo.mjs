@@ -30,4 +30,20 @@ for (const result of report.results) {
   assert.equal(result.spokenAudio, false);
 }
 assert.match(report.results.find((item) => item.commentType === "unknown").answer, /確認できません/);
-console.log("AI-live local rehearsal safety contract: 19 assertions passed");
+
+const preview = readFileSync(new URL("./ai-live-avatar-preview.html", import.meta.url), "utf8");
+assert.match(preview, /<html lang="ja">/);
+assert.match(preview, /MOCK DATA · NO NETWORK/);
+assert.match(preview, /SpeechSynthesisUtterance/);
+assert.match(preview, /speechSynthesis\.speak/);
+assert.match(preview, /speechSynthesis\.cancel/);
+assert.match(preview, /data-type="price"/);
+assert.match(preview, /data-type="features"/);
+assert.match(preview, /data-type="stock"/);
+assert.match(preview, /data-type="delivery"/);
+assert.match(preview, /aria-live="polite"/);
+assert.match(preview, /id="stop"/);
+assert.match(preview, /実際の在庫を確認していません/);
+assert.doesNotMatch(preview, /fetch\s*\(|WebSocket|EventSource|https?:\/\//);
+assert.doesNotMatch(preview, /src=["']https?:/);
+console.log("AI-live local rehearsal and avatar preview safety contract: 35 assertions passed");
