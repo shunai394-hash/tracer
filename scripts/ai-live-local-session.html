@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRACER AI Live ローカル計測</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111827;color:#f3f4f6}*{box-sizing:border-box}
+body{margin:0;padding:24px;min-height:100vh;display:grid;place-items:center}main{max-width:760px;width:100%;padding:28px;border-radius:20px;background:#1f2937;border:1px solid #475569}
+.tag{color:#99f6e4;font-size:.8rem;letter-spacing:.08em}h1{font-size:1.8rem}.muted{color:#cbd5e1;line-height:1.7}
+.stage{display:flex;gap:22px;align-items:center;margin:24px 0}.avatar{width:130px;height:130px;flex:0 0 130px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(140deg,#99f6e4,#818cf8,#c084fc)}
+.face{width:82px;height:65px;border-radius:45%;background:#f8fafc;position:relative}.eye{position:absolute;top:22px;width:7px;height:10px;border-radius:50%;background:#1e293b}.left{left:22px}.right{right:22px}.mouth{position:absolute;left:32px;top:41px;width:18px;height:6px;border-bottom:3px solid #be6680;border-radius:50%}.talking .mouth{height:13px;top:37px;background:#be6680;border:2px solid #be6680;animation:talk .15s infinite alternate}@keyframes talk{to{transform:scaleY(.5)}}
+.answer{padding:16px;border-radius:14px;background:#111827;line-height:1.8;flex:1;min-height:85px}
+button{border:0;border-radius:10px;padding:11px 14px;margin:4px;font:inherit;font-weight:650;cursor:pointer;background:#99f6e4;color:#102027}button.alt{background:#475569;color:white}button:disabled{opacity:.4}
+.metrics{padding:14px;background:#111827;border-radius:12px;margin:16px 0;line-height:1.8}.row{display:flex;flex-wrap:wrap;gap:4px}
+@media(max-width:520px){.stage{flex-direction:column}.answer{width:100%}}
+</style></head><body><main>
+<div class="tag">LOCAL ONLY · OFFLINE DEMO · 架空商品</div>
+<h1>TRACER AIアバター — 30〜60分リハーサル</h1>
+<p class="muted">このページは架空の商品と模擬コメントだけを使います。外部API、DB、販売システム、TikTokには接続しません。音声はブラウザ標準の音声合成です。</p>
+<div class="stage"><div id="avatar" class="avatar" role="img" aria-label="簡易アバター"><div class="face"><i class="eye left"></i><i class="eye right"></i><i class="mouth"></i></div></div><div id="answer" class="answer" aria-live="polite">コメント例を選ぶと回答を表示し、ブラウザ音声で読み上げます。</div></div>
+<div class="row"><button id="start">計測開始</button><button id="end" class="alt" disabled>計測終了・JSON保存</button><button id="stop" class="alt">音声停止</button></div>
+<div id="metrics" class="metrics">計測未開始 · 応答 0 件 · 音声エラー 0 件</div>
+<h2>模擬コメント</h2><div class="row">
+<button data-kind="price">価格は？</button><button data-kind="features">どんな商品？</button><button data-kind="stock">在庫は？</button><button data-kind="buy">どこで買える？</button><button data-kind="unknown">明日届く？</button>
+</div>
+<p id="status" class="muted">待機中。マイク、カメラ、外部接続は使用しません。</p>
+</main><script>
+(() => {
+const fixture=Object.freeze({title:"デモ商品（架空データ）",description:"これは動作確認用の架空商品です。実在の商品情報ではありません。",price:2980,url:"https://tracer.base.ec/"});
+const answers={
+ price:`こちらは動作確認用の架空商品で、表示価格は${fixture.price.toLocaleString("ja-JP")}円です。`,
+ features:fixture.description,
+ stock:"このデモでは在庫ありとして応答しています。実商品の在庫状況は確認していません。",
+ buy:`購入先の表示例はこちらです。${fixture.url}`,
+ unknown:"お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。"
+};
+const $=s=>document.querySelector(s), avatar=$("#avatar"), metrics=$("#metrics"), status=$("#status");
+let started=null, interval=null, count=0, errors=0, events=[], latencies=[];
+function refresh(){const secs=started===null?0:Math.floor((Date.now()-started)/1000);metrics.textContent=`計測 ${started===null?"未開始":Math.floor(secs/60)+"分"+secs%60+"秒"} · 応答 ${count} 件 · 音声エラー ${errors} 件`;}
+$("#start").addEventListener("click",()=>{started=Date.now();count=0;errors=0;events=[];latencies=[];$("#start").disabled=true;$("#end").disabled=false;interval=setInterval(refresh,1000);refresh();status.textContent="計測中。模擬コメントを選んでください。";});
+$("#end").addEventListener("click",()=>{if(started===null)return;clearInterval(interval);interval=null;const sorted=[...latencies].sort((a,b)=>a-b);const report={mode:"local-only",demoDataOnly:true,startedAt:new Date(started).toISOString(),endedAt:new Date().toISOString(),durationSeconds:Math.floor((Date.now()-started)/1000),simulatedResponses:count,speechErrors:errors,medianAnswerMs:sorted.length?sorted[Math.floor(sorted.length/2)]:null,networkAccess:false,databaseAccess:false,commerceWrites:false,publicStreaming:false,events};const blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="tracer-ai-live-local-report.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);started=null;$("#start").disabled=false;$("#end").disabled=true;refresh();status.textContent="計測終了。JSONレポートを保存しました。";});
+function speak(text){if(!("speechSynthesis"in window)){status.textContent="このブラウザは音声合成に対応していません。";return;}speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="ja-JP";u.onstart=()=>{avatar.classList.add("talking");status.textContent="日本語音声を再生中";};u.onend=()=>{avatar.classList.remove("talking");status.textContent="待機中";};u.onerror=()=>{avatar.classList.remove("talking");errors++;if(started!==null)events.push({at:new Date().toISOString(),event:"speech_error"});refresh();status.textContent="音声再生エラー";};speechSynthesis.speak(u);}
+$("#stop").addEventListener("click",()=>{if("speechSynthesis"in window)speechSynthesis.cancel();avatar.classList.remove("talking");status.textContent="音声停止";});
+document.querySelectorAll("[data-kind]").forEach(b=>b.addEventListener("click",()=>{const t=performance.now(),text=answers[b.dataset.kind];$("#answer").textContent=text;count++;const ms=Math.round(performance.now()-t);latencies.push(ms);if(started!==null)events.push({at:new Date().toISOString(),kind:b.dataset.kind,answerMs:ms,answer:text});refresh();speak(text);}));
+})();
+</script></body></html>
