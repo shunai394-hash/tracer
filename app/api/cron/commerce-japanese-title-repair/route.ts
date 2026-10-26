@@ -57,10 +57,17 @@ export async function GET(request: Request) {
     if (!product) continue;
     if (isSpecificJapaneseProductTitle(raw.title_ja) && isSpecificJapaneseProductTitle(product.title_ja) && !hasEnglishWords(raw.title_ja) && !hasEnglishWords(product.title_ja)) continue;
     const metadata = product.metadata ?? {};
-    const sourceTitle = [metadata.sourceTitle, metadata.source_title, metadata.originalTitle]
-      .find((value) => typeof value === "string" && value.trim()) as string | undefined;
-    const localized = sourceTitle ? localizeProductTitle(sourceTitle) : null;
-    if (!localized || !isSpecificJapaneseProductTitle(localized) || hasEnglishWords(localized)) {
+    // Metadata may be absent on older imported products. Fall back only to
+    // the persisted source title fields; the same localization quality gate
+    // still rejects generic or unsupported guesses.
+    const sourceCandidates = [
+      metadata.sourceTitle, metadata.source_title, metadata.originalTitle,
+      raw.title_ja, product.title_ja,
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const localized = sourceCandidates
+      .map((sourceTitle) => localizeProductTitle(sourceTitle))
+      .find((title) => Boolean(title && isSpecificJapaneseProductTitle(title) && !hasEnglishWords(title))) ?? null;
+    if (!localized) {
       unmapped.push(raw.product_id);
       continue;
     }
