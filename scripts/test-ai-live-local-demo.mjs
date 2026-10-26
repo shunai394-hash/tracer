@@ -35,6 +35,10 @@ const preview = readFileSync(new URL("./ai-live-avatar-preview.html", import.met
 assert.match(preview, /<html lang="ja">/);
 assert.match(preview, /MOCK DATA · NO NETWORK/);
 assert.match(preview, /SpeechSynthesisUtterance/);
+assert.match(preview, /id="voiceSelect"/);
+assert.match(preview, /getVoices\(\)/);
+assert.match(preview, /voiceURI === voiceSelect\.value/);
+assert.match(preview, /日本語音声が見つかりません/);
 assert.match(preview, /speechSynthesis\.speak/);
 assert.match(preview, /speechSynthesis\.cancel/);
 assert.match(preview, /data-type="price"/);
@@ -52,4 +56,4 @@ assert.match(preview, /連続テストを手動停止/);
 assert.match(preview, /実際の在庫を確認していません/);
 assert.doesNotMatch(preview, /fetch\s*\(|WebSocket|EventSource|https?:\/\//);
 assert.doesNotMatch(preview, /src=["']https?:/);
-console.log("AI-live local rehearsal and avatar preview safety contract: 41 assertions passed");
+console.log("AI-live local rehearsal and avatar preview safety contract: 45 assertions passed");
