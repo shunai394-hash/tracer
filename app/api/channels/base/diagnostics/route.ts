@@ -189,10 +189,10 @@ export async function GET(request: Request) {
               if (offer && (!Number.isFinite(Number(offer.inventory)) || Number(offer.inventory) <= 0)) blockers.push("inventory_unknown_or_zero");
               if (price && (!Number.isFinite(Number(price.selling_price)) || Number(price.selling_price) <= 0)) blockers.push("selling_price_invalid");
               if (price && (!Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) <= 0)) blockers.push("profit_non_positive_or_unknown");
-              if (offer && !fresh) {
-                mappingAudit.commerceEvidenceStaleCount += 1;
-                blockers.push("evidence_stale");
-              }
+              // Evidence age is reported separately. Do not turn age alone into
+              // a delisting verdict; explicit missing/invalid stock and fulfillment
+              // evidence remains a blocker.
+              if (offer && !fresh) mappingAudit.commerceEvidenceStaleCount += 1;
               for (const reason of blockers) {
                 mappingAudit.commerceFulfillmentBlockReasons[reason] = (mappingAudit.commerceFulfillmentBlockReasons[reason] ?? 0) + 1;
               }
