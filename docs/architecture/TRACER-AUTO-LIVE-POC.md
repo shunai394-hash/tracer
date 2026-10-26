@@ -70,7 +70,7 @@ Inspect the existing TRACER read-only listing/product routes and authentication 
 
 ## Local avatar preview (implemented)
 
-Open `scripts/ai-live-avatar-preview.html` directly in a modern desktop browser (Chrome or Edge). No build, API key, account connection, or server is required. After this PR is merged and deployed, the same mock experience is also served at `/ai-live-preview.html` (marked noindex/nofollow).
+After this PR is merged and deployed, open `/ai-live-preview.html` in a modern desktop browser (Chrome or Edge). It is marked noindex/nofollow and uses no API key, account connection, or server-side service.
 
 - The avatar is a lightweight CSS illustration with mouth movement during browser speech synthesis.
 - A voice selector lists installed Japanese voices when the browser exposes them; if none are available, the page shows a fallback warning.
