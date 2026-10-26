@@ -1,0 +1,90 @@
+name: AI-live read-only product feed smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum sale-ready products to read (1-20)"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ai-live-readonly-feed-smoke
+  cancel-in-progress: true
+
+jobs:
+  read-only-feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Request short-lived GitHub OIDC token
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+          token="$(jq -er '.value | select(type == "string" and length > 0)' <<< "$response")"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch and validate the read-only product feed
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+          PRODUCT_LIMIT: ${{ inputs.limit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          limit="$PRODUCT_LIMIT"
+          [[ "$limit" =~ ^[0-9]+$ ]] || { echo "limit must be an integer"; exit 1; }
+          (( limit >= 1 && limit <= 20 )) || { echo "limit must be between 1 and 20"; exit 1; }
+
+          response="$(curl --fail --silent --show-error \
+            --max-time 20 \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Accept: application/json" \
+            "https://tracer-pied-alpha.vercel.app/api/admin/ai-live/products?limit=$limit")"
+
+          jq -e '
+            .ok == true and
+            .readOnly == true and
+            (.count | type == "number") and
+            (.products | type == "array") and
+            (.count == (.products | length)) and
+            all(.products[];
+              (.id | type == "string") and
+              (.title | type == "string" and length > 0 and test("[\\u3040-\\u30ff\\u3400-\\u9fff]")) and
+              ((.description == null) or (.description | type == "string" and test("[\\u3040-\\u30ff\\u3400-\\u9fff]"))) and
+              (.sellingPrice | type == "number" and . > 0) and
+              (.inStock == true) and
+              (.productUrl | type == "string" and startswith("https://tracer.base.ec/items/"))
+            )
+          ' <<< "$response" >/dev/null
+
+          # Do not print the OIDC token or raw API response to logs.
+          count="$(jq -r '.count' <<< "$response")"
+          generated_at="$(jq -r '.generatedAt' <<< "$response")"
+          echo "Read-only feed OK: count=$count generatedAt=$generated_at"
+          echo "No listings, inventory, prices, orders, or supplier records were modified."
+          mkdir -p ai-live-feed-report
+          jq '{
+            ok,
+            readOnly,
+            generatedAt,
+            count,
+            products: [.products[] | {id, title, sellingPrice, currency, inStock, productUrl, updatedAt}]
+          }' <<< "$response" > ai-live-feed-report/products.json
+
+      - name: Upload short-lived feed snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-live-readonly-feed
+          path: ai-live-feed-report/products.json
+          if-no-files-found: error
+          retention-days: 1
