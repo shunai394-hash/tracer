@@ -48,8 +48,11 @@ export async function POST(request: Request) {
     : "";
 
   if (!productId || route.action !== "answer_from_verified_facts") {
+    const safeRoute = !productId && route.action === "answer_from_verified_facts"
+      ? { category: route.category, action: "human_handoff" as const, reason: "product_context_required" }
+      : route;
     return NextResponse.json(
-      { ok: true, readOnly: true, route, productFacts: null },
+      { ok: true, readOnly: true, route: safeRoute, productFacts: null },
       { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } },
     );
   }
