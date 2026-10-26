@@ -86,15 +86,15 @@ export default function MyPage() {
         {error ? <p role="alert" className="mt-8 border border-amber-300/40 bg-amber-300/10 p-4 text-sm font-medium text-amber-100">{error}</p> : null}
 
         <section className="mt-10 grid gap-5 lg:grid-cols-[1fr_320px]" aria-labelledby="orders-heading">
-          <div className="border border-white/20 bg-[#0a0d10] p-5 sm:p-7">
+          <div className="rounded-lg border-2 border-slate-300 bg-white p-5 text-slate-950 shadow-sm sm:p-7">
             <div className="flex items-end justify-between gap-4">
-              <div><p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300">Purchase history</p><h2 id="orders-heading" className="mt-2 text-xl font-semibold text-white">注文履歴</h2></div>
-              <span className="font-mono text-xs text-zinc-300">{orders.length} orders</span>
+              <div><p className="font-mono text-base font-bold uppercase tracking-[0.12em] text-slate-900">Purchase history</p><h2 id="orders-heading" className="mt-2 text-2xl font-bold text-slate-950">注文履歴</h2></div>
+              <span className="rounded-md bg-slate-900 px-3 py-2 font-mono text-sm font-bold text-white">{orders.length} orders</span>
             </div>
-            {loading ? <p className="mt-8 text-base text-zinc-200">注文履歴を読み込んでいます…</p> : orders.length === 0 ? (
-              <div className="mt-8 border border-dashed border-white/25 px-5 py-12 text-center"><p className="text-base text-zinc-200">まだ注文はありません。</p><Link href="/shop" className="mt-4 inline-block text-sm font-semibold text-cyan-200 underline underline-offset-4 hover:text-white">商品を見る →</Link></div>
+            {loading ? <p className="mt-8 text-base font-semibold text-slate-800">注文履歴を読み込んでいます…</p> : orders.length === 0 ? (
+              <div className="mt-8 rounded-md border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-12 text-center"><p className="text-lg font-semibold text-slate-900">まだ注文はありません。</p><Link href="/shop" className="mt-4 inline-flex min-h-11 items-center rounded-md bg-slate-900 px-5 text-base font-bold text-white underline underline-offset-4 hover:bg-slate-700">商品を見る →</Link></div>
             ) : (
-              <div className="mt-7 space-y-3">{orders.map((order) => <article key={order.id} className="border border-white/20 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-xs text-zinc-300">#{order.id}</p><p className="text-sm text-zinc-200">{order.createdAt ? new Date(order.createdAt).toLocaleString("ja-JP") : "—"}</p></div><div className="mt-4 flex flex-wrap gap-2 text-xs font-mono"><span className="border border-white/20 px-2 py-1 text-zinc-100">ORDER {order.status}</span><span className="border border-white/20 px-2 py-1 text-zinc-100">PAYMENT {order.paymentStatus}</span></div>{order.hasShippingAddress ? <p className="mt-4 text-sm leading-5 text-zinc-200">配送先登録済み</p> : null}</article>)}</div>
+              <div className="mt-7 space-y-3">{orders.map((order) => <article key={order.id} className="rounded-md border border-slate-300 bg-slate-50 p-4 text-slate-950 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><p className="font-mono text-sm font-semibold text-slate-800">注文番号 #{order.id}</p><p className="text-sm font-medium text-slate-800">{order.createdAt ? new Date(order.createdAt).toLocaleString("ja-JP") : "—"}</p></div><div className="mt-4 flex flex-wrap gap-2 text-sm font-mono font-bold"><span className="rounded border border-slate-400 bg-white px-3 py-2 text-slate-900">注文 {order.status}</span><span className="rounded border border-slate-400 bg-white px-3 py-2 text-slate-900">支払い {order.paymentStatus}</span></div>{order.hasShippingAddress ? <p className="mt-4 text-sm font-semibold leading-5 text-slate-800">配送先登録済み</p> : null}</article>)}</div>
             )}
           </div>
 
