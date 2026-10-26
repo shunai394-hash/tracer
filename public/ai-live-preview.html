@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER AI配信ローカルプレビュー</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111827;color:#f9fafb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+main{width:min(920px,100%);display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.9fr);gap:24px}
+section{background:#1f2937;border:1px solid #374151;border-radius:18px;padding:22px}
+h1{font-size:1.35rem;margin:0 0 8px}h2{font-size:1rem;margin:0 0 14px}.notice{color:#fde68a;font-size:.9rem;line-height:1.6}
+.avatar-wrap{display:grid;place-items:center;min-height:280px;background:radial-gradient(circle at 50% 35%,#374151,#111827);border-radius:14px;margin:16px 0}
+.avatar{width:160px;height:190px;position:relative;display:grid;place-items:center}
+.head{width:132px;height:145px;border-radius:48% 48% 43% 43%;background:#f3c9a7;position:relative;box-shadow:inset -10px -6px #dfaa88}
+.hair{position:absolute;top:-9px;left:-4px;width:140px;height:62px;border-radius:60% 60% 35% 25%;background:#312e81}
+.eye{position:absolute;top:62px;width:9px;height:12px;border-radius:50%;background:#1f2937}.eye.left{left:34px}.eye.right{right:34px}
+.mouth{position:absolute;left:50%;top:99px;transform:translateX(-50%);width:28px;height:7px;border-radius:0 0 16px 16px;background:#7f1d1d}
+.speaking .mouth{animation:talk .18s infinite alternate}
+@keyframes talk{from{height:4px;width:19px}to{height:20px;width:27px}}
+.shoulders{position:absolute;bottom:-2px;width:160px;height:64px;border-radius:55% 55% 16px 16px;background:#60a5fa}
+.avatar .head{z-index:1;margin-top:-12px}
+button,select{font:inherit;border-radius:10px;border:1px solid #4b5563;padding:11px 13px;background:#374151;color:#fff;cursor:pointer}
+button:hover{background:#4b5563}button:focus-visible,select:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.controls{display:flex;flex-wrap:wrap;gap:9px}.primary{background:#1d4ed8;border-color:#2563eb}
+.answer{min-height:86px;line-height:1.65;padding:14px;background:#111827;border-radius:10px;margin:14px 0;overflow-wrap:anywhere}
+label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{font-size:.85rem;color:#9ca3af;margin-top:12px}
+@media(max-width:700px){main{grid-template-columns:1fr}body{padding:14px}}
+</style>
+</head>
+<body>
+<main>
+<section>
+<h1>TRACER AI配信プレビュー</h1>
+<p class="notice">ローカル動作確認用。商品・価格・在庫はすべて架空のデモデータです。TikTokには接続せず、外部通信も行いません。</p>
+<div class="avatar-wrap">
+  <div class="avatar" id="avatar" role="img" aria-label="音声に合わせて口が動く簡易デモアバター">
+    <div class="shoulders"></div><div class="head"><div class="hair"></div><div class="eye left"></div><div class="eye right"></div><div class="mouth"></div></div>
+  </div>
+</div>
+<h2>デモ商品：架空の商品</h2>
+<p>表示価格：2,980円（テスト用の仮価格）</p>
+<div class="controls">
+<button class="primary" id="intro">商品紹介を読み上げる</button>
+<button id="stop">音声停止</button>
+</div>
+<div class="controls" aria-label="連続動作テスト" style="margin-top:10px">
+<button id="soak30">30分テスト開始</button>
+<button id="soak60">60分テスト開始</button>
+<button id="stopSoak">連続テスト終了</button>
+</div>
+<p class="status" id="soakStatus" role="status">連続テスト未実行</p>
+<p class="status" id="status" role="status">待機中。音声はお使いのブラウザの日本語音声を使用します。</p>
+</section>
+<section>
+<h2>模擬コメントに回答</h2>
+<label for="voice">音声</label>
+<select id="voice"><option value="">ブラウザの既定音声</option></select>
+<div class="controls" style="margin-top:14px">
+<button data-type="price">「いくら？」</button>
+<button data-type="features">「どんな商品？」</button>
+<button data-type="stock">「在庫ある？」</button>
+<button data-type="purchase">「どこで買える？」</button>
+<button data-type="delivery">「明日届く？」</button>
+</div>
+<div class="answer" id="answer" aria-live="polite">コメントボタンを押すと、デモ回答を表示して音声で読み上げます。</div>
+<p class="status">実商品データのAPI接続、生成AI、TikTokコメント取得はまだ未接続です。</p>
+</section>
+</main>
+<script>
+(() => {
+  const avatar = document.getElementById('avatar');
+  const answer = document.getElementById('answer');
+  const status = document.getElementById('status');
+  const voiceSelect = document.getElementById('voice');
+  const synth = window.speechSynthesis;
+  const replies = {
+    price: 'こちらは動作確認用の架空商品です。テスト用の表示価格は2,980円です。',
+    features: 'これはデモ画面のため、実在の商品特徴は設定していません。実際の商品情報は商品ページでご確認ください。',
+    stock: 'このデモでは実際の在庫を確認していません。最新の在庫は商品ページでご確認ください。',
+    purchase: '購入先の表示テストです。実際の商品ではありませんので、購入はできません。',
+    delivery: 'お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。'
+  };
+  function loadVoices() {
+    const old = voiceSelect.value;
+    voiceSelect.replaceChildren(new Option('ブラウザの既定音声', ''));
+    const voices = synth ? synth.getVoices() : [];
+    voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('ja')).forEach(v => {
+      voiceSelect.add(new Option(v.name + ' (' + v.lang + ')', v.name));
+    });
+    if ([...voiceSelect.options].some(o => o.value === old)) voiceSelect.value = old;
+  }
+  function speak(text) {
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+      status.textContent = 'このブラウザは音声合成に対応していません。Chrome / Edgeなどでお試しください。';
+      return;
+    }
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 1;
+    const selected = voiceSelect.value;
+    const voice = synth.getVoices().find(v => v.name === selected);
+    if (voice) utterance.voice = voice;
+    utterance.onstart = () => { avatar.classList.add('speaking'); status.textContent = '読み上げ中'; };
+    utterance.onend = () => { avatar.classList.remove('speaking'); status.textContent = '読み上げ完了'; };
+    utterance.onerror = () => { avatar.classList.remove('speaking'); status.textContent = '音声再生に失敗しました。ブラウザの音声設定を確認してください。'; };
+    synth.speak(utterance);
+  }
+  document.getElementById('intro').addEventListener('click', () => {
+    const text = 'こんにちは。TRACER AI配信のローカル動作テストです。こちらは架空のデモ商品で、表示価格は2,980円という設定です。実際の商品情報や販売状況はまだ読み込んでいません。';
+    answer.textContent = text; speak(text);
+  });
+  document.getElementById('stop').addEventListener('click', () => {
+    if (synth) synth.cancel();
+    avatar.classList.remove('speaking'); status.textContent = '音声を停止しました。';
+  });
+  document.querySelectorAll('button[data-type]').forEach(button => button.addEventListener('click', () => {
+    const text = replies[button.dataset.type];
+    answer.textContent = text; speak(text);
+  }));
+  let soakTimer = null;
+  let soakInterval = null;
+  let soakStartedAt = 0;
+  let soakDurationMs = 0;
+  let soakCount = 0;
+  const soakStatus = document.getElementById('soakStatus');
+  const soakTypes = ['price', 'features', 'stock', 'delivery'];
+  function stopSoak(message) {
+    if (soakTimer) clearTimeout(soakTimer);
+    if (soakInterval) clearInterval(soakInterval);
+    soakTimer = null; soakInterval = null;
+    document.getElementById('soak30').disabled = false;
+    document.getElementById('soak60').disabled = false;
+    if (message) soakStatus.textContent = message;
+  }
+  function startSoak(minutes) {
+    stopSoak();
+    if (synth) synth.cancel();
+    soakStartedAt = Date.now(); soakDurationMs = minutes * 60 * 1000; soakCount = 0;
+    document.getElementById('soak30').disabled = true;
+    document.getElementById('soak60').disabled = true;
+    const tick = () => {
+      const elapsed = Date.now() - soakStartedAt;
+      soakStatus.textContent = minutes + '分テスト: ' + Math.floor(elapsed / 60000) + '分' + Math.floor((elapsed % 60000) / 1000) + '秒経過 / 応答 ' + soakCount + '回';
+    };
+    const speakNext = () => {
+      if (Date.now() - soakStartedAt >= soakDurationMs) return;
+      const text = replies[soakTypes[soakCount % soakTypes.length]];
+      soakCount += 1; answer.textContent = text; speak(text); tick();
+    };
+    speakNext();
+    soakInterval = setInterval(speakNext, 45000);
+    soakTimer = setTimeout(() => {
+      stopSoak(minutes + '分テスト完了。模擬応答 ' + soakCount + '回。ブラウザを閉じると記録は保持されません。');
+      if (synth) synth.cancel();
+      avatar.classList.remove('speaking');
+    }, soakDurationMs);
+  }
+  document.getElementById('soak30').addEventListener('click', () => startSoak(30));
+  document.getElementById('soak60').addEventListener('click', () => startSoak(60));
+  document.getElementById('stopSoak').addEventListener('click', () => {
+    stopSoak('連続テストを手動停止。模擬応答 ' + soakCount + '回。');
+    if (synth) synth.cancel();
+    avatar.classList.remove('speaking');
+  });
+  window.addEventListener('pagehide', () => {
+    stopSoak();
+    if (synth) synth.cancel();
+  });
+  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+  else status.textContent = 'このブラウザは音声合成に対応していません。';
+})();
+</script>
+</body>
+</html>
