@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getLinkedSupplierListingIds } from "@/lib/catalog/canonical-supplier-identity";
+import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { probeBaseReadOnly, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
 import { classifyBaseIdentifier, decideCommerceSkuLink } from "@/lib/channels/base-item-identity";
 import { classifyBaseMappingCounts } from "@/lib/channels/base-mapping-audit";
@@ -71,18 +71,18 @@ export async function GET(request: Request) {
       } else if (externalIds.length > 0) {
         try {
           const db = createSupabaseAdminClient();
-          const listingRows: Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }> = [];
+          const listingRows: Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null; product_id: string | null; supplier_product_id: string | null; supplier_variant_id: string | null }> = [];
           for (let offset = 0; offset < externalIds.length; offset += 100) {
             const batch = externalIds.slice(offset, offset + 100);
             const { data, error: listingError } = await db
               .from("shop_listings")
-              .select("id,base_item_id,supplier_listing_id")
+              .select("id,base_item_id,supplier_listing_id,product_id,supplier_product_id,supplier_variant_id")
               .in("base_item_id", batch);
             if (listingError) throw new Error("base_listing_mapping_db_read_failed");
             listingRows.push(...(data ?? []));
           }
 
-          const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null }>>();
+          const rowsByBaseId = new Map<string, Array<{ id: string; base_item_id: string | number | null; supplier_listing_id: string | null; product_id: string | null; supplier_product_id: string | null; supplier_variant_id: string | null }>>();
           for (const row of listingRows ?? []) {
             const key = String(row.base_item_id ?? "");
             const existing = rowsByBaseId.get(key) ?? [];
@@ -90,11 +90,23 @@ export async function GET(request: Request) {
               id: String(row.id),
               base_item_id: row.base_item_id,
               supplier_listing_id: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+              product_id: row.product_id == null ? null : String(row.product_id),
+              supplier_product_id: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+              supplier_variant_id: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
             });
             rowsByBaseId.set(key, existing);
           }
-          const linkedSupplierIds = await getLinkedSupplierListingIds(
-            (listingRows ?? []).map((row) => row.supplier_listing_id),
+          // Treat exact, currently verified native-CJ supply as publishable even when
+          // its marketplace identity status is supply_discovered rather than linked.
+          // This is the same fail-closed predicate used by the actual publication path.
+          const supplierStatuses = await getPublishableSupplierListingStatuses(
+            (listingRows ?? []).map((row) => ({
+              listingId: String(row.id),
+              supplierListingId: row.supplier_listing_id == null ? null : String(row.supplier_listing_id),
+              productId: row.product_id == null ? null : String(row.product_id),
+              supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+              supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
+            })),
           );
 
           // The active commerce pipeline uses channel_listings/commerce_variants/
@@ -203,7 +215,7 @@ export async function GET(request: Request) {
             }
 
             const supplierId = legacyMatches[0].supplier_listing_id;
-            if (!supplierId || !linkedSupplierIds.has(supplierId)) {
+            if (!supplierId || !supplierStatuses.has(String(legacyMatches[0].id))) {
               mappingAudit.visibleItemsUnlinked += 1;
             } else {
               mappingAudit.visibleItemsLinked += 1;
