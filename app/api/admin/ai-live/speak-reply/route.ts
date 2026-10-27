@@ -192,7 +192,7 @@ export async function POST(request: Request) {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
-        "Content-Length": String(bytes.byteLength),
+        "Content-Length": String(totalBytes),
         'Content-Disposition': 'inline; filename="tracer-ai-live-reply.mp3"',
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
