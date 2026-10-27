@@ -10,6 +10,7 @@ export const maxDuration = 30;
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const MAX_COMMENT_CHARS = 2000;
+const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -43,7 +44,41 @@ export async function POST(request: Request) {
 
   let input: Record<string, unknown>;
   try {
-    const parsed: unknown = await request.json();
+    const declaredRequestLength = request.headers.get("content-length");
+    if (declaredRequestLength !== null) {
+      const parsedLength = Number(declaredRequestLength);
+      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+        return json({ ok: false, error: "invalid_content_length" }, 400);
+      }
+      if (parsedLength > MAX_REQUEST_BYTES) {
+        return json({ ok: false, error: "request_body_too_large" }, 413);
+      }
+    }
+    if (!request.body) return json({ ok: false, error: "invalid_json" }, 400);
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_REQUEST_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          return json({ ok: false, error: "request_body_too_large" }, 413);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return json({ ok: false, error: "invalid_json_object" }, 400);
     }
@@ -148,17 +183,51 @@ export async function POST(request: Request) {
     if (!contentType.toLowerCase().includes("audio/")) {
       return json({ ok: false, error: "unexpected_audio_response" }, 502);
     }
-    const bytes = new Uint8Array(await upstream.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_AUDIO_BYTES) {
+    const declaredLength = upstream.headers.get("content-length");
+    if (declaredLength !== null) {
+      const parsedLength = Number(declaredLength);
+      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0 || parsedLength > MAX_AUDIO_BYTES) {
+        await upstream.body?.cancel().catch(() => undefined);
+        return json({ ok: false, error: "audio_size_out_of_range" }, 502);
+      }
+    }
+    if (!upstream.body) {
+      return json({ ok: false, error: "audio_body_missing" }, 502);
+    }
+
+    // Enforce the cap while streaming, before accumulating an oversized response in memory.
+    const reader = upstream.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_AUDIO_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          return json({ ok: false, error: "audio_size_out_of_range" }, 502);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (totalBytes === 0) {
       return json({ ok: false, error: "audio_size_out_of_range" }, 502);
     }
-    const audioBuffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(audioBuffer).set(bytes);
+    const audioBuffer = new ArrayBuffer(totalBytes);
+    const output = new Uint8Array(audioBuffer);
+    let offset = 0;
+    for (const chunk of chunks) {
+      output.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
     return new NextResponse(audioBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
-        "Content-Length": String(bytes.byteLength),
+        "Content-Length": String(totalBytes),
         'Content-Disposition': 'inline; filename="tracer-ai-live-reply.mp3"',
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
