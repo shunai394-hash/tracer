@@ -124,13 +124,13 @@ export async function POST(request: Request) {
       });
     }
 
-    // A single explicit request causes at most one provider call; never retry automatically.
+    // S2 Pro: a single explicit request causes at most one provider call; never retry automatically.
     const upstream = await fetch(FISH_TTS_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        model: "drama-3",
+        model: "s2-pro",
       },
       body: JSON.stringify({ text: reply.text.slice(0, 1200), reference_id: referenceId, format: "mp3" }),
       cache: "no-store",
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
         'Content-Disposition': 'inline; filename="tracer-ai-live-reply.mp3"',
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "X-AI-Voice-Model": "drama-3",
+        "X-AI-Voice-Model": "s2-pro",
         "X-AI-Reply-Category": route.category,
       },
     });
