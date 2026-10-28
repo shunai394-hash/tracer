@@ -56,7 +56,7 @@ export function validateCommerceBotRunEvent(
 
   const value = input as Record<string, unknown>;
   const errors: string[] = [];
-  if (typeof value.runId !== "string" || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value.runId)) {
+  if (typeof value.runId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.runId)) {
     errors.push("runId must be a UUID");
   }
   if (typeof value.botId !== "string" || !BOT_IDS.has(value.botId)) errors.push("botId is invalid");
