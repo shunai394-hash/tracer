@@ -24,6 +24,12 @@ Request JSON:
 
 The response is MP3 audio on success. On errors, the endpoint returns a small JSON error object. Maximum input length is 1,200 characters; requests time out after 25 seconds and are not automatically retried.
 
+## Browser preview
+
+After deployment, open `/ai-live-drama-preview.html` to compare one explicitly requested Drama 3 clip with the existing browser speech preview. Enter `TRACER_ADMIN_TOKEN` manually and a permitted Fish Audio voice reference ID. The page sends the token only to the same-origin TRACER endpoint, does not persist it, and clears the field after a successful response. The token is still present in browser memory while the request is in progress; use only on a trusted device and sign out/close the page afterward. The page does not call Fish Audio directly and never receives `FISH_API_KEY`.
+
+The original `/ai-live-preview.html` remains a local-only browser-speech demo with no API calls. The Drama 3 page makes a provider request only when the user presses Generate.
+
 ## Cost and safety
 
 - The API is paid; it is not a free-tier integration. The official launch announcement says Drama 3 API pricing is discounted 80% through November 12, 2026. Confirm the current rate and account billing in Fish Audio before use.
