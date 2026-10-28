@@ -1329,3 +1329,16 @@ test("BASE image format rejection retries with the existing Shopify CDN image on
   assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
   assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
 });
+
+
+test("minimum expected profit floor is JPY 2,500 across TRACER, BASE, Shopify and NEWFIND promotion", async () => {
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
+  assert.match(core, /MIN_EXPECTED_PROFIT_JPY = 2500/);
+  assert.match(core, /\.gte\("commerce_prices\.expected_profit", MIN_EXPECTED_PROFIT_JPY\)/);
+  assert.match(publish, /Number\(price\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /minimum_profit_below_2500_jpy/);
+  assert.match(patrol, /\.gte\("commerce_prices\.expected_profit", MIN_EXPECTED_PROFIT_JPY\)/);
+});
