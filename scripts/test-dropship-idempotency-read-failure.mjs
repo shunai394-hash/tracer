@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../lib/ordering/dropship.ts", import.meta.url), "utf8");
+const source = (await readFile(new URL("../lib/ordering/dropship.ts", import.meta.url), "utf8")).replace(/\r\n?/g, "\n");
 const lookupStart = source.indexOf("const { data: existingPo, error: existingPoLookupError }");
 assert.notEqual(lookupStart, -1, "purchase-order idempotency lookup must expose database errors");
 const failClosed = source.indexOf('reason: "purchase_order_idempotency_lookup_failed"', lookupStart);
