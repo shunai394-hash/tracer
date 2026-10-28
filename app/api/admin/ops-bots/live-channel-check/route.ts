@@ -24,6 +24,12 @@ function num(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
   return Number.isFinite(parsed) ? parsed : null;
 }
+function sameShopifyProductId(stored: unknown, liveGid: string): boolean {
+  const value = str(stored);
+  if (!value) return false;
+  const normalized = /^\\d+$/.test(value) ? "gid://shopify/Product/" + value : value;
+  return normalized === liveGid;
+}
 function visible(value: unknown): boolean | null {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1 ? true : value === 0 ? false : null;
@@ -60,7 +66,7 @@ async function readCanonicalExpected(): Promise<Map<string, CanonicalExpected>> 
   const [variantsResult, productsResult, offersResult, pricesResult] = await Promise.all([
     db.from("commerce_variants").select("id,product_id,sku,source_variant_key"),
     db.from("commerce_products").select("id,active"),
-    db.from("supplier_offers").select("variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,tracking_supported,source_status,last_checked_at"),
+    db.from("supplier_offers").select("id,variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,tracking_supported,source_status,last_checked_at"),
     db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price"),
   ]);
   if (variantsResult.error || productsResult.error || offersResult.error || pricesResult.error) {
@@ -190,7 +196,7 @@ export async function GET(request: Request) {
               status: node.status ?? null,
               variants: (node.variants?.nodes ?? []).map((variant) => {
                 const linked = shopifySample.find((row) =>
-                  str(row.external_product_id) === node.id &&
+                  sameShopifyProductId(row.external_product_id, node.id) &&
                   str(row.external_variant_id) === variant.id
                 );
                 const expected = linked ? canonical.get(str(linked.variant_id) ?? "") ?? null : null;
