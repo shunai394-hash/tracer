@@ -44,6 +44,81 @@ async function readListings() {
   return (data ?? []) as unknown as Row[];
 }
 
+type CanonicalExpected = {
+  variantId: string;
+  productId: string | null;
+  sku: string | null;
+  price: number | null;
+  stock: number | null;
+  shouldBePublic: boolean | null;
+  supplierProductId: string | null;
+  supplierVariantId: string | null;
+};
+
+async function readCanonicalExpected(): Promise<Map<string, CanonicalExpected>> {
+  const db = createSupabaseAdminClient();
+  const [variantsResult, productsResult, offersResult, pricesResult] = await Promise.all([
+    db.from("commerce_variants").select("id,product_id,sku,source_variant_key"),
+    db.from("commerce_products").select("id,active"),
+    db.from("supplier_offers").select("variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,tracking_supported,source_status,last_checked_at"),
+    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price"),
+  ]);
+  if (variantsResult.error || productsResult.error || offersResult.error || pricesResult.error) {
+    throw new Error("canonical_expected_read_failed");
+  }
+  const products = new Map((productsResult.data ?? []).map((row) => [String(row.id), row]));
+  const offersById = new Map((offersResult.data ?? []).map((row) => [String(row.id), row]));
+  const offersByVariant = new Map<string, typeof offersResult.data>();
+  for (const offer of offersResult.data ?? []) {
+    const id = str(offer.variant_id);
+    if (!id) continue;
+    offersByVariant.set(id, [...(offersByVariant.get(id) ?? []), offer]);
+  }
+  const pricesByVariant = new Map<string, typeof pricesResult.data>();
+  for (const price of pricesResult.data ?? []) {
+    const id = str(price.variant_id);
+    if (!id) continue;
+    pricesByVariant.set(id, [...(pricesByVariant.get(id) ?? []), price]);
+  }
+  const now = Date.now();
+  const expected = new Map<string, CanonicalExpected>();
+  for (const variant of variantsResult.data ?? []) {
+    const variantId = str(variant.id);
+    const productId = str(variant.product_id);
+    if (!variantId || !productId) continue;
+    const product = products.get(productId);
+    const offers = offersByVariant.get(variantId) ?? [];
+    const prices = pricesByVariant.get(variantId) ?? [];
+    const matched = prices.map((price) => ({ price, offer: offersById.get(str(price.supplier_offer_id) ?? "") }))
+      .filter((pair) => pair.offer && str(pair.offer.variant_id) === variantId)
+      .sort((a, b) => (num(b.price.selling_price) ?? 0) - (num(a.price.selling_price) ?? 0))[0];
+    const offer = matched?.offer ?? offers[0] ?? null;
+    const price = matched?.price ?? null;
+    const checked = offer?.last_checked_at ? Date.parse(String(offer.last_checked_at)) : NaN;
+    const fresh = Boolean(offer &&
+      str(offer.source_status) === "verified" &&
+      str(offer.ship_to) === "JP" &&
+      str(offer.supplier_product_id) && str(offer.supplier_variant_id) &&
+      (num(offer.unit_cost) ?? 0) > 0 && (num(offer.shipping_cost) ?? 0) > 0 &&
+      offer.tracking_supported === true && (num(offer.inventory) ?? 0) > 0 &&
+      Number.isFinite(checked) && now - checked >= 0 && now - checked <= 24 * 60 * 60 * 1000);
+    const sellingPrice = num(price?.selling_price);
+    const margin = sellingPrice && offer && num(offer.unit_cost) !== null && num(offer.shipping_cost) !== null
+      ? (sellingPrice - (num(offer.unit_cost) as number) - (num(offer.shipping_cost) as number)) / sellingPrice
+      : null;
+    expected.set(variantId, {
+      variantId, productId,
+      sku: str(variant.sku) ?? str(variant.source_variant_key),
+      price: sellingPrice,
+      stock: num(offer?.inventory),
+      shouldBePublic: product?.active === true && fresh && sellingPrice !== null && margin !== null && margin >= 0.5,
+      supplierProductId: str(offer?.supplier_product_id),
+      supplierVariantId: str(offer?.supplier_variant_id),
+    });
+  }
+  return expected;
+}
+
 /**
  * Explicit, bounded live read probe. Call with ?live=1 to avoid making external
  * API calls on routine report requests. Reads only existing external IDs; never
@@ -62,7 +137,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const rows = await readListings();
+    const [rows, canonical] = await Promise.all([readListings(), readCanonicalExpected()]);
     const baseRows = rows.filter((row) => ["base"].includes(String(row.channel ?? "").toLowerCase()) && /^\d+$/.test(str(row.external_product_id) ?? ""));
     const shopifyRows = rows.filter((row) => String(row.channel ?? "").toLowerCase() === "shopify" && Boolean(str(row.external_product_id)));
     const newfindRows = rows.filter((row) => String(row.channel ?? "").toLowerCase() === "newfind");
@@ -88,6 +163,8 @@ export async function GET(request: Request) {
             published: visible(item.visible),
             observedAt: new Date().toISOString(),
             identityVerified: str(item.item_id) === id,
+            variantId: str(listing.variant_id),
+            canonical: canonical.get(str(listing.variant_id) ?? "") ?? null,
           });
         } catch {
           errors.push({ channel: "BASE", reason: "item_read_failed:" + id });
@@ -111,12 +188,26 @@ export async function GET(request: Request) {
             shopify.push({
               externalProductId: node.id,
               status: node.status ?? null,
-              variants: (node.variants?.nodes ?? []).map((variant) => ({
-                externalVariantId: variant.id,
-                sku: variant.sku,
-                price: num(variant.price),
-                stock: num(variant.inventoryQuantity),
-              })),
+              variants: (node.variants?.nodes ?? []).map((variant) => {
+                const linked = shopifySample.find((row) =>
+                  str(row.external_product_id) === node.id &&
+                  str(row.external_variant_id) === variant.id
+                );
+                const expected = linked ? canonical.get(str(linked.variant_id) ?? "") ?? null : null;
+                return {
+                  externalVariantId: variant.id,
+                  sku: variant.sku,
+                  price: num(variant.price),
+                  stock: num(variant.inventoryQuantity),
+                  variantId: linked ? str(linked.variant_id) : null,
+                  canonical: expected,
+                  parity: expected ? {
+                    skuMatch: Boolean(expected.sku && variant.sku === expected.sku),
+                    priceMatch: expected.price !== null && num(variant.price) === expected.price,
+                    stockMatch: expected.stock !== null && num(variant.inventoryQuantity) === expected.stock,
+                  } : null,
+                };
+              }),
               observedAt: new Date().toISOString(),
             });
           }
@@ -132,9 +223,43 @@ export async function GET(request: Request) {
       mode: "bounded_live_read",
       limits: { maxBaseItems: 5, maxShopifyProducts: 20, databaseListingRows: 500 },
       samples: {
-        BASE: { requested: baseSample.length, verified: base.filter((item) => item.identityVerified === true).length, items: base },
+        BASE: { requested: baseSample.length, verified: base.filter((item) => item.identityVerified === true).length, items: base.map((item) => {
+          const expected = item.canonical as CanonicalExpected | null;
+          const actual = item as Record<string, unknown>;
+          return {
+            ...item,
+            parity: expected ? {
+              skuMatch: Boolean(expected.sku && actual.sku === expected.sku),
+              priceMatch: expected.price !== null && actual.price === expected.price,
+              stockMatch: expected.stock !== null && actual.stock === expected.stock,
+              publicationMatch: expected.shouldBePublic !== null && actual.published === expected.shouldBePublic,
+            } : null,
+          };
+        }) },
         Shopify: { requested: shopifySample.length, returned: shopify.length, products: shopify },
         NEWFIND: { storedRows: newfindRows.length, liveVerification: "not_implemented" },
+      },
+      paritySummary: {
+        BASE: {
+          linked: base.filter((item) => Boolean(item.canonical)).length,
+          unlinked: base.filter((item) => !item.canonical).length,
+          mismatches: base.reduce((count, item) => {
+            const p = item.canonical as CanonicalExpected | null;
+            if (!p) return count;
+            return count + Number(Boolean(p.sku && item.sku !== p.sku))
+              + Number(p.price !== null && item.price !== p.price)
+              + Number(p.stock !== null && item.stock !== p.stock)
+              + Number(p.shouldBePublic !== null && item.published !== p.shouldBePublic);
+          }, 0),
+        },
+        Shopify: {
+          linked: shopify.reduce((count, product) => count + (product.variants as Array<Record<string, unknown>>).filter((v) => Boolean(v.canonical)).length, 0),
+          unlinked: shopify.reduce((count, product) => count + (product.variants as Array<Record<string, unknown>>).filter((v) => !v.canonical).length, 0),
+          mismatches: shopify.reduce((count, product) => count + (product.variants as Array<Record<string, unknown>>).reduce((n, v) => {
+            const parity = v.parity as Record<string, boolean> | null;
+            return n + (parity ? Object.values(parity).filter((match) => !match).length : 0);
+          }, 0), 0),
+        },
       },
       errors,
       generatedAt: new Date().toISOString(),
