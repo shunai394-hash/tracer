@@ -12,7 +12,8 @@ const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 
 function authorizedAdminToken(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") ?? "";
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7).trim() : "";
   if (!expected || !supplied) return false;
   const expectedBytes = Buffer.from(expected);
   const suppliedBytes = Buffer.from(supplied);
