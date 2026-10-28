@@ -27,6 +27,9 @@ assert.doesNotMatch(speak, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/u);
 assert.doesNotMatch(speak, /console\.(log|error)\(/u);
 
 assert.match(drama, /requireAutomationAuth\(request\)/u);
+assert.match(drama, /TRACER_ADMIN_TOKEN/u);
+assert.match(drama, /timingSafeEqual/u);
+assert.match(drama, /authorizedAdminToken\(request\)/u);
 assert.match(drama, /model: "drama-3"/u);
 assert.match(drama, /"X-AI-Voice-Model": "drama-3"/u);
 assert.match(drama, /AbortSignal\.timeout\(25_000\)/u);
