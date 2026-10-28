@@ -273,6 +273,14 @@ export async function persistBrightDataProducts(
           seller: candidate.seller,
           productUrl: candidate.productUrl,
           imageUrl: candidate.imageUrl,
+          identifiers: {
+            asin: candidate.asin ?? null,
+            jan: candidate.jan ?? null,
+            gtin: candidate.gtin ?? null,
+            ean: candidate.ean ?? null,
+            upc: candidate.upc ?? null,
+            mpn: candidate.mpn ?? null,
+          },
         },
         normalized_data: {
           title: canonicalName,
@@ -282,6 +290,14 @@ export async function persistBrightDataProducts(
           imageUrl,
           price: amount,
           currency,
+          identifiers: {
+            asin: candidate.asin ?? null,
+            jan: candidate.jan ?? null,
+            gtin: candidate.gtin ?? null,
+            ean: candidate.ean ?? null,
+            upc: candidate.upc ?? null,
+            mpn: candidate.mpn ?? null,
+          },
         },
         confidence: 0.8,
       })
@@ -341,6 +357,16 @@ export async function persistBrightDataProducts(
           observation_id: observationResult.data.id,
           currency_confidence: currencyAssessment.confidence,
           currency_confidence_reasons: currencyAssessment.reasons,
+          identifiers: {
+            asin: candidate.asin ?? null,
+            jan: candidate.jan ?? null,
+            gtin: candidate.gtin ?? null,
+            ean: candidate.ean ?? null,
+            upc: candidate.upc ?? null,
+            mpn: candidate.mpn ?? null,
+          },
+          identity_link_status: "unverified",
+          identity_link_method: null,
         },
       })
       .select("id")

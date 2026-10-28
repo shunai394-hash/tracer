@@ -23,6 +23,13 @@ export type BrightDataProductCandidate = {
   seller: string | null;
   productUrl: string | null;
   imageUrl: string | null;
+  /** Verified identifiers supplied by the source; never infer these from title text. */
+  asin?: string | null;
+  jan?: string | null;
+  gtin?: string | null;
+  ean?: string | null;
+  upc?: string | null;
+  mpn?: string | null;
 };
 
 export type BrightDataSearchResult = {
@@ -171,6 +178,12 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
             image: Array.isArray(record.image) ? record.image[0] : record.image ?? null,
             seller: offer.seller && typeof offer.seller === "object"
               ? (offer.seller as Record<string, unknown>).name : null,
+            asin: record.asin ?? record.ASIN ?? null,
+            jan: record.jan ?? record.JAN ?? null,
+            gtin: record.gtin ?? record.gtin8 ?? record.gtin12 ?? record.gtin13 ?? record.gtin14 ?? record.GTIN ?? null,
+            ean: record.ean ?? record.EAN ?? null,
+            upc: record.upc ?? record.UPC ?? null,
+            mpn: record.mpn ?? record.model ?? record.model_number ?? null,
           }];
         }
         return Object.values(record).flatMap((value) => collectProducts(value, depth + 1));
@@ -297,7 +310,15 @@ function extractShoppingProducts(payload: unknown): BrightDataProductCandidate[]
     const productUrl = normalizeUrl(record.link ?? record.url ?? record.product_url ?? record.productUrl ?? record.href);
     const imageUrl = normalizeUrl(record.image ?? record.image_url ?? record.imageUrl ?? record.thumbnail ?? record.thumbnail_url ?? record.thumbnailUrl);
     seen.add(title);
-    products.push({ title, brand: brand || null, price, currency, seller: seller || null, productUrl, imageUrl });
+    products.push({
+      title, brand: brand || null, price, currency, seller: seller || null, productUrl, imageUrl,
+      asin: findFirstString(record, ["asin", "ASIN", "amazon_asin"]),
+      jan: findFirstString(record, ["jan", "JAN", "jan_code", "janCode"]),
+      gtin: findFirstString(record, ["gtin", "GTIN", "gtin8", "gtin12", "gtin13", "gtin14"]),
+      ean: findFirstString(record, ["ean", "EAN", "ean_code", "eanCode"]),
+      upc: findFirstString(record, ["upc", "UPC", "upc_code", "upcCode"]),
+      mpn: findFirstString(record, ["mpn", "MPN", "model_number", "modelNumber", "manufacturer_part_number"]),
+    });
     if (products.length >= 100) break;
   }
   return products;
