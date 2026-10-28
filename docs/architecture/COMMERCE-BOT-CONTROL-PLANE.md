@@ -29,6 +29,8 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 - `lib/agents/commerce-bot-control-plane.ts` defines the five roles and their known integration points.
 - `GET /api/admin/bots/status` requires the existing automation authentication and returns a no-store, read-only configuration report.
 - The status response deliberately marks every check as `not-run`; configured credentials or an existing route are not presented as a successful audit.
+- Channel Sync readiness requires BASE OAuth settings, Shopify store domain plus one valid supported auth mode, and NEWFIND outbound API settings; it does not infer readiness from `CRON_SECRET` alone.
+- The control-plane test covers missing provider configuration, both supported Shopify auth modes, and the no-false-success contract.
 - The endpoint does not execute cron routes, modify database rows, or write to external channels.
 
 ## Rollout plan
@@ -36,7 +38,7 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 ### Stage 1 — Status and evidence contracts
 - [x] Define five bot roles and safety gates.
 - [x] Add authenticated, read-only status endpoint.
-- [ ] Add automated unit tests for missing configuration and no-false-success semantics.
+- [x] Add automated unit tests for missing configuration and no-false-success semantics (execution still needs CI/local verification).
 - [ ] Confirm the route is included in deployment and test the auth boundary.
 
 ### Stage 2 — Durable run/evidence records
