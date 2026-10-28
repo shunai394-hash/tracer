@@ -57,7 +57,6 @@ export async function GET(request: Request) {
 
     const productsById = new Map(productRows.map((row) => [str(row.id), row]));
     const offersById = new Map(offerRows.map((row) => [str(row.id), row]));
-    const variantsById = new Map(variantRows.map((row) => [str(row.id), row]));
     const listingsByVariant = new Map<string, Row[]>();
     for (const listing of listingRows) {
       const variantId = str(listing.variant_id);
