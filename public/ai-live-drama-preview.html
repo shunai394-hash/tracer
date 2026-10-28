@@ -31,7 +31,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 </form>
 <p id="status" class="status" role="status" aria-live="polite">待機中。生成ボタンを押すまでAPI通信は行いません。</p>
 <audio id="audio" controls hidden></audio>
-<p class="small">管理トークンはこのページのメモリ内でのみ使用し、localStorage等には保存しません。音声生成にはTRACER管理権限とサーバー側のFISH_API_KEY設定が必要です。音声の所有権・利用許可を確認したVoice Reference IDだけを使用してください。</p>
+<p class="small">管理トークンはこのページのメモリ内でのみ使用し、localStorage等には保存しません。音声生成にはTRACER管理権限とサーバー側のFish Audio API設定が必要です。音声の所有権・利用許可を確認したVoice Reference IDだけを使用してください。</p>
 <p><a href="/ai-live-preview.html">← ブラウザ音声プレビューに戻る</a></p>
 <script>
 (() => {
@@ -70,7 +70,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
           if (response.status === 401 || response.status === 403) message = "認証に失敗しました。管理トークンを確認してください。";
           else if (data && typeof data.message === "string") message = data.message;
           else if (data && typeof data.error === "string") message = data.error;
-          if (data && data.error === "fish_audio_not_configured") message = "サーバーにFISH_API_KEYが設定されていません。";
+          if (data && data.error === "fish_audio_not_configured") message = "サーバーにFish Audio APIキーが設定されていません。";
         } catch {}
         throw new Error(message);
       }
