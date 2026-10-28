@@ -54,3 +54,13 @@ assert.match(migration, /enable row level security/i);
 assert.match(migration, /revoke update, delete, truncate/i);
 assert.match(migration, /unique \(idempotency_key\)/);
 console.log("Commerce bot run evidence tests passed");
+
+
+const historyRoute = readFileSync(new URL("../app/api/admin/bots/runs/route.ts", import.meta.url), "utf8");
+assert.match(historyRoute, /requireAutomationAuth\(request\)/);
+assert.match(historyRoute, /\.from\("commerce_bot_run_events"\)/);
+assert.match(historyRoute, /\.order\("occurred_at", \{ ascending: false \}\)/);
+assert.match(historyRoute, /Math\.min\(100, limitParam\)/);
+assert.match(historyRoute, /invalid_run_id/);
+assert.match(historyRoute, /invalid_bot_id/);
+console.log("Commerce bot run history API guardrails passed");
