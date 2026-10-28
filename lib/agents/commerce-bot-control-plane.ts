@@ -53,7 +53,7 @@ export const COMMERCE_BOTS: readonly CommerceBotDefinition[] = [
     responsibility: "商品名・説明文の日本語品質、誇大表現、欠落属性を検査する",
     mode: "transform",
     existingRoutes: ["/api/cron/base-japanese-copy"],
-    requiredEnvironment: ["CRON_SECRET", "GEMINI_API_KEY", "BASE_CLIENT_ID", "BASE_CLIENT_SECRET", "BASE_REFRESH_TOKEN"],
+    requiredEnvironment: ["CRON_SECRET", "GEMINI_API_KEY", "BASE_CLIENT_ID", "BASE_CLIENT_SECRET", "BASE_REFRESH_TOKEN", "BASE_REDIRECT_URI"],
     writesExternalSystems: true,
     approvalGate: "翻訳候補の生成と外部更新を分離し、更新後の再取得確認ができない商品は成功扱いにしない。",
   },
@@ -63,7 +63,16 @@ export const COMMERCE_BOTS: readonly CommerceBotDefinition[] = [
     responsibility: "TRACERを正本としてBASE・Shopify・NEWFINDのSKU/外部ID/価格/在庫/公開状態を照合する",
     mode: "reconcile",
     existingRoutes: ["/api/admin/shopify/reconcile", "/api/cron/shopify-publish", "/api/cron/newfind-retry"],
-    requiredEnvironment: ["CRON_SECRET"],
+    requiredEnvironment: [
+      "CRON_SECRET",
+      "BASE_CLIENT_ID",
+      "BASE_CLIENT_SECRET",
+      "BASE_REFRESH_TOKEN",
+      "BASE_REDIRECT_URI",
+      "SHOPIFY_STORE_DOMAIN",
+      "NEWFIND_API_URL",
+      "NEWFIND_API_KEY",
+    ],
     writesExternalSystems: true,
     approvalGate: "まず読み取り照合。書き込みは不一致の根拠、対象ID、変更前後、冪等キーが確認できる場合のみ。",
   },
@@ -81,12 +90,31 @@ export const COMMERCE_BOTS: readonly CommerceBotDefinition[] = [
 
 export type CommerceBotEnvironment = Record<string, string | undefined>;
 
+export function getMissingCommerceBotEnvironment(
+  bot: CommerceBotDefinition,
+  env: CommerceBotEnvironment,
+): string[] {
+  const missing = bot.requiredEnvironment.filter((key) => !env[key]?.trim());
+  if (bot.id === "channel-sync") {
+    const hasStaticToken = Boolean(env.SHOPIFY_ADMIN_ACCESS_TOKEN?.trim());
+    const hasClientCredentials = Boolean(env.SHOPIFY_CLIENT_ID?.trim() && env.SHOPIFY_CLIENT_SECRET?.trim());
+    const authMode = env.SHOPIFY_AUTH_MODE?.trim();
+    const validShopifyAuth = authMode === "static_admin_token"
+      ? hasStaticToken
+      : authMode === "client_credentials"
+        ? hasClientCredentials
+        : !authMode && (hasStaticToken !== hasClientCredentials);
+    if (!validShopifyAuth) missing.push("SHOPIFY_ADMIN_ACCESS_TOKEN または SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET（SHOPIFY_AUTH_MODEと整合）");
+  }
+  return missing;
+}
+
 export function getCommerceBotStatus(
   bot: CommerceBotDefinition,
   env: CommerceBotEnvironment,
 ): CommerceBotStatus {
   if (bot.id === "qa") return "read-only-foundation";
-  const missing = bot.requiredEnvironment.filter((key) => !env[key]?.trim());
+  const missing = getMissingCommerceBotEnvironment(bot, env);
   if (missing.length > 0) return "needs-configuration";
   return bot.existingRoutes.length > 0 ? "route-backed" : "configured";
 }
@@ -95,7 +123,7 @@ export function buildCommerceBotStatusReport(env: CommerceBotEnvironment) {
   const bots = COMMERCE_BOTS.map((bot) => ({
     ...bot,
     status: getCommerceBotStatus(bot, env),
-    missingEnvironment: bot.requiredEnvironment.filter((key) => !env[key]?.trim()),
+    missingEnvironment: getMissingCommerceBotEnvironment(bot, env),
     executionClaim: "not-run",
   }));
 
