@@ -26,7 +26,7 @@ The response is MP3 audio on success. On errors, the endpoint returns a small JS
 
 ## Browser preview
 
-After deployment, open `/ai-live-drama-preview.html` to compare one explicitly requested Drama 3 clip with the existing browser speech preview. Enter `TRACER_ADMIN_TOKEN` manually and a permitted Fish Audio voice reference ID. The page sends the token only to the same-origin TRACER endpoint, does not persist it, and clears the field after a successful response. The token is still present in browser memory while the request is in progress; use only on a trusted device and sign out/close the page afterward. The page does not call Fish Audio directly and never receives `FISH_API_KEY`.
+After deployment, open `/ai-live-drama-preview.html` to compare one explicitly requested Drama 3 clip with the existing browser speech preview. Enter `TRACER_ADMIN_TOKEN` manually and a permitted Fish Audio voice reference ID. The page sends the token only to the same-origin TRACER endpoint, does not persist it, and clears the field after a successful response. The route accepts either the existing automation authorization or a valid `TRACER_ADMIN_TOKEN` (compared in constant time). The token is still present in browser memory while the request is in progress; use only on a trusted device and sign out/close the page afterward. The page does not call Fish Audio directly and never receives `FISH_API_KEY`.
 
 The original `/ai-live-preview.html` remains a local-only browser-speech demo with no API calls. The Drama 3 page makes a provider request only when the user presses Generate.
 
