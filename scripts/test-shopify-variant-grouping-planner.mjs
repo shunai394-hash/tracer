@@ -80,6 +80,22 @@ test("blocks incomplete Shopify ID pairs", () => {
   assert.ok(plan[0].blockingReasons.includes("partial_shopify_mapping"));
 });
 
+test("blocks a source parent key that is split across multiple internal product IDs", () => {
+  const plan = planShopifyVariantGroups([
+    row({ product_id: "product-1", variant_id: "variant-1" }),
+    row({
+      product_id: "product-2",
+      variant_id: "variant-2",
+      supplier_variant_id: "child-2",
+      sku: "TRC-CHILD-2",
+      base_item_id: "base-2",
+    }),
+  ]);
+  assert.equal(plan.length, 2);
+  assert.ok(plan.every((group) => group.canProceedToDryRunReview === false));
+  assert.ok(plan.every((group) => group.blockingReasons.includes("source_key_maps_to_multiple_internal_product_ids")));
+});
+
 test("rejects non-array input", () => {
   assert.throws(() => planShopifyVariantGroups(null), /rows_must_be_array/);
 });
