@@ -35,6 +35,7 @@ const changed = runReadOnlyOperationsBots({
   previousProducts: [product],
 });
 assert.ok(changed.findings.some((f) => f.code === "LANDED_COST_CHANGED"));
+assert.ok(changed.findings.some((f) => f.code === "MARGIN_BELOW_TARGET"));
 assert.ok(changed.findings.some((f) => f.code === "STOCK_CHANGED"));
 assert.ok(changed.findings.some((f) => f.code === "TITLE_NEEDS_JAPANESE_REVIEW"));
 assert.ok(changed.findings.some((f) => f.code === "CHANNEL_IDENTITY_MISMATCH" && f.channels.includes("BASE")));
@@ -48,6 +49,6 @@ assert.ok(missingIdentity.findings.some((f) => f.code === "IDENTITY_INCOMPLETE" 
 const duplicateIdentity = runReadOnlyOperationsBots({ products: [product, { ...product, title: "別タイトル" }] });
 assert.ok(duplicateIdentity.findings.some((f) => f.code === "DUPLICATE_STABLE_IDENTITY"));
 
-const unknownCost = runReadOnlyOperationsBots({ products: [{ ...product, supplierCost: null, japanShippingCost: null }] });
+const unknownCost = runReadOnlyOperationsBots({ products: [{ ...product, supplierCost: 0, japanShippingCost: null }] });
 assert.ok(unknownCost.findings.some((f) => f.code === "SUPPLIER_COST_OR_SHIPPING_UNKNOWN" && f.requiresHumanApproval));
-console.log("Read-only multi-bot orchestrator: 12 assertions passed");
+console.log("Read-only multi-bot orchestrator: 13+ assertions passed");
