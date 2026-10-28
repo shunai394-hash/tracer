@@ -42,9 +42,12 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 - [ ] Confirm the route is included in deployment and test the auth boundary.
 
 ### Stage 2 — Durable run/evidence records
-- Add append-only bot-run records with run ID, bot ID, start/end, input snapshot hash, evidence refs, status, blockers and retry count.
-- Add idempotency and a per-channel lease so overlapping schedules cannot duplicate writes.
-- Use a reviewed Supabase migration; do not wipe or recreate existing tables.
+- [x] Additive Supabase migration for append-only `commerce_bot_run_events` with run ID, bot ID, event type/status, timestamp, input snapshot hash, evidence refs, blockers, retry count and idempotency key.
+- [x] Add a payload validation contract and regression tests wired into `prebuild`.
+- [x] Restrict table access to `service_role`; enable RLS and revoke update/delete/truncate so evidence is appended, not rewritten.
+- [ ] Apply the reviewed migration to Supabase and verify grants/RLS in the target environment.
+- [ ] Add the server-side event writer and authenticated read-only run history endpoint.
+- [ ] Add a per-channel lease so overlapping schedules cannot duplicate writes.
 
 ### Stage 3 — Read-only monitors
 - Supplier monitor detects changed cost, shipping, inventory, identity and tracking evidence.
