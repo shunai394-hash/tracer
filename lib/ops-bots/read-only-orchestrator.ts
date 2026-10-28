@@ -127,13 +127,24 @@ export function runReadOnlyOperationsBots(args: {
         evidence: { sellingPrice: product.sellingPrice }, requiresHumanApproval: true,
       });
     }
-    if (!validNonNegativeNumber(product.supplierCost) || !validNonNegativeNumber(product.japanShippingCost)) {
+    if (!validPositiveNumber(product.supplierCost) || !validPositiveNumber(product.japanShippingCost)) {
       findings.push({
         bot: "product_monitor", code: "SUPPLIER_COST_OR_SHIPPING_UNKNOWN", severity: "high", productKey: key,
         channels, message: "仕入原価または日本向け送料が未確認です。利益判定を確定できません。",
         evidence: { supplierCostKnown: validNonNegativeNumber(product.supplierCost), japanShippingCostKnown: validNonNegativeNumber(product.japanShippingCost) },
         requiresHumanApproval: true,
       });
+    }
+    if (validPositiveNumber(product.sellingPrice) && validPositiveNumber(product.supplierCost) && validPositiveNumber(product.japanShippingCost)) {
+      const margin = (product.sellingPrice - product.supplierCost - product.japanShippingCost) / product.sellingPrice;
+      if (margin < 0.5) {
+        findings.push({
+          bot: "product_monitor", code: "MARGIN_BELOW_TARGET", severity: "high", productKey: key,
+          channels, message: "仕入原価と日本向け送料を含む推定利益率が50%未満です。自動価格変更は行わず、販売適格性を確認してください。",
+          evidence: { marginPercent: Math.round(margin * 10000) / 100, targetMarginPercent: 50 },
+          requiresHumanApproval: true,
+        });
+      }
     }
     if (product.stock === null || !Number.isFinite(product.stock) || product.stock < 0) {
       findings.push({
