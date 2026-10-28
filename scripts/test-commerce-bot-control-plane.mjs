@@ -3,6 +3,7 @@ import {
   buildCommerceBotStatusReport,
   COMMERCE_BOTS,
   getCommerceBotStatus,
+  getMissingCommerceBotEnvironment,
 } from "../lib/agents/commerce-bot-control-plane.ts";
 
 const empty = buildCommerceBotStatusReport({});
@@ -15,7 +16,18 @@ assert.equal(empty.bots.find((bot) => bot.id === "product-monitor").status, "nee
 
 const configured = buildCommerceBotStatusReport({
   CRON_SECRET: "test-secret",
-  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
+  CJ_API_KEY: "cj-test",
+  GEMINI_API_KEY: "gemini-test",
+  BASE_CLIENT_ID: "base-id",
+  BASE_CLIENT_SECRET: "base-secret",
+  BASE_REFRESH_TOKEN: "base-refresh",
+  BASE_REDIRECT_URI: "https://example.test/callback",
+  SHOPIFY_STORE_DOMAIN: "example.myshopify.com",
+  SHOPIFY_ADMIN_ACCESS_TOKEN: "shopify-test",
+  SHOPIFY_AUTH_MODE: "static_admin_token",
+  NEWFIND_API_URL: "https://newfind.example.test",
+  NEWFIND_API_KEY: "newfind-test",
 });
 assert.equal(configured.bots.find((bot) => bot.id === "main").status, "route-backed");
 assert.equal(configured.bots.find((bot) => bot.id === "product-monitor").status, "route-backed");
@@ -27,5 +39,13 @@ assert.ok(sync);
 assert.equal(sync.writesExternalSystems, true);
 assert.match(sync.approvalGate, /読み取り照合/);
 assert.equal(getCommerceBotStatus(sync, {}), "needs-configuration");
+assert.ok(getMissingCommerceBotEnvironment(sync, {}).includes("SHOPIFY_STORE_DOMAIN"));
+const syncConfigured = getMissingCommerceBotEnvironment(sync, {
+  CRON_SECRET: "test-secret",
+  BASE_CLIENT_ID: "base-id", BASE_CLIENT_SECRET: "base-secret", BASE_REFRESH_TOKEN: "base-refresh", BASE_REDIRECT_URI: "https://example.test/callback",
+  SHOPIFY_STORE_DOMAIN: "example.myshopify.com", SHOPIFY_CLIENT_ID: "client-id", SHOPIFY_CLIENT_SECRET: "client-secret", SHOPIFY_AUTH_MODE: "client_credentials",
+  NEWFIND_API_URL: "https://newfind.example.test", NEWFIND_API_KEY: "newfind-test",
+});
+assert.deepEqual(syncConfigured, []);
 
 console.log("Commerce bot control plane tests passed");
