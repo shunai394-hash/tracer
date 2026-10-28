@@ -64,3 +64,14 @@ assert.match(historyRoute, /Math\.min\(100, limitParam\)/);
 assert.match(historyRoute, /invalid_run_id/);
 assert.match(historyRoute, /invalid_bot_id/);
 console.log("Commerce bot run history API guardrails passed");
+
+
+const leaseMigration = readFileSync(new URL("../supabase/migrations/20261028110000_commerce_channel_leases.sql", import.meta.url), "utf8");
+assert.match(leaseMigration, /create table if not exists public\\.commerce_channel_leases/);
+assert.match(leaseMigration, /create or replace function public\\.acquire_commerce_channel_lease/);
+assert.match(leaseMigration, /create or replace function public\\.release_commerce_channel_lease/);
+assert.match(leaseMigration, /greatest\\(30, least\\(p_lease_seconds, 900\\)\\)/);
+assert.match(leaseMigration, /where current_lease\\.expires_at <= now\\(\\)/);
+assert.match(leaseMigration, /and lease_token = p_lease_token/);
+assert.match(leaseMigration, /revoke all on function public\\.acquire_commerce_channel_lease/);
+console.log("Commerce channel lease migration guardrails passed");
