@@ -8,6 +8,7 @@ import { splitJapaneseAddress } from "../lib/commerce/japanese-address.mjs";
 import { isCanonicalCJNativeId } from "../lib/sources/cj/native-id.mjs";
 import { japaneseCommerceDescription } from "../lib/commerce/japanese-copy.mjs";
 import { resolveBasePublicUrl } from "../lib/commerce/base-public-url.mjs";
+import { MINIMUM_EXPECTED_PROFIT_JPY, meetsMinimumExpectedProfit, minimumProfitBlockReason } from "../lib/commerce/profit-floor.mjs";
 
 test("localizes the known Maruki side-clip hair accessory from its source title", async () => {
   const japaneseProduct = await readFile(new URL("../lib/intelligence/japanese-product.ts", import.meta.url), "utf8");
@@ -1328,4 +1329,26 @@ test("BASE image format rejection retries with the existing Shopify CDN image on
   assert.match(publish, /BaseCompatibleProductImage/);
   assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
   assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
+});
+
+
+test("¥2,500 minimum expected profit is shared across channel publication and storefront gates", async () => {
+  assert.equal(MINIMUM_EXPECTED_PROFIT_JPY, 2500);
+  assert.equal(meetsMinimumExpectedProfit(2499), false);
+  assert.equal(meetsMinimumExpectedProfit(2500), true);
+  assert.equal(meetsMinimumExpectedProfit("2501"), true);
+  assert.equal(meetsMinimumExpectedProfit(null), false);
+  assert.equal(meetsMinimumExpectedProfit("unknown"), false);
+  assert.equal(minimumProfitBlockReason(2499), "expected_profit_below_minimum_2500_jpy");
+  assert.equal(minimumProfitBlockReason(2500), null);
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  const newfind = await readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8");
+  assert.match(publish, /meetsMinimumExpectedProfit\(price\.expected_profit\)/);
+  assert.match(publish, /meetsMinimumExpectedProfit\(currentCanonicalPrice\.expected_profit\)/);
+  assert.match(publish, /expected_profit_below_minimum_/);
+  assert.match(store, /\.gte\("expected_profit", MINIMUM_EXPECTED_PROFIT_JPY\)/);
+  assert.match(store, /meetsMinimumExpectedProfit\(item\.expected_profit\)/);
+  assert.match(newfind, /loadCanonicalCommerceListings\(\)/,
+    "NEWFIND candidates must come through the storefront's shared profit gate");
 });
