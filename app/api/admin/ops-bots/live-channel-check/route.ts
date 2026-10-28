@@ -30,6 +30,12 @@ function sameShopifyProductId(stored: unknown, liveGid: string): boolean {
   const normalized = /^\\d+$/.test(value) ? "gid://shopify/Product/" + value : value;
   return normalized === liveGid;
 }
+function sameShopifyVariantId(stored: unknown, liveGid: string): boolean {
+  const value = str(stored);
+  if (!value) return false;
+  const normalized = /^\\d+$/.test(value) ? "gid://shopify/ProductVariant/" + value : value;
+  return normalized === liveGid;
+}
 function visible(value: unknown): boolean | null {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1 ? true : value === 0 ? false : null;
@@ -197,7 +203,7 @@ export async function GET(request: Request) {
               variants: (node.variants?.nodes ?? []).map((variant) => {
                 const linked = shopifySample.find((row) =>
                   sameShopifyProductId(row.external_product_id, node.id) &&
-                  str(row.external_variant_id) === variant.id
+                  sameShopifyVariantId(row.external_variant_id, variant.id)
                 );
                 const expected = linked ? canonical.get(str(linked.variant_id) ?? "") ?? null : null;
                 return {
