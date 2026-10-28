@@ -13,6 +13,8 @@ assert.match(route, /identityVerified: str\(item\.item_id\) === id/);
 assert.match(route, /readCanonicalExpected\(\)/);
 assert.match(route, /sameShopifyProductId\(row\.external_product_id, node\.id\)/);
 assert.match(route, /sameShopifyVariantId\(row\.external_variant_id, variant\.id\)/);
+assert.match(route, /\/\^\\d\+\$\//);
+assert.doesNotMatch(route, /\/\^\\\\d\+\$\//);
 assert.match(route, /paritySummary/);
 assert.match(route, /skuMatch/);
 assert.match(route, /priceMatch/);
