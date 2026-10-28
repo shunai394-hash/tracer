@@ -169,6 +169,17 @@ export function runReadOnlyOperationsBots(args: {
       });
     }
 
+    const updatedAtMs = Date.parse(String(product.updatedAt ?? ""));
+    const generatedAtMs = Date.parse(generatedAt);
+    if (!Number.isFinite(updatedAtMs) || !Number.isFinite(generatedAtMs) || generatedAtMs - updatedAtMs > 24 * 60 * 60 * 1000 || updatedAtMs > generatedAtMs + 5 * 60 * 1000) {
+      findings.push({
+        bot: "qa", code: "SOURCE_DATA_STALE", severity: "high", productKey: key,
+        channels, message: "商品データの更新時刻が不明・古い・未来時刻のため、最新情報として扱いません。",
+        evidence: { updatedAt: product.updatedAt, freshnessLimitHours: 24 },
+        requiresHumanApproval: true,
+      });
+    }
+
     const previous = previousByKey.get(key);
     if (previous) {
       if (previous.sellingPrice !== product.sellingPrice) {
@@ -201,7 +212,17 @@ export function runReadOnlyOperationsBots(args: {
 
     for (const channel of CHANNELS) {
       const snapshot = product.channels[channel];
-      if (!snapshot) continue;
+      if (!snapshot) {
+        if (product.shouldBePublic === true) {
+          findings.push({
+            bot: "channel_sync", code: "CHANNEL_SNAPSHOT_MISSING", severity: "high", productKey: key,
+            channels: [channel], message: "公開対象の商品について、このチャネルの照合用スナップショットがありません。",
+            evidence: { channel, expectedPublic: true },
+            requiresHumanApproval: true,
+          });
+        }
+        continue;
+      }
       if (!snapshot.externalProductId || !snapshot.sku || !product.sku || snapshot.sku !== product.sku) {
         findings.push({
           bot: "channel_sync", code: "CHANNEL_IDENTITY_MISMATCH", severity: "high", productKey: key,
