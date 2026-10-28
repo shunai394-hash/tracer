@@ -19,6 +19,7 @@ const valid = {
   channels: [
     { channel: "BASE", listing: { id: "base-1", price: 300, inventory: 5, published: true, sku: "SKU-1", variantId: "v-1", title: "日本語の商品名" } },
     { channel: "Shopify", listing: { id: "shopify-1", price: 300, inventory: 5, published: true, sku: "SKU-1", variantId: "v-1", title: "日本語の商品名" } },
+    { channel: "NEWFIND", listing: { id: "newfind-1", price: 300, inventory: 5, published: true, sku: "SKU-1", variantId: "v-1", title: "日本語の商品名" } },
   ],
   description: "日本語の商品説明",
 };
@@ -43,10 +44,14 @@ assert.ok(broken.issues.some((issue) => issue.code === "sellability_missing_supp
 assert.ok(broken.issues.some((issue) => issue.code === "sellability_missing_positiveStock"));
 assert.ok(broken.issues.some((issue) => issue.code === "channel_parity_mismatch_BASE_price"));
 assert.ok(broken.issues.some((issue) => issue.code === "channel_listing_missing_Shopify"));
+assert.ok(broken.issues.some((issue) => issue.code === "channel_listing_missing_NEWFIND"));
 
 const aggregate = auditCommerceProducts([valid, { ...valid, productId: "p-3", channels: [] }], now);
 assert.equal(aggregate.scanned, 2);
-assert.equal(aggregate.withIssues, 0);
+assert.equal(aggregate.withIssues, 1);
+assert.equal(aggregate.issueCounts.channel_listing_missing_BASE, 1);
+assert.equal(aggregate.issueCounts.channel_listing_missing_Shopify, 1);
+assert.equal(aggregate.issueCounts.channel_listing_missing_NEWFIND, 1);
 assert.equal(aggregate.writesPerformed, false);
 
 console.log("grok-commerce-product-audit: all assertions passed");
