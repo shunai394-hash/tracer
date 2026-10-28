@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER 音声比較テスト — ElevenLabs 清美</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111827;color:#f9fafb}
+*{box-sizing:border-box}body{margin:0;padding:24px;display:grid;place-items:center;min-height:100vh}
+main{width:min(760px,100%);background:#1f2937;border:1px solid #374151;border-radius:18px;padding:clamp(18px,4vw,30px)}
+h1{font-size:1.35rem;margin:0 0 8px}p{line-height:1.65}.notice{color:#fde68a;font-size:.9rem}
+label{display:block;margin:16px 0 6px;font-size:.9rem}input,textarea,button{font:inherit;border-radius:9px;border:1px solid #4b5563;padding:11px 12px;width:100%;background:#111827;color:#fff}
+textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4ed8;border-color:#2563eb;cursor:pointer;margin-top:16px}button:disabled{opacity:.55;cursor:wait}
+.status{font-size:.9rem;color:#d1d5db;overflow-wrap:anywhere}.small{font-size:.8rem;color:#9ca3af}audio{width:100%;margin-top:16px}a{color:#93c5fd}
+</style>
+</head>
+<body>
+<main>
+<h1>TRACER AI音声比較 — ElevenLabs 清美</h1>
+<p class="notice">このページは、生成ボタンを押したときだけTRACERのサーバー経由でElevenLabsに音声生成を依頼します。1回の生成で料金が発生する場合があります。連続生成・自動再試行は行いません。</p>
+<p>清美の声で短い原稿を読み上げ、ブラウザ音声や他の音声と比較するための管理者向けテスト画面です。</p>
+<form id="form" method="post" autocomplete="off">
+<label for="token">TRACER管理トークン</label>
+<input id="token" type="password" autocomplete="off" required placeholder="TRACER_ADMIN_TOKEN" />
+<label for="voice">ElevenLabs Voice ID（清美）</label>
+<input id="voice" autocomplete="off" required pattern="[a-zA-Z0-9_-]{8,128}" minlength="8" maxlength="128" spellcheck="false" value="pdJqk51tDVoes2IzwOyU" />
+<label for="script">読み上げ原稿（最大1,200文字）</label>
+<textarea id="script" maxlength="1200" required>こんにちは、TRACER AI配信です。気になる商品について、価格や特徴をわかりやすくご案内します。商品情報を確認してから、正確にお伝えします。</textarea>
+<button id="generate" type="submit">清美の音声を生成</button>
+</form>
+<p id="status" class="status" role="status" aria-live="polite">待機中。生成ボタンを押すまでAPI通信は行いません。</p>
+<audio id="audio" controls hidden></audio>
+<p class="small">管理トークンはリクエスト中のメモリ内だけで使用し、localStorage、sessionStorage、URLには保存しません。ログにも残しません。APIキーはサーバー環境からのみ読み、このページには置きません。利用を許可されたVoice IDだけを使ってください。</p>
+<p><a href="/ai-live-preview.html">← ブラウザ音声プレビューに戻る</a></p>
+<script>
+(() => {
+  const form = document.getElementById("form");
+  const token = document.getElementById("token");
+  const voice = document.getElementById("voice");
+  const script = document.getElementById("script");
+  const button = document.getElementById("generate");
+  const status = document.getElementById("status");
+  const audio = document.getElementById("audio");
+  let audioUrl = null;
+  let pending = false;
+
+  function failureMessage(response, data) {
+    if (response.status === 401 || response.status === 403) return "認証に失敗しました。管理トークンを確認してください。";
+    const code = data && typeof data.error === "string" ? data.error : "";
+    if (code === "elevenlabs_not_configured") return "サーバーにElevenLabsのAPIキーが設定されていません。";
+    if (code === "elevenlabs_timeout") return "音声生成がタイムアウトしました。自動では再試行しません。";
+    if (code === "empty_audio_response") return "音声データが空でした。自動では再試行しません。";
+    if (data && typeof data.message === "string" && data.message) return data.message;
+    if (code) return code;
+    return "音声生成に失敗しました。自動では再試行しません。";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (pending) return;
+    if (!form.reportValidity()) return;
+    pending = true;
+    button.disabled = true;
+    status.textContent = "音声を生成中です。通常は数秒かかります。";
+    audio.hidden = true;
+    audio.pause();
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    audioUrl = null;
+    const adminToken = token.value.trim();
+    try {
+      const response = await fetch("/api/admin/ai-live/eleven-v4-turbo", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + adminToken,
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({ text: script.value.trim(), voiceId: voice.value.trim() })
+      });
+      const type = response.headers.get("content-type") || "";
+      if (!response.ok || !type.toLowerCase().includes("audio/")) {
+        let data = null;
+        try { data = await response.json(); } catch {}
+        throw new Error(failureMessage(response, data));
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("音声データが空でした。自動では再試行しません。");
+      audioUrl = URL.createObjectURL(blob);
+      audio.src = audioUrl;
+      audio.hidden = false;
+      status.textContent = "生成完了。音声を再生します。";
+      token.value = "";
+      try {
+        await audio.play();
+      } catch {
+        status.textContent = "生成完了。下のプレーヤーで再生してください。";
+      }
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "通信に失敗しました。自動では再試行しません。";
+    } finally {
+      pending = false;
+      button.disabled = false;
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  });
+})();
+</script>
+</main>
+</body>
+</html>
