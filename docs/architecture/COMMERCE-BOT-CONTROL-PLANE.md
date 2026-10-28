@@ -1,0 +1,77 @@
+# TRACER Commerce Bot Control Plane
+
+## Purpose
+
+Coordinate five focused bots around TRACER as the canonical catalog and BASE, Shopify, and NEWFIND as downstream channels. The control plane is a coordinator and evidence ledger, not a replacement for the existing provider adapters.
+
+## Bot responsibilities
+
+| Bot | Responsibility | Existing integration points | Initial mode |
+|---|---|---|---|
+| Main Bot | Priorities, cross-bot progress, stop conditions, incident summary | `/api/cron/patrol-ai` | Read-only orchestration |
+| Product Monitor Bot | Supplier product/variant identity, cost, Japan shipping, inventory and tracking evidence | `/api/cron/supply-first`, `/api/cron/inventory-refresh` | Detect/report first |
+| Japanese Copy Bot | Japanese title/description, missing attributes, unsupported claims, read-back verification | `/api/cron/base-japanese-copy` | Existing route; report update/read-back outcomes |
+| Channel Sync Bot | TRACER vs BASE/Shopify/NEWFIND IDs, SKU, price, stock and publication | `/api/admin/shopify/reconcile`, `/api/cron/shopify-publish`, `/api/cron/newfind-retry` | Read-only reconciliation before any write |
+| QA Bot | Test/build/deploy/live-data evidence and discrepancy report | `/api/health`, read-only reconciliation, test suite | Read-only |
+
+## Safety and product eligibility
+
+1. Use supplier product ID + supplier variant ID + channel product/variant IDs/SKU as identity evidence. Never silently merge based on title or image similarity.
+2. Do not consider an item publishable unless supplier identity, variant, positive inventory, Japan shipping, tracking capability, known non-zero cost/shipping and the configured margin rule are evidenced.
+3. Keep read-only audits separate from external writes. A write plan must name exact target IDs, before/after values, evidence, idempotency key, and rollback/recovery action.
+4. After each write, fetch the provider state again. An accepted API response alone is not proof of final public state.
+5. A Main Bot must not bypass the existing publication, identity, order, or supplier safety gates.
+6. Keep purchase/order creation disabled in any new orchestration path until a separately authorized end-to-end test proves customer order → supplier order → tracking back to the channel.
+7. Never expose tokens, secrets, customer PII, or full addresses in bot reports.
+
+## Implemented control-plane foundation
+
+- `lib/agents/commerce-bot-control-plane.ts` defines the five roles and their known integration points.
+- `GET /api/admin/bots/status` requires the existing automation authentication and returns a no-store, read-only configuration report.
+- The status response deliberately marks every check as `not-run`; configured credentials or an existing route are not presented as a successful audit.
+- The endpoint does not execute cron routes, modify database rows, or write to external channels.
+
+## Rollout plan
+
+### Stage 1 — Status and evidence contracts
+- [x] Define five bot roles and safety gates.
+- [x] Add authenticated, read-only status endpoint.
+- [ ] Add automated unit tests for missing configuration and no-false-success semantics.
+- [ ] Confirm the route is included in deployment and test the auth boundary.
+
+### Stage 2 — Durable run/evidence records
+- Add append-only bot-run records with run ID, bot ID, start/end, input snapshot hash, evidence refs, status, blockers and retry count.
+- Add idempotency and a per-channel lease so overlapping schedules cannot duplicate writes.
+- Use a reviewed Supabase migration; do not wipe or recreate existing tables.
+
+### Stage 3 — Read-only monitors
+- Supplier monitor detects changed cost, shipping, inventory, identity and tracking evidence.
+- Channel Sync compares real provider state against TRACER canonical IDs/SKU/price/stock/publication.
+- QA Bot aggregates tests, provider reads and mismatches, retaining partial-scan and API-error states as unknown rather than success.
+
+### Stage 4 — Japanese copy workflow
+- Generate Japanese copy into a reviewable candidate.
+- Validate facts against supplier attributes; reject unsupported claims and unverified dimensions/materials.
+- Update in small bounded batches, then fetch the exact item again and verify title/description while confirming price, stock and publication did not drift.
+
+### Stage 5 — Guarded write executor
+- Only run after preflight evidence is fresh and passing.
+- Separate BASE, Shopify and NEWFIND write adapters.
+- Enforce idempotency, bounded batches, rate limits, retries, dead-letter reporting and post-write read-back.
+- Never let the Main Bot call provider writes directly.
+
+### Stage 6 — End-to-end sales proof
+- Use an explicitly approved test order and prove customer order ingestion, supplier order creation, supplier order ID, tracking receipt and tracking propagation.
+- Report code implementation, CI, deployment, provider-side verification and actual sales proof as separate statuses.
+
+## API
+
+`GET /api/admin/bots/status` — requires `Authorization: Bearer <CRON_SECRET>` or the existing trusted GitHub OIDC automation token. Returns bot definitions, missing configuration, guardrails and a generated timestamp. It does not execute a bot or claim live data was checked.
+
+## Acceptance criteria
+
+- No external write happens from the status endpoint.
+- Unauthorized requests return 401.
+- Every bot run has an explicit state: `not-run`, `running`, `passed`, `blocked`, `partial`, or `failed`.
+- Missing credentials, partial scans, stale evidence and API errors cannot be reported as `passed`.
+- Every channel write is followed by provider read-back and a discrepancy report.
