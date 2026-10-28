@@ -6,7 +6,7 @@ assert.match(route, /requireAutomationAuth\(request\)/);
 assert.match(route, /url\.searchParams\.get\("live"\) !== "1"/);
 assert.match(route, /getBaseItemDetail\(id\)/);
 assert.match(route, /shopifyGraphQL/);
-assert.match(route, /maxBaseItems: 20/);
+assert.match(route, /maxBaseItems: 5/);
 assert.match(route, /maxShopifyProducts: 20/);
 assert.match(route, /liveVerification: "not_implemented"/);
 assert.match(route, /identityVerified: str\(item\.item_id\) === id/);
