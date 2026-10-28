@@ -9,12 +9,16 @@ export const maxDuration = 30;
 
 type CountResult = { count: number; error: string | null };
 
-type CountFilter = { column: string; operator: "eq" | "gte"; value: string };
+type CountFilter = { column: string; operator: "eq" | "gte"; value: string; and?: Array<{ column: string; operator: "eq" | "gte"; value: string }> };
 
 async function exactCount(db: ReturnType<typeof createSupabaseAdminClient>, table: string, filter?: CountFilter): Promise<CountResult> {
   let query = db.from(table).select("*", { count: "exact", head: true });
   if (filter?.operator === "eq") query = query.eq(filter.column, filter.value);
   if (filter?.operator === "gte") query = query.gte(filter.column, filter.value);
+  for (const extra of filter?.and ?? []) {
+    if (extra.operator === "eq") query = query.eq(extra.column, extra.value);
+    if (extra.operator === "gte") query = query.gte(extra.column, extra.value);
+  }
   const { count, error } = await query;
   return { count: count ?? 0, error: error?.message ?? null };
 }
