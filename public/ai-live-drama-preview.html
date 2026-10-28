@@ -67,10 +67,16 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
         let message = "音声生成に失敗しました。";
         try {
           const data = await response.json();
-          if (response.status === 401 || response.status === 403) message = "認証に失敗しました。管理トークンを確認してください。";
-          else if (data && typeof data.message === "string") message = data.message;
-          else if (data && typeof data.error === "string") message = data.error;
-          if (data && data.error === "fish_audio_not_configured") message = "サーバーにFish Audio APIキーが設定されていません。";
+          if (response.status === 401 || response.status === 403) {
+            message = "認証に失敗しました。管理トークンを確認してください。";
+          } else if (data && data.error === "fish_audio_not_configured") {
+            message = "サーバーにFish Audio APIキーが設定されていません。生成リクエストは送信されていません。";
+          } else if (response.status === 400 || response.status === 413) {
+            message = typeof data.message === "string" ? data.message : "入力内容を確認してください。";
+          } else {
+            const detail = data && typeof data.message === "string" ? " 詳細: " + data.message : "";
+            message = "生成結果を確認できませんでした。プロバイダー側で処理された可能性があるため、料金・生成履歴はFish Audio側で確認してください。" + detail;
+          }
         } catch {}
         throw new Error(message);
       }
