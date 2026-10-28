@@ -35,7 +35,7 @@ A product key is valid only when TRACER product ID, supplier product ID, and sup
 4. Main Bot sorts specialist tasks by priority and returns a report.
 5. QA/human reviewer verifies evidence and approves any future separately implemented change request.
 
-The PR implements the deterministic engine and a protected canonical-data report. It also adds an explicit live-read endpoint at `/api/admin/ops-bots/live-channel-check?live=1`: BASE detail reads are capped at 20 existing item IDs and Shopify GraphQL reads at 20 existing product IDs. The endpoint never searches by title and never writes to DB or channels. NEWFIND live price/stock verification remains unimplemented; persisted listing rows are reported only. The endpoint does not persist snapshots or run on a schedule.
+The PR implements the deterministic engine and a protected canonical-data report. It also adds an explicit live-read endpoint at `/api/admin/ops-bots/live-channel-check?live=1`: BASE detail reads are capped at 5 existing item IDs and Shopify GraphQL reads at 20 existing product IDs. The endpoint never searches by title and never writes to DB or channels. NEWFIND live price/stock verification remains unimplemented; persisted listing rows are reported only. The endpoint does not persist snapshots or run on a schedule.
 
 ## Safety and non-goals
 
