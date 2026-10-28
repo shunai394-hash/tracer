@@ -9,6 +9,7 @@ import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
+import { MINIMUM_EXPECTED_PROFIT_JPY, meetsMinimumExpectedProfit } from "@/lib/commerce/profit-floor.mjs";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -167,7 +168,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || !meetsMinimumExpectedProfit(price.expected_profit)) missing.push("expected_profit_below_minimum_" + MINIMUM_EXPECTED_PROFIT_JPY + "_jpy");
+        if (!price || Number(price.margin_rate) < 0.5) missing.push("margin_below_50_percent");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -369,7 +371,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+          meetsMinimumExpectedProfit(price.expected_profit) && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -424,7 +426,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const price = currentCanonicalPrice && currentPriceOffer &&
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
+      meetsMinimumExpectedProfit(currentCanonicalPrice.expected_profit) &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
@@ -547,8 +549,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
-      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
+    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || !meetsMinimumExpectedProfit(price.expected_profit)) {
+      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "expected_profit_below_minimum_" + MINIMUM_EXPECTED_PROFIT_JPY + "_jpy" });
       continue;
     }
     // Never manufacture storefront inventory. A listing can remain visible, but it is
