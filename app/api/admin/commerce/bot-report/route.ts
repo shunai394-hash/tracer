@@ -9,8 +9,13 @@ export const maxDuration = 30;
 
 type CountResult = { count: number; error: string | null };
 
-async function exactCount(db: ReturnType<typeof createSupabaseAdminClient>, table: string, apply: (query: any) => any = (query) => query): Promise<CountResult> {
-  const { count, error } = await apply(db.from(table).select("*", { count: "exact", head: true }));
+type CountFilter = { column: string; operator: "eq" | "gte"; value: string };
+
+async function exactCount(db: ReturnType<typeof createSupabaseAdminClient>, table: string, filter?: CountFilter): Promise<CountResult> {
+  let query = db.from(table).select("*", { count: "exact", head: true });
+  if (filter?.operator === "eq") query = query.eq(filter.column, filter.value);
+  if (filter?.operator === "gte") query = query.gte(filter.column, filter.value);
+  const { count, error } = await query;
   return { count: count ?? 0, error: error?.message ?? null };
 }
 
@@ -28,11 +33,11 @@ export async function GET(request: Request) {
       exactCount(db, "commerce_products"),
       exactCount(db, "commerce_variants"),
       exactCount(db, "supplier_offers"),
-      exactCount(db, "supplier_offers", (q) => q.eq("source_status", "error")),
+      exactCount(db, "supplier_offers", { column: "source_status", operator: "eq", value: "error" }),
       exactCount(db, "channel_listings"),
-      exactCount(db, "channel_listings", (q) => q.eq("status", "error")),
-      exactCount(db, "cron_runs", (q) => q.gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())),
-      exactCount(db, "cron_runs", (q) => q.gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).eq("status", "failed")),
+      exactCount(db, "channel_listings", { column: "status", operator: "eq", value: "error" }),
+      exactCount(db, "cron_runs", { column: "started_at", operator: "gte", value: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
+      exactCount(db, "cron_runs", { column: "started_at", operator: "gte", value: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
     ]);
 
     const sources = { products, variants, offers, offerErrors, channelListings, listingErrors, cronRuns, cronFailures };
