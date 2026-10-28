@@ -15,7 +15,7 @@
     "mobile:bootstrap": "node scripts/bootstrap-mobile.mjs",
     "test:order-status-write-failures": "node --experimental-strip-types --no-warnings scripts/test-order-status-write-failures.mjs",
     "test:catalog-count-safety-check": "node --experimental-strip-types --no-warnings scripts/test-catalog-count-safety-check.mjs",
-    "prebuild": "npm run test:ai-live-product-feed && npm run test:ai-live-local-demo && npm run test:ai-live-comment-router && npm run test:ai-live-reply-from-facts && npm run test:ai-live-verified-speech-route && npm run test:shopify-variant-identity && npm run test:base-oauth-preflight && npm run test:base-japanese-copy-id-regex && npm run test:commerce-core && npm run test:tracer-core && npm run test:cj-procurement-adapter && npm run test:auth-diagnostics && npm run test:manual-inventory && npm run test:dropship-idempotency-read-failure",
+    "prebuild": "npm run test:grok-commerce-role-contracts && npm run test:ai-live-product-feed && npm run test:ai-live-local-demo && npm run test:ai-live-comment-router && npm run test:ai-live-reply-from-facts && npm run test:ai-live-verified-speech-route && npm run test:shopify-variant-identity && npm run test:base-oauth-preflight && npm run test:base-japanese-copy-id-regex && npm run test:commerce-core && npm run test:tracer-core && npm run test:cj-procurement-adapter && npm run test:auth-diagnostics && npm run test:manual-inventory && npm run test:dropship-idempotency-read-failure",
     "test:auth-diagnostics": "node scripts/test-auth-diagnostics.mjs",
     "test:bounded-product-scoring": "node scripts/test-bounded-product-scoring.mjs",
     "test:bounded-reorder-recommendations": "node scripts/test-bounded-reorder-recommendations.mjs",
@@ -57,7 +57,8 @@
     "test:base-oauth-preflight": "node scripts/test-base-oauth-preflight.mjs",
     "test:base-japanese-copy-id-regex": "node scripts/test-base-japanese-copy-id-regex.mjs",
     "test:manual-inventory": "node scripts/test-manual-inventory.mjs",
-    "test:ai-live-verified-speech-route": "node scripts/test-ai-live-verified-speech-route.mjs"
+    "test:ai-live-verified-speech-route": "node scripts/test-ai-live-verified-speech-route.mjs",
+    "test:grok-commerce-role-contracts": "node --experimental-strip-types --no-warnings scripts/test-grok-commerce-role-contracts.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
