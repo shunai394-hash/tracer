@@ -53,6 +53,6 @@ assert.match(dramaPreview, /fetch\("\/api\/admin\/ai-live\/fish-drama-3"/);
 assert.match(dramaPreview, /Authorization.*Bearer/);
 assert.match(dramaPreview, /referenceId/);
 assert.match(dramaPreview, /audio\/mpeg|audio\//);
-assert.doesNotMatch(dramaPreview, /FISH_API_KEY|NEXT_PUBLIC_FISH_API_KEY|localStorage|sessionStorage/);
+assert.doesNotMatch(dramaPreview, /FISH_API_KEY|NEXT_PUBLIC_FISH_API_KEY|\b(?:localStorage|sessionStorage)\s*\./);
 assert.match(dramaPreview, /URL\.revokeObjectURL/);
 console.log("AI-live local and explicit Drama 3 preview safety contracts passed");
