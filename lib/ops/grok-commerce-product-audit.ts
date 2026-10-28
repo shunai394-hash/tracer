@@ -1,6 +1,8 @@
 import type { Evidence, ListingSnapshot } from "./grok-commerce-role-contracts.ts";
 import { evaluateSellability } from "./grok-commerce-role-contracts.ts";
 
+export const REQUIRED_COMMERCE_CHANNELS = ["BASE", "Shopify", "NEWFIND"] as const;
+
 export type ProductAuditInput = {
   productId: string;
   evidence: Evidence;
@@ -45,7 +47,17 @@ export function auditCommerceProduct(input: ProductAuditInput, now = new Date())
   }
 
   const seenChannels = new Set<string>();
-  for (const entry of input.channels ?? []) {
+  const channelEntries = input.channels ?? [];
+  for (const requiredChannel of REQUIRED_COMMERCE_CHANNELS) {
+    if (!channelEntries.some((entry) => entry.channel === requiredChannel)) {
+      issues.push({
+        code: `channel_listing_missing_${requiredChannel}`,
+        severity: "error",
+        detail: `No listing snapshot was supplied for required channel ${requiredChannel}.`,
+      });
+    }
+  }
+  for (const entry of channelEntries) {
     if (seenChannels.has(entry.channel)) {
       issues.push({
         code: `duplicate_channel_snapshot_${entry.channel}`,
