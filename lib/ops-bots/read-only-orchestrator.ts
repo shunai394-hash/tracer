@@ -242,7 +242,7 @@ export function runReadOnlyOperationsBots(args: {
       if (snapshot.stock === null || snapshot.stock !== product.stock) {
         findings.push({
           bot: "channel_sync", code: "CHANNEL_STOCK_MISMATCH", severity: "high", productKey: key,
-          channels: [channel], message: "チャネル在庫とTRACER基準在庫が一致していません。",
+          channels: [channel], message: "チャネル在庫が未確認、またはTRACER基準在庫と不一致です。",
           evidence: { channelStock: snapshot.stock, tracerStock: product.stock },
           requiresHumanApproval: true,
         });
