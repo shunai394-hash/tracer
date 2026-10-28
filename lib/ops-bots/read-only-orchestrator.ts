@@ -61,8 +61,6 @@ const hasJapanese = (value: string | null): boolean =>
   typeof value === "string" && /[\u3040-\u30ff\u3400-\u9fff]/u.test(value);
 const validPositiveNumber = (value: number | null): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
-const validNonNegativeNumber = (value: number | null): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 function productKey(product: OperationsProductSnapshot): string | null {
   if (!product.tracerProductId || !product.supplierProductId || !product.supplierVariantId) return null;
@@ -131,7 +129,7 @@ export function runReadOnlyOperationsBots(args: {
       findings.push({
         bot: "product_monitor", code: "SUPPLIER_COST_OR_SHIPPING_UNKNOWN", severity: "high", productKey: key,
         channels, message: "仕入原価または日本向け送料が未確認です。利益判定を確定できません。",
-        evidence: { supplierCostKnown: validNonNegativeNumber(product.supplierCost), japanShippingCostKnown: validNonNegativeNumber(product.japanShippingCost) },
+        evidence: { supplierCostKnown: validPositiveNumber(product.supplierCost), japanShippingCostKnown: validPositiveNumber(product.japanShippingCost) },
         requiresHumanApproval: true,
       });
     }
