@@ -27,13 +27,13 @@ function num(value: unknown): number | null {
 function sameShopifyProductId(stored: unknown, liveGid: string): boolean {
   const value = str(stored);
   if (!value) return false;
-  const normalized = /^\\d+$/.test(value) ? "gid://shopify/Product/" + value : value;
+  const normalized = /^\d+$/.test(value) ? "gid://shopify/Product/" + value : value;
   return normalized === liveGid;
 }
 function sameShopifyVariantId(stored: unknown, liveGid: string): boolean {
   const value = str(stored);
   if (!value) return false;
-  const normalized = /^\\d+$/.test(value) ? "gid://shopify/ProductVariant/" + value : value;
+  const normalized = /^\d+$/.test(value) ? "gid://shopify/ProductVariant/" + value : value;
   return normalized === liveGid;
 }
 function visible(value: unknown): boolean | null {
