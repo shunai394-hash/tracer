@@ -1,0 +1,63 @@
+name: Generate Kiyomi voice sample
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  generate-sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Request short Japanese sample from TRACER
+        shell: bash
+        env:
+          API_URL: https://tracer-pied-alpha.vercel.app/api/admin/ai-live/eleven-v4-turbo
+          VOICE_ID: pdJqk51tDVoes2IzwOyU
+          SAMPLE_TEXT: こんにちは、TRACER AI配信です。気になる商品について、価格や特徴をわかりやすくご案内します。商品情報を確認してから、正確にお伝えします。
+        run: |
+          set -euo pipefail
+          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?GitHub OIDC URL is unavailable}"
+          : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?GitHub OIDC request token is unavailable}"
+
+          if [[ "$ACTIONS_ID_TOKEN_REQUEST_URL" == *\?* ]]; then
+            token_url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          else
+            token_url="${ACTIONS_ID_TOKEN_REQUEST_URL}?audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app"
+          fi
+
+          oidc_json="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$token_url")"
+          oidc_token="$(printf '%s' "$oidc_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          payload="$(python3 -c 'import json,os; print(json.dumps({"text":os.environ["SAMPLE_TEXT"],"voiceId":os.environ["VOICE_ID"]}))')"
+
+          http_code="$(curl --silent --show-error \
+            --output kiyomi-sample.mp3 \
+            --write-out '%{http_code}' \
+            --request POST "$API_URL" \
+            --header "Authorization: Bearer $oidc_token" \
+            --header 'Content-Type: application/json' \
+            --data "$payload")"
+
+          if [[ "$http_code" != "200" ]]; then
+            echo "TRACER voice sample request failed (HTTP $http_code). Response body:"
+            cat kiyomi-sample.mp3
+            exit 1
+          fi
+
+          if ! file kiyomi-sample.mp3 | grep -qi 'audio\|MPEG'; then
+            echo "The response was not recognized as an audio file."
+            exit 1
+          fi
+          echo "Kiyomi sample generated successfully."
+      - name: Upload audio sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-elevenlabs-kiyomi-sample
+          path: kiyomi-sample.mp3
+          if-no-files-found: error
+          retention-days: 3
