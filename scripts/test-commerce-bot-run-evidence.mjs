@@ -25,6 +25,8 @@ if (valid.ok) {
 
 assert.equal(validateCommerceBotRunEvent(null).ok, false);
 assert.equal(validateCommerceBotRunEvent({ runId: "bad", botId: "main", eventType: "run_started", status: "running" }).ok, false);
+assert.equal(validateCommerceBotRunEvent({ runId: "123e4567-e89b-12d3-z456-426614174000", botId: "main", eventType: "run_started", status: "running" }).ok, false);
+assert.equal(validateCommerceBotRunEvent({ runId: "123e4567-e89b-12d3-a456-42661417400", botId: "main", eventType: "run_started", status: "running" }).ok, false);
 assert.equal(validateCommerceBotRunEvent({
   runId: "123e4567-e89b-12d3-a456-426614174000",
   botId: "unknown",
