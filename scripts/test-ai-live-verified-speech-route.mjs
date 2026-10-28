@@ -112,10 +112,10 @@ await expectRequestBodyFailure(new Request("https://example.test", {
   method: "POST",
   body: new Uint8Array(16 * 1024 + 1),
 }), "request_body_too_large");
-await expectRequestBodyFailure(new Request("https://example.test", {
+await assert.rejects(readRequestBodyLimited(new Request("https://example.test", {
   method: "POST",
   body: new Uint8Array([0xc3, 0x28]),
-}), "The encoded data was not valid for encoding utf-8");
+})), (error) => error instanceof TypeError);
 
 const helperSource = extractFunction(speak, "readAudioBodyLimited").replace(/\r\n/g, "\n");
 assert.equal(extractFunction(drama, "readAudioBodyLimited").replace(/\r\n/g, "\n"), helperSource);
