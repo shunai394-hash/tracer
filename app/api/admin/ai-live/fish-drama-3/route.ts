@@ -24,7 +24,7 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 
 async function readRequestBodyLimited(request: Request): Promise<string> {
   const rawLength = request.headers.get("content-length")?.trim() ?? "";
-  if (/^\\d+$/.test(rawLength)) {
+  if (/^\d+$/.test(rawLength)) {
     const digits = rawLength.replace(/^0+/, "") || "0";
     const limit = String(MAX_REQUEST_BODY_BYTES);
     if (digits.length > limit.length || (digits.length === limit.length && digits > limit)) {
