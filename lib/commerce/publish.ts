@@ -5,7 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
-import { isCanonicalCjNativeId } from "@/lib/commerce/core";
+import { isCanonicalCjNativeId, MIN_EXPECTED_PROFIT_JPY } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
@@ -167,7 +167,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || Number(price.margin_rate) < 0.5 || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY) missing.push("minimum_profit_below_2500_jpy");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -369,7 +369,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+          Number(price.expected_profit) >= MIN_EXPECTED_PROFIT_JPY && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -424,7 +424,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const price = currentCanonicalPrice && currentPriceOffer &&
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
+      Number(currentCanonicalPrice.expected_profit) >= MIN_EXPECTED_PROFIT_JPY &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
@@ -461,6 +461,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const preflightStockKnown = preflightRawOfferData.stockKnown === true ||
       (preflightRawOfferData.stockKnown === undefined && rawOffer?.source_status === "verified");
      const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
+      !currentCanonicalPrice || Number(currentCanonicalPrice.expected_profit) < MIN_EXPECTED_PROFIT_JPY ||
       !preflightShippingKnown || !preflightStockKnown ||
       rawOffer.tracking_supported !== true || rawOffer.ship_to !== "JP" ||
       !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0;
