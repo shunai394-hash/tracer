@@ -8,6 +8,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { MINIMUM_EXPECTED_PROFIT_JPY, meetsMinimumExpectedProfit } from "@/lib/commerce/profit-floor.mjs";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -369,7 +370,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .in("variant_id", batch)
         .eq("currency", "JPY")
         .gt("selling_price", 0)
-        .gt("expected_profit", 0),
+        .gte("expected_profit", MINIMUM_EXPECTED_PROFIT_JPY),
     ]);
     if (variantError) throw new Error(variantError.message);
     if (offerError) throw new Error(offerError.message);
@@ -392,7 +393,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     // Match price and offer as a pair. An unrelated/stale price row must not
     // hide a variant that has another profitable price linked to a verified offer.
     const linkedPairs = validPrices
-      .filter((item) => String(item.variant_id) === variantId && Number(item.selling_price) > 0 && Number(item.expected_profit) > 0)
+      .filter((item) => String(item.variant_id) === variantId && Number(item.selling_price) > 0 && meetsMinimumExpectedProfit(item.expected_profit))
       .map((item) => ({ price: item, offer: validOffers.find((candidate) =>
         String(candidate.id) === String(item.supplier_offer_id) && String(candidate.variant_id) === variantId &&
         Boolean(candidate.supplier_product_id) && Boolean(candidate.supplier_variant_id) &&
