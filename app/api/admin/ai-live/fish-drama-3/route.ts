@@ -16,6 +16,102 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function readAudioBodyLimited(response: Response, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
+  const fail = (code: "audio_size_out_of_range" | "audio_read_failed"): Error => {
+    const error = new Error(code);
+    error.name = "AudioBodyError";
+    return error;
+  };
+
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw fail("audio_read_failed");
+  }
+
+  const rawLength = response.headers.get("content-length");
+  const trimmedLength = rawLength === null ? "" : rawLength.trim();
+  // Only a non-negative decimal integer is a declared length. Exponents, fractions,
+  // signs, and other forms are ignored so the measured stream enforces the cap.
+  if (/^\d+$/.test(trimmedLength)) {
+    const digits = trimmedLength.replace(/^0+/, "") || "0";
+    const limit = String(maxBytes);
+    const declaredExceedsLimit =
+      digits.length > limit.length ||
+      (digits.length === limit.length && digits > limit);
+    if (declaredExceedsLimit) {
+      const unread = response.body;
+      if (unread) {
+        try {
+          await unread.cancel();
+        } catch {
+          // The body was not read. Size rejection still applies.
+        }
+      }
+      throw fail("audio_size_out_of_range");
+    }
+  }
+
+  const body = response.body;
+  if (!body) {
+    throw fail("audio_size_out_of_range");
+  }
+
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = body.getReader();
+  } catch {
+    throw fail("audio_read_failed");
+  }
+
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      let next: ReadableStreamReadResult<Uint8Array>;
+      try {
+        next = await reader.read();
+      } catch {
+        throw fail("audio_read_failed");
+      }
+      if (next.done) break;
+      const value = next.value;
+      if (!value || value.byteLength === 0) continue;
+      if (value.byteLength > maxBytes - total) {
+        throw fail("audio_size_out_of_range");
+      }
+      const owned = new Uint8Array(value.byteLength);
+      owned.set(value);
+      chunks.push(owned);
+      total += owned.byteLength;
+    }
+  } catch (error) {
+    try {
+      await reader.cancel();
+    } catch {
+      // Keep the original size or read failure.
+    }
+    if (error instanceof Error && error.name === "AudioBodyError") throw error;
+    throw fail("audio_read_failed");
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // cancel() already released the reader.
+    }
+  }
+
+  if (total === 0) {
+    throw fail("audio_size_out_of_range");
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 /**
  * Admin-only Drama 3 speech synthesis for short, explicitly requested clips.
  * This is opt-in and never called automatically by the browser preview.
@@ -117,11 +213,15 @@ export async function POST(request: Request) {
       }, 502);
     }
 
-    const bytes = new Uint8Array(await upstream.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_AUDIO_BYTES) {
-      return json({ ok: false, error: "audio_size_out_of_range" }, 502);
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      bytes = await readAudioBodyLimited(upstream, MAX_AUDIO_BYTES);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AudioBodyError" && error.message === "audio_size_out_of_range") {
+        return json({ ok: false, error: "audio_size_out_of_range" }, 502);
+      }
+      throw error;
     }
-
     return new NextResponse(bytes, {
       status: 200,
       headers: {
