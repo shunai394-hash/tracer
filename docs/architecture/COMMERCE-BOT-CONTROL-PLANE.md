@@ -48,7 +48,7 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 - [x] Add the server-side event writer and authenticated read-only run history endpoint (code present; runtime and DB still unverified).
 - [x] Add static guardrail assertions for the run-history endpoint.
 - [ ] Apply the reviewed migration to Supabase and verify grants/RLS in the target environment.
-- [ ] Add a per-channel lease so overlapping schedules cannot duplicate writes.
+- [x] Add an additive per-channel lease migration with atomic acquire, bounded expiry, and token-checked release (runtime integration and DB application remain unverified).
 
 ### Stage 3 — Read-only monitors
 - Supplier monitor detects changed cost, shipping, inventory, identity and tracking evidence.
