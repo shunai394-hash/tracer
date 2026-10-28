@@ -33,7 +33,7 @@ assert.match(drama, /authorizedAdminToken\(request\)/u);
 assert.match(drama, /const MAX_REQUEST_BODY_BYTES = 16 \* 1024;/u);
 assert.match(drama, /readRequestBodyLimited\(request\)/u);
 const requestBodyHelper = drama.slice(drama.indexOf("async function readRequestBodyLimited("), drama.indexOf("\nfunction json("));
-assert.match(requestBodyHelper, /if \(\/\^\\\\d\+\$\/\.test\(rawLength\)\)/u);
+assert.ok(requestBodyHelper.includes('if (/^\\\\d+$/.test(rawLength))'));
 assert.match(requestBodyHelper, /MAX_REQUEST_BODY_BYTES/u);
 assert.match(drama, /request_body_too_large/u);
 assert.doesNotMatch(drama, /generationStarted:\s*false/u);
