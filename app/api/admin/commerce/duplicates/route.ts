@@ -169,7 +169,7 @@ export async function GET(request: Request) {
       },
       duplicates: {
         productSourceKey: duplicateGroups(products, (r) => String(r.source_key ?? "").trim(), ["id", "source_key", "title_ja", "active"]),
-        productNormalizedTitle: duplicateGroups(products, (r) => String(r.title_ja ?? "").normalize("NFKC").toLowerCase().replace(/[\\s\\p{P}\\p{S}]+/gu, ""), ["id", "source_key", "title_ja", "active"]),
+        productNormalizedTitle: duplicateGroups(products, (r) => String(r.title_ja ?? "").normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, ""), ["id", "source_key", "title_ja", "active"]),
         variantProductSourceKey: duplicateGroups(variants, (r) => {
           const productId = String(r.product_id ?? "").trim();
           const sourceKey = String(r.source_variant_key ?? "").trim();
