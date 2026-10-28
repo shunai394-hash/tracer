@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     const baseRows = rows.filter((row) => ["base"].includes(String(row.channel ?? "").toLowerCase()) && /^\d+$/.test(str(row.external_product_id) ?? ""));
     const shopifyRows = rows.filter((row) => String(row.channel ?? "").toLowerCase() === "shopify" && Boolean(str(row.external_product_id)));
     const newfindRows = rows.filter((row) => String(row.channel ?? "").toLowerCase() === "newfind");
-    const baseSample = baseRows.slice(0, 20);
+    const baseSample = baseRows.slice(0, 5);
     const shopifySample = shopifyRows.slice(0, 20);
     const base: Array<Record<string, unknown>> = [];
     const shopify: Array<Record<string, unknown>> = [];
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
       ok: errors.length === 0,
       readOnly: true,
       mode: "bounded_live_read",
-      limits: { maxBaseItems: 20, maxShopifyProducts: 20, databaseListingRows: 500 },
+      limits: { maxBaseItems: 5, maxShopifyProducts: 20, databaseListingRows: 500 },
       samples: {
         BASE: { requested: baseSample.length, verified: base.filter((item) => item.identityVerified === true).length, items: base },
         Shopify: { requested: shopifySample.length, returned: shopify.length, products: shopify },
