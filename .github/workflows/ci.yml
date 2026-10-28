@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:tracer-core
+      - name: Test Shopify parent-variant grouping planner
+        run: npm run test:shopify-variant-grouping-planner
       - name: Test BASE unfulfillable reconciliation retry filter
         run: node scripts/test-base-unfulfillable-reconciliation.mjs
       - name: Test Shopify order SKU mapping
