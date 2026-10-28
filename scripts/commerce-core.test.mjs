@@ -1347,6 +1347,8 @@ test("¥2,500 minimum expected profit is shared across channel publication and s
   assert.match(publish, /meetsMinimumExpectedProfit\(price\.expected_profit\)/);
   assert.match(publish, /meetsMinimumExpectedProfit\(currentCanonicalPrice\.expected_profit\)/);
   assert.match(publish, /expected_profit_below_minimum_/);
+  assert.match(publish, /!meetsMinimumExpectedProfit\(currentCanonicalPrice\?\.expected_profit\)/,
+    "already-published under-floor items must enter the hide/zero-stock path");
   assert.match(store, /\.gte\("expected_profit", MINIMUM_EXPECTED_PROFIT_JPY\)/);
   assert.match(store, /meetsMinimumExpectedProfit\(item\.expected_profit\)/);
   assert.match(newfind, /loadCanonicalCommerceListings\(\)/,
