@@ -58,7 +58,8 @@
     "test:base-oauth-preflight": "node scripts/test-base-oauth-preflight.mjs",
     "test:base-japanese-copy-id-regex": "node scripts/test-base-japanese-copy-id-regex.mjs",
     "test:manual-inventory": "node scripts/test-manual-inventory.mjs",
-    "test:ai-live-verified-speech-route": "node scripts/test-ai-live-verified-speech-route.mjs"
+    "test:ai-live-verified-speech-route": "node scripts/test-ai-live-verified-speech-route.mjs",
+    "test:shopify-variant-manifest-exporter": "node --test scripts/test-shopify-variant-manifest-exporter.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
