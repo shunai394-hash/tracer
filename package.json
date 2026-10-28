@@ -23,6 +23,7 @@
     "test:dropship-order-gate": "node --experimental-strip-types --no-warnings scripts/test-dropship-order-gate.mjs",
     "test:dropship-idempotency-read-failure": "node scripts/test-dropship-idempotency-read-failure.mjs",
     "test:shopify-variant-identity": "node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs",
+    "test:shopify-variant-grouping-planner": "node --test scripts/test-shopify-variant-grouping-planner.mjs",
     "test:shopify-line-item-pagination": "node scripts/test-shopify-line-item-pagination.mjs",
     "test:shopify-seo-sync": "node scripts/test-shopify-seo-sync.mjs",
     "test:shopify-order-sku-mapping": "node --experimental-strip-types --no-warnings scripts/test-shopify-order-sku-mapping.mjs",
