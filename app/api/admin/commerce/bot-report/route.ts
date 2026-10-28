@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       exactCount(db, "channel_listings"),
       exactCount(db, "channel_listings", { column: "status", operator: "eq", value: "error" }),
       exactCount(db, "cron_runs", { column: "started_at", operator: "gte", value: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
-      exactCount(db, "cron_runs", { column: "started_at", operator: "gte", value: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
+      exactCount(db, "cron_runs", { column: "started_at", operator: "gte", value: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), and: [{ column: "status", operator: "eq", value: "failed" }] }),
     ]);
 
     const sources = { products, variants, offers, offerErrors, channelListings, listingErrors, cronRuns, cronFailures };
