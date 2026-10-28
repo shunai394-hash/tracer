@@ -20,6 +20,48 @@ function authorizedAdminToken(request: Request): boolean {
   return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes);
 }
 
+const MAX_REQUEST_BODY_BYTES = 16 * 1024;
+
+async function readRequestBodyLimited(request: Request): Promise<string> {
+  const rawLength = request.headers.get("content-length")?.trim() ?? "";
+  if (/^\\d+$/.test(rawLength)) {
+    const digits = rawLength.replace(/^0+/, "") || "0";
+    const limit = String(MAX_REQUEST_BODY_BYTES);
+    if (digits.length > limit.length || (digits.length === limit.length && digits > limit)) {
+      throw new Error("request_body_too_large");
+    }
+  }
+
+  const body = request.body;
+  if (!body) throw new Error("invalid_json");
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      const chunk = next.value;
+      if (!chunk?.byteLength) continue;
+      if (chunk.byteLength > MAX_REQUEST_BODY_BYTES - total) {
+        try { await reader.cancel(); } catch { /* preserve size error */ }
+        throw new Error("request_body_too_large");
+      }
+      chunks.push(chunk);
+      total += chunk.byteLength;
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* reader may already be released */ }
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
     status,
@@ -145,12 +187,16 @@ export async function POST(request: Request) {
 
   let input: Record<string, unknown>;
   try {
-    const parsed: unknown = await request.json();
+    const rawBody = await readRequestBodyLimited(request);
+    const parsed: unknown = JSON.parse(rawBody);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return json({ ok: false, error: "invalid_json_object" }, 400);
     }
     input = parsed as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === "request_body_too_large") {
+      return json({ ok: false, error: "request_body_too_large", maxBytes: MAX_REQUEST_BODY_BYTES }, 413);
+    }
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
@@ -213,7 +259,6 @@ export async function POST(request: Request) {
         ok: false,
         error: providerCode,
         message: providerMessage,
-        generationStarted: false,
       }, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502);
     }
 
