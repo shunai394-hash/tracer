@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
@@ -11,6 +12,16 @@ const OUTPUT_FORMAT = "mp3_44100_128";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 const PROVIDER_TIMEOUT_MS = 25_000;
+
+function authorizedAdminToken(request: Request): boolean {
+  const expected = process.env.TRACER_ADMIN_TOKEN;
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7).trim() : "";
+  if (!expected || !supplied) return false;
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes);
+}
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
@@ -104,13 +115,16 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
 }
 
 /**
- * Admin-only, explicitly requested Eleven v4 Turbo Japanese voice sample.
- * No browser preview or live comment flow calls this automatically.
- * Keep credentials server-side; never log prompts, voice IDs, or audio.
+ * Admin-only Eleven v4 Turbo speech for one explicitly requested clip.
+ * The browser preview calls this only when an operator presses Generate.
+ * GitHub OIDC and CRON_SECRET stay valid; TRACER_ADMIN_TOKEN is an additional admin path.
+ * Keep the API key server-side; never log prompts, voice IDs, tokens, or audio.
  */
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!authorizedAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -152,6 +166,14 @@ export async function POST(request: Request) {
 
   try {
     const bytes = await synthesizeDialogue(apiKey, voiceId, text);
+    if (bytes.byteLength === 0) {
+      return json({
+        ok: false,
+        error: "empty_audio_response",
+        message: "ElevenLabs returned no audio. It was not automatically retried.",
+        generationStarted: true,
+      }, 502);
+    }
     const responseBuffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(responseBuffer).set(bytes);
     return new NextResponse(responseBuffer, {
@@ -167,18 +189,23 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "";
-    const status = reason === "provider_rejected_request" ? 502 : 502;
-    return json({
-      ok: false,
-      error: reason === "provider_timeout"
-        ? "elevenlabs_timeout"
+    const errorCode = reason === "provider_timeout"
+      ? "elevenlabs_timeout"
+      : reason === "empty_audio_response"
+        ? "empty_audio_response"
         : reason === "audio_size_limit_exceeded"
           ? "audio_size_out_of_range"
-          : "elevenlabs_unavailable",
-      message: reason === "provider_timeout"
-        ? "The request timed out. It was not automatically retried."
-        : "ElevenLabs could not complete the audio request. It was not automatically retried.",
+          : "elevenlabs_unavailable";
+    const message = reason === "provider_timeout"
+      ? "The request timed out. It was not automatically retried."
+      : reason === "empty_audio_response"
+        ? "ElevenLabs returned no audio. It was not automatically retried."
+        : "ElevenLabs could not complete the audio request. It was not automatically retried.";
+    return json({
+      ok: false,
+      error: errorCode,
+      message,
       generationStarted: true,
-    }, status);
+    }, 502);
   }
 }
