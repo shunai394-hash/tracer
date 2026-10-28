@@ -45,8 +45,9 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 - [x] Additive Supabase migration for append-only `commerce_bot_run_events` with run ID, bot ID, event type/status, timestamp, input snapshot hash, evidence refs, blockers, retry count and idempotency key.
 - [x] Add a payload validation contract and regression tests wired into `prebuild`.
 - [x] Restrict table access to `service_role`; enable RLS and revoke update/delete/truncate so evidence is appended, not rewritten.
+- [x] Add the server-side event writer and authenticated read-only run history endpoint (code present; runtime and DB still unverified).
+- [x] Add static guardrail assertions for the run-history endpoint.
 - [ ] Apply the reviewed migration to Supabase and verify grants/RLS in the target environment.
-- [ ] Add the server-side event writer and authenticated read-only run history endpoint.
 - [ ] Add a per-channel lease so overlapping schedules cannot duplicate writes.
 
 ### Stage 3 — Read-only monitors
@@ -72,6 +73,8 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 ## API
 
 `GET /api/admin/bots/status` — requires `Authorization: Bearer <CRON_SECRET>` or the existing trusted GitHub OIDC automation token. Returns bot definitions, missing configuration, guardrails and a generated timestamp. It does not execute a bot or claim live data was checked.
+
+`GET /api/admin/bots/runs?limit=50&botId=channel-sync&runId=<uuid>` — uses the same automation authentication boundary; returns recent append-only run events, optionally filtered by bot or run ID. The route is code-complete but requires deployment and a migrated database table before it can return ledger records.
 
 ## Acceptance criteria
 
