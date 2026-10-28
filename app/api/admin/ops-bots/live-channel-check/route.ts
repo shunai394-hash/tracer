@@ -9,6 +9,19 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 type Row = Record<string, unknown>;
+type Db = ReturnType<typeof createSupabaseAdminClient>;
+
+async function readAllRows(db: Db, table: string, columns: string, orderColumn: string): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let from = 0; from < 10_000; from += 1000) {
+    const { data, error } = await db.from(table).select(columns).order(orderColumn, { ascending: true }).range(from, from + 999);
+    if (error) throw new Error(table + "_read_failed");
+    const page = (data ?? []) as unknown as Row[];
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+  throw new Error(table + "_read_incomplete");
+}
 type ShopifyNode = {
   id: string;
   status?: string | null;
@@ -69,32 +82,29 @@ type CanonicalExpected = {
 
 async function readCanonicalExpected(): Promise<Map<string, CanonicalExpected>> {
   const db = createSupabaseAdminClient();
-  const [variantsResult, productsResult, offersResult, pricesResult] = await Promise.all([
-    db.from("commerce_variants").select("id,product_id,sku,source_variant_key"),
-    db.from("commerce_products").select("id,active"),
-    db.from("supplier_offers").select("id,variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,tracking_supported,source_status,last_checked_at"),
-    db.from("commerce_prices").select("variant_id,supplier_offer_id,selling_price"),
+  const [variants, productsRows, offers, prices] = await Promise.all([
+    readAllRows(db, "commerce_variants", "id,product_id,sku,source_variant_key", "id"),
+    readAllRows(db, "commerce_products", "id,active", "id"),
+    readAllRows(db, "supplier_offers", "id,variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,tracking_supported,source_status,last_checked_at", "id"),
+    readAllRows(db, "commerce_prices", "variant_id,supplier_offer_id,selling_price", "variant_id"),
   ]);
-  if (variantsResult.error || productsResult.error || offersResult.error || pricesResult.error) {
-    throw new Error("canonical_expected_read_failed");
-  }
-  const products = new Map((productsResult.data ?? []).map((row) => [String(row.id), row]));
-  const offersById = new Map((offersResult.data ?? []).map((row) => [String(row.id), row]));
-  const offersByVariant = new Map<string, typeof offersResult.data>();
-  for (const offer of offersResult.data ?? []) {
+  const products = new Map(productsRows.map((row) => [String(row.id), row]));
+  const offersById = new Map(offers.map((row) => [String(row.id), row]));
+  const offersByVariant = new Map<string, Row[]>();
+  for (const offer of offers) {
     const id = str(offer.variant_id);
     if (!id) continue;
     offersByVariant.set(id, [...(offersByVariant.get(id) ?? []), offer]);
   }
-  const pricesByVariant = new Map<string, typeof pricesResult.data>();
-  for (const price of pricesResult.data ?? []) {
+  const pricesByVariant = new Map<string, Row[]>();
+  for (const price of prices) {
     const id = str(price.variant_id);
     if (!id) continue;
     pricesByVariant.set(id, [...(pricesByVariant.get(id) ?? []), price]);
   }
   const now = Date.now();
   const expected = new Map<string, CanonicalExpected>();
-  for (const variant of variantsResult.data ?? []) {
+  for (const variant of variants) {
     const variantId = str(variant.id);
     const productId = str(variant.product_id);
     if (!variantId || !productId) continue;
