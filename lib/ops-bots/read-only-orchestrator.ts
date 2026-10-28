@@ -113,7 +113,7 @@ export function runReadOnlyOperationsBots(args: {
       findings.push({
         bot: "qa", code: "DUPLICATE_STABLE_IDENTITY", severity: "critical", productKey: key,
         channels, message: "同一の安定識別IDが複数行に存在します。タイトルによる自動統合はせず、確認が必要です。",
-        evidence: { occurrences: keyCounts.get(key) },
+        evidence: { occurrences: keyCounts.get(key) ?? 0 },
         requiresHumanApproval: true,
       });
     }
