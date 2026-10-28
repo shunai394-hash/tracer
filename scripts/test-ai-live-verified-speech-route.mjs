@@ -83,6 +83,40 @@ function extractFunction(source, name) {
   throw new Error(`unterminated ${name}`);
 }
 
+const requestBodySource = extractFunction(drama, "readRequestBodyLimited").replace(/\r\n/g, "\n");
+const requestBodyCompiled = ts.transpileModule(`${requestBodySource}\nexport { readRequestBodyLimited };\n`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+}).outputText;
+const requestBodyModule = await import(`data:text/javascript;base64,${Buffer.from(requestBodyCompiled).toString("base64")}`);
+const { readRequestBodyLimited } = requestBodyModule;
+
+async function expectRequestBodyFailure(request, message) {
+  await assert.rejects(readRequestBodyLimited(request), (error) => {
+    assert.equal(error?.message, message);
+    return true;
+  });
+}
+
+const validBody = JSON.stringify({ text: "清美の音声プレビュー" });
+assert.equal(await readRequestBodyLimited(new Request("https://example.test", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: validBody,
+})), validBody);
+await expectRequestBodyFailure(new Request("https://example.test", {
+  method: "POST",
+  headers: { "content-length": "16385" },
+  body: "{}",
+}), "request_body_too_large");
+await expectRequestBodyFailure(new Request("https://example.test", {
+  method: "POST",
+  body: new Uint8Array(16 * 1024 + 1),
+}), "request_body_too_large");
+await expectRequestBodyFailure(new Request("https://example.test", {
+  method: "POST",
+  body: new Uint8Array([0xc3, 0x28]),
+}), "The encoded data was not valid for encoding utf-8");
+
 const helperSource = extractFunction(speak, "readAudioBodyLimited").replace(/\r\n/g, "\n");
 assert.equal(extractFunction(drama, "readAudioBodyLimited").replace(/\r\n/g, "\n"), helperSource);
 assert.ok(helperSource.indexOf('response.headers.get("content-length")') < helperSource.indexOf("body.getReader()"));
