@@ -1,5 +1,5 @@
-import type { Evidence, ListingSnapshot } from "./grok-commerce-role-contracts";
-import { evaluateSellability } from "./grok-commerce-role-contracts";
+import type { Evidence, ListingSnapshot } from "./grok-commerce-role-contracts.ts";
+import { evaluateSellability } from "./grok-commerce-role-contracts.ts";
 
 export type ProductAuditInput = {
   productId: string;
