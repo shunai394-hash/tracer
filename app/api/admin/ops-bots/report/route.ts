@@ -15,7 +15,7 @@ async function readAll(db: Db, table: string, columns: string, orderColumn: stri
   for (let from = 0; from < 10_000; from += 1000) {
     const { data, error } = await db.from(table).select(columns).order(orderColumn, { ascending: true }).range(from, from + 999);
     if (error) throw new Error(table + "_read_failed");
-    const page = (data ?? []) as Row[];
+    const page = (data ?? []) as unknown as Row[];
     rows.push(...page);
     if (page.length < 1000) return rows;
   }
