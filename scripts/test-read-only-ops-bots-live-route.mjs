@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const route = await readFile(new URL("../app/api/admin/ops-bots/live-channel-check/route.ts", import.meta.url), "utf8");
+assert.match(route, /requireAutomationAuth\(request\)/);
+assert.match(route, /url\.searchParams\.get\("live"\) !== "1"/);
+assert.match(route, /getBaseItemDetail\(id\)/);
+assert.match(route, /shopifyGraphQL/);
+assert.match(route, /maxBaseItems: 5/);
+assert.match(route, /maxShopifyProducts: 20/);
+assert.match(route, /liveVerification: "not_implemented"/);
+assert.match(route, /identityVerified: str\(item\.item_id\) === id/);
+assert.match(route, /readCanonicalExpected\(\)/);
+assert.match(route, /async function readAllRows\(/);
+assert.match(route, /\.range\(from, from \+ 999\)/);
+assert.match(route, /_read_incomplete/);
+assert.match(route, /sameShopifyProductId\(row\.external_product_id, node\.id\)/);
+assert.match(route, /sameShopifyVariantId\(row\.external_variant_id, variant\.id\)/);
+assert.match(route, /\/\^\\d\+\$\//);
+assert.doesNotMatch(route, /\/\^\\\\d\+\$\//);
+assert.match(route, /paritySummary/);
+assert.match(route, /skuMatch/);
+assert.match(route, /priceMatch/);
+assert.match(route, /stockMatch/);
+assert.match(route, /Cache-Control/);
+assert.doesNotMatch(route, /\.insert\s*\(|\.upsert\s*\(|\.update\s*\(|\.delete\s*\(|editBaseItem|createBaseItem|publishProduct|createCJOrder/);
+console.log("Read-only live channel check contract: 18 assertions passed");
