@@ -465,7 +465,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
      const supplierEvidenceUnverified = !rawOffer || rawOffer.source_status !== "verified" ||
       !preflightShippingKnown || !preflightStockKnown ||
       rawOffer.tracking_supported !== true || rawOffer.ship_to !== "JP" ||
-      !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0;
+      !Number.isFinite(Number(rawOffer.inventory)) || Number(rawOffer.inventory) <= 0 ||
+      !meetsMinimumExpectedProfit(currentCanonicalPrice?.expected_profit);
     const currentState = stateByVariant.get(candidate.id);
     // Never republish a previously-created item unless supplier identity, known positive
     // stock, Japan shipping, tracking, and positive-margin pricing are all evidenced.
@@ -487,6 +488,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         sellingPrice: Number(currentCanonicalPrice?.selling_price),
         expectedProfit: Number(currentCanonicalPrice?.expected_profit),
       }) : ["supplier", "identity", "variant", "stock", "cost", "domestic_shipping", "profit"];
+      if (!meetsMinimumExpectedProfit(currentCanonicalPrice?.expected_profit)) missing.push("expected_profit_below_minimum_" + MINIMUM_EXPECTED_PROFIT_JPY + "_jpy");
       const reason = missing.join(",") || "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
