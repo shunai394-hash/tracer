@@ -27,6 +27,12 @@ assert.equal(clean.mode, "read-only");
 assert.equal(clean.findingCount, 0);
 assert.equal(clean.tasks.length, 0);
 
+const stale = runReadOnlyOperationsBots({ products: [{ ...product, updatedAt: "2026-10-20T00:00:00.000Z" }], generatedAt: "2026-10-28T02:00:00.000Z" });
+assert.ok(stale.findings.some((f) => f.code === "SOURCE_DATA_STALE"));
+
+const missingNewfind = runReadOnlyOperationsBots({ products: [{ ...product, channels: { BASE: product.channels.BASE, Shopify: product.channels.Shopify } }] });
+assert.ok(missingNewfind.findings.some((f) => f.code === "CHANNEL_SNAPSHOT_MISSING" && f.channels.includes("NEWFIND")));
+
 const changed = runReadOnlyOperationsBots({
   products: [{ ...product, supplierCost: 1300, stock: 3, title: "Redwood Product", channels: {
     ...product.channels,
@@ -51,4 +57,4 @@ assert.ok(duplicateIdentity.findings.some((f) => f.code === "DUPLICATE_STABLE_ID
 
 const unknownCost = runReadOnlyOperationsBots({ products: [{ ...product, supplierCost: 0, japanShippingCost: null }] });
 assert.ok(unknownCost.findings.some((f) => f.code === "SUPPLIER_COST_OR_SHIPPING_UNKNOWN" && f.requiresHumanApproval));
-console.log("Read-only multi-bot orchestrator: 13+ assertions passed");
+console.log("Read-only multi-bot orchestrator: 15+ assertions passed");
