@@ -17,14 +17,14 @@ Coordinate five focused bots around TRACER as the canonical catalog and BASE, Sh
 ## Safety and product eligibility
 
 1. Use supplier product ID + supplier variant ID + channel product/variant IDs/SKU as identity evidence. Never silently merge based on title or image similarity.
-2. Do not consider an item publishable unless supplier identity, variant, positive inventory, Japan shipping, tracking capability, known non-zero cost/shipping and the configured margin rule are evidenced.
+2. Do not consider an item publishable unless supplier identity, variant, positive inventory, Japan shipping, tracking capability, known non-zero cost/shipping and the configured margin rule are evidenced. Temporary absolute floor: `expected_profit >= ¥2,500` after supplier cost, Japan shipping and channel fees; below-floor products must not publish or be promoted to any channel.
 3. Keep read-only audits separate from external writes. A write plan must name exact target IDs, before/after values, evidence, idempotency key, and rollback/recovery action.
 4. After each write, fetch the provider state again. An accepted API response alone is not proof of final public state.
 5. A Main Bot must not bypass the existing publication, identity, order, or supplier safety gates.
 6. Keep purchase/order creation disabled in any new orchestration path until a separately authorized end-to-end test proves customer order → supplier order → tracking back to the channel.
 7. Never expose tokens, secrets, customer PII, or full addresses in bot reports.
 
-## Implemented control-plane foundation
+## Temporary minimum-profit floor\n\n- `lib/commerce/profit-floor.mjs` is the shared policy: minimum expected profit is ¥2,500 JPY. Unknown, non-finite and lower values fail closed.\n- BASE and Shopify publication checks reject under-floor candidates; existing channel listings are sent through the existing hide/zero-stock path when the scheduled reconciliation processes them.\n- TRACER canonical storefront listings and therefore new NEWFIND promotions use the same threshold.\n- This is a code change only: production deployment, provider read-back, and removal of already delivered NEWFIND records have not been verified.\n\n## Implemented control-plane foundation
 
 - `lib/agents/commerce-bot-control-plane.ts` defines the five roles and their known integration points.
 - `GET /api/admin/bots/status` requires the existing automation authentication and returns a no-store, read-only configuration report.
