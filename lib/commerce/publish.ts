@@ -10,6 +10,8 @@ import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
 
+const MIN_EXPECTED_PROFIT_JPY = Math.max(0, Number.parseInt(process.env.TRACER_MIN_EXPECTED_PROFIT_JPY ?? "2500", 10) || 2500);
+
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
@@ -167,7 +169,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || Number(price.margin_rate) < 0.5 || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY) missing.push("profit_below_minimum_or_margin");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -369,7 +371,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+          Number(price.expected_profit) >= MIN_EXPECTED_PROFIT_JPY && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -424,7 +426,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const price = currentCanonicalPrice && currentPriceOffer &&
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
+      Number(currentCanonicalPrice.expected_profit) >= MIN_EXPECTED_PROFIT_JPY &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
