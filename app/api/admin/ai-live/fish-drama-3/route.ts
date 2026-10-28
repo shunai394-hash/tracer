@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 
@@ -8,6 +9,15 @@ export const maxDuration = 30;
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+
+function authorizedAdminToken(request: Request): boolean {
+  const expected = process.env.TRACER_ADMIN_TOKEN;
+  const supplied = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") ?? "";
+  if (!expected || !supplied) return false;
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes);
+}
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
@@ -118,8 +128,10 @@ async function readAudioBodyLimited(response: Response, maxBytes: number): Promi
  * Keep the Fish API key server-side; do not log text, voice IDs, or audio.
  */
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!authorizedAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   const apiKey = process.env.FISH_API_KEY;
   if (!apiKey) {
