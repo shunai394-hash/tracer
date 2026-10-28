@@ -35,7 +35,7 @@ A product key is valid only when TRACER product ID, supplier product ID, and sup
 4. Main Bot sorts specialist tasks by priority and returns a report.
 5. QA/human reviewer verifies evidence and approves any future separately implemented change request.
 
-The PR implements the deterministic engine and a protected canonical-data report. It also adds an explicit live-read endpoint at `/api/admin/ops-bots/live-channel-check?live=1`: BASE detail reads are capped at 5 existing item IDs and Shopify GraphQL reads at 20 existing product IDs. The endpoint never searches by title and never writes to DB or channels. NEWFIND live price/stock verification remains unimplemented; persisted listing rows are reported only. The endpoint does not persist snapshots or run on a schedule.
+The PR implements the deterministic engine and a protected canonical-data report. It also adds an explicit live-read endpoint at `/api/admin/ops-bots/live-channel-check?live=1`: BASE detail reads are capped at 5 existing item IDs and Shopify GraphQL reads at 20 existing product IDs. The endpoint joins bounded live samples to canonical TRACER variants using channel external IDs and checks SKU, price, stock, and publication parity where the channel exposes those fields. It never searches by title and never writes to DB or channels. NEWFIND live price/stock verification remains unimplemented; persisted listing rows are reported only. The endpoint does not persist snapshots or run on a schedule.
 
 ## Safety and non-goals
 
@@ -44,7 +44,7 @@ The PR implements the deterministic engine and a protected canonical-data report
 - No automatic translation writeback.
 - No secrets, supplier credentials, supplier costs, or margin figures are sent to an LLM or public channel.
 - Read-only engine has no network or persistence code.
-- Live reads require an explicit `?live=1` flag and automation authentication; ordinary report requests do not call external channel APIs. BASE and Shopify reads are bounded, but the returned samples are diagnostic only and are not yet joined to canonical variants for a complete parity verdict. NEWFIND live adapter, durable snapshot history, scheduled shadow runs, and full cross-channel variant reconciliation remain future work.
+- Live reads require an explicit `?live=1` flag and automation authentication; ordinary report requests do not call external channel APIs. BASE and Shopify reads are bounded diagnostic samples, not full-catalog reconciliation, so their parity summaries cannot establish that every listing is synchronized. NEWFIND live adapter, durable snapshot history, scheduled shadow runs, and full cross-channel variant reconciliation remain future work.
 
 ## Test
 
