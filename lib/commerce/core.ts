@@ -125,7 +125,7 @@ export async function recalculatePrice(input: {
   const highestExistingPrice = Math.max(0, ...(channelPrices ?? [])
     .map((row) => Number(row.selling_price))
     .filter((value) => Number.isFinite(value) && value > 0));
-  const minimumProfitPrice = Math.ceil((unitCostJpy + shippingCostJpy + (input.fixedFeeJpy ?? 0) + MIN_EXPECTED_PROFIT_JPY) / (1 - input.feeRate));
+  const minimumProfitPrice = Math.ceil((unitCostJpy + shippingCostJpy + (input.fixedFeeJpy ?? 0) + MIN_EXPECTED_PROFIT_JPY + 1) / (1 - input.feeRate));
   const sellingPrice = Math.max(minimumPrice.sellingPrice, highestExistingPrice, minimumProfitPrice);
   const feeAmount = Math.ceil(sellingPrice * input.feeRate) + (input.fixedFeeJpy ?? 0);
   const expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
