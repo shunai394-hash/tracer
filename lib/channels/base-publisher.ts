@@ -347,12 +347,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       : sourceCost !== null && Number.isFinite(sourceCost) && shippingCost !== null
         ? price - sourceCost - shippingCost
         : null;
-    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit <= 0) {
+    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit < 2500) {
       await supabase.from("shop_listings").update({
         published: false,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: contributionProfit === null ? "profit_unknown" : "profit_not_positive",
+        pipeline_reason: contributionProfit === null ? "profit_unknown" : "profit_below_minimum_2500",
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: contributionProfit === null ? "profit_unknown" : "profit_not_positive" });
