@@ -7,6 +7,7 @@ import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/clie
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Listing = {
   id: string;
@@ -109,7 +110,8 @@ function sku(listing: Listing): string {
 }
 
 async function ensureJapaneseCopy(row: Listing): Promise<{ title: string; description: string }> {
-  const title = String(row.title ?? "").trim();
+  // Shared storefront hygiene (mistranslated modifiers, colour conflicts).
+  const title = normalizeListingTitle(String(row.title ?? "")) || String(row.title ?? "").trim();
   const description = String(row.description ?? title).trim();
   // Workflow/status text must never survive as buyer-facing copy, even when it
   // happens to contain Japanese characters and passes the language-only check.

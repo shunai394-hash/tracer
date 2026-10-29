@@ -8,6 +8,7 @@ import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -225,7 +226,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     try {
       const copy = await ensureJapaneseCatalogCopy(
-        String(listing.title ?? ""),
+        normalizeListingTitle(String(listing.title ?? "")) || String(listing.title ?? ""),
         String(listing.description ?? listing.title ?? ""),
       );
       return { listingId, copy, error: null as string | null };

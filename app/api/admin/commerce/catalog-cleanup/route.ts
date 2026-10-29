@@ -5,7 +5,7 @@ import { syncCommerceListings } from "@/lib/commerce/publish";
 import { editBaseItem, getBaseItemDetail } from "@/lib/channels/base";
 import { shopifyGraphQL, toShopifyGid } from "@/lib/shopify/admin";
 import { withdrawNewfindPromotionsForVariants } from "@/lib/integration/newfind-commerce";
-import { applyManualTitle } from "@/lib/commerce/listing-title";
+import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 
@@ -18,7 +18,50 @@ type Ref = { channel: Channel; externalProductId: string };
 type CopyItem = { ref: Ref; title?: string; description?: string };
 type ListingRow = { id: string; variant_id: string; channel: Channel; external_product_id: string | null; status: string; selling_price: number };
 
+type LegacyRow = { id: string; title: string | null; description: string | null; selling_price: number | null; shopify_product_id: string | null; base_item_id: string | null; archived_at: string | null };
+
 const MAX_REFS_PER_CALL = 15;
+
+async function hideShopifyProduct(rawId: string): Promise<void> {
+  const gid = toShopifyGid("Product", rawId);
+  if (!gid) throw new Error("shopify_product_id_invalid");
+  const updated = await shopifyGraphQL<{ productUpdate: { product: { status: string } | null; userErrors: Array<{ message: string }> } }>(
+    "mutation TracerManualWithdraw($input: ProductUpdateInput!) { productUpdate(product: $input) { product { status } userErrors { message } } }",
+    { input: { id: gid, status: "DRAFT" } },
+  );
+  if (updated.productUpdate.userErrors.length || updated.productUpdate.product?.status !== "DRAFT") {
+    throw new Error("shopify_draft_failed:" + updated.productUpdate.userErrors.map((e) => e.message).join("; "));
+  }
+}
+
+// BASE edits replace every field, so read the live item first and keep what we
+// are not changing (visibility and stock unless hiding).
+async function editBaseKeeping(itemId: string, change: { title?: string; detail?: string; hide?: boolean }, fallbackPrice: number): Promise<void> {
+  const live = await getBaseItemDetail(itemId);
+  const visible = change.hide ? false : !(live.visible === false || live.visible === 0 || live.visible === "0");
+  await editBaseItem({
+    itemId,
+    title: change.title ?? String(live.title ?? "TRACER商品"),
+    detail: change.detail ?? String(live.detail ?? live.title ?? "TRACER商品"),
+    price: Math.max(50, Math.round(Number(live.price) || fallbackPrice || 50)),
+    stock: change.hide ? 0 : Math.max(0, Math.floor(Number(live.stock) || 0)),
+    visible,
+  });
+}
+
+async function retitleShopifyProduct(rawId: string, title: string, descriptionHtml?: string): Promise<void> {
+  const gid = toShopifyGid("Product", rawId);
+  if (!gid) throw new Error("shopify_product_id_invalid");
+  const input: Record<string, unknown> = { id: gid, title };
+  if (descriptionHtml) input.descriptionHtml = descriptionHtml;
+  const updated = await shopifyGraphQL<{ productUpdate: { product: { title: string } | null; userErrors: Array<{ message: string }> } }>(
+    "mutation TracerManualRetitle($input: ProductUpdateInput!) { productUpdate(product: $input) { product { title } userErrors { message } } }",
+    { input },
+  );
+  if (updated.productUpdate.userErrors.length || !updated.productUpdate.product) {
+    throw new Error("shopify_retitle_failed:" + updated.productUpdate.userErrors.map((e) => e.message).join("; "));
+  }
+}
 const WITHDRAW_REASON = "manual_catalog_cleanup";
 
 function parseRef(value: unknown): Ref | null {
@@ -108,6 +151,39 @@ export async function POST(request: Request) {
     if (!variant?.product_id) { unresolved.push(ref); continue; }
     resolved.set(key, { variantId: String(variant.id), productId: String(variant.product_id) });
   }
+  // Older listings live in shop_listings and are synced by the legacy jobs.
+  const legacy = new Map<string, LegacyRow>();
+  const stillUnresolved: Ref[] = [];
+  for (const ref of unresolved) {
+    const column = ref.channel === "shopify" ? "shopify_product_id" : "base_item_id";
+    const { data, error } = await db.from("shop_listings")
+      .select("id,title,description,selling_price,shopify_product_id,base_item_id,archived_at")
+      .in(column, storedIdCandidates(ref))
+      .limit(1)
+      .maybeSingle();
+    if (error) return NextResponse.json({ ok: false, error: "legacy_listing_read_failed", detail: error.message }, { status: 500 });
+    if (data) legacy.set(ref.channel + ":" + ref.externalProductId, data as LegacyRow);
+    else stillUnresolved.push(ref);
+  }
+  unresolved.length = 0;
+  unresolved.push(...stillUnresolved);
+  const legacyOf = (ref: Ref | null) => (ref ? legacy.get(ref.channel + ":" + ref.externalProductId) : undefined);
+  const legacyWithdraw = new Map<string, LegacyRow>();
+  for (const ref of withdraw) { const row = legacyOf(ref); if (row) legacyWithdraw.set(row.id, row); }
+  const legacyRetitle = new Map<string, { row: LegacyRow; title: string; description?: string }>();
+  for (const ref of resync) {
+    const row = legacyOf(ref);
+    if (!row || legacyWithdraw.has(row.id)) continue;
+    const next = normalizeListingTitle(row.title);
+    if (next && next !== String(row.title ?? "").trim() && isJapaneseProductTitle(next) && isPublishableCatalogTitle(next)) legacyRetitle.set(row.id, { row, title: next });
+  }
+  for (const item of copy) {
+    const row = legacyOf(item!.ref);
+    if (!row || legacyWithdraw.has(row.id)) continue;
+    const title = item!.title ? applyManualTitle(item!.title, row.title) : String(row.title ?? "");
+    legacyRetitle.set(row.id, { row, title, description: item!.description });
+  }
+
   const productOf = (ref: Ref | null) => (ref ? resolved.get(ref.channel + ":" + ref.externalProductId)?.productId : undefined);
 
   const productIds = [...new Set([...resolved.values()].map((item) => item.productId))];
@@ -147,6 +223,8 @@ export async function POST(request: Request) {
     copy: [...copyProducts.entries()].map(([id, item]) => ({ productId: id, from: (products ?? []).find((p) => p.id === id)?.title_ja ?? null, title: item.title ?? null, description: Boolean(item.description) })),
     resync: resyncProducts.map((id) => ({ productId: id, title: (products ?? []).find((p) => p.id === id)?.title_ja ?? null })),
     skippedMultiVariant,
+    legacyWithdraw: [...legacyWithdraw.values()].map((row) => ({ listingId: row.id, title: row.title, archived: Boolean(row.archived_at) })),
+    legacyRetitle: [...legacyRetitle.values()].map((item) => ({ listingId: item.row.id, from: item.row.title, to: item.title })),
     unresolved,
   };
   if (!apply) return NextResponse.json({ ok: true, readOnly: true, plan });
@@ -217,6 +295,35 @@ export async function POST(request: Request) {
     }
   }
 
+  // 1b) Legacy listings: archive (excluded from every legacy sync) and hide.
+  const legacyResult = { archived: 0, retitled: 0 };
+  for (const row of legacyWithdraw.values()) {
+    try {
+      const { error } = await db.from("shop_listings").update({
+        published: false, published_at: null, archived_at: now, archive_reason: WITHDRAW_REASON, updated_at: now,
+      }).eq("id", row.id);
+      if (error) throw new Error("legacy_archive_failed:" + error.message);
+      if (row.shopify_product_id) { await hideShopifyProduct(String(row.shopify_product_id)); hidden.shopify++; }
+      if (row.base_item_id) { await editBaseKeeping(String(row.base_item_id), { hide: true }, Number(row.selling_price) || 50); hidden.base++; }
+      legacyResult.archived++;
+    } catch (error) {
+      errors.push("legacy:" + row.id + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 160));
+    }
+  }
+  for (const { row, title, description } of legacyRetitle.values()) {
+    try {
+      const update: Record<string, unknown> = { title, updated_at: now };
+      if (description) update.description = description;
+      const { error } = await db.from("shop_listings").update(update).eq("id", row.id);
+      if (error) throw new Error("legacy_title_save_failed:" + error.message);
+      if (row.shopify_product_id) await retitleShopifyProduct(String(row.shopify_product_id), title);
+      if (row.base_item_id) await editBaseKeeping(String(row.base_item_id), { title, ...(description ? { detail: description } : {}) }, Number(row.selling_price) || 50);
+      legacyResult.retitled++;
+    } catch (error) {
+      errors.push("legacy:" + row.id + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 160));
+    }
+  }
+
   // 2) Curated copy, stored where every sync reads it first.
   for (const [productId, item] of copyProducts) {
     const product = (products ?? []).find((p) => p.id === productId);
@@ -248,6 +355,7 @@ export async function POST(request: Request) {
     readOnly: false,
     plan,
     withdrawn: withdrawProducts.length,
+    legacy: legacyResult,
     hidden,
     newfind,
     sync,

@@ -1,6 +1,6 @@
 {
   "apply": true,
-  "note": "Run 2 (2026-10-30): re-check withdrawals, fix curl-rod title suffix, resync title fixes.",
+  "note": "Run 3 (2026-10-30): legacy shop_listings support — archive mispriced legacy items, fix legacy titles.",
   "withdraw": [
     {
       "channel": "shopify",
@@ -139,20 +139,15 @@
     {
       "ref": {
         "channel": "shopify",
-        "externalProductId": "8624271654956"
+        "externalProductId": "8638980620332"
       },
-      "title": "寝ながらゆる巻き サテン ヒートレスカールロッド｜コテを使わないヘアアレンジに",
-      "description": "コテを使わずに、朝のゆる巻きを。夜にロッドへ髪を巻いて寝るだけの、サテン調ヒートレスカールロッドです。\n\n・朝のヘアセットを短くしたい日に\n・熱によるダメージを避けたい人に\n・旅行先でのヘアアレンジに\n\n対応する髪質・使用方法・付属品は仕入先の商品仕様をご確認ください。"
+      "title": "普段使いのレディースショルダーバッグ"
     }
   ],
   "resync": [
     {
       "channel": "shopify",
       "externalProductId": "8638973378604"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638980620332"
     },
     {
       "channel": "shopify",
