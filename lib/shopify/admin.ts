@@ -490,7 +490,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   }>(
     `mutation ProductUpdate($input: ProductUpdateInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input, media: $media) {
-        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
+        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { id mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
