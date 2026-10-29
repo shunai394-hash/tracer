@@ -6,6 +6,7 @@ export const SALE_EVIDENCE_FIELDS = [
   "cost",
   "domestic_shipping",
   "profit",
+  "minimum_profit",
   "verification",
 ] as const;
 
@@ -44,6 +45,7 @@ export function missingSaleEvidence(input: SaleEvidenceInput): SaleEvidenceField
   if (!shippingKnown) missing.push("domestic_shipping");
   const profitKnown = input.currency === "JPY" && Number(input.sellingPrice) > 0 && Number(input.expectedProfit) > 0;
   if (!profitKnown) missing.push("profit");
+  else if (Number(input.expectedProfit) < 2500) missing.push("minimum_profit");
   // Verification status remains a hard requirement; timestamp age is not.
   // Inventory, destination shipping, and tracking must still be positively evidenced.
   if (input.sourceStatus !== "verified") missing.push("verification");
