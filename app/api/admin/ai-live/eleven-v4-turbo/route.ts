@@ -89,7 +89,38 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
         const record = message as Record<string, unknown>;
 
         if (record.error) {
-          finish(new Error("provider_rejected_request"));
+          const providerError = record.error;
+          let providerCode = "";
+          let providerMessage = "";
+          if (typeof providerError === "string") {
+            providerMessage = providerError;
+          } else if (providerError && typeof providerError === "object") {
+            const details = providerError as Record<string, unknown>;
+            providerCode = typeof details.code === "string" || typeof details.code === "number"
+              ? String(details.code)
+              : typeof details.status === "string" || typeof details.status === "number"
+                ? String(details.status)
+                : "";
+            providerMessage = typeof details.message === "string"
+              ? details.message
+              : typeof details.detail === "string"
+                ? details.detail
+                : "";
+          }
+          // Keep provider diagnostics useful without ever returning credentials,
+          // the submitted script, or the voice identifier to the browser.
+          const safeMessage = providerMessage
+            .replaceAll(apiKey, "[redacted]")
+            .replaceAll(voiceId, "[voice]")
+            .replaceAll(text, "[text]")
+            .replace(/[\\r\\n\\t]+/gu, " ")
+            .slice(0, 180);
+          const error = new Error("provider_rejected_request");
+          Object.assign(error, {
+            providerCode: providerCode.replace(/[^a-zA-Z0-9_.:-]/gu, "").slice(0, 48),
+            providerMessage: safeMessage,
+          });
+          finish(error);
           return;
         }
 
@@ -201,6 +232,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "";
+    const providerDiagnostic = error && typeof error === "object"
+      ? error as Error & { providerCode?: string; providerMessage?: string }
+      : null;
     const errorCode = reason === "provider_timeout"
       ? "elevenlabs_timeout"
       : reason === "empty_audio_response"
@@ -221,6 +255,14 @@ export async function POST(request: Request) {
       ok: false,
       error: errorCode,
       message,
+      ...(reason === "provider_rejected_request" && (providerDiagnostic?.providerCode || providerDiagnostic?.providerMessage)
+        ? {
+            providerDiagnostic: {
+              ...(providerDiagnostic.providerCode ? { code: providerDiagnostic.providerCode } : {}),
+              ...(providerDiagnostic.providerMessage ? { message: providerDiagnostic.providerMessage } : {}),
+            },
+          }
+        : {}),
       generationStarted: true,
     }, 502);
   }
