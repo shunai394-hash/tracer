@@ -9,9 +9,9 @@ import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
+import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 const MIN_EXPECTED_PROFIT_JPY = Math.max(0, Number.parseInt(process.env.TRACER_MIN_EXPECTED_PROFIT_JPY ?? "2500", 10) || 2500);
-import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -170,7 +170,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5 || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY) missing.push("profit_below_minimum_or_margin");
+         if (!price || !Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY || !Number.isFinite(Number(price.margin_rate)) || Number(price.margin_rate) < 0.5) missing.push("profit_below_minimum_or_margin");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
