@@ -46,7 +46,7 @@ export type ShopListing = {
   supplierName: string | null;
   supplierProductId: string | null;
   supplierVariantId: string | null;
-  variantLabel: string | null;
+  variantLabel?: string | null;
   shopifyVariantId: string | null;
   shopifyProductId: string | null;
   shopifyHandle: string | null;
