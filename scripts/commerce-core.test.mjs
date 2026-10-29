@@ -76,7 +76,8 @@ test("canonical repricing uses the highest existing storefront price and preserv
   const end = core.indexOf("/** Channel state is independent.", start);
   const pricing = core.slice(start, end);
   assert.match(pricing, /from\("channel_listings"\)[\s\S]*?\.eq\("variant_id", input\.variantId\)/);
-  assert.match(pricing, /Math\.max\(minimumPrice\.sellingPrice, highestExistingPrice\)/);
+  assert.match(pricing, /minimumProfitPrice = Math\.ceil\(/);
+  assert.match(pricing, /Math\.max\(minimumPrice\.sellingPrice, highestExistingPrice, minimumProfitPrice\)/);
   assert.match(pricing, /marginRate \+ Number\.EPSILON < \(input\.targetMarginRate \?\? 0\.5\)/);
 });
 test("keeps calculated storefront prices at or above BASE minimum ¥50", () => {
