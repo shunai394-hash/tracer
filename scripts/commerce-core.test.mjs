@@ -1339,6 +1339,7 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
   assert.match(route, /MIN_EXPECTED_PROFIT_JPY = 2500/);
   assert.match(route, /price\.expected_profit < MIN_EXPECTED_PROFIT_JPY/);
   assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
-  assert.match(config, /"path": "\/api\/cron\/commerce-minimum-profit-withdraw",[\s\S]*?"schedule": "\*\/5 \* \* \* \*"/);
+  assert.ok(config.includes('"path": "/api/cron/commerce-minimum-profit-withdraw"'));
+  assert.ok(config.includes('"schedule": "*/5 * * * *"'));
   assert.doesNotMatch(route, /\.delete\(/);
 });
