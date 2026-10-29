@@ -360,7 +360,7 @@ function blockReasons(row: Listing): string[] {
     ? sellingPrice - sourceCost - shippingCost
     : null);
   if (contributionProfit === null) reasons.push("profit_unknown");
-  else if (contributionProfit <= 0) reasons.push("profit_not_positive");
+  else if (contributionProfit < 2500) reasons.push("minimum_contribution_profit_below_2500");
   const inventory = asNumber(row.inventory);
   if (inventory === null || inventory <= 0) reasons.push("inventory_not_positive");
   return reasons;
