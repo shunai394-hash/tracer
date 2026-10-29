@@ -30,6 +30,16 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function messageText(data: unknown): Promise<string> {
+  if (typeof data === "string") return data;
+  if (data instanceof Blob) return data.text();
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+  }
+  throw new Error("unsupported_provider_message");
+}
+
 async function synthesizeDialogue(apiKey: string, voiceId: string, text: string): Promise<Uint8Array> {
   const url = new URL(ELEVEN_TTD_WS_URL);
   url.searchParams.set("model_id", MODEL_ID);
@@ -62,20 +72,18 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
     const timeout = setTimeout(() => finish(new Error("provider_timeout")), PROVIDER_TIMEOUT_MS);
 
     socket.addEventListener("open", () => {
-      // v4 Turbo is only supported by Text to Dialogue WebSocket. Register
-      // exactly one authorized voice, then submit the short clip and flush.
+      // v4 Turbo allows exactly one registered voice per dialogue session.
       socket.send(JSON.stringify({ voices: [voiceId], xi_api_key: apiKey }));
       socket.send(JSON.stringify({
         inputs: [{ text, voice_id: voiceId, new_turn: true }],
       }));
+      // Flush buffered text and signal the end of this one-shot session.
       socket.send(JSON.stringify({ close_socket: true }));
     });
 
     socket.addEventListener("message", async (event: MessageEvent) => {
       try {
-        const raw = typeof event.data === "string"
-          ? event.data
-          : await (event.data as Blob).text();
+        const raw = await messageText(event.data);
         const message: unknown = JSON.parse(raw);
         if (!message || typeof message !== "object") return;
         const record = message as Record<string, unknown>;
@@ -95,7 +103,9 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
           chunks.push(chunk);
         }
 
-        if (record.is_final === true) {
+        // ElevenLabs documents both final-marker shapes across the TTD
+        // guide and API reference. Accept either to avoid rejecting valid audio.
+        if (record.is_final === true || record.is_final_audio_for_turn === true) {
           if (totalBytes === 0) {
             finish(new Error("empty_audio_response"));
           } else {
@@ -109,7 +119,9 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
 
     socket.addEventListener("error", () => finish(new Error("websocket_error")));
     socket.addEventListener("close", () => {
-      if (!settled) finish(new Error("connection_closed_before_final_audio"));
+      if (!settled) {
+        finish(new Error(totalBytes > 0 ? "final_audio_marker_missing" : "connection_closed_before_final_audio"));
+      }
     });
   });
 }
@@ -195,12 +207,16 @@ export async function POST(request: Request) {
         ? "empty_audio_response"
         : reason === "audio_size_limit_exceeded"
           ? "audio_size_out_of_range"
-          : "elevenlabs_unavailable";
+          : reason === "provider_rejected_request"
+            ? "elevenlabs_request_rejected"
+            : "elevenlabs_unavailable";
     const message = reason === "provider_timeout"
       ? "The request timed out. It was not automatically retried."
       : reason === "empty_audio_response"
         ? "ElevenLabs returned no audio. It was not automatically retried."
-        : "ElevenLabs could not complete the audio request. It was not automatically retried.";
+        : reason === "provider_rejected_request"
+          ? "ElevenLabs rejected the request. Check the API key permissions and whether the voice is available to this account. It was not automatically retried."
+          : "ElevenLabs could not complete the audio request. It was not automatically retried.";
     return json({
       ok: false,
       error: errorCode,
