@@ -146,6 +146,22 @@ test("new storefront candidates require evidenced landed costs and exact supplie
   assert.match(publish, /Boolean\(x\.supplier_product_id && x\.supplier_variant_id && nativeIdsValid && unitCostKnown && shippingKnown\)/);
 });
 
+test("publication and storefront listing enforce the ¥2,500 expected-profit floor and fail closed on missing evidence", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  assert.match(publish, /MIN_EXPECTED_PROFIT_JPY[\\s\\S]*?TRACER_MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /Number\\.isFinite\\(Number\\(price\\.expected_profit\\)\\)/);
+  assert.match(publish, /currentState\\?\\.external_product_id[\\s\\S]*?Number\\(currentCanonicalPrice\\?\\.expected_profit\\) < MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /expected_profit_below_2500_or_unknown/);
+  assert.match(publish, /margin_below_50_percent_or_unknown/);
+  assert.match(publish, /Number\\(price\\.expected_profit\\) >= MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /Number\\(currentCanonicalPrice\\.expected_profit\\) >= MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(store, /\\.gte\\("expected_profit", MIN_EXPECTED_PROFIT_JPY\\)/);
+  assert.match(store, /\\.gte\\("margin_rate", 0\\.5\\)/);
+  assert.match(store, /Number\\(item\\.expected_profit\\) >= MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(store, /expectedProfit: asNumber\\(price\\.expected_profit\\)/);
+});
+
 test("catalog publication requires positive profit, not current stock or tracking readiness", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const pricingStart = core.indexOf("export async function recalculatePrice");
@@ -231,7 +247,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
   assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
   assert.match(publish, /Number\(currentCanonicalPrice\.margin_rate\) >= 0\.5/);
-  assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= 2500/);
+  assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
   assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
   assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.gte\("commerce_prices\.margin_rate", 0\.5\)/);
