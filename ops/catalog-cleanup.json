@@ -1,6 +1,6 @@
 {
   "apply": true,
-  "note": "Run 5 (2026-10-30): include TRACER product-page URLs in the NEWFIND withdrawal.",
+  "note": "Run 6 (2026-10-30): resend NEWFIND withdrawals after NEWFIND accepts seeded TRACER items.",
   "withdraw": [
     {
       "channel": "shopify",

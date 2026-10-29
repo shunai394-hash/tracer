@@ -404,7 +404,9 @@ export async function sendNewfindProductWithdrawnForUrls(productUrls: string[], 
   const urls = [...new Set(productUrls.filter((url) => /^https:\/\//.test(url)))];
   if (!enabled || !cfg.apiUrl || !cfg.webhookSecret) return { sent: false, status: "newfind_not_configured" };
   if (urls.length === 0) return { sent: false, status: "no_urls" };
-  const digest = createHmac("sha256", "tracer-manual-withdraw").update(urls.sort().join("|")).digest("hex").slice(0, 24);
+  // A fresh id per run: a receiver that de-duplicates by event id must still
+  // re-apply a withdrawal after its own matching rules change.
+  const digest = createHmac("sha256", "tracer-manual-withdraw").update(urls.sort().join("|") + "|" + Date.now()).digest("hex").slice(0, 24);
   const eventId = "tracer-manual-withdrawn:" + digest;
   const rawBody = JSON.stringify({
     source: "tracer",
