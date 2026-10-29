@@ -10,6 +10,8 @@ import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
+const MIN_EXPECTED_PROFIT_JPY = Math.max(0, Number.parseInt(process.env.TRACER_MIN_EXPECTED_PROFIT_JPY ?? "2500", 10) || 2500);
+
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -34,6 +36,7 @@ export type ShopListing = {
   description: string | null;
   imageUrl: string | null;
   sellingPrice: number | null;
+  expectedProfit?: number | null;
   currency: string | null;
   inventory: number;
   orderable: boolean;
@@ -61,6 +64,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     description: typeof row.description === "string" ? row.description : null,
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     sellingPrice: asNumber(row.selling_price),
+    expectedProfit: asNumber(row.expected_profit),
     currency: typeof row.currency === "string" ? row.currency : null,
     inventory: Math.max(0, Math.floor(asNumber(row.inventory) ?? 0)),
     orderable: asBoolean(row.orderable),
@@ -370,7 +374,8 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .in("variant_id", batch)
         .eq("currency", "JPY")
         .gte("selling_price", MINIMUM_LISTING_PRICE_JPY)
-        .gt("expected_profit", 0),
+        .gte("expected_profit", MIN_EXPECTED_PROFIT_JPY)
+        .gte("margin_rate", 0.5),
     ]);
     if (variantError) throw new Error(variantError.message);
     if (offerError) throw new Error(offerError.message);
@@ -393,7 +398,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     // Match price and offer as a pair. An unrelated/stale price row must not
     // hide a variant that has another profitable price linked to a verified offer.
     const linkedPairs = validPrices
-      .filter((item) => String(item.variant_id) === variantId && Number(item.selling_price) > 0 && Number(item.expected_profit) > 0)
+      .filter((item) => String(item.variant_id) === variantId && Number(item.selling_price) > 0 && Number(item.expected_profit) >= MIN_EXPECTED_PROFIT_JPY && Number(item.margin_rate) >= 0.5)
       .map((item) => ({ price: item, offer: validOffers.find((candidate) =>
         String(candidate.id) === String(item.supplier_offer_id) && String(candidate.variant_id) === variantId &&
         Boolean(candidate.supplier_product_id) && Boolean(candidate.supplier_variant_id) &&
@@ -441,6 +446,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       description,
       imageUrl,
       sellingPrice: asNumber(price.selling_price),
+      expectedProfit: asNumber(price.expected_profit),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
       orderable: isCJLiveOrderPathReady() && offerFresh,
