@@ -370,7 +370,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+          Number(price.expected_profit) >= 2500 && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -426,7 +426,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
       isMinimumListingPriceEligible(currentCanonicalPrice.selling_price) &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
+      Number(currentCanonicalPrice.expected_profit) >= 2500 &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
@@ -551,7 +551,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) < 2500) {
       results.push({ variantId: candidate.id, ok: false, error: !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) ? "minimum_listing_price_below_2500_or_unknown" : !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
