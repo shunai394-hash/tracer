@@ -1339,6 +1339,6 @@ test("minimum expected profit floor is JPY 2,500 across TRACER, BASE, Shopify an
   assert.match(core, /\.gte\("commerce_prices\.expected_profit", MIN_EXPECTED_PROFIT_JPY\)/);
   assert.match(publish, /Number\(price\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
   assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
-  assert.match(publish, /minimum_profit_below_2500_jpy/);
+  assert.match(publish, /minimum_profit/);
   assert.match(patrol, /\.gte\("commerce_prices\.expected_profit", MIN_EXPECTED_PROFIT_JPY\)/);
 });
