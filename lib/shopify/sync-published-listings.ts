@@ -5,6 +5,7 @@ import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigure
 import { isJapaneseProductDescription, isJapaneseProductTitle, isSpecificJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { meetsMinimumSellingPrice, MINIMUM_SELLING_PRICE_JPY } from "@/lib/commerce/minimum-selling-price";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
@@ -353,6 +354,7 @@ function blockReasons(row: Listing): string[] {
   if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
   if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
   const sellingPrice = asNumber(row.selling_price);
+  if (!meetsMinimumSellingPrice(sellingPrice)) reasons.push(`minimum_selling_price_below_${MINIMUM_SELLING_PRICE_JPY}`);
   const sourceCost = asNumber(row.source_cost);
   const shippingCost = asNumber(row.shipping_cost);
   const recordedProfit = asNumber(row.contribution_profit);

@@ -8,6 +8,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { meetsMinimumSellingPrice } from "@/lib/commerce/minimum-selling-price";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -433,6 +434,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const shopifyVariantId = String(channel.external_variant_id ?? "");
     const shopifyProductId = String(channel.external_product_id ?? "");
     if (!handle || !/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(shopifyVariantId) || !/^gid:\/\/shopify\/Product\/\d+$/.test(shopifyProductId)) continue;
+    if (!meetsMinimumSellingPrice(price.selling_price)) continue;
     candidates.push({
       id: variantId,
       slug: variantId,

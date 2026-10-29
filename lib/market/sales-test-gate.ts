@@ -23,6 +23,7 @@ export type SalesTestGateInput = {
 };
 
 import { isJapaneseProductTitle } from "../intelligence/japanese-product.ts";
+import { meetsMinimumSellingPrice, MINIMUM_SELLING_PRICE_JPY } from "../commerce/minimum-selling-price.ts";
 
 const NON_PHYSICAL_TITLE_PATTERNS = [
   /商品券/i,
@@ -52,6 +53,7 @@ export function evaluateSalesTestGate(input: SalesTestGateInput): SalesTestGateR
   if (isNonPhysicalProductTitle(input.title)) reasons.push("non_physical_product");
   if (input.sellingPrice === null) reasons.push("selling_price_unknown");
   else if (!Number.isFinite(input.sellingPrice) || input.sellingPrice <= 0) reasons.push("selling_price_invalid");
+  else if (!meetsMinimumSellingPrice(input.sellingPrice)) reasons.push(`minimum_selling_price_below_${MINIMUM_SELLING_PRICE_JPY}`);
   if (!input.identityLinked || input.identityMethod === "title") reasons.push("identity_not_confirmed");
   if (input.identityConfidence !== undefined && (input.identityConfidence === null || !Number.isFinite(input.identityConfidence) || input.identityConfidence < 0.88)) reasons.push("identity_confidence_low");
   if (input.sourceCost === null) reasons.push("source_cost_unknown");
