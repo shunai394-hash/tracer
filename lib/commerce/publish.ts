@@ -45,7 +45,7 @@ function shippingInclusiveDescription(description: string): string {
     .replace(/[^。！？\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています|日本向け送料[：:]|配送費用は決済画面)[^。！？\n]*[。！？]?/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return [cleaned, "送料込み・送料無料。日本向け送料は商品価格に含まれています。"]
+  return [cleaned, "送料・配送条件は購入手続き画面でご確認ください。"]
     .filter(Boolean)
     .join("\n\n");
 }
