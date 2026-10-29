@@ -12,18 +12,21 @@ assert.equal(isMinimumListingPriceEligible(0), false);
 assert.equal(isMinimumListingPriceEligible(null), false);
 assert.equal(isMinimumListingPriceEligible("unknown"), false);
 
-const [publish, newfindCommerce, newfindLegacy, withdrawal, storefront] = await Promise.all([
+const [publish, newfindCommerce, newfindLegacy, withdrawal, storefront, withdrawalRoute] = await Promise.all([
   readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-reconcile.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/admin/channels/newfind/minimum-price-withdraw/route.ts", import.meta.url), "utf8"),
 ]);
 assert.match(publish, /isMinimumListingPriceEligible\(currentCanonicalPrice\.selling_price\)/, "BASE/Shopify publication rejects canonical prices below the floor");
 assert.match(publish, /minimum_listing_price_below_2500/, "existing BASE/Shopify listings below the floor are routed to the unpublish path");
 assert.match(newfindCommerce, /isMinimumListingPriceEligible\(listing\.sellingPrice\)/, "canonical NEWFIND promotion rejects low-price listings");
 assert.match(newfindLegacy, /minimum_listing_price_below_2500/, "legacy NEWFIND promotion path rejects low-price listings");
 assert.match(withdrawal, /!isMinimumListingPriceEligible\(listing\.selling_price\)/, "legacy NEWFIND withdrawal identifies processed promotions below the floor");
+assert.match(newfindCommerce, /withdrawBelowMinimumPriceCommercePromotions/, "canonical NEWFIND has a withdrawal path for already-processed promotions below the floor");
+assert.match(withdrawalRoute, /explicit_execute_flag_required/, "live NEWFIND withdrawal requires explicit execute flag");
 assert.match(storefront, /gte\("selling_price", MINIMUM_LISTING_PRICE_JPY\)/, "TRACER storefront excludes canonical listings below the floor");
 assert.match(storefront, /minimum_listing_price_below_2500/, "checkout rejects legacy items below the floor");
 
