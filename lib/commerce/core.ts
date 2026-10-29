@@ -1,6 +1,8 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+export const MIN_EXPECTED_PROFIT_JPY = 2500;
+
 export type CommerceChannel = "base" | "shopify";
 export type OfferInput = {
   supplierCode: string; supplierProductId: string; supplierVariantId: string;
@@ -123,7 +125,8 @@ export async function recalculatePrice(input: {
   const highestExistingPrice = Math.max(0, ...(channelPrices ?? [])
     .map((row) => Number(row.selling_price))
     .filter((value) => Number.isFinite(value) && value > 0));
-  const sellingPrice = Math.max(minimumPrice.sellingPrice, highestExistingPrice);
+  const minimumProfitPrice = Math.ceil((unitCostJpy + shippingCostJpy + (input.fixedFeeJpy ?? 0) + MIN_EXPECTED_PROFIT_JPY) / (1 - input.feeRate));
+  const sellingPrice = Math.max(minimumPrice.sellingPrice, highestExistingPrice, minimumProfitPrice);
   const feeAmount = Math.ceil(sellingPrice * input.feeRate) + (input.fixedFeeJpy ?? 0);
   const expectedProfit = sellingPrice - unitCostJpy - shippingCostJpy - feeAmount;
   const marginRate = expectedProfit / sellingPrice;
@@ -146,7 +149,7 @@ export async function getPublicationCandidates(channel: CommerceChannel, limit =
   const { data, error } = await db.from("commerce_variants")
     .select("id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active),supplier_offers!inner(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,inventory,ship_to,tracking_supported,source_status),commerce_prices!inner(currency,selling_price,expected_profit,fee_amount,margin_rate)")
     .eq("commerce_products.active", true).eq("commerce_prices.currency", "JPY")
-    .gt("commerce_prices.expected_profit", 0).order("updated_at", { ascending: false })
+    .gte("commerce_prices.expected_profit", MIN_EXPECTED_PROFIT_JPY).order("updated_at", { ascending: false })
     .limit(Math.min(500, Math.max(1, Math.floor(limit))));
   if (error) throw new Error("publication_candidates_failed:" + error.message);
   // Catalog eligibility is profit-first. Current stock, tracking, and live-order
