@@ -25,4 +25,7 @@ assert.match(newfindCommerce, /isMinimumListingPriceEligible\(listing\.sellingPr
 assert.match(newfindLegacy, /minimum_listing_price_below_2500/, "legacy NEWFIND promotion path rejects low-price listings");
 assert.match(withdrawal, /!isMinimumListingPriceEligible\(listing\.selling_price\)/, "legacy NEWFIND withdrawal identifies processed promotions below the floor");
 
+assert.match(storefront, /gte\("selling_price", MINIMUM_LISTING_PRICE_JPY\)/, "TRACER storefront excludes canonical listings below the floor");
+assert.match(storefront, /minimum_listing_price_below_2500/, "checkout rejects legacy items below the floor");
+
 console.log("Minimum listing price policy tests passed.");
