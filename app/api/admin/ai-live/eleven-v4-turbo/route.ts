@@ -113,7 +113,7 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
             .replaceAll(apiKey, "[redacted]")
             .replaceAll(voiceId, "[voice]")
             .replaceAll(text, "[text]")
-            .replace(/[\\r\\n\\t]+/gu, " ")
+            .replace(/\s+/gu, " ")
             .slice(0, 180);
           const error = new Error("provider_rejected_request");
           Object.assign(error, {
