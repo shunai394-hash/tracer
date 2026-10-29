@@ -150,6 +150,9 @@ test("publication and storefront listing enforce the ¥2,500 expected-profit flo
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   assert.match(publish, /MIN_EXPECTED_PROFIT_JPY[\s\S]*?TRACER_MIN_EXPECTED_PROFIT_JPY/);
   assert.match(publish, /Number\.isFinite\(Number\(price\.expected_profit\)\)/);
+  assert.match(publish, /currentState\?\.external_product_id[\s\S]*?Number\(currentCanonicalPrice\.expected_profit\) < MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(publish, /expected_profit_below_2500_or_unknown/);
+  assert.match(publish, /margin_below_50_percent_or_unknown/);
   assert.match(publish, /Number\(price\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
   assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
   assert.match(store, /\.gte\("expected_profit", MIN_EXPECTED_PROFIT_JPY\)/);
