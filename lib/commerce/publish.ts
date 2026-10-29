@@ -9,6 +9,7 @@ import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
+import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -424,6 +425,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const price = currentCanonicalPrice && currentPriceOffer &&
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
+      isMinimumListingPriceEligible(currentCanonicalPrice.selling_price) &&
       Number(currentCanonicalPrice.expected_profit) > 0 &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
@@ -468,7 +470,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Never republish a previously-created item unless supplier identity, known positive
     // stock, Japan shipping, tracking, and positive-margin pricing are all evidenced.
     // A stale timestamp alone is not a reason to delist; the order flow must recheck stock.
-    if (currentState?.external_product_id && supplierEvidenceUnverified) {
+    if (currentState?.external_product_id && (supplierEvidenceUnverified || !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price))) {
       const missing = rawOffer ? missingSaleEvidence({
         supplierCode: rawOffer.supplier_code,
         supplierProductId: rawOffer.supplier_product_id,
@@ -485,7 +487,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         sellingPrice: Number(currentCanonicalPrice?.selling_price),
         expectedProfit: Number(currentCanonicalPrice?.expected_profit),
       }) : ["supplier", "identity", "variant", "stock", "cost", "domestic_shipping", "profit"];
-      const reason = missing.join(",") || "supplier_offer_invalid";
+      const reason = !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price)
+        ? (currentCanonicalPrice ? "minimum_listing_price_below_2500" : "canonical_price_missing")
+        : missing.join(",") || "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
         const fallbackPrice = Math.min(100_000_000, Math.max(50, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 50)));
@@ -548,7 +552,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
-      results.push({ variantId: candidate.id, ok: false, error: !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
+      results.push({ variantId: candidate.id, ok: false, error: !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) ? "minimum_listing_price_below_2500_or_unknown" : !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
     // Never manufacture storefront inventory. A listing can remain visible, but it is
