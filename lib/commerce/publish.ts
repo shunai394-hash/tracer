@@ -9,6 +9,8 @@ import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
+
+const MIN_EXPECTED_PROFIT_JPY = Math.max(0, Number.parseInt(process.env.TRACER_MIN_EXPECTED_PROFIT_JPY ?? "2500", 10) || 2500);
 import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 type Channel = "base" | "shopify";
@@ -168,7 +170,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || Number(price.margin_rate) < 0.5 || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY) missing.push("profit_below_minimum_or_margin");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -370,7 +372,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) > 0 && Number(price.margin_rate) >= 0.5);
+          Number(price.expected_profit) >= MIN_EXPECTED_PROFIT_JPY && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -426,7 +428,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
       isMinimumListingPriceEligible(currentCanonicalPrice.selling_price) &&
-      Number(currentCanonicalPrice.expected_profit) > 0 &&
+      Number(currentCanonicalPrice.expected_profit) >= MIN_EXPECTED_PROFIT_JPY &&
       Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
@@ -551,7 +553,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }
       continue;
     }
-    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) <= 0) {
+    if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY) {
       results.push({ variantId: candidate.id, ok: false, error: !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) ? "minimum_listing_price_below_2500_or_unknown" : !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
       continue;
     }
