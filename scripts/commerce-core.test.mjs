@@ -823,7 +823,7 @@ test("patrol counts canonical commerce eligibility independently from the legacy
   const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
   assert.match(patrol, /commerce_variants/);
   assert.match(patrol, /supplier_offers\.source_status", "verified"/);
-  assert.match(patrol, /commerce_prices\.expected_profit", 0/);
+  assert.match(patrol, /commerce_prices\.expected_profit", 2500/);
   assert.match(patrol, /\.gt\("supplier_offers\.unit_cost", 0\)/);
   assert.match(patrol, /\.gt\("supplier_offers\.shipping_cost", 0\)/);
   assert.match(patrol, /Number\(offer\.unit_cost\) > 0 && Number\(offer\.shipping_cost\) > 0/);
