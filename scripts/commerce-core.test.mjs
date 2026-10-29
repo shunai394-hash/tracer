@@ -1331,3 +1331,14 @@ test("BASE image format rejection retries with the existing Shopify CDN image on
   assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
   assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
 });
+
+
+test("scheduled minimum-profit withdrawal batches existing published listings without deleting them", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-minimum-profit-withdraw/route.ts", import.meta.url), "utf8");
+  const config = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(route, /MIN_EXPECTED_PROFIT_JPY = 2500/);
+  assert.match(route, /price\.expected_profit < MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
+  assert.match(config, /"path": "\/api\/cron\/commerce-minimum-profit-withdraw",[\s\S]*?"schedule": "\*\/5 \* \* \* \*"/);
+  assert.doesNotMatch(route, /\.delete\(/);
+});
