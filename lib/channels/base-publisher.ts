@@ -314,6 +314,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const price = Number(listing.selling_price);
+    const minimumExpectedProfitJpy = 2500;
     if (!Number.isFinite(price) || price <= 0) {
       await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "selling_price_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: "selling_price_invalid" });
@@ -347,12 +348,12 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       : sourceCost !== null && Number.isFinite(sourceCost) && shippingCost !== null
         ? price - sourceCost - shippingCost
         : null;
-    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit <= 0) {
+    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit < minimumExpectedProfitJpy) {
       await supabase.from("shop_listings").update({
         published: false,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: contributionProfit === null ? "profit_unknown" : "profit_not_positive",
+        pipeline_reason: contributionProfit === null ? "profit_unknown" : contributionProfit < minimumExpectedProfitJpy ? "minimum_contribution_profit_below_2500" : "profit_not_positive",
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: contributionProfit === null ? "profit_unknown" : "profit_not_positive" });
