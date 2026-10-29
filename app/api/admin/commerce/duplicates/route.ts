@@ -45,6 +45,19 @@ function legacyChannelIdentityOverlap(
     offersByVariant.set(variantId, group);
   }
 
+  const supplierCodesByIdentity = new Map<string, Set<string>>();
+  for (const offer of offers) {
+    const productId = String(offer.supplier_product_id ?? "").trim();
+    const variantId = String(offer.supplier_variant_id ?? "").trim();
+    const supplierCode = String(offer.supplier_code ?? "").trim().toLowerCase();
+    if (!productId || !variantId || !supplierCode) continue;
+    const identity = productId + "::" + variantId;
+    const codes = supplierCodesByIdentity.get(identity) ?? new Set<string>();
+    codes.add(supplierCode);
+    supplierCodesByIdentity.set(identity, codes);
+  }
+  const ambiguousSupplierIdentities = new Set<string>();
+
   const legacyByIdentity = new Map<string, Row[]>();
   for (const row of legacyRows) {
     const productId = String(row.supplier_product_id ?? "").trim();
@@ -67,6 +80,11 @@ function legacyChannelIdentityOverlap(
       const supplierVariantId = String(offer.supplier_variant_id ?? "").trim();
       if (!productId || !supplierVariantId) continue;
       const identity = productId + "::" + supplierVariantId;
+      const supplierCodes = supplierCodesByIdentity.get(identity) ?? new Set<string>();
+      if (supplierCodes.size !== 1) {
+        ambiguousSupplierIdentities.add(identity);
+        continue;
+      }
       for (const legacy of legacyByIdentity.get(identity) ?? []) {
         if (legacy.published !== true) continue;
         const channel = String(listing.channel ?? "").trim().toLowerCase();
@@ -113,7 +131,10 @@ function legacyChannelIdentityOverlap(
   };
 
   return {
-    definition: "Legacy shop_listings and published channel_listings share exact supplier product+variant IDs, both are marked published, and their channel external product IDs differ. Review only; no mutations.",
+    definition: "Legacy shop_listings and published channel_listings share exact supplier product+variant IDs, both are marked published, and their channel external product IDs differ. Identities used by multiple supplier codes are excluded as ambiguous. Review only; no mutations.",
+    ambiguousSupplierIdentityCount: ambiguousSupplierIdentities.size,
+    ambiguousSupplierIdentities: [...ambiguousSupplierIdentities].slice(0, 100),
+    omittedAmbiguousSupplierIdentities: Math.max(0, ambiguousSupplierIdentities.size - 100),
     base: summarize("base"),
     shopify: summarize("shopify"),
   };
