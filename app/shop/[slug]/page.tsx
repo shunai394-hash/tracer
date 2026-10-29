@@ -136,7 +136,7 @@ export default async function ShopProductPage({
   const variantOptions = listing.supplierName && listing.supplierProductId
     ? publishedListings
       .filter((item) =>
-        item.supplierName === listing.supplierName &&
+        String(item.supplierName ?? "").trim().toLowerCase() === String(listing.supplierName ?? "").trim().toLowerCase() &&
         item.supplierProductId === listing.supplierProductId &&
         Boolean(item.supplierVariantId) &&
         Boolean(item.variantLabel),
