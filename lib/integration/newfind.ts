@@ -5,6 +5,7 @@ import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isRetryableRejectedNewfindEvent } from "@/lib/integration/newfind-retry-policy";
+import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -229,6 +230,10 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     .maybeSingle();
 
   if (error) throw new Error(error.message);
+
+  if (listing && !isMinimumListingPriceEligible(listing.selling_price)) {
+    return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "minimum_listing_price_below_2500" };
+  }
 
   if (!listing || !hasPassedSalesTestGate(listing)) {
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "sales_test_gate_not_passed" };
