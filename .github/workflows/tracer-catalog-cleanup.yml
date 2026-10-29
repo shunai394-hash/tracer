@@ -66,6 +66,7 @@ jobs:
           const dryRun = await post({ apply: false, withdraw, copy, resync });
           console.log(JSON.stringify(dryRun, null, 2));
           await writeFile("catalog-cleanup-dry-run.json", JSON.stringify(dryRun, null, 2));
+          console.log("::notice title=cleanup dry-run::" + JSON.stringify({ status: dryRun.status, ok: dryRun.ok, error: dryRun.error ?? null, withdraw: dryRun.plan?.withdraw?.length, skipped: dryRun.plan?.skippedMultiVariant, unresolved: dryRun.plan?.unresolved, copy: dryRun.plan?.copy?.length, resync: dryRun.plan?.resync?.length }).slice(0, 3800));
           if (dryRun.ok !== true) throw new Error("DRY_RUN_FAILED:" + dryRun.status);
           const out = { apply: spec.apply === true, dryRun: dryRun.plan, batches: [] };
           if (out.apply) {
@@ -73,6 +74,11 @@ jobs:
             for (const part of chunk(withdraw, 12)) out.batches.push({ kind: "withdraw", ...(await post({ apply: true, withdraw: part })) });
             for (const part of chunk(copy, 5)) out.batches.push({ kind: "copy", ...(await post({ apply: true, copy: part })) });
             for (const part of chunk(resync, 8)) out.batches.push({ kind: "resync", ...(await post({ apply: true, resync: part })) });
+            for (const batch of out.batches) {
+              const brief = { kind: batch.kind, status: batch.status, ok: batch.ok, withdrawn: batch.withdrawn, hidden: batch.hidden, newfind: batch.newfind ? { promoted: batch.newfind.promoted, withdrawn: batch.newfind.withdrawn, failed: (batch.newfind.failed ?? []).length, error: batch.newfind.error ?? null, enabled: batch.newfind.enabled } : null, sync: batch.sync, errors: (batch.errors ?? []).slice(0, 5), skipped: batch.plan?.skippedMultiVariant, unresolved: batch.plan?.unresolved, error: batch.error ?? null };
+              // Annotations stay readable even when run logs are not.
+              console.log("::notice title=cleanup " + batch.kind + "::" + JSON.stringify(brief).replace(/[\r\n%]/g, " ").slice(0, 3800));
+            }
             for (const batch of out.batches) console.log(JSON.stringify({ kind: batch.kind, status: batch.status, ok: batch.ok, withdrawn: batch.withdrawn, hidden: batch.hidden, sync: batch.sync, newfind: batch.newfind, errors: batch.errors, skipped: batch.plan?.skippedMultiVariant, unresolved: batch.plan?.unresolved }));
           }
           await writeFile("catalog-cleanup-result.json", JSON.stringify(out, null, 2));

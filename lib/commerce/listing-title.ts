@@ -88,7 +88,10 @@ export function applyManualTitle(manual: string, variantTitle: unknown): string 
   if (!base) return "";
   if (/（[^）]+）/u.test(base)) return base;
   const suffix = typeof variantTitle === "string" ? variantTitle.match(/（[^）]*）$/u)?.[0] ?? "" : "";
-  if (!suffix) return base;
+  // Only a colour suffix distinguishes variants; other generated suffixes
+  // (e.g. "（寝ながらカール）") would just repeat the curated wording.
+  const suffixWords = suffix.slice(1, -1).split("・");
+  if (!suffix || !suffixWords.every((word) => COLOR_WORDS.has(word))) return base;
   const bar = base.indexOf("｜");
   return bar === -1 ? base + suffix : base.slice(0, bar) + suffix + base.slice(bar);
 }
