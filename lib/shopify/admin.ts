@@ -10,7 +10,7 @@ export type ShopifyProduct = {
   status?: string | null;
   seo?: { title: string | null; description: string | null };
   variants?: { nodes: Array<{ id: string; sku: string | null; price: string | null }> };
-  media?: { nodes: Array<{ mediaContentType: string; alt: string | null; preview?: { image?: { url: string } | null } | null }> };
+  media?: { nodes: Array<{ id: string; mediaContentType: string; alt: string | null; preview?: { image?: { url: string } | null } | null }> };
 };
 
 type GraphQLError = { message: string };
@@ -433,7 +433,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   }>(
     `mutation ProductCreate($input: ProductCreateInput!, $media: [CreateMediaInput!]) {
       productCreate(product: $input, media: $media) {
-        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
+        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { id mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
@@ -490,7 +490,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   }>(
     `mutation ProductUpdate($input: ProductUpdateInput!, $media: [CreateMediaInput!]) {
       productUpdate(product: $input, media: $media) {
-        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { mediaContentType alt preview { image { url } } } } }
+        product { id handle status seo { title description } variants(first: 10) { nodes { id sku price } } media(first: 10) { nodes { id mediaContentType alt preview { image { url } } } } }
         userErrors { field message }
       }
     }`,
@@ -534,6 +534,38 @@ export async function updateShopifyProduct(input: { productId: string; title: st
     }
     if (imageFailed) throw new Error("shopify_image_processing_failed");
     if (!imageReady) throw new Error("shopify_image_processing_not_ready_after_readback");
+  }
+
+  const staleImageMedia = (product.media?.nodes ?? []).filter((media) =>
+    media.mediaContentType === "IMAGE" && Boolean(media.id) && media.alt !== input.title,
+  );
+  if (staleImageMedia.length > 0) {
+    const altUpdate = await shopifyGraphQL<{
+      fileUpdate: { files: Array<{ id: string; alt?: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation TracerUpdateImageAlt($files: [FileUpdateInput!]!) {
+        fileUpdate(files: $files) {
+          files { ... on MediaImage { id alt } }
+          userErrors { field message }
+        }
+      }`,
+      { files: staleImageMedia.map((media) => ({ id: media.id, alt: input.title })) },
+    );
+    if (altUpdate.fileUpdate.userErrors.length) {
+      throw new Error("shopify_image_alt_update_failed:" + altUpdate.fileUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+    const altReadback = await shopifyGraphQL<{
+      nodes: Array<{ id: string; alt?: string | null } | null>;
+    }>(
+      `query VerifyTracerImageAlt($ids: [ID!]!) {
+        nodes(ids: $ids) { ... on MediaImage { id alt } }
+      }`,
+      { ids: staleImageMedia.map((media) => media.id) },
+    );
+    const actualAlt = new Map((altReadback.nodes ?? []).filter((node): node is { id: string; alt?: string | null } => Boolean(node?.id)).map((node) => [node.id, node.alt ?? null]));
+    if (staleImageMedia.some((media) => actualAlt.get(media.id) !== input.title)) {
+      throw new Error("shopify_image_alt_readback_mismatch");
+    }
   }
 
   const expectedSeo = shopifySeoInput(input);

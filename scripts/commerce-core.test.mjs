@@ -1340,3 +1340,34 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
   assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
   assert.doesNotMatch(route, /\.delete\(/);
 });
+
+test("publishing uses one canonical Japan shipping label", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /日本国内への送料は商品価格に含まれています。/);
+  assert.doesNotMatch(publish, /送料込み・送料無料。日本向け送料は商品価格に含まれています。/);
+});
+
+test("Shopify product sync refreshes and verifies persisted image alt text", async () => {
+  const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
+  assert.match(admin, /TracerUpdateImageAlt/);
+  assert.match(admin, /fileUpdate\(files: \$files\)/);
+  assert.match(admin, /media\.alt !== input\.title/);
+  assert.match(admin, /shopify_image_alt_readback_mismatch/);
+});
+
+test("CJ import preserves exact supplier variant labels for safe colour-option grouping", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /variant_title: String\(exactVariant\.nameEn \?\? ""\)\.trim\(\) \|\| null/);
+  assert.match(importer, /supplier_variant_name: String\(exactVariant\.nameEn \?\? ""\)\.trim\(\) \|\| null/);
+  assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
+});
+
+test("TRACER product pages expose only source-confirmed variants from the same supplier parent", async () => {
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(store, /\.from\("commerce_variants"\)[\s\S]*?\.select\("source_variant_key,title_ja,attributes"\)/);
+  assert.match(store, /variantLabel: listing\.supplierVariantId \? labels\.get\(listing\.supplierVariantId\) \?\? null : null/);
+  assert.match(page, /item\.supplierProductId === listing\.supplierProductId/);
+  assert.match(page, /カラー・バリエーション/);
+  assert.match(page, /option\.variantLabel/);
+});

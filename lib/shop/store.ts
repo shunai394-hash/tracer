@@ -46,6 +46,7 @@ export type ShopListing = {
   supplierName: string | null;
   supplierProductId: string | null;
   supplierVariantId: string | null;
+  variantLabel?: string | null;
   shopifyVariantId: string | null;
   shopifyProductId: string | null;
   shopifyHandle: string | null;
@@ -75,6 +76,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
     supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
     supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
+    variantLabel: null,
     shopifyVariantId: row.shopify_variant_id ? String(row.shopify_variant_id) : null,
     shopifyProductId: row.shopify_product_id ? String(row.shopify_product_id) : null,
     shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
@@ -201,6 +203,69 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
     });
 }
 
+
+async function attachVariantLabels(listings: ShopListing[]): Promise<ShopListing[]> {
+  const keys = [...new Set(listings.map((listing) => listing.supplierVariantId?.trim() ?? "").filter(Boolean))];
+  if (keys.length === 0) return listings;
+  const supabase = createSupabaseAdminClient();
+  const labels = new Map<string, string>();
+  for (let offset = 0; offset < keys.length; offset += 100) {
+    const batch = keys.slice(offset, offset + 100);
+    const { data, error } = await supabase
+      .from("commerce_variants")
+      .select("source_variant_key,title_ja,attributes")
+      .in("source_variant_key", batch);
+    if (error) {
+      console.warn("[storefront-variant-labels-unavailable]", error.message.slice(0, 200));
+      return listings;
+    }
+    for (const row of (data ?? []) as Array<{ source_variant_key: string; title_ja: string | null; attributes: Record<string, unknown> | null }>) {
+      const title = String(row.title_ja ?? "").trim();
+      const suffix = title.match(/[（(]([^（）()]*)[）)]\s*$/)?.[1]?.trim();
+      const sourceName = String(row.attributes?.supplierVariantName ?? "").trim();
+      const label = suffix || labelFromSupplierVariantName(sourceName);
+      if (label) labels.set(String(row.source_variant_key), label);
+    }
+  }
+  return listings.map((listing) => ({
+    ...listing,
+    variantLabel: listing.supplierVariantId ? labels.get(listing.supplierVariantId) ?? null : null,
+  }));
+}
+
+function labelFromSupplierVariantName(value: string): string | null {
+  if (!value) return null;
+  const patterns: Array<[RegExp, string]> = [
+    [/rose\s+red/i, "ローズレッド"],
+    [/wine\s+red/i, "ワインレッド"],
+    [/peacock\s+blue/i, "ピーコックブルー"],
+    [/beige\s+white/i, "ベージュ・ホワイト"],
+    [/orange\s+floral/i, "オレンジ・花柄"],
+    [/dark\s+brown/i, "ダークブラウン"],
+    [/light\s+brown/i, "ライトブラウン"],
+    [/coffee/i, "コーヒー"],
+    [/pink/i, "ピンク"],
+    [/purple/i, "パープル"],
+    [/yellow/i, "イエロー"],
+    [/green/i, "グリーン"],
+    [/grey|gray/i, "グレー"],
+    [/black/i, "ブラック"],
+    [/brown/i, "ブラウン"],
+    [/white/i, "ホワイト"],
+    [/blue/i, "ブルー"],
+    [/khaki/i, "カーキ"],
+    [/gold/i, "ゴールド"],
+    [/\b(\d+)\s*(?:style|\.style)\b/i, "スタイル"],
+    [/\bset\s*(\d+)\b/i, "セット"],
+    [/\b(\d+)\s*pcs\b/i, "個セット"],
+  ];
+  for (const [pattern, label] of patterns) {
+    const match = value.match(pattern);
+    if (match) return match[1] ? label + match[1] : label;
+  }
+  return null;
+}
+
 // The full catalog read touches Supabase and Shopify live stock for ~1000 variants.
 // Reuse one result per server instance briefly so every page view does not repeat it.
 // Final stock is still enforced at Shopify checkout; failures are never cached.
@@ -253,13 +318,14 @@ async function loadPublishedShopListings(): Promise<ShopListing[]> {
         : `listing:${listing.id}`;
     if (!storefrontProducts.has(duplicateKey)) storefrontProducts.set(duplicateKey, listing);
   }
-  return [...storefrontProducts.values()]
+  const prioritized = [...storefrontProducts.values()]
     .map((listing) => {
       const priority = womenProductPriority({ title: listing.title, category: listing.description });
       return { listing, womenBonus: priority.bonus };
     })
     .sort((a, b) => b.womenBonus - a.womenBonus)
     .map(({ listing }) => listing);
+  return attachVariantLabels(prioritized);
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
