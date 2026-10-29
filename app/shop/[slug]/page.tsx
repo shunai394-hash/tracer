@@ -121,16 +121,28 @@ export default async function ShopProductPage({
   };
 
   let related: ShopListing[] = [];
+  let publishedListings: ShopListing[] = [];
   try {
+    publishedListings = await listPublishedShopListings();
     const family = variantFamily(listing.title);
     const category = categoryOf(listing.title);
     related = pickDistinct(
-      (await listPublishedShopListings()).filter((item) => item.id !== listing.id && categoryOf(item.title) === category && variantFamily(item.title) !== family),
+      publishedListings.filter((item) => item.id !== listing.id && categoryOf(item.title) === category && variantFamily(item.title) !== family),
       4,
     );
   } catch {
-    // Related items are optional; the product itself must still render.
+    // Related items and variant options are optional; the product itself must still render.
   }
+  const variantOptions = listing.supplierName && listing.supplierProductId
+    ? publishedListings
+      .filter((item) =>
+        item.supplierName === listing.supplierName &&
+        item.supplierProductId === listing.supplierProductId &&
+        Boolean(item.supplierVariantId) &&
+        Boolean(item.variantLabel),
+      )
+      .sort((a, b) => String(a.variantLabel).localeCompare(String(b.variantLabel), "ja"))
+    : [];
   const category = STOREFRONT_CATEGORIES.find((item) => item.slug === categoryOf(listing.title));
   const breadcrumbItems = [
     { name: "ホーム", item: `${storefrontBaseUrl}/` },
@@ -184,6 +196,26 @@ export default async function ShopProductPage({
             <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
               {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
             </p>
+
+            {variantOptions.length > 1 ? (
+              <section className="mt-5" aria-label="商品バリエーション">
+                <p className="mb-2 text-sm font-medium">カラー・バリエーション</p>
+                <div className="flex flex-wrap gap-2">
+                  {variantOptions.map((option) => (
+                    <Link
+                      key={option.id}
+                      href={`/shop/${encodeURIComponent(option.slug)}`}
+                      aria-current={option.id === listing.id ? "page" : undefined}
+                      className={option.id === listing.id
+                        ? "rounded-full border border-[#3B241A] bg-[#3B241A] px-4 py-2 text-sm text-white"
+                        : "rounded-full border border-[#D8C6BA] bg-white px-4 py-2 text-sm text-[#3B241A] hover:border-[#9A6B5B]"}
+                    >
+                      {option.variantLabel}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <div className="mt-6">
               {shopifyProductUrl ? (
