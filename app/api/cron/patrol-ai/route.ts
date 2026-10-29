@@ -9,6 +9,7 @@ import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
 import { isCanonicalCjNativeId } from "@/lib/commerce/core";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { MINIMUM_EXPECTED_PROFIT_JPY } from "@/lib/commerce/profit-floor.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -61,7 +62,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     .gt("supplier_offers.shipping_cost", 0)
     .eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.selling_price", 0)
-    .gt("commerce_prices.expected_profit", 0);
+    .gte("commerce_prices.expected_profit", MINIMUM_EXPECTED_PROFIT_JPY);
   const publishedBaseVariantIdsQuery = db.from("channel_listings").select("variant_id")
     .eq("channel", "base").eq("status", "published");
   const publishedShopifyVariantIdsQuery = db.from("channel_listings").select("variant_id")
@@ -147,7 +148,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     });
     if (!validOffer) continue;
     if (!prices.some((price) => price.supplier_offer_id === validOffer.id && price.currency === "JPY" &&
-      Number(price.selling_price) > 0 && Number(price.expected_profit) > 0)) continue;
+      Number(price.selling_price) > 0 && Number(price.expected_profit) >= MINIMUM_EXPECTED_PROFIT_JPY)) continue;
     eligibleVariantIds.add(String(row.id));
   }
   const publishedBaseVariantIds = new Set((publishedBaseVariantIdsResult.data ?? []).map((row) => String(row.variant_id)));
