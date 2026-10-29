@@ -349,14 +349,44 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         ? price - sourceCost - shippingCost
         : null;
     if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit < minimumExpectedProfitJpy) {
+      const reason = contributionProfit === null
+        ? "profit_unknown"
+        : contributionProfit < minimumExpectedProfitJpy
+          ? "minimum_contribution_profit_below_2500"
+          : "profit_not_positive";
+      if (listing.base_item_id) {
+        try {
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: catalogCopy.title,
+            detail: catalogCopy.detail,
+            price,
+            stock: 0,
+            visible: false,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await supabase.from("shop_listings").update({
+            base_last_error: message,
+            pipeline_stage: "BASE_RECONCILIATION",
+            pipeline_status: "failed",
+            pipeline_reason: "base_hide_minimum_profit_failed",
+            pipeline_error: message,
+            pipeline_updated_at: new Date().toISOString(),
+          }).eq("id", listingId);
+          results.push({ listingId, ok: false, error: message });
+          continue;
+        }
+      }
       await supabase.from("shop_listings").update({
         published: false,
+        orderable: false,
         pipeline_stage: "BASE_PUBLICATION",
         pipeline_status: "blocked",
-        pipeline_reason: contributionProfit === null ? "profit_unknown" : contributionProfit < minimumExpectedProfitJpy ? "minimum_contribution_profit_below_2500" : "profit_not_positive",
+        pipeline_reason: reason,
         pipeline_updated_at: new Date().toISOString(),
       }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: contributionProfit === null ? "profit_unknown" : "profit_not_positive" });
+      results.push({ listingId, ok: false, skipped: true, error: reason });
       continue;
     }
 
