@@ -4,6 +4,7 @@ import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { isNewfindPromotionLedgerSchemaBlocked, promoteShopListingToNewfind } from "@/lib/integration/newfind";
+import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -156,12 +157,12 @@ export async function withdrawUnpublishedNewfindPromotions(options: { limit?: nu
   result.examined = deliveries?.length ?? 0;
   if (!deliveries || deliveries.length === 0) return result;
 
-  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, title, slug, bestseller_id, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").is("archived_at", null).in("id", deliveries.map((row) => String(row.listing_id)));
+  const { data: listings, error: listingError } = await supabase.from("shop_listings").select("id, title, slug, bestseller_id, selling_price, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons").is("archived_at", null).in("id", deliveries.map((row) => String(row.listing_id)));
   if (listingError) throw new Error(listingError.message);
   const listingById = new Map((listings ?? []).map((row) => [String(row.id), row]));
   const stale = deliveries.filter((row) => {
     const listing = listingById.get(String(row.listing_id));
-    return !listing || listing.published !== true || !hasPassedSalesTestGate(listing);
+    return !listing || listing.published !== true || !hasPassedSalesTestGate(listing) || !isMinimumListingPriceEligible(listing.selling_price);
   });
   result.stale = stale.length;
 
@@ -184,7 +185,7 @@ export async function withdrawUnpublishedNewfindPromotions(options: { limit?: nu
       event_type: "product_withdrawn",
       event_version: 1,
       occurred_at: new Date().toISOString(),
-      payload: { source: "tracer", tracer_listing_id: listingId, promotion_event_id: delivery.event_id, product_urls: productUrls, reason: !listing ? "listing_deleted" : listing.published !== true ? "tracer_unpublished" : "sales_test_gate_not_passed" },
+      payload: { source: "tracer", tracer_listing_id: listingId, promotion_event_id: delivery.event_id, product_urls: productUrls, reason: !listing ? "listing_deleted" : listing.published !== true ? "tracer_unpublished" : !isMinimumListingPriceEligible(listing.selling_price) ? "minimum_listing_price_below_2500" : "sales_test_gate_not_passed" },
     });
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = createHmac("sha256", cfg.webhookSecret).update(`${timestamp}.${withdrawEventId}.${rawBody}`, "utf8").digest("hex");
