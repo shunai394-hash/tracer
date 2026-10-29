@@ -8,6 +8,7 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
+import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -222,7 +223,7 @@ async function loadPublishedShopListings(): Promise<ShopListing[]> {
     .eq("published", true)
     .or("manual_inventory.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.eq.synced,orderable.eq.true,tracking_available.eq.true)")
     .gt("inventory", 0)
-    .gt("selling_price", 0)
+    .gte("selling_price", MINIMUM_LISTING_PRICE_JPY)
     .eq("currency", "JPY")
     .order("published_at", { ascending: false })
     .limit(1800);
@@ -368,7 +369,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .select("variant_id,supplier_offer_id,currency,selling_price,expected_profit,margin_rate")
         .in("variant_id", batch)
         .eq("currency", "JPY")
-        .gt("selling_price", 0)
+        .gte("selling_price", MINIMUM_LISTING_PRICE_JPY)
         .gt("expected_profit", 0),
     ]);
     if (variantError) throw new Error(variantError.message);
@@ -572,6 +573,7 @@ export async function placeShopOrder(args: {
     if (String(listing.currency ?? "").trim().toUpperCase() !== "JPY") throw new Error("currency must be JPY");
     const unitPrice = asNumber(listing.selling_price);
     if (unitPrice === null || unitPrice <= 0) throw new Error("selling price unknown");
+    if (!isMinimumListingPriceEligible(unitPrice)) throw new Error("minimum_listing_price_below_2500");
     if (currency && listing.currency && currency !== listing.currency) throw new Error("currency mismatch");
     currency = typeof listing.currency === "string" ? listing.currency : currency;
     subtotal += unitPrice * item.qty;

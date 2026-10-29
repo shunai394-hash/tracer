@@ -5,12 +5,14 @@ import { getNewfindConfig } from "@/lib/config/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { loadCanonicalCommerceListings, type ShopListing } from "@/lib/shop/store";
 import { resolveLiveTracerUrl } from "@/lib/integration/newfind";
+import { isMinimumListingPriceEligible, MINIMUM_LISTING_PRICE_JPY } from "@/lib/commerce/minimum-listing-price";
 import {
   NEWFIND_COMMERCE_EVENT_TYPE,
   NEWFIND_COMMERCE_LEASE_MS,
   decideNewfindCommerceDelivery,
   initialNewfindCommerceDetail,
   newfindCommerceEventKey,
+  readNewfindCommerceDetail,
   newfindCommerceOutcome,
   type NewfindCommerceDecision,
   type NewfindCommerceDetail,
@@ -51,7 +53,9 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
 
   const requestedVariantIds = options.variantIds?.length ? new Set(options.variantIds.map((id) => id.trim()).filter(Boolean)) : null;
   const listings = (await loadCanonicalCommerceListings()).filter((listing) =>
-    listing.canonicalCommerce && (!requestedVariantIds || requestedVariantIds.has(listing.id))
+    listing.canonicalCommerce &&
+    isMinimumListingPriceEligible(listing.sellingPrice) &&
+    (!requestedVariantIds || requestedVariantIds.has(listing.id))
   );
   result.candidates = listings.length;
   if (listings.length === 0) return result;
@@ -236,4 +240,110 @@ async function deliverOne(
     processedAt: status === "processed" ? new Date().toISOString() : null,
   });
   return { status, detail: status === "failed" ? `http_${response.status}: ${detail}` : ackStatus ?? `http_${response.status}` };
+}
+
+
+export type NewfindMinimumPriceWithdrawResult = {
+  enabled: boolean;
+  configured: boolean;
+  examined: number;
+  eligible: number;
+  withdrawn: number;
+  failed: Array<{ variantId: string; detail: string }>;
+};
+
+/**
+ * Withdraw already-delivered canonical NEWFIND promotions whose persisted
+ * Shopify selling price is below the minimum. This is a bounded, explicit
+ * maintenance action; callers must authenticate and request execution.
+ */
+export async function withdrawBelowMinimumPriceCommercePromotions(options: { limit?: number } = {}): Promise<NewfindMinimumPriceWithdrawResult> {
+  const cfg = getNewfindConfig();
+  const enabled = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
+  const configured = Boolean(cfg.apiUrl && cfg.webhookSecret);
+  const result: NewfindMinimumPriceWithdrawResult = { enabled, configured, examined: 0, eligible: 0, withdrawn: 0, failed: [] };
+  if (!enabled || !configured) return result;
+
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
+  const db = createSupabaseAdminClient();
+  const { data: lowListings, error: listingError } = await db.from("channel_listings")
+    .select("variant_id,selling_price,status")
+    .eq("channel", "shopify")
+    .lt("selling_price", MINIMUM_LISTING_PRICE_JPY)
+    .in("status", ["published", "error"])
+    .not("external_product_id", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(500);
+  if (listingError) throw new Error("newfind_minimum_price_listing_read_failed:" + listingError.message);
+  const variantIds = [...new Set((lowListings ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+  result.examined = variantIds.length;
+  if (variantIds.length === 0) return result;
+
+  const keys = variantIds.map(newfindCommerceEventKey);
+  const { data: events, error: eventError } = await db.from("commerce_events")
+    .select("event_key,status,detail")
+    .in("event_key", keys);
+  if (eventError) throw new Error("newfind_minimum_price_ledger_read_failed:" + eventError.message);
+  const eventByKey = new Map((events ?? []).map((row) => [String(row.event_key), row]));
+  const targets = variantIds.filter((variantId) => eventByKey.get(newfindCommerceEventKey(variantId))?.status === "processed");
+  result.eligible = targets.length;
+  const originValue = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tracer-pied-alpha.vercel.app";
+  const origin = new URL(originValue);
+  if (origin.protocol !== "https:") throw new Error("newfind_minimum_price_site_origin_must_be_https");
+
+  for (const variantId of targets.slice(0, limit)) {
+    const key = newfindCommerceEventKey(variantId);
+    const event = eventByKey.get(key)!;
+    const detail = readNewfindCommerceDetail(variantId, event.detail);
+    const withdrawEventId = "tracer-commerce-withdrawn:" + detail.eventId;
+    const productUrl = origin.origin + "/shop/" + encodeURIComponent(variantId);
+    const rawBody = JSON.stringify({
+      source: "tracer",
+      event_id: withdrawEventId,
+      event_type: "product_withdrawn",
+      event_version: 1,
+      occurred_at: new Date().toISOString(),
+      payload: {
+        source: "tracer",
+        tracer_listing_id: variantId,
+        promotion_event_id: detail.eventId,
+        product_urls: [productUrl],
+        reason: "minimum_listing_price_below_2500",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac("sha256", cfg.webhookSecret as string)
+      .update(`${timestamp}.${withdrawEventId}.${rawBody}`, "utf8").digest("hex");
+    try {
+      const response = await fetch(buildUrl(cfg.apiUrl as string), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Integration-Key": cfg.apiKey || "newfind-tracer",
+          "X-Integration-Timestamp": timestamp,
+          "X-Integration-Id": withdrawEventId,
+          "X-Integration-Signature": signature,
+        },
+        body: rawBody,
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      const responseText = await response.text();
+      let ackStatus: string | null = null;
+      try { ackStatus = (JSON.parse(responseText) as { status?: string }).status ?? null; } catch {}
+      if (response.ok && (ackStatus === "processed" || ackStatus === "duplicate")) {
+        const { error: saveError } = await db.from("commerce_events").update({
+          status: "withdrawn",
+          detail: { ...detail, leaseUntil: null, lastError: null, withdrawalEventId: withdrawEventId, withdrawnAt: new Date().toISOString(), withdrawalAckStatus: ackStatus },
+        }).eq("event_key", key).eq("status", "processed");
+        if (saveError) result.failed.push({ variantId, detail: "withdrawn_but_not_recorded:" + saveError.message });
+        else result.withdrawn += 1;
+      } else {
+        result.failed.push({ variantId, detail: `withdraw_http_${response.status}:${responseText.slice(0, 160)}` });
+      }
+    } catch (error) {
+      result.failed.push({ variantId, detail: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200) });
+    }
+  }
+  return result;
 }
