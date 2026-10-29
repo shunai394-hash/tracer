@@ -11,6 +11,8 @@ import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
 import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 
+const MIN_EXPECTED_PROFIT_JPY = Math.max(0, Number.parseInt(process.env.TRACER_MIN_EXPECTED_PROFIT_JPY ?? "2500", 10) || 2500);
+
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
@@ -168,7 +170,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || Number(price.margin_rate) < 0.5) missing.push("profit");
+         if (!price || !Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY || !Number.isFinite(Number(price.margin_rate)) || Number(price.margin_rate) < 0.5) missing.push("profit_below_minimum_or_margin");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
@@ -370,7 +372,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           shippingKnown && stockKnown && offer.ship_to === "JP" &&
           offer.tracking_supported === true && Number(offer.inventory) > 0 &&
           price.currency === "JPY" && Number(price.selling_price) > 0 &&
-          Number(price.expected_profit) >= 2500 && Number(price.margin_rate) >= 0.5);
+          Number.isFinite(Number(price.expected_profit)) && Number(price.expected_profit) >= MIN_EXPECTED_PROFIT_JPY && Number.isFinite(Number(price.margin_rate)) && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
         return !saleable;
@@ -426,8 +428,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       currentCanonicalPrice.currency === "JPY" &&
       Number(currentCanonicalPrice.selling_price) > 0 &&
       isMinimumListingPriceEligible(currentCanonicalPrice.selling_price) &&
-      Number(currentCanonicalPrice.expected_profit) >= 2500 &&
-      Number(currentCanonicalPrice.margin_rate) >= 0.5
+      Number.isFinite(Number(currentCanonicalPrice.expected_profit)) && Number(currentCanonicalPrice.expected_profit) >= MIN_EXPECTED_PROFIT_JPY &&
+      Number.isFinite(Number(currentCanonicalPrice.margin_rate)) && Number(currentCanonicalPrice.margin_rate) >= 0.5
       ? currentCanonicalPrice
       : undefined;
     const offer = price ? currentPriceOffer : undefined;
@@ -470,7 +472,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Never republish a previously-created item unless supplier identity, known positive
     // stock, Japan shipping, tracking, and positive-margin pricing are all evidenced.
     // A stale timestamp alone is not a reason to delist; the order flow must recheck stock.
-    if (currentState?.external_product_id && (supplierEvidenceUnverified || !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) || Number(currentCanonicalPrice?.expected_profit) < 2500)) {
+    if (currentState?.external_product_id && (supplierEvidenceUnverified || !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) || !Number.isFinite(Number(currentCanonicalPrice?.expected_profit)) || Number(currentCanonicalPrice?.expected_profit) < MIN_EXPECTED_PROFIT_JPY || !Number.isFinite(Number(currentCanonicalPrice?.margin_rate)) || Number(currentCanonicalPrice?.margin_rate) < 0.5)) {
       const missing = rawOffer ? missingSaleEvidence({
         supplierCode: rawOffer.supplier_code,
         supplierProductId: rawOffer.supplier_product_id,
@@ -489,7 +491,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       }) : ["supplier", "identity", "variant", "stock", "cost", "domestic_shipping", "profit"];
       const reason = !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price)
         ? (currentCanonicalPrice ? "minimum_listing_price_below_2500" : "canonical_price_missing")
-        : missing.join(",") || "supplier_offer_invalid";
+        : !Number.isFinite(Number(currentCanonicalPrice?.expected_profit)) || Number(currentCanonicalPrice?.expected_profit) < MIN_EXPECTED_PROFIT_JPY
+          ? "expected_profit_below_2500_or_unknown"
+          : !Number.isFinite(Number(currentCanonicalPrice?.margin_rate)) || Number(currentCanonicalPrice?.margin_rate) < 0.5
+            ? "margin_below_50_percent_or_unknown"
+            : missing.join(",") || "supplier_offer_invalid";
       const nowIso = new Date().toISOString();
       try {
         const fallbackPrice = Math.min(100_000_000, Math.max(50, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 50)));
