@@ -12,11 +12,12 @@ assert.equal(isMinimumListingPriceEligible(0), false);
 assert.equal(isMinimumListingPriceEligible(null), false);
 assert.equal(isMinimumListingPriceEligible("unknown"), false);
 
-const [publish, newfindCommerce, newfindLegacy, withdrawal] = await Promise.all([
+const [publish, newfindCommerce, newfindLegacy, withdrawal, storefront] = await Promise.all([
   readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-reconcile.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
 ]);
 assert.match(publish, /isMinimumListingPriceEligible\(currentCanonicalPrice\.selling_price\)/, "BASE/Shopify publication rejects canonical prices below the floor");
 assert.match(publish, /minimum_listing_price_below_2500/, "existing BASE/Shopify listings below the floor are routed to the unpublish path");
