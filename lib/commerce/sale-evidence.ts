@@ -6,6 +6,7 @@ export const SALE_EVIDENCE_FIELDS = [
   "cost",
   "domestic_shipping",
   "profit",
+  "minimum_profit",
   "verification",
 ] as const;
 
