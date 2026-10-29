@@ -29,6 +29,117 @@ function duplicateGroups(rows: Row[], keyOf: (row: Row) => string, fields: strin
     .sort((a, b) => b.count - a.count);
 }
 
+function legacyChannelIdentityOverlap(
+  legacyRows: Row[],
+  variants: Row[],
+  offers: Row[],
+  listings: Row[],
+) {
+  const variantById = new Map(variants.map((row) => [String(row.id ?? ""), row]));
+  const offersByVariant = new Map<string, Row[]>();
+  for (const offer of offers) {
+    const variantId = String(offer.variant_id ?? "").trim();
+    if (!variantId) continue;
+    const group = offersByVariant.get(variantId) ?? [];
+    group.push(offer);
+    offersByVariant.set(variantId, group);
+  }
+
+  const supplierCodesByIdentity = new Map<string, Set<string>>();
+  for (const offer of offers) {
+    const productId = String(offer.supplier_product_id ?? "").trim();
+    const variantId = String(offer.supplier_variant_id ?? "").trim();
+    const supplierCode = String(offer.supplier_code ?? "").trim().toLowerCase();
+    if (!productId || !variantId || !supplierCode) continue;
+    const identity = productId + "::" + variantId;
+    const codes = supplierCodesByIdentity.get(identity) ?? new Set<string>();
+    codes.add(supplierCode);
+    supplierCodesByIdentity.set(identity, codes);
+  }
+  const ambiguousSupplierIdentities = new Set<string>();
+
+  const legacyByIdentity = new Map<string, Row[]>();
+  for (const row of legacyRows) {
+    const productId = String(row.supplier_product_id ?? "").trim();
+    const variantId = String(row.supplier_variant_id ?? "").trim();
+    if (!productId || !variantId) continue;
+    const key = productId + "::" + variantId;
+    const group = legacyByIdentity.get(key) ?? [];
+    group.push(row);
+    legacyByIdentity.set(key, group);
+  }
+
+  const overlaps = new Map<string, Row>();
+  for (const listing of listings) {
+    if (String(listing.status ?? "").toLowerCase() !== "published") continue;
+    const variant = variantById.get(String(listing.variant_id ?? ""));
+    if (!variant) continue;
+    const variantOffers = offersByVariant.get(String(variant.id ?? "")) ?? [];
+    for (const offer of variantOffers) {
+      const productId = String(offer.supplier_product_id ?? "").trim();
+      const supplierVariantId = String(offer.supplier_variant_id ?? "").trim();
+      if (!productId || !supplierVariantId) continue;
+      const identity = productId + "::" + supplierVariantId;
+      const supplierCodes = supplierCodesByIdentity.get(identity) ?? new Set<string>();
+      if (supplierCodes.size !== 1) {
+        ambiguousSupplierIdentities.add(identity);
+        continue;
+      }
+      for (const legacy of legacyByIdentity.get(identity) ?? []) {
+        if (legacy.published !== true) continue;
+        const channel = String(listing.channel ?? "").trim().toLowerCase();
+        const legacyExternalId = channel === "base"
+          ? String(legacy.base_item_id ?? "").trim()
+          : channel === "shopify"
+            ? String(legacy.shopify_product_id ?? "").trim()
+            : "";
+        const currentExternalId = String(listing.external_product_id ?? "").trim();
+        if (!legacyExternalId || !currentExternalId || legacyExternalId === currentExternalId) continue;
+
+        const legacyPrice = Number(legacy.selling_price);
+        const currentPrice = Number(listing.selling_price);
+        const key = [channel, identity, String(legacy.id ?? ""), currentExternalId].join("::");
+        overlaps.set(key, {
+          channel,
+          supplier_product_id: productId,
+          supplier_variant_id: supplierVariantId,
+          legacy_listing_id: legacy.id ?? null,
+          legacy_title: legacy.title ?? null,
+          legacy_external_product_id: legacyExternalId,
+          legacy_selling_price: Number.isFinite(legacyPrice) ? legacyPrice : null,
+          canonical_listing_id: listing.id ?? null,
+          canonical_title: variant.title_ja ?? null,
+          canonical_external_product_id: currentExternalId,
+          canonical_selling_price: Number.isFinite(currentPrice) ? currentPrice : null,
+          price_mismatch: Number.isFinite(legacyPrice) && Number.isFinite(currentPrice) && legacyPrice !== currentPrice,
+          review_required: true,
+        });
+      }
+    }
+  }
+
+  const records = [...overlaps.values()];
+  const byChannel = (channel: string) => records.filter((row) => row.channel === channel);
+  const summarize = (channel: string) => {
+    const rows = byChannel(channel);
+    return {
+      candidateCount: rows.length,
+      priceMismatchCount: rows.filter((row) => row.price_mismatch === true).length,
+      records: rows.slice(0, 100),
+      omittedRecords: Math.max(0, rows.length - 100),
+    };
+  };
+
+  return {
+    definition: "Legacy shop_listings and published channel_listings share exact supplier product+variant IDs, both are marked published, and their channel external product IDs differ. Identities used by multiple supplier codes are excluded as ambiguous. Review only; no mutations.",
+    ambiguousSupplierIdentityCount: ambiguousSupplierIdentities.size,
+    ambiguousSupplierIdentities: [...ambiguousSupplierIdentities].slice(0, 100),
+    omittedAmbiguousSupplierIdentities: Math.max(0, ambiguousSupplierIdentities.size - 100),
+    base: summarize("base"),
+    shopify: summarize("shopify"),
+  };
+}
+
 async function readAll(table: string, columns: string): Promise<Row[]> {
   const db = createSupabaseAdminClient();
   const pageSize = 1000;
@@ -58,11 +169,12 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   try {
-    const [products, variants, offers, listings] = await Promise.all([
+    const [products, variants, offers, listings, legacyListings] = await Promise.all([
       readAll("commerce_products", "id,source_key,title_ja,active"),
-      readAll("commerce_variants", "id,product_id,source_variant_key,sku"),
+      readAll("commerce_variants", "id,product_id,source_variant_key,sku,title_ja"),
       readAll("supplier_offers", "id,variant_id,supplier_code,supplier_product_id,supplier_variant_id"),
-      readAll("channel_listings", "id,variant_id,channel,external_product_id,external_variant_id,external_sku,status"),
+      readAll("channel_listings", "id,variant_id,channel,external_product_id,external_variant_id,external_sku,status,selling_price"),
+      readAll("shop_listings", "id,title,selling_price,published,supplier_product_id,supplier_variant_id,base_item_id,shopify_product_id"),
     ]);
 
     const report = {
@@ -74,6 +186,7 @@ export async function GET(request: Request) {
         commerceVariants: variants.length,
         supplierOffers: offers.length,
         channelListings: listings.length,
+        legacyShopListings: legacyListings.length,
       },
       duplicates: {
         productSourceKey: duplicateGroups(products, (r) => String(r.source_key ?? "").trim(), ["id", "source_key", "title_ja", "active"]),
@@ -105,6 +218,7 @@ export async function GET(request: Request) {
           return channel && externalId ? channel + "::" + externalId : "";
         }, ["id", "variant_id", "channel", "external_product_id", "external_variant_id", "external_sku", "status"]),
       },
+      legacyChannelIdentityOverlap: legacyChannelIdentityOverlap(legacyListings, variants, offers, listings),
     };
 
     return NextResponse.json(report, { headers: { "Cache-Control": "no-store" } });
