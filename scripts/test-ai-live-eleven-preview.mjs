@@ -348,7 +348,9 @@ try {
   assert.equal(rejectedProvider.status, 502);
   assert.equal(rejectedProvider.body.error, "elevenlabs_request_rejected");
   assert.equal(FakeSocket.sockets.length, 1);
-  assert.equal(JSON.stringify(rejectedProvider.body).includes("voice_not_found"), false);
+  assert.equal(rejectedProvider.body.providerDiagnostic.message, "voice_not_found");
+  assert.equal(JSON.stringify(rejectedProvider.body).includes("server-side-elevenlabs-key"), false);
+  assert.equal(JSON.stringify(rejectedProvider.body).includes(KIYOMI_VOICE_ID), false);
 
   FakeSocket.mode = "oversize";
   const oversized = await post({
