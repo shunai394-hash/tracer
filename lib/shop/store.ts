@@ -10,6 +10,7 @@ import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { normalizeShippingCopy } from "@/lib/commerce/shipping-copy.mjs";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -59,7 +60,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     id: String(row.id),
     slug: String(row.slug),
     title: String(row.title),
-    description: typeof row.description === "string" ? row.description : null,
+    description: typeof row.description === "string" ? normalizeShippingCopy(row.description) : null,
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     sellingPrice: asNumber(row.selling_price),
     currency: typeof row.currency === "string" ? row.currency : null,
