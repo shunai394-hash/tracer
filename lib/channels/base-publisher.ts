@@ -6,6 +6,7 @@ import { createBaseItem, editBaseItem, addBaseItemImage, getBasePublicShopUrl, i
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
+import { meetsMinimumSellingPrice, MINIMUM_SELLING_PRICE_JPY } from "@/lib/commerce/minimum-selling-price";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 
@@ -179,7 +180,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of publishableListings) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
-    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
+    const belowMinimumPrice = !meetsMinimumSellingPrice(listing.selling_price);
+    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked && !belowMinimumPrice)) continue;
     if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       unpublishFailed += 1;
@@ -201,10 +203,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published_at: null,
         base_publication_status: "failed",
         base_publication_lease_until: null,
-        base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
+        base_last_error: belowMinimumPrice ? "minimum_selling_price_hidden" : isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
+        pipeline_reason: belowMinimumPrice ? `minimum_selling_price_below_${MINIMUM_SELLING_PRICE_JPY}` : isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
@@ -218,7 +220,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
+  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && meetsMinimumSellingPrice(listing.selling_price));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -323,6 +325,16 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (!validHttpUrl(listing.image_url)) {
       await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "image_url_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, error: "image_url_invalid" });
+      continue;
+    }
+
+    if (!meetsMinimumSellingPrice(price)) {
+      if (listing.base_item_id) {
+        try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
+        catch (error) { const message = error instanceof Error ? error.message : String(error); results.push({ listingId, ok: false, error: message }); continue; }
+      }
+      await supabase.from("shop_listings").update({ published: false, orderable: false, base_publication_lease_until: null, base_last_error: "minimum_selling_price_hidden", pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: `minimum_selling_price_below_${MINIMUM_SELLING_PRICE_JPY}`, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      results.push({ listingId, ok: true, skipped: true, hidden: true, error: "minimum_selling_price_below_threshold" });
       continue;
     }
 
