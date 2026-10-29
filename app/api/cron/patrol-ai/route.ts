@@ -7,7 +7,7 @@ import { recoverStaleCronRun } from "@/lib/ops/cron-lock";
 import { rescueUndeliveredGatePassedListings, retryPendingNewfindPromotions } from "@/lib/integration/newfind";
 import { catalogCountsNeedReview } from "@/lib/ops/catalog-count-check";
 import { promoteCommerceListingsToNewfind } from "@/lib/integration/newfind-commerce";
-import { isCanonicalCjNativeId } from "@/lib/commerce/core";
+import { isCanonicalCjNativeId, MIN_EXPECTED_PROFIT_JPY } from "@/lib/commerce/core";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 
 export const runtime = "nodejs";
@@ -61,7 +61,7 @@ async function snapshot(db: ReturnType<typeof createSupabaseAdminClient>): Promi
     .gt("supplier_offers.shipping_cost", 0)
     .eq("commerce_prices.currency", "JPY")
     .gt("commerce_prices.selling_price", 0)
-    .gt("commerce_prices.expected_profit", 0);
+    .gte("commerce_prices.expected_profit", MIN_EXPECTED_PROFIT_JPY);
   const publishedBaseVariantIdsQuery = db.from("channel_listings").select("variant_id")
     .eq("channel", "base").eq("status", "published");
   const publishedShopifyVariantIdsQuery = db.from("channel_listings").select("variant_id")
