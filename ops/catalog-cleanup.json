@@ -1,6 +1,6 @@
 {
   "apply": true,
-  "note": "Run 3 (2026-10-30): legacy shop_listings support — archive mispriced legacy items, fix legacy titles.",
+  "note": "Run 4 (2026-10-30): withdraw NEWFIND promotions by Shopify URL for withdrawn items.",
   "withdraw": [
     {
       "channel": "shopify",
@@ -135,103 +135,6 @@
       "externalProductId": "164092821"
     }
   ],
-  "copy": [
-    {
-      "ref": {
-        "channel": "shopify",
-        "externalProductId": "8638980620332"
-      },
-      "title": "普段使いのレディースショルダーバッグ"
-    }
-  ],
-  "resync": [
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973378604"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638994284588"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638994743340"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639045500972"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034294316"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8628827848748"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8628827979820"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8628828110892"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8621671055404"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8621671088172"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8622668644396"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8622760460332"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8632309055532"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638975967276"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8620217434156"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8620217499692"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8620217597996"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8620217696300"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8620217827372"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034097708"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8621750321196"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8621750353964"
-    }
-  ]
+  "copy": [],
+  "resync": []
 }

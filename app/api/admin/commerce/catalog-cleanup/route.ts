@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncCommerceListings } from "@/lib/commerce/publish";
 import { editBaseItem, getBaseItemDetail } from "@/lib/channels/base";
 import { shopifyGraphQL, toShopifyGid } from "@/lib/shopify/admin";
-import { withdrawNewfindPromotionsForVariants } from "@/lib/integration/newfind-commerce";
+import { sendNewfindProductWithdrawnForUrls, withdrawNewfindPromotionsForVariants } from "@/lib/integration/newfind-commerce";
 import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -16,9 +16,9 @@ export const maxDuration = 300;
 type Channel = "shopify" | "base";
 type Ref = { channel: Channel; externalProductId: string };
 type CopyItem = { ref: Ref; title?: string; description?: string };
-type ListingRow = { id: string; variant_id: string; channel: Channel; external_product_id: string | null; status: string; selling_price: number };
+type ListingRow = { id: string; variant_id: string; channel: Channel; external_product_id: string | null; status: string; selling_price: number; published_url: string | null };
 
-type LegacyRow = { id: string; title: string | null; description: string | null; selling_price: number | null; shopify_product_id: string | null; base_item_id: string | null; archived_at: string | null };
+type LegacyRow = { id: string; title: string | null; description: string | null; selling_price: number | null; shopify_product_id: string | null; shopify_handle: string | null; base_item_id: string | null; archived_at: string | null };
 
 const MAX_REFS_PER_CALL = 15;
 
@@ -157,7 +157,7 @@ export async function POST(request: Request) {
   for (const ref of unresolved) {
     const column = ref.channel === "shopify" ? "shopify_product_id" : "base_item_id";
     const { data, error } = await db.from("shop_listings")
-      .select("id,title,description,selling_price,shopify_product_id,base_item_id,archived_at")
+      .select("id,title,description,selling_price,shopify_product_id,shopify_handle,base_item_id,archived_at")
       .in(column, storedIdCandidates(ref))
       .limit(1)
       .maybeSingle();
@@ -242,13 +242,16 @@ export async function POST(request: Request) {
     withdrawnVariantIds.push(...(variantsByProduct.get(productId) ?? []));
   }
   const hidden = { shopify: 0, base: 0 };
+  // Storefront URLs NEWFIND may link to for anything withdrawn here.
+  const withdrawnUrls: string[] = [];
   if (withdrawnVariantIds.length) {
     const { data: listings, error } = await db.from("channel_listings")
-      .select("id,variant_id,channel,external_product_id,status,selling_price")
+      .select("id,variant_id,channel,external_product_id,status,selling_price,published_url")
       .in("variant_id", withdrawnVariantIds);
     if (error) errors.push("withdraw_listing_read_failed:" + error.message);
     const hiddenShopifyProducts = new Set<string>();
     for (const listing of (listings ?? []) as ListingRow[]) {
+      if (listing.published_url) withdrawnUrls.push(String(listing.published_url));
       if (!listing.external_product_id) continue;
       try {
         if (listing.channel === "shopify") {
@@ -303,6 +306,8 @@ export async function POST(request: Request) {
         published: false, published_at: null, archived_at: now, archive_reason: WITHDRAW_REASON, updated_at: now,
       }).eq("id", row.id);
       if (error) throw new Error("legacy_archive_failed:" + error.message);
+      const shopDomain = process.env.SHOPIFY_STORE_DOMAIN?.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      if (row.shopify_handle && shopDomain) withdrawnUrls.push(`https://${shopDomain}/products/${encodeURIComponent(String(row.shopify_handle))}`);
       if (row.shopify_product_id) { await hideShopifyProduct(String(row.shopify_product_id)); hidden.shopify++; }
       if (row.base_item_id) { await editBaseKeeping(String(row.base_item_id), { hide: true }, Number(row.selling_price) || 50); hidden.base++; }
       legacyResult.archived++;
@@ -321,6 +326,17 @@ export async function POST(request: Request) {
       legacyResult.retitled++;
     } catch (error) {
       errors.push("legacy:" + row.id + ":" + (error instanceof Error ? error.message : String(error)).slice(0, 160));
+    }
+  }
+
+  let newfindUrls: { sent: boolean; status: string; urls: number } | null = null;
+  if (withdrawnUrls.length) {
+    try {
+      const sent = await sendNewfindProductWithdrawnForUrls(withdrawnUrls, WITHDRAW_REASON);
+      newfindUrls = { ...sent, urls: new Set(withdrawnUrls).size };
+      if (!sent.sent && sent.status !== "newfind_not_configured") errors.push("newfind_url_withdraw:" + sent.status);
+    } catch (error) {
+      errors.push("newfind_url_withdraw:" + (error instanceof Error ? error.message : String(error)).slice(0, 160));
     }
   }
 
@@ -358,6 +374,7 @@ export async function POST(request: Request) {
     legacy: legacyResult,
     hidden,
     newfind,
+    newfindUrls,
     sync,
     errors,
   }, { status: errors.length ? 207 : 200 });

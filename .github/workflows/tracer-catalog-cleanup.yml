@@ -75,7 +75,7 @@ jobs:
             for (const part of chunk(copy, 5)) out.batches.push({ kind: "copy", ...(await post({ apply: true, copy: part })) });
             for (const part of chunk(resync, 8)) out.batches.push({ kind: "resync", ...(await post({ apply: true, resync: part })) });
             for (const batch of out.batches) {
-              const brief = { kind: batch.kind, status: batch.status, ok: batch.ok, withdrawn: batch.withdrawn, hidden: batch.hidden, newfind: batch.newfind ? { promoted: batch.newfind.promoted, withdrawn: batch.newfind.withdrawn, failed: (batch.newfind.failed ?? []).length, error: batch.newfind.error ?? null, enabled: batch.newfind.enabled } : null, sync: batch.sync, errors: (batch.errors ?? []).slice(0, 5), skipped: batch.plan?.skippedMultiVariant, unresolved: batch.plan?.unresolved, error: batch.error ?? null };
+              const brief = { kind: batch.kind, status: batch.status, ok: batch.ok, withdrawn: batch.withdrawn, hidden: batch.hidden, newfind: batch.newfind ? { promoted: batch.newfind.promoted, withdrawn: batch.newfind.withdrawn, failed: (batch.newfind.failed ?? []).length, error: batch.newfind.error ?? null, enabled: batch.newfind.enabled } : null, newfindUrls: batch.newfindUrls ?? null, legacy: batch.legacy ?? null, sync: batch.sync, errors: (batch.errors ?? []).slice(0, 5), skipped: batch.plan?.skippedMultiVariant, unresolved: batch.plan?.unresolved, error: batch.error ?? null };
               // Annotations stay readable even when run logs are not.
               console.log("::notice title=cleanup " + batch.kind + "::" + JSON.stringify(brief).replace(/[\r\n%]/g, " ").slice(0, 3800));
             }

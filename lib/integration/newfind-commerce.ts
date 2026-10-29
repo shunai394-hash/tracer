@@ -392,3 +392,45 @@ export async function withdrawNewfindPromotionsForVariants(variantIds: string[],
   await sendNewfindWithdrawals(db, cfg, targets, eventByKey, reason, result);
   return result;
 }
+
+/**
+ * Sends one signed product_withdrawn event for explicit storefront URLs
+ * (e.g. the Shopify product page NEWFIND links to). Used by the manual catalog
+ * cleanup, where a product may have reached NEWFIND through any promotion path.
+ */
+export async function sendNewfindProductWithdrawnForUrls(productUrls: string[], reason: string): Promise<{ sent: boolean; status: string }> {
+  const cfg = getNewfindConfig();
+  const enabled = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
+  const urls = [...new Set(productUrls.filter((url) => /^https:\/\//.test(url)))];
+  if (!enabled || !cfg.apiUrl || !cfg.webhookSecret) return { sent: false, status: "newfind_not_configured" };
+  if (urls.length === 0) return { sent: false, status: "no_urls" };
+  const digest = createHmac("sha256", "tracer-manual-withdraw").update(urls.sort().join("|")).digest("hex").slice(0, 24);
+  const eventId = "tracer-manual-withdrawn:" + digest;
+  const rawBody = JSON.stringify({
+    source: "tracer",
+    event_id: eventId,
+    event_type: "product_withdrawn",
+    event_version: 1,
+    occurred_at: new Date().toISOString(),
+    payload: { source: "tracer", product_urls: urls, reason },
+  });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac("sha256", cfg.webhookSecret).update(`${timestamp}.${eventId}.${rawBody}`, "utf8").digest("hex");
+  const response = await fetch(buildUrl(cfg.apiUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Integration-Key": cfg.apiKey || "newfind-tracer",
+      "X-Integration-Timestamp": timestamp,
+      "X-Integration-Id": eventId,
+      "X-Integration-Signature": signature,
+    },
+    body: rawBody,
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  let ack: string | null = null;
+  try { ack = (JSON.parse(text) as { status?: string }).status ?? null; } catch {}
+  return { sent: response.ok && (ack === "processed" || ack === "duplicate"), status: `http_${response.status}:${ack ?? text.slice(0, 120)}` };
+}
