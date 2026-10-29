@@ -21,6 +21,7 @@ assert.match(routeSource, /process\.env\.ELEVENLABS_API_KEY/u);
 assert.match(routeSource, /error: "elevenlabs_not_configured"/u);
 assert.match(routeSource, /"elevenlabs_timeout"/u);
 assert.match(routeSource, /"empty_audio_response"/u);
+assert.match(routeSource, /record\.is_final === true \|\| record\.is_final_audio_for_turn === true/u);
 assert.match(routeSource, /error: "text_length_out_of_range"/u);
 assert.match(routeSource, /error: "valid_voice_id_required"/u);
 assert.match(routeSource, /"Content-Type": "audio\/mpeg"/u);
@@ -342,7 +343,7 @@ try {
     body: validBody(),
   });
   assert.equal(rejectedProvider.status, 502);
-  assert.equal(rejectedProvider.body.error, "elevenlabs_unavailable");
+  assert.equal(rejectedProvider.body.error, "elevenlabs_request_rejected");
   assert.equal(FakeSocket.sockets.length, 1);
   assert.equal(JSON.stringify(rejectedProvider.body).includes("voice_not_found"), false);
 
