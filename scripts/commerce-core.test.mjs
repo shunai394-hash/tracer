@@ -1340,3 +1340,17 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
   assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
   assert.doesNotMatch(route, /\.delete\(/);
 });
+
+test("publishing uses one canonical Japan shipping label", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  assert.match(publish, /日本国内への送料は商品価格に含まれています。/);
+  assert.doesNotMatch(publish, /送料込み・送料無料。日本向け送料は商品価格に含まれています。/);
+});
+
+test("Shopify product sync refreshes and verifies persisted image alt text", async () => {
+  const admin = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
+  assert.match(admin, /TracerUpdateImageAlt/);
+  assert.match(admin, /fileUpdate\(files: \$files\)/);
+  assert.match(admin, /media\.alt !== input\.title/);
+  assert.match(admin, /shopify_image_alt_readback_mismatch/);
+});
