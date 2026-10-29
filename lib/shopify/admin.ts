@@ -468,10 +468,10 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const existingMedia = await shopifyGraphQL<{
     product: {
       featuredImage?: { url: string } | null;
-      media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
+      media: { nodes: Array<{ id: string; alt: string | null; mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
     } | null;
   }>(
-    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { featuredImage { url } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } }",
+    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { featuredImage { url } media(first: 50) { nodes { id alt mediaContentType preview { image { url } } } } } }",
     { id: input.productId },
   );
   // Shopify's product image connection can expose a persisted featured image
@@ -499,6 +499,30 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   if (productData.productUpdate.userErrors.length) throw new Error(productData.productUpdate.userErrors.map((error) => error.message).join("; "));
   const product = productData.productUpdate.product;
   if (!product) throw new Error("Shopify productUpdate returned no product");
+
+  // Keep existing Shopify image accessibility text aligned with the current
+  // Japanese product title. Old titles can remain on media even after product
+  // title/SEO fields are repaired.
+  const staleImageAltIds = (existingMedia.product?.media.nodes ?? [])
+    .filter((media) => media.mediaContentType === "IMAGE" && media.id && media.alt !== input.title)
+    .map((media) => media.id);
+  for (const mediaId of staleImageAltIds) {
+    const altUpdate = await shopifyGraphQL<{
+      fileUpdate: { files: Array<{ id: string; alt: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation TracerUpdateProductImageAlt($files: [FileUpdateInput!]!) {
+        fileUpdate(files: $files) { files { id alt } userErrors { field message } }
+      }`,
+      { files: [{ id: mediaId, alt: input.title }] },
+    );
+    if (altUpdate.fileUpdate.userErrors.length) {
+      throw new Error("shopify_image_alt_update_failed:" + altUpdate.fileUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+    const updatedMedia = altUpdate.fileUpdate.files.find((media) => media.id === mediaId);
+    if (!updatedMedia || updatedMedia.alt !== input.title) {
+      throw new Error("shopify_image_alt_readback_mismatch");
+    }
+  }
 
   // Shopify processes externally hosted images asynchronously. A successful
   // productUpdate response can still have a null preview while media is
