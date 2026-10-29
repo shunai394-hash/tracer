@@ -1354,3 +1354,10 @@ test("Shopify product sync refreshes and verifies persisted image alt text", asy
   assert.match(admin, /media\.alt !== input\.title/);
   assert.match(admin, /shopify_image_alt_readback_mismatch/);
 });
+
+test("CJ import preserves exact supplier variant labels for safe colour-option grouping", async () => {
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  assert.match(importer, /variant_title: String\(exactVariant\.nameEn \?\? ""\)\.trim\(\) \|\| null/);
+  assert.match(importer, /supplier_variant_name: String\(exactVariant\.nameEn \?\? ""\)\.trim\(\) \|\| null/);
+  assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
+});
