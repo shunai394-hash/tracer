@@ -51,7 +51,15 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
     if (code === "elevenlabs_not_configured") return "サーバーにElevenLabsのAPIキーが設定されていません。";
     if (code === "elevenlabs_timeout") return "音声生成がタイムアウトしました。自動では再試行しません。";
     if (code === "empty_audio_response") return "音声データが空でした。自動では再試行しません。";
-    if (data && typeof data.message === "string" && data.message) return data.message;
+    if (data && typeof data.message === "string" && data.message) {
+      const diagnostic = data.providerDiagnostic && typeof data.providerDiagnostic === "object"
+        ? data.providerDiagnostic
+        : null;
+      const details = diagnostic
+        ? [diagnostic.code ? "コード: " + diagnostic.code : "", diagnostic.message ? "詳細: " + diagnostic.message : ""].filter(Boolean).join(" / ")
+        : "";
+      return details ? data.message + " (" + details + ")" : data.message;
+    }
     if (code) return code;
     return "音声生成に失敗しました。自動では再試行しません。";
   }
