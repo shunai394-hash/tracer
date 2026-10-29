@@ -221,7 +221,7 @@ async function attachVariantLabels(listings: ShopListing[]): Promise<ShopListing
     }
     for (const row of (data ?? []) as Array<{ source_variant_key: string; title_ja: string | null; attributes: Record<string, unknown> | null }>) {
       const title = String(row.title_ja ?? "").trim();
-      const suffix = title.match(/[（(]([^（）()]*)[）)]\\s*$/)?.[1]?.trim();
+      const suffix = title.match(/[（(]([^（）()]*)[）)]\s*$/)?.[1]?.trim();
       const sourceName = String(row.attributes?.supplierVariantName ?? "").trim();
       const label = suffix || labelFromSupplierVariantName(sourceName);
       if (label) labels.set(String(row.source_variant_key), label);
@@ -236,13 +236,13 @@ async function attachVariantLabels(listings: ShopListing[]): Promise<ShopListing
 function labelFromSupplierVariantName(value: string): string | null {
   if (!value) return null;
   const patterns: Array<[RegExp, string]> = [
-    [/rose\\s+red/i, "ローズレッド"],
-    [/wine\\s+red/i, "ワインレッド"],
-    [/peacock\\s+blue/i, "ピーコックブルー"],
-    [/beige\\s+white/i, "ベージュ・ホワイト"],
-    [/orange\\s+floral/i, "オレンジ・花柄"],
-    [/dark\\s+brown/i, "ダークブラウン"],
-    [/light\\s+brown/i, "ライトブラウン"],
+    [/rose\s+red/i, "ローズレッド"],
+    [/wine\s+red/i, "ワインレッド"],
+    [/peacock\s+blue/i, "ピーコックブルー"],
+    [/beige\s+white/i, "ベージュ・ホワイト"],
+    [/orange\s+floral/i, "オレンジ・花柄"],
+    [/dark\s+brown/i, "ダークブラウン"],
+    [/light\s+brown/i, "ライトブラウン"],
     [/coffee/i, "コーヒー"],
     [/pink/i, "ピンク"],
     [/purple/i, "パープル"],
@@ -255,9 +255,9 @@ function labelFromSupplierVariantName(value: string): string | null {
     [/blue/i, "ブルー"],
     [/khaki/i, "カーキ"],
     [/gold/i, "ゴールド"],
-    [/\\b(\\d+)\\s*(?:style|\\.style)\\b/i, "スタイル"],
-    [/\\bset\\s*(\\d+)\\b/i, "セット"],
-    [/\\b(\\d+)\\s*pcs\\b/i, "個セット"],
+    [/\b(\d+)\s*(?:style|\.style)\b/i, "スタイル"],
+    [/\bset\s*(\d+)\b/i, "セット"],
+    [/\b(\d+)\s*pcs\b/i, "個セット"],
   ];
   for (const [pattern, label] of patterns) {
     const match = value.match(pattern);
