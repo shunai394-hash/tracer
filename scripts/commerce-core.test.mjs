@@ -247,7 +247,7 @@ test("publication matches each JPY profitable price to its own cost-bearing supp
   assert.match(publish, /const currentCanonicalPrice = currentPriceRows\[0\]/);
   assert.match(publish, /const price = currentCanonicalPrice && currentPriceOffer/);
   assert.match(publish, /Number\(currentCanonicalPrice\.margin_rate\) >= 0\.5/);
-  assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= 2500/);
+  assert.match(publish, /Number\(currentCanonicalPrice\.expected_profit\) >= MIN_EXPECTED_PROFIT_JPY/);
   assert.doesNotMatch(publish, /\.eq\("commerce_prices\.currency", "JPY"\)/);
   assert.doesNotMatch(publish, /\.gt\("commerce_prices\.expected_profit", 0\)/);
   assert.doesNotMatch(publish, /\.gte\("commerce_prices\.margin_rate", 0\.5\)/);
