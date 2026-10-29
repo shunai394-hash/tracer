@@ -5,6 +5,7 @@ import { getNewfindConfig } from "@/lib/config/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { loadCanonicalCommerceListings, type ShopListing } from "@/lib/shop/store";
 import { resolveLiveTracerUrl } from "@/lib/integration/newfind";
+import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 import {
   NEWFIND_COMMERCE_EVENT_TYPE,
   NEWFIND_COMMERCE_LEASE_MS,
@@ -51,7 +52,9 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
 
   const requestedVariantIds = options.variantIds?.length ? new Set(options.variantIds.map((id) => id.trim()).filter(Boolean)) : null;
   const listings = (await loadCanonicalCommerceListings()).filter((listing) =>
-    listing.canonicalCommerce && (!requestedVariantIds || requestedVariantIds.has(listing.id))
+    listing.canonicalCommerce &&
+    isMinimumListingPriceEligible(listing.sellingPrice) &&
+    (!requestedVariantIds || requestedVariantIds.has(listing.id))
   );
   result.candidates = listings.length;
   if (listings.length === 0) return result;
