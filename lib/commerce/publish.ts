@@ -470,7 +470,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     // Never republish a previously-created item unless supplier identity, known positive
     // stock, Japan shipping, tracking, and positive-margin pricing are all evidenced.
     // A stale timestamp alone is not a reason to delist; the order flow must recheck stock.
-    if (currentState?.external_product_id && (supplierEvidenceUnverified || !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price))) {
+    if (currentState?.external_product_id && (supplierEvidenceUnverified || !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) || Number(currentCanonicalPrice?.expected_profit) < 2500)) {
       const missing = rawOffer ? missingSaleEvidence({
         supplierCode: rawOffer.supplier_code,
         supplierProductId: rawOffer.supplier_product_id,
