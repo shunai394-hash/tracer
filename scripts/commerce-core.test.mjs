@@ -1361,3 +1361,13 @@ test("CJ import preserves exact supplier variant labels for safe colour-option g
   assert.match(importer, /supplier_variant_name: String\(exactVariant\.nameEn \?\? ""\)\.trim\(\) \|\| null/);
   assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
 });
+
+test("TRACER product pages expose only source-confirmed variants from the same supplier parent", async () => {
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(store, /\.from\("commerce_variants"\)[\s\S]*?\.select\("source_variant_key,title_ja,attributes"\)/);
+  assert.match(store, /variantLabel: listing\.supplierVariantId \? labels\.get\(listing\.supplierVariantId\) \?\? null : null/);
+  assert.match(page, /item\.supplierProductId === listing\.supplierProductId/);
+  assert.match(page, /カラー・バリエーション/);
+  assert.match(page, /option\.variantLabel/);
+});
