@@ -171,6 +171,7 @@ async function deliverOne(
       product_image_url: listing.imageUrl ?? "",
       image_url: listing.imageUrl ?? "",
       price: listing.sellingPrice,
+      expected_profit: listing.expectedProfit,
       currency: listing.currency,
       category: "other",
       discovery_reason: `TRACER canonical commerce; supplier=${listing.supplierName}; CJ stock and JP shipping verified within 24h; profit calculated; live on Shopify`,
