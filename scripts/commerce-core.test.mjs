@@ -1344,6 +1344,7 @@ test("¥2,500 minimum expected profit is shared across channel publication and s
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   const newfind = await readFile(new URL("../lib/integration/newfind-commerce.ts", import.meta.url), "utf8");
+  const patrol = await readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8");
   assert.match(publish, /meetsMinimumExpectedProfit\(price\.expected_profit\)/);
   assert.match(publish, /meetsMinimumExpectedProfit\(currentCanonicalPrice\.expected_profit\)/);
   assert.match(publish, /expected_profit_below_minimum_/);
@@ -1351,6 +1352,9 @@ test("¥2,500 minimum expected profit is shared across channel publication and s
     "already-published under-floor items must enter the hide/zero-stock path");
   assert.match(store, /\.gte\("expected_profit", MINIMUM_EXPECTED_PROFIT_JPY\)/);
   assert.match(store, /meetsMinimumExpectedProfit\(item\.expected_profit\)/);
+  assert.match(patrol, /\.gte\("commerce_prices\.expected_profit", MINIMUM_EXPECTED_PROFIT_JPY\)/,
+    "patrol eligibility counts must use the same ¥2,500 floor");
+  assert.match(patrol, /Number\(price\.expected_profit\) >= MINIMUM_EXPECTED_PROFIT_JPY/);
   assert.match(newfind, /loadCanonicalCommerceListings\(\)/,
     "NEWFIND candidates must come through the storefront's shared profit gate");
 });
