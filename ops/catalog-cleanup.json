@@ -1,6 +1,6 @@
 {
   "apply": true,
-  "note": "Run 4 (2026-10-30): withdraw NEWFIND promotions by Shopify URL for withdrawn items.",
+  "note": "Run 5 (2026-10-30): include TRACER product-page URLs in the NEWFIND withdrawal.",
   "withdraw": [
     {
       "channel": "shopify",

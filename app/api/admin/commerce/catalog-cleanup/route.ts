@@ -18,7 +18,7 @@ type Ref = { channel: Channel; externalProductId: string };
 type CopyItem = { ref: Ref; title?: string; description?: string };
 type ListingRow = { id: string; variant_id: string; channel: Channel; external_product_id: string | null; status: string; selling_price: number; published_url: string | null };
 
-type LegacyRow = { id: string; title: string | null; description: string | null; selling_price: number | null; shopify_product_id: string | null; shopify_handle: string | null; base_item_id: string | null; archived_at: string | null };
+type LegacyRow = { id: string; title: string | null; description: string | null; selling_price: number | null; shopify_product_id: string | null; shopify_handle: string | null; slug: string | null; base_item_id: string | null; archived_at: string | null };
 
 const MAX_REFS_PER_CALL = 15;
 
@@ -157,7 +157,7 @@ export async function POST(request: Request) {
   for (const ref of unresolved) {
     const column = ref.channel === "shopify" ? "shopify_product_id" : "base_item_id";
     const { data, error } = await db.from("shop_listings")
-      .select("id,title,description,selling_price,shopify_product_id,shopify_handle,base_item_id,archived_at")
+      .select("id,title,description,selling_price,shopify_product_id,shopify_handle,slug,base_item_id,archived_at")
       .in(column, storedIdCandidates(ref))
       .limit(1)
       .maybeSingle();
@@ -242,8 +242,11 @@ export async function POST(request: Request) {
     withdrawnVariantIds.push(...(variantsByProduct.get(productId) ?? []));
   }
   const hidden = { shopify: 0, base: 0 };
-  // Storefront URLs NEWFIND may link to for anything withdrawn here.
+  // Storefront URLs NEWFIND may link to for anything withdrawn here: the TRACER
+  // product page (canonical /shop/{variantId}, legacy /shop/{slug}) and Shopify.
   const withdrawnUrls: string[] = [];
+  const siteOrigin = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
+  for (const variantId of withdrawnVariantIds) withdrawnUrls.push(siteOrigin + "/shop/" + encodeURIComponent(variantId));
   if (withdrawnVariantIds.length) {
     const { data: listings, error } = await db.from("channel_listings")
       .select("id,variant_id,channel,external_product_id,status,selling_price,published_url")
@@ -307,6 +310,7 @@ export async function POST(request: Request) {
       }).eq("id", row.id);
       if (error) throw new Error("legacy_archive_failed:" + error.message);
       const shopDomain = process.env.SHOPIFY_STORE_DOMAIN?.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      if (row.slug) withdrawnUrls.push(siteOrigin + "/shop/" + encodeURIComponent(String(row.slug)));
       if (row.shopify_handle && shopDomain) withdrawnUrls.push(`https://${shopDomain}/products/${encodeURIComponent(String(row.shopify_handle))}`);
       if (row.shopify_product_id) { await hideShopifyProduct(String(row.shopify_product_id)); hidden.shopify++; }
       if (row.base_item_id) { await editBaseKeeping(String(row.base_item_id), { hide: true }, Number(row.selling_price) || 50); hidden.base++; }
