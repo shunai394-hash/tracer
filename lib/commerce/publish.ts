@@ -170,7 +170,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
           sellingPrice: Number(price?.selling_price),
           expectedProfit: Number(price?.expected_profit),
         });
-         if (!price || !Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY || !Number.isFinite(Number(price.margin_rate)) || Number(price.margin_rate) < 0.5) missing.push("profit_below_minimum_or_margin");
+         if (!price || !Number.isFinite(Number(price.expected_profit)) || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY || !Number.isFinite(Number(price.margin_rate)) || Number(price.margin_rate) < 0.5) missing.push("minimum_profit");
         return { offer, price, missing, nativeIdsValid };
       }).sort((a, b) => a.missing.length - b.missing.length);
       const best = evaluated[0] ?? null;
