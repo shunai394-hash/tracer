@@ -1,0 +1,306 @@
+{
+  "apply": true,
+  "note": "2026-10-30 catalog cleanup: withdraw mispriced/off-theme items, curated copy for SNS picks, resync mistranslated titles. Set apply to false for a dry run only.",
+  "withdraw": [
+    {
+      "channel": "shopify",
+      "externalProductId": "8638972821548"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638972854316"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638976065580"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8634720190508"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638972887084"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638980718636"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638980882476"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638980980780"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973181996"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034392620"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639046090796"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973280300"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973345836"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034130476"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034163244"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034327084"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034228780"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639046058028"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973083692"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973116460"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034458156"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639076597804"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639076630572"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639046254636"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639046352940"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639076106284"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639076302892"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034261548"
+    },
+    {
+      "channel": "base",
+      "externalProductId": "163878665"
+    },
+    {
+      "channel": "base",
+      "externalProductId": "164039402"
+    },
+    {
+      "channel": "base",
+      "externalProductId": "164088680"
+    },
+    {
+      "channel": "base",
+      "externalProductId": "164091495"
+    },
+    {
+      "channel": "base",
+      "externalProductId": "164092821"
+    }
+  ],
+  "copy": [
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8624271654956"
+      },
+      "title": "寝ながらゆる巻き サテン ヒートレスカールロッド｜コテを使わないヘアアレンジに",
+      "description": "コテを使わずに、朝のゆる巻きを。夜にロッドへ髪を巻いて寝るだけの、サテン調ヒートレスカールロッドです。\n\n・朝のヘアセットを短くしたい日に\n・熱によるダメージを避けたい人に\n・旅行先でのヘアアレンジに\n\n対応する髪質・使用方法・付属品は仕入先の商品仕様をご確認ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8628092534828"
+      },
+      "title": "回すだけで洗える 回転式メイクブラシクリーナー｜面倒なブラシ洗いをかんたんに",
+      "description": "ブラシ洗い、つい後回しにしていませんか。ブラシをセットして回転させて洗う、電動のメイクブラシクリーナーです。\n\n・毎日使うファンデーションブラシのお手入れに\n・手洗いの手間を減らしたい人に\n・メイク好きの友人へのギフトに\n\n対応するブラシのサイズ・使用方法・お手入れ方法は商品仕様をご確認のうえ、清潔に保ってご使用ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8633704939564"
+      },
+      "title": "USB給電 ポータブル メイクブラシクリーナー｜旅行先でもブラシをお手入れ",
+      "description": "出先でも、ブラシを清潔に。USB給電で使える、持ち運びやすい電動メイクブラシクリーナーです。\n\n・旅行や出張のメイク道具と一緒に\n・自宅の洗面台でも場所を取りにくい\n・はじめての電動クリーナーに\n\n対応するブラシのサイズ・使用方法・お手入れ方法は商品仕様をご確認のうえ、清潔に保ってご使用ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8629091401772"
+      },
+      "title": "着脱式 メイクブラシ洗浄ボード｜こすって洗うだけのブラシケア",
+      "description": "ブラシ洗いを、こするだけのひと手間に。凹凸のある面でブラシをこすって洗う、着脱式の洗浄ボードです。\n\n・電動クリーナーまでは要らない人に\n・アイシャドウブラシなど小さなブラシにも\n・ほかの商品と一緒に気軽に\n\n使用方法やお手入れ方法は商品仕様をご確認のうえ、清潔に保ってご使用ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8619947655212"
+      },
+      "title": "もこもこ素材 ハンドバッグ｜冬コーデのアクセントに",
+      "description": "冬のコーデに、もこもこの主役を。ぬいぐるみのような素材感のレディースハンドバッグです。\n\n・ニットやコートに合わせて季節感を\n・シンプルな服の差し色に\n・冬のギフトにも\n\nカラーや形状は商品画像でご確認ください。サイズ・収納量は仕様欄をご確認ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8629664579628"
+      },
+      "title": "猫モチーフ ミニハンドバッグ｜ねこ好きさんへのギフトにも",
+      "description": "持つだけで、ねこ好きが伝わる。猫モチーフのミニサイズ レディースハンドバッグです。\n\n・いつものコーデのワンポイントに\n・ちょっとしたお出かけの小物入れに\n・ねこ好きの友人へのギフトに\n\nカラーや形状は商品画像でご確認ください。サイズ・収納量は仕様欄をご確認ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8623983165484"
+      },
+      "title": "ラメ入り ミニ蝶ヘアクリップ 50個セット｜ヘアアレンジにきらめきをプラス",
+      "description": "髪に散らすだけで、きらめきをプラス。ラメ入りのミニ蝶モチーフ ヘアクリップ、50個セットです。\n\n・編み込みやハーフアップのアクセントに\n・ライブやイベントのヘアアレンジに\n・友だちと分けて使えるたっぷりセット\n\n形状やカラーは商品画像・仕様欄をご確認ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8639045468204"
+      },
+      "title": "クリスマスモチーフ ヘアアクセサリー｜冬のイベント・パーティーに",
+      "description": "この季節だけの、ヘアアクセを。クリスマスモチーフのヘアクリップです。\n\n・クリスマスパーティーやイベントに\n・冬のヘアアレンジのアクセントに\n・プチギフトにも\n\nサイズ・材質・保持力は販売元の仕様をご確認ください。"
+    },
+    {
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8626330370092"
+      },
+      "title": "パール装飾 レディースバッグ（ホワイト）｜忘年会・パーティーの装いに",
+      "description": "年末のパーティーシーンに、上品なきらめきを。パール装飾のホワイトのレディースバッグです。\n\n・忘年会・結婚式の二次会に\n・ワンピースやドレスに合わせて\n・シンプルな装いを格上げしたい日に\n\nサイズ・素材・仕様は商品画像と商品詳細をご確認ください。"
+    }
+  ],
+  "resync": [
+    {
+      "channel": "shopify",
+      "externalProductId": "8638973378604"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638980620332"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638994284588"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638994743340"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639045500972"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034294316"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8628827848748"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8628827979820"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8628828110892"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8621671055404"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8621671088172"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8622668644396"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8622760460332"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8632309055532"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8638975967276"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8620217434156"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8620217499692"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8620217597996"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8620217696300"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8620217827372"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8639034097708"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8621750321196"
+    },
+    {
+      "channel": "shopify",
+      "externalProductId": "8621750353964"
+    }
+  ]
+}

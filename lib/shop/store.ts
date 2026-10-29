@@ -9,6 +9,7 @@ import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
+import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -353,7 +354,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       { data: batchPrices, error: priceError },
     ] = await Promise.all([
       supabase.from("commerce_variants")
-        .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active)")
+        .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active,metadata)")
         .in("id", batch)
         .eq("commerce_products.active", true),
       supabase.from("supplier_offers")
@@ -412,8 +413,12 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     // Catalog visibility follows the live published Shopify listing and live Shopify
     // inventory below. Stale supplier checks must not silently remove products from
     // TRACER's catalog; they disable TRACER's own orderable flag until reverified.
-    const title = String(variant.title_ja || product.title_ja || "").trim();
-    const description = typeof product.description_ja === "string" ? product.description_ja : null;
+    // Same title hygiene and curated overrides as the Shopify/BASE publisher.
+    const metadata = (product.metadata && typeof product.metadata === "object" ? product.metadata : {}) as Record<string, unknown>;
+    const manualTitle = typeof metadata.manualTitleJa === "string" ? applyManualTitle(metadata.manualTitleJa, variant.title_ja) : "";
+    const title = manualTitle || normalizeListingTitle(String(variant.title_ja || product.title_ja || ""));
+    const manualDescription = typeof metadata.manualDescriptionJa === "string" && metadata.manualDescriptionJa.trim() ? metadata.manualDescriptionJa.trim() : null;
+    const description = manualDescription ?? (typeof product.description_ja === "string" ? product.description_ja : null);
     const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {

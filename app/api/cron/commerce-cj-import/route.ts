@@ -9,6 +9,7 @@ import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
 import { selectRotatingVariantBatch } from "@/lib/commerce/variant-batch";
 import { japaneseCommerceDescription } from "@/lib/commerce/japanese-copy.mjs";
 import { persistCjInternalSupplyCandidate } from "@/lib/suppliers/persist-cj-internal-supply";
+import { filterModifiersForCore, singleVariantColor } from "@/lib/commerce/listing-title";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -102,10 +103,14 @@ function sourceSpecificFallbackTitle(title: string, variantNames: string[] = [])
   else if (/makeup brush|cosmetic brush|brush cleaner|brush cleaning|brush scrubber|puff cleanser/.test(source)) core = "メイクブラシ・お手入れ用品";
   else if (/eyebrow|eyelash|lash|gua sha|roller massager|acne|pimple|nail|beauty tool|facial/.test(source)) core = "美容ケアツール";
   if (!core) return null;
-  const meaningful = modifiers;
+  // Beauty-tool words (eyebrow, lash, cleaner…) must not label a bag.
+  const meaningful = filterModifiersForCore(modifiers, core);
   if (meaningful.length === 0 && variants) {
     const color = [/black/.test(variants) && "ブラック", /white/.test(variants) && "ホワイト", /pink/.test(variants) && "ピンク", /brown|coffee/.test(variants) && "ブラウン", /blue/.test(variants) && "ブルー", /green/.test(variants) && "グリーン", /purple/.test(variants) && "パープル", /gold/.test(variants) && "ゴールド", /silver/.test(variants) && "シルバー"].filter((item): item is string => Boolean(item));
-    if (color.length) meaningful.push(...color);
+    // Only a single shared colour is a fact about the product; several colours
+    // would contradict each variant's own colour suffix.
+    const onlyColor = singleVariantColor(color);
+    if (onlyColor) meaningful.push(onlyColor);
   }
   if (meaningful.length === 0) return null;
   return (meaningful.slice(0, 2).join("・") + " " + core).slice(0, 120);

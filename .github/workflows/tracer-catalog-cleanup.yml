@@ -1,0 +1,90 @@
+name: TRACER catalog cleanup (explicit IDs)
+
+# Runs when ops/catalog-cleanup.json changes on main. It always dry-runs the whole
+# file first; it applies only when the file's "apply" is true, in bounded chunks.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/catalog-cleanup.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-catalog-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ops
+      - name: Wait until production serves this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then echo "Production serves $TARGET_SHA"; exit 0; fi
+            sleep 15
+          done
+          echo "Production does not serve target SHA; refusing to run."
+          exit 1
+      - name: Dry-run, then apply in chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile } from "node:fs/promises";
+          const spec = JSON.parse(await readFile("ops/catalog-cleanup.json", "utf8"));
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const getToken = async () => {
+            const r = await fetch(tokenUrl, { headers: { Authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+            if (!r.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + r.status);
+            const { value } = await r.json();
+            if (typeof value !== "string" || !value) throw new Error("OIDC_TOKEN_MISSING");
+            return value;
+          };
+          const endpoint = audience + "/api/admin/commerce/catalog-cleanup";
+          const post = async (body) => {
+            const response = await fetch(endpoint, { method: "POST", headers: { Authorization: "Bearer " + await getToken(), "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(295000) });
+            const result = await response.json().catch(() => ({}));
+            return { status: response.status, ...result };
+          };
+          const withdraw = spec.withdraw ?? [], copy = spec.copy ?? [], resync = spec.resync ?? [];
+          const dryRun = await post({ apply: false, withdraw, copy, resync });
+          console.log(JSON.stringify(dryRun, null, 2));
+          await writeFile("catalog-cleanup-dry-run.json", JSON.stringify(dryRun, null, 2));
+          if (dryRun.ok !== true) throw new Error("DRY_RUN_FAILED:" + dryRun.status);
+          const out = { apply: spec.apply === true, dryRun: dryRun.plan, batches: [] };
+          if (out.apply) {
+            const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
+            for (const part of chunk(withdraw, 12)) out.batches.push({ kind: "withdraw", ...(await post({ apply: true, withdraw: part })) });
+            for (const part of chunk(copy, 5)) out.batches.push({ kind: "copy", ...(await post({ apply: true, copy: part })) });
+            for (const part of chunk(resync, 8)) out.batches.push({ kind: "resync", ...(await post({ apply: true, resync: part })) });
+            for (const batch of out.batches) console.log(JSON.stringify({ kind: batch.kind, status: batch.status, ok: batch.ok, withdrawn: batch.withdrawn, hidden: batch.hidden, sync: batch.sync, newfind: batch.newfind, errors: batch.errors, skipped: batch.plan?.skippedMultiVariant, unresolved: batch.plan?.unresolved }));
+          }
+          await writeFile("catalog-cleanup-result.json", JSON.stringify(out, null, 2));
+          const failed = out.batches.filter((b) => b.ok !== true);
+          await writeFile(process.env.GITHUB_STEP_SUMMARY, ["# Catalog cleanup", "", "Mode: " + (out.apply ? "apply" : "dry-run"), "", "Batches: " + out.batches.length + ", not ok: " + failed.length, ""].join("\n"));
+          if (failed.length) process.exitCode = 1;
+          NODE
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-cleanup-${{ github.run_id }}
+          path: catalog-cleanup-*.json
+          if-no-files-found: ignore
+          retention-days: 30

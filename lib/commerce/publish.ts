@@ -10,6 +10,7 @@ import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
 import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
+import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -29,11 +30,19 @@ function safeSlug(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "tracer-item";
 }
 
+// Shopify renders descriptionHtml as HTML, so plain-text line breaks would
+// collapse into one run-on paragraph. Already-HTML copy is passed through.
+function plainTextToShopifyHtml(text: string): string {
+  if (/<(p|br|ul|li|div)\b/i.test(text)) return text;
+  const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.split(/\n{2,}/).map((block) => "<p>" + escape(block.trim()).replace(/\n/g, "<br>") + "</p>").join("\n");
+}
+
 function shippingInclusiveDescription(description: string): string {
   // Remove legacy supplier copy that tells customers to pay freight separately.
   // The canonical JPY selling price already includes supplier shipping cost.
   const cleaned = description
-    .replace(/[^。！？\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています)[^。！？\n]*[。！？]?/gu, "")
+    .replace(/[^。！？\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています|日本向け送料[：:]|配送費用は決済画面)[^。！？\n]*[。！？]?/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return [cleaned, "送料込み・送料無料。日本向け送料は商品価格に含まれています。"]
@@ -192,7 +201,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
       const variant = variantsById.get(String(listing.variant_id));
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
-      const title = String(variant?.title_ja || product?.title_ja || "TRACER商品");
+      const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER商品")) || "TRACER商品";
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
         const itemId = String(listing.external_product_id);
@@ -443,13 +452,27 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const containsEnglishWords = (value: unknown) => typeof value === "string" && /[A-Za-z]{2,}/.test(value.replace(/\b(?:PU|PC|USB|LED|UV|A4|Type-C|iPhone|Huawei|PHOERA)\b/gi, ""));
     const localizedTitleIsPublishable = Boolean(localizedSourceTitle && isPublishableCatalogTitle(localizedSourceTitle) &&
       isJapaneseProductTitle(localizedSourceTitle) && !containsEnglishWords(localizedSourceTitle));
-    const title = localizedTitleIsPublishable
-      ? String(localizedSourceTitle).trim()
-      : !containsEnglishWords(candidate.title_ja) && isPublishableCatalogTitle(candidate.title_ja) && isJapaneseProductTitle(candidate.title_ja)
-        ? candidate.title_ja.trim()
-        : !containsEnglishWords(product.title_ja) && isPublishableCatalogTitle(product.title_ja) && isJapaneseProductTitle(product.title_ja)
-          ? product.title_ja.trim()
-          : "";
+    // A curated title (metadata.manualTitleJa) wins over generated ones so routine
+    // syncs never revert copy that was fixed by hand. Every candidate passes the
+    // shared storefront hygiene rules (mistranslated modifiers, colour conflicts).
+    const isPublishableTitle = (value: string) => Boolean(value) && !containsEnglishWords(value) &&
+      isPublishableCatalogTitle(value) && isJapaneseProductTitle(value);
+    const manualTitle = typeof product.metadata?.manualTitleJa === "string"
+      ? applyManualTitle(product.metadata.manualTitleJa, candidate.title_ja)
+      : "";
+    const candidateTitle = normalizeListingTitle(candidate.title_ja);
+    const productTitle = normalizeListingTitle(product.title_ja);
+    const title = isPublishableTitle(manualTitle)
+      ? manualTitle
+      : localizedTitleIsPublishable
+        ? normalizeListingTitle(String(localizedSourceTitle))
+        // The hygiene rules may translate a known half-English title; anything
+        // still English after normalization stays blocked by isPublishableTitle.
+        : (!containsEnglishWords(candidate.title_ja) || !containsEnglishWords(candidateTitle)) && isPublishableTitle(candidateTitle)
+          ? candidateTitle
+          : (!containsEnglishWords(product.title_ja) || !containsEnglishWords(productTitle)) && isPublishableTitle(productTitle)
+            ? productTitle
+            : "";
     const rawOffer = currentPriceOfferId
       ? allOffers.find((candidateOffer) => String(candidateOffer.id) === currentPriceOfferId) ?? null
       : null;
@@ -620,7 +643,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
-    const description = (product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
+    const manualDescription = typeof product.metadata?.manualDescriptionJa === "string" ? product.metadata.manualDescriptionJa.trim() : "";
+    const description = (manualDescription || product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
     // Selling price includes supplier item cost, Japan-bound freight, platform fees and target margin.
     // Remove any legacy copy implying that customers pay supplier freight separately.
     const storefrontDescription = supplierShippingKnown
@@ -789,10 +813,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           }
         };
         const productResult = productId && variantId
-          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl, seoTitle, seoDescription })
+          ? await updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: plainTextToShopifyHtml(storefrontDescription), handle, price: Number(price.selling_price), variantId, sku, imageUrl, seoTitle, seoDescription })
           : recoveredProduct && recoveredVariantId
-            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null, seoTitle, seoDescription })
-            : await createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription });
+            ? await updateWithHandleCollisionRecovery({ productId: recoveredProduct.id, title, descriptionHtml: plainTextToShopifyHtml(storefrontDescription), handle, price: Number(price.selling_price), variantId: recoveredVariantId, sku, imageUrl: null, seoTitle, seoDescription })
+            : await createShopifyProduct({ title, descriptionHtml: plainTextToShopifyHtml(storefrontDescription), handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription });
         externalProductId = productResult.id;
         const variant = productResult.variants?.nodes?.[0];
         if (!variant?.id) throw new Error("shopify_variant_id_missing");

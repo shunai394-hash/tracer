@@ -287,11 +287,27 @@ export async function withdrawBelowMinimumPriceCommercePromotions(options: { lim
   const eventByKey = new Map((events ?? []).map((row) => [String(row.event_key), row]));
   const targets = variantIds.filter((variantId) => eventByKey.get(newfindCommerceEventKey(variantId))?.status === "processed");
   result.eligible = targets.length;
+  await sendNewfindWithdrawals(db, cfg, targets.slice(0, limit), eventByKey, "minimum_listing_price_below_2500", result);
+  return result;
+}
+
+type NewfindWithdrawalTally = { withdrawn: number; failed: Array<{ variantId: string; detail: string }> };
+
+// Signs and sends product_withdrawn for variants whose NEWFIND promotion was
+// processed, then records the withdrawal in the commerce_events ledger.
+async function sendNewfindWithdrawals(
+  db: ReturnType<typeof createSupabaseAdminClient>,
+  cfg: ReturnType<typeof getNewfindConfig>,
+  targets: string[],
+  eventByKey: Map<string, { event_key: unknown; status: unknown; detail: unknown }>,
+  reason: string,
+  result: NewfindWithdrawalTally,
+): Promise<void> {
   const originValue = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tracer-pied-alpha.vercel.app";
   const origin = new URL(originValue);
-  if (origin.protocol !== "https:") throw new Error("newfind_minimum_price_site_origin_must_be_https");
+  if (origin.protocol !== "https:") throw new Error("newfind_withdraw_site_origin_must_be_https");
 
-  for (const variantId of targets.slice(0, limit)) {
+  for (const variantId of targets) {
     const key = newfindCommerceEventKey(variantId);
     const event = eventByKey.get(key)!;
     const detail = readNewfindCommerceDetail(variantId, event.detail);
@@ -308,7 +324,7 @@ export async function withdrawBelowMinimumPriceCommercePromotions(options: { lim
         tracer_listing_id: variantId,
         promotion_event_id: detail.eventId,
         product_urls: [productUrl],
-        reason: "minimum_listing_price_below_2500",
+        reason,
       },
     });
     const timestamp = String(Math.floor(Date.now() / 1000));
@@ -345,5 +361,34 @@ export async function withdrawBelowMinimumPriceCommercePromotions(options: { lim
       result.failed.push({ variantId, detail: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200) });
     }
   }
+}
+
+export type NewfindVariantWithdrawResult = NewfindWithdrawalTally & {
+  enabled: boolean;
+  configured: boolean;
+  promoted: number;
+};
+
+/**
+ * Withdraws NEWFIND promotions for an explicit list of variants (for example
+ * products taken off sale by a manual catalog cleanup). Variants that were
+ * never promoted are skipped.
+ */
+export async function withdrawNewfindPromotionsForVariants(variantIds: string[], reason: string): Promise<NewfindVariantWithdrawResult> {
+  const cfg = getNewfindConfig();
+  const enabled = process.env.NEWFIND_TRACER_PROMOTION_RECEIVER_READY?.trim() === "1";
+  const configured = Boolean(cfg.apiUrl && cfg.webhookSecret);
+  const result: NewfindVariantWithdrawResult = { enabled, configured, promoted: 0, withdrawn: 0, failed: [] };
+  const ids = [...new Set(variantIds.filter(Boolean))];
+  if (!enabled || !configured || ids.length === 0) return result;
+  const db = createSupabaseAdminClient();
+  const { data: events, error } = await db.from("commerce_events")
+    .select("event_key,status,detail")
+    .in("event_key", ids.map(newfindCommerceEventKey));
+  if (error) throw new Error("newfind_withdraw_ledger_read_failed:" + error.message);
+  const eventByKey = new Map((events ?? []).map((row) => [String(row.event_key), row]));
+  const targets = ids.filter((variantId) => eventByKey.get(newfindCommerceEventKey(variantId))?.status === "processed");
+  result.promoted = targets.length;
+  await sendNewfindWithdrawals(db, cfg, targets, eventByKey, reason, result);
   return result;
 }
