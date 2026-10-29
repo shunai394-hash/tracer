@@ -40,6 +40,8 @@ function plainTextToShopifyHtml(text: string): string {
 }
 
 function shippingInclusiveDescription(description: string): string {
+  // Legacy wording "日本向け送料は商品価格に含まれています" is intentionally
+  // removed: supplier freight/checkout rules can vary, so never promise inclusion.
   return normalizeShippingCopy(description);
 }
 
