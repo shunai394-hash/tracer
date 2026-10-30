@@ -280,6 +280,17 @@ test("BASE listing URLs resolve from the authenticated shop profile when API edi
   assert.match(publish, /getBasePublicShopUrl\(\)/);
   assert.match(publish, /resolveBasePublicUrl\(visibleResponse, externalProductId, basePublicShopUrl\)/);
 });
+test("BASE item creation can encode variant names, stock and stable variant identifiers", async () => {
+  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+  assert.match(base, /variations\?: Array<\{/);
+  assert.match(base, /body\.set\(\`variation\[\${index}\]\`, name\)/);
+  assert.match(base, /body\.set\(\`variation_stock\[\${index}\]\`, String\(Math\.floor\(stock\)\)\)/);
+  assert.match(base, /body\.set\(\`variation_identifier\[\${index}\]\`, identifier\)/);
+  assert.match(base, /BASE_VARIATION_NAME_INVALID/);
+  assert.match(base, /BASE_VARIATION_STOCK_INVALID/);
+  assert.match(base, /BASE_VARIATION_IDENTIFIER_INVALID/);
+  assert.match(base, /BASE applies one item-level price to all variations/);
+});
 test("product dashboard displays the canonical commerce catalog instead of legacy zero counts", async () => {
   const page = await readFile(new URL("../app/products/page.tsx", import.meta.url), "utf8");
   assert.match(page, /from\("commerce_products"\)/);

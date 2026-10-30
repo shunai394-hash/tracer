@@ -14,6 +14,17 @@ type BaseItemInput = {
   price: number;
   stock?: number;
   visible?: boolean;
+  /**
+   * Optional sellable variants for the legacy /1/items/add API.
+   * BASE applies one item-level price to all variations, so callers must
+   * only group variants whose storefront selling price is identical.
+   */
+  variations?: Array<{
+    name: string;
+    stock: number;
+    identifier?: string;
+    barcode?: string;
+  }>;
 };
 
 type BaseItemResponse = {
@@ -195,17 +206,30 @@ async function requestBase(
 }
 
 export async function createBaseItem(input: BaseItemInput) {
-  return requestBase(
-    "/items/add",
-    new URLSearchParams({
-      title: input.title,
-      ...(input.identifier ? { identifier: input.identifier } : {}),
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-  );
+  const body = new URLSearchParams({
+    title: input.title,
+    ...(input.identifier ? { identifier: input.identifier } : {}),
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  for (const [index, variation] of (input.variations ?? []).entries()) {
+    const name = String(variation.name ?? "").trim();
+    if (!name || name.length > 255) throw new Error("BASE_VARIATION_NAME_INVALID");
+    const stock = Number(variation.stock);
+    if (!Number.isFinite(stock) || stock < 0) throw new Error("BASE_VARIATION_STOCK_INVALID");
+    const identifier = String(variation.identifier ?? "").trim();
+    if (identifier && !/^[a-zA-Z0-9_-]{1,50}$/.test(identifier)) {
+      throw new Error("BASE_VARIATION_IDENTIFIER_INVALID");
+    }
+    const barcode = String(variation.barcode ?? "").trim();
+    body.set(`variation[${index}]`, name);
+    body.set(`variation_stock[${index}]`, String(Math.floor(stock)));
+    if (identifier) body.set(`variation_identifier[${index}]`, identifier);
+    if (barcode) body.set(`barcode[${index}]`, barcode);
+  }
+  return requestBase("/items/add", body);
 }
 
 export async function editBaseItem(input: {
