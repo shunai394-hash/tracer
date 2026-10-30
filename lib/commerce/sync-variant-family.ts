@@ -394,12 +394,23 @@ async function syncOneFamily(db: Db, channel: Channel, productId: string, candid
     await rememberBlocked(db, channel, productId, planned.reason);
     return variantIds.filter(touched).map((variantId) => ({ variantId, ok: false, error: "variant_family_blocked:" + planned.reason }));
   }
-  const priced = planned.variations.filter((variation) => variation.sellingPrice > 0);
-  if (priced.length < 2) {
-    await rememberBlocked(db, channel, productId, "variant_family_price_missing");
-    return variantIds.filter(touched).map((variantId) => ({ variantId, ok: false, error: "variant_family_blocked:variant_family_price_missing" }));
+  const sellablePriced = planned.variations.filter((variation) => variation.sellable && variation.sellingPrice > 0);
+  if (sellablePriced.length === 0) {
+    await rememberBlocked(db, channel, productId, "variant_family_no_sellable_price");
+    return variantIds.filter(touched).map((variantId) => ({ variantId, ok: false, error: "variant_family_blocked:variant_family_no_sellable_price" }));
   }
-  const plan: Plan = { ...planned, variations: priced };
+  // Keep every supplier-identified color/size in the shared parent. A variant
+  // without a verified price receives the family's reference price but remains
+  // hidden with zero stock; it is never made purchasable by this fallback.
+  const referencePrice = Math.max(...planned.variations.map((variation) => variation.sellingPrice).filter((price) => price > 0));
+  const familyVariations = planned.variations.map((variation) => ({
+    ...variation,
+    sellingPrice: variation.sellingPrice > 0 ? variation.sellingPrice : referencePrice,
+    sellable: variation.sellable && variation.sellingPrice > 0,
+    inventory: variation.sellable && variation.sellingPrice > 0 ? variation.inventory : 0,
+    withheldReason: variation.sellingPrice > 0 ? variation.withheldReason : "price_unavailable",
+  }));
+  const plan: Plan = { ...planned, variations: familyVariations };
   if (!isJapaneseProductTitle(plan.productTitle) || !isPublishableCatalogTitle(plan.productTitle)) {
     await rememberBlocked(db, channel, productId, "japanese_product_title_invalid");
     return variantIds.filter(touched).map((variantId) => ({ variantId, ok: false, error: "japanese_product_title_invalid" }));
