@@ -6,6 +6,7 @@ import ts from "typescript";
 const nodeRequire = createRequire(import.meta.url);
 const routePath = new URL("../app/api/admin/ai-live/sfx-v3/route.ts", import.meta.url);
 const source = readFileSync(routePath, "utf8");
+const page = readFileSync(new URL("../public/ai-live-sfx-v3-preview.html", import.meta.url), "utf8");
 
 assert.match(source, /eleven_text_to_sound_v3/u);
 assert.match(source, /process\.env\.ELEVENLABS_API_KEY/u);
