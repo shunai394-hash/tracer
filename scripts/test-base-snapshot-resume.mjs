@@ -40,7 +40,7 @@ const complete = {
   trackingSupported: true,
   currency: "JPY",
   sellingPrice: 1000,
-  expectedProfit: 400,
+  expectedProfit: 2500,
 };
 assert.deepEqual(missingSaleEvidence(complete), []);
 assert.deepEqual(missingSaleEvidence({ ...complete, unitCost: 0 }), ["cost"]);
