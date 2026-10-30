@@ -17,6 +17,12 @@ assert.match(source, /MAX_DURATION_SECONDS = 8/u);
 assert.match(source, /Math\.ceil\(durationSeconds \* 40\)/u);
 assert.match(source, /not automatically retried/u);
 assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\(/u);
+assert.match(page, /<meta name="robots" content="noindex,nofollow">/u);
+assert.match(page, /api\\/admin\\/ai-live\\/sfx-v3/u);
+assert.match(page, /window\\.confirm/u);
+assert.match(page, /雨の日の玄関/u);
+assert.match(page, /夏祭り/u);
+assert.doesNotMatch(page, /localStorage|sessionStorage|ELEVENLABS_API_KEY|xi-api-key|console\\.(log|debug|info|warn|error)\\(/u);
 
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
