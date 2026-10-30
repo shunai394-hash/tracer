@@ -1,4 +1,4 @@
-﻿-- Variant family channel identity migration
+-- Variant family channel identity migration
 
 create table if not exists public.channel_listing_identity_backup (
   id bigint generated always as identity primary key,
@@ -12,6 +12,22 @@ create table if not exists public.channel_listing_identity_backup (
   selling_price integer,
   reason text not null,
   created_at timestamptz not null default now()
+);
+
+-- Preserve every existing channel identity before relaxing the parent-product uniqueness rule.
+-- The listing_id guard makes this copy safe to rerun if a migration is manually retried.
+insert into public.channel_listing_identity_backup (
+  listing_id, channel, variant_id, external_product_id, external_variant_id,
+  external_sku, status, selling_price, reason
+)
+select
+  cl.id, cl.channel, cl.variant_id, cl.external_product_id, cl.external_variant_id,
+  cl.external_sku, cl.status, cl.selling_price, 'pre_variant_family_migration'
+from public.channel_listings cl
+where not exists (
+  select 1
+  from public.channel_listing_identity_backup b
+  where b.listing_id = cl.id
 );
 
 alter table public.channel_listing_identity_backup enable row level security;
