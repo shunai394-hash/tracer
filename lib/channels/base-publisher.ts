@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { createBaseItem, editBaseItem, addBaseItemImage, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
-import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
+import { isJapaneseProductTitle, localizeProductDescription, localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
@@ -27,7 +27,17 @@ async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise
   if (!isPublishableCatalogTitle(sourceTitle)) throw new Error("BASE catalog title contains workflow or disqualification text");
   if (!isPublishableCatalogDescription(sourceDetail)) throw new Error("BASE catalog description contains generic placeholder text");
   if (isJapaneseProductTitle(sourceTitle) && hasUsableJapaneseCopy(sourceDetail)) return { title: sourceTitle, detail: sourceDetail };
-  if (!isGeminiConfigured()) throw new Error("BASE japanese catalog copy requires GEMINI_API_KEY");
+  // Use deterministic, source-grounded local rules for known products before requiring Gemini.
+  if (!isGeminiConfigured()) {
+    const localizedTitle = localizeProductTitle(sourceTitle);
+    const localizedDetail = localizeProductDescription(sourceDetail);
+    if (localizedTitle && localizedDetail && isJapaneseProductTitle(localizedTitle)
+      && isPublishableCatalogTitle(localizedTitle) && isPublishableCatalogDescription(localizedDetail)
+      && hasUsableJapaneseCopy(localizedDetail)) {
+      return { title: localizedTitle, detail: localizedDetail };
+    }
+    throw new Error("japanese_catalog_copy_unavailable_without_gemini");
+  }
   const result = await generateStructuredJson<JapaneseCatalogCopy>({
     systemInstruction: "あなたは日本のEC商品編集者です。入力された商品情報を日本語の販売用コピーへ変換してください。商品名と説明は必ず日本語にしてください。英語の固有名詞・型番・規格・ブランド名は必要な場合だけ残してください。存在しない仕様や数値を追加しないでください。titleは簡潔で自然な日本語の商品名、detailは購入判断に必要な特徴を読みやすい日本語でまとめてください。JSONのみ返してください。",
     prompt: JSON.stringify({ title: sourceTitle, detail: sourceDetail }),
@@ -132,7 +142,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
     ].join(","));
   }
-  const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
   // Prefer the newest gate-passed, never-published listings. Already-hidden
   // stale BASE items are excluded above so they cannot consume every bounded
   // batch and starve fresh products waiting for their first BASE item.

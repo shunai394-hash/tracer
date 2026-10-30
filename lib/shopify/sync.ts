@@ -14,7 +14,7 @@ export type ShopifySyncResult = {
 export async function syncPublishedListingsToShopify(listingIds?: string[], limit = 10): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) return { configured: false, attempted: 0, synced: 0, failed: [], listingIds: [] };
 
-  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(15, Math.floor(limit)) : 10;
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(50, Math.floor(limit)) : 10;
   const result = await syncCanonicalShopifyListings(safeLimit, listingIds);
   return {
     configured: result.configured,
