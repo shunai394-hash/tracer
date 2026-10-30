@@ -1,140 +1,16 @@
 {
   "apply": true,
-  "note": "Run 6 (2026-10-30): resend NEWFIND withdrawals after NEWFIND accepts seeded TRACER items.",
-  "withdraw": [
+  "note": "Run 7 (2026-10-30): pearl bag curated title without a fixed colour so every variant keeps its own colour.",
+  "withdraw": [],
+  "copy": [
     {
-      "channel": "shopify",
-      "externalProductId": "8638972821548"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638972854316"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638976065580"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8634720190508"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638972887084"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638980718636"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638980882476"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638980980780"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973181996"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034392620"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639046090796"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973280300"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973345836"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034130476"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034163244"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034327084"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034228780"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639046058028"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973083692"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8638973116460"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034458156"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639076597804"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639076630572"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639046254636"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639046352940"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639076106284"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639076302892"
-    },
-    {
-      "channel": "shopify",
-      "externalProductId": "8639034261548"
-    },
-    {
-      "channel": "base",
-      "externalProductId": "163878665"
-    },
-    {
-      "channel": "base",
-      "externalProductId": "164039402"
-    },
-    {
-      "channel": "base",
-      "externalProductId": "164088680"
-    },
-    {
-      "channel": "base",
-      "externalProductId": "164091495"
-    },
-    {
-      "channel": "base",
-      "externalProductId": "164092821"
+      "ref": {
+        "channel": "shopify",
+        "externalProductId": "8626330370092"
+      },
+      "title": "パール装飾 レディースバッグ｜忘年会・パーティーの装いに",
+      "description": "年末のパーティーシーンに、上品なきらめきを。パール装飾のレディースバッグです。\n\n・忘年会・結婚式の二次会に\n・ワンピースやドレスに合わせて\n・シンプルな装いを格上げしたい日に\n\nカラーは商品名・商品画像でご確認ください。サイズ・素材・仕様は商品詳細をご確認ください。"
     }
   ],
-  "copy": [],
   "resync": []
 }
