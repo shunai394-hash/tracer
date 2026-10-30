@@ -77,11 +77,19 @@ export async function POST(request: Request) {
             if (updated.productUpdate.userErrors.length) throw new Error(updated.productUpdate.userErrors.map((e) => e.message).join("; "));
           }
           if (alts.length) {
-            const updated = await shopifyGraphQL<{ fileUpdate: { userErrors: Array<{ message: string }> } }>(
-              "mutation SweepAlt($files: [FileUpdateInput!]!) { fileUpdate(files: $files) { userErrors { message } } }",
-              { files: alts.map((media) => ({ id: media.id, alt: finalTitle.slice(0, 512) })) },
-            );
-            if (updated.fileUpdate.userErrors.length) throw new Error(updated.fileUpdate.userErrors.map((e) => e.message).join("; "));
+            // Alt text needs the write_files scope, which this app may not have.
+            // A missing scope must not fail the copy fixes made above.
+            try {
+              const updated = await shopifyGraphQL<{ fileUpdate: { userErrors: Array<{ message: string }> } }>(
+                "mutation SweepAlt($files: [FileUpdateInput!]!) { fileUpdate(files: $files) { userErrors { message } } }",
+                { files: alts.map((media) => ({ id: media.id, alt: finalTitle.slice(0, 512) })) },
+              );
+              if (updated.fileUpdate.userErrors.length) throw new Error(updated.fileUpdate.userErrors.map((e) => e.message).join("; "));
+            } catch (altError) {
+              const message = altError instanceof Error ? altError.message : String(altError);
+              if (!/write_files|Access denied/i.test(message)) throw altError;
+              change.alts = 0;
+            }
           }
         } catch (error) {
           change.error = (error instanceof Error ? error.message : String(error)).slice(0, 160);
