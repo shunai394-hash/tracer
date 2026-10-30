@@ -112,6 +112,26 @@ test("different supplier product ids are never merged, even when the titles matc
   assert.equal(refused[0].products.length, 2);
 });
 
+test("evidence age alone does not hide a variant when all sale evidence is valid", () => {
+  const plan = planVariantFamily({
+    productId: "product-1",
+    sourceKey: "cj:1234567890123",
+    productTitle: "ヘアクリップ",
+    members: [
+      member({ evidenceFresh: false }),
+      member({
+        variantId: "22222222-2222-4222-8222-222222222222",
+        supplierVariantId: "9876543210988",
+        title: "ヘアクリップ（ホワイト）",
+        evidenceFresh: false,
+      }),
+    ],
+  });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.visible, true);
+  assert.ok(plan.variations.every((row) => row.sellable));
+});
+
 test("a below-target margin stays unsold and identical option labels are rejected", () => {
   const low = planVariantFamily({
     productId: "product-1",
