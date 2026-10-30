@@ -1,2 +1,2 @@
-dry-run
-2026-10-30: preview free-shipping copy, title and alt-text sweep.
+apply
+2026-10-30: unify free-shipping copy, clean titles, fix image alt text on Shopify and BASE.
