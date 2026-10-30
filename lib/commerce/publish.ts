@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, getBasePublicShopUrl, isBaseConfigured, setBaseVariationStock, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { syncQueuedVariantFamilies } from "@/lib/commerce/sync-variant-family";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
@@ -196,6 +197,35 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
       const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER商品")) || "TRACER商品";
       const detail = String(product?.description_ja || title);
+      const { count: sharedCount, error: sharedError } = await db.from("channel_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", channel)
+        .eq("external_product_id", String(listing.external_product_id))
+        .neq("id", listing.id)
+        .eq("status", "published");
+      if (sharedError) throw new Error("shared_product_lookup_failed:" + sharedError.message);
+      if ((sharedCount ?? 0) > 0) {
+        if (channel === "base") {
+          const variationId = String(listing.external_variant_id ?? "");
+          if (!variationId || variationId === String(listing.external_product_id)) throw new Error("base_shared_variation_id_missing");
+          await setBaseVariationStock(String(listing.external_product_id), variationId, 0);
+        } else if (listing.external_variant_id) {
+          await setShopifyVariantInventory({
+            variantId: String(listing.external_variant_id),
+            quantity: 0,
+            reference: "shared-family-withhold:" + String(listing.variant_id),
+          });
+        }
+        const { error: saveSharedError } = await db.from("channel_listings").update({
+          status: "error",
+          last_error: "supplier_offer_no_longer_fulfillable:" + reason,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", listing.id);
+        if (saveSharedError) throw new Error("stale_listing_state_save_failed:" + saveSharedError.message);
+        result.unpublished++;
+        continue;
+      }
       if (channel === "base") {
         const itemId = String(listing.external_product_id);
         await editBaseItem({
@@ -403,7 +433,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     if (id) baseItemsById.set(id, item);
   }
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; missingEvidence?: string[]; action?: "published" | "unpublished" }> = [];
+  // Color and size variants that share a supplier product are one channel product.
+  // A run syncs two families; the rest stay variant_family_deferred and are not created again as separate products.
+  const familySync = await syncQueuedVariantFamilies({ channel, variantIds: candidates.map((candidate) => candidate.id) });
+  const familyHandled = new Set(familySync.handledVariantIds);
+  results.push(...familySync.results);
   for (const candidate of candidates) {
+    if (familyHandled.has(candidate.id)) continue;
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => {

@@ -3,6 +3,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBaseOrderDetail, isBaseConfigured, listBaseOrders } from "@/lib/channels/base";
 import { ingestPaidOrder } from "@/lib/commerce/core";
+import { resolveBaseOrderVariant } from "@/lib/commerce/variant-family.mjs";
 import { splitJapaneseAddress } from "@/lib/commerce/japanese-address.mjs";
 
 const BASE_UNMAPPED_ORDER_ITEM_EVENT = "base_order_unmapped_item";
@@ -84,12 +85,18 @@ export async function GET(request: Request) {
         if (sourceLines.some((item) => item.item_id === undefined || item.item_id === null || !String(item.item_id).trim() || item.order_item_id === undefined || item.order_item_id === null || !String(item.order_item_id).trim())) {
           throw new Error("base_order_line_identity_missing");
         }
-        const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
+        const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string; selection: Record<string, unknown> }> = [];
         let hasUnmappedLine = false;
         for (const item of sourceLines) {
-          const { data: listing, error: listingError } = await db.from("channel_listings")
-            .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
+          const { data: listingRows, error: listingError } = await db.from("channel_listings")
+            .select("variant_id,external_product_id,external_variant_id,external_sku,status").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published");
           if (listingError) throw new Error("base_item_mapping_read_failed:" + listingError.message);
+          const resolved = resolveBaseOrderVariant({
+            itemId: item.item_id,
+            variationId: item.variation_id,
+            variationIdentifier: item.variation_identifier,
+          }, listingRows ?? []);
+          const listing = resolved.ok ? { variant_id: resolved.variantId, external_sku: (listingRows ?? []).find((row) => String(row.variant_id) === resolved.variantId)?.external_sku ?? "" } : null;
           if (!listing) {
             // A paid line for a BASE item TRACER does not link (legacy, duplicate
             // or foreign listing) must never vanish: record it for a person to
@@ -114,7 +121,14 @@ export async function GET(request: Request) {
           lines.push({
             externalLineId: String(item.order_item_id),
             variantId: String(listing.variant_id), sku: String(listing.external_sku ?? ""),
-            quantity, unitPrice: Math.round(Number(item.price ?? 0)), offerId: String(price.supplier_offer_id)
+            quantity, unitPrice: Math.round(Number(item.price ?? 0)), offerId: String(price.supplier_offer_id),
+            selection: {
+              channel: "base",
+              variation: item.variation ?? null,
+              variationId: item.variation_id ?? null,
+              variationIdentifier: item.variation_identifier ?? null,
+              supplierVariantId: resolved.ok ? resolved.supplierVariantId : null,
+            },
           });
         }
         // Never procure only the mapped subset of a multi-line paid order. Keep

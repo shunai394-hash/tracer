@@ -32,6 +32,14 @@ export function newfindCommerceEventKey(variantId: string): string {
   return `newfind_commerce:${variantId}`;
 }
 
+export function newfindCommerceProductEventKey(productId: string): string {
+  return `newfind_commerce_product:${productId}`;
+}
+
+export function newfindCommerceProductEventId(productId: string): string {
+  return `tracer-commerce-product:${productId}`;
+}
+
 /** Receiver idempotency key; stable across retries of the same variant. */
 export function newfindCommerceEventId(variantId: string): string {
   return `tracer-commerce-variant:${variantId}`;

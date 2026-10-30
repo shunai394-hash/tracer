@@ -9,6 +9,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { retireShopListingsOwnedByCommerce } from "@/lib/commerce/retire-legacy-storefront";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -155,6 +156,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
   const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
+  const retiredIds = await retireShopListingsOwnedByCommerce(publishableListings, "base", supabase);
   const identityUnlinkedIds = new Set<string>(publishableListings
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
@@ -219,7 +221,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
+  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !retiredIds.has(String(listing.id)));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -244,6 +246,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
+    if (retiredIds.has(listingId)) continue;
     if (identityUnlinkedIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
