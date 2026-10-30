@@ -227,7 +227,7 @@ assert.match(shopify, /catalog_title_not_publishable/, "Shopify sync must report
 assert.match(shopify, /isPublishableCatalogDescription\(row\.description\)/, "Shopify sync must reject generic descriptions");
 assert.match(shopify, /workflowDescription = \/商品アイデンティティが未確定/, "Shopify sync must repair persisted workflow-status descriptions");
 assert.match(shopify, /staleWorkflowCopy/, "Shopify reconciliation must resync existing products with stale workflow copy");
-assert.match(shopify, /仕入先の送料見積もりは商品価格の計算に反映しています/, "Shopify copy must not claim nonzero supplier shipping is separately charged");
+assert.match(shopify, /freeShippingText\(copy\.description\)/, "Shopify copy must use the shared free-shipping sentence because Japan-bound shipping is included in the listing price");
 assert.doesNotMatch(shopify, /送料別（仕入先条件に従います）/, "Shopify copy must not label shipping separately when supplier shipping is priced into the listing");
 assert.match(base, /isPublishableCatalogTitle\(sourceTitle\)/, "BASE must reject invalid source titles");
 assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must reject invalid translated titles");
