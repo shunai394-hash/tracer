@@ -8,7 +8,7 @@ import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
-import { normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -291,7 +291,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId, ok: false, skipped: true, error: "japanese_catalog_copy_required" });
       continue;
     }
-    const catalogCopy = copyResult.copy;
+    // Selling prices include Japan-bound shipping: one free-shipping sentence everywhere.
+    const catalogCopy = { ...copyResult.copy, detail: freeShippingText(copyResult.copy.detail) };
     if (catalogCopy.title !== String(listing.title ?? "").trim() || catalogCopy.detail !== String(listing.description ?? listing.title ?? "").trim()) {
       await supabase.from("shop_listings").update({ title: catalogCopy.title, description: catalogCopy.detail, pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
     }

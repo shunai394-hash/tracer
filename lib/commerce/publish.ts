@@ -10,7 +10,7 @@ import { asRelationRows } from "@/lib/commerce/relation-rows";
 import { resolveBasePublicUrl } from "@/lib/commerce/base-public-url.mjs";
 import { missingSaleEvidence } from "@/lib/commerce/sale-evidence";
 import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
-import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Channel = "base" | "shopify";
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
@@ -39,15 +39,8 @@ function plainTextToShopifyHtml(text: string): string {
 }
 
 function shippingInclusiveDescription(description: string): string {
-  // Remove legacy supplier copy that tells customers to pay freight separately.
   // The canonical JPY selling price already includes supplier shipping cost.
-  const cleaned = description
-    .replace(/[^。！？\n]*(?:送料別|送料別途|送料込み|送料無料|送料は商品価格に含まれています|日本向け送料[：:]|配送費用は決済画面)[^。！？\n]*[。！？]?/gu, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return [cleaned, "送料込み・送料無料。日本向け送料は商品価格に含まれています。"]
-    .filter(Boolean)
-    .join("\n\n");
+  return freeShippingText(description);
 }
 
 async function addBaseImageWithFormatFallback(input: {

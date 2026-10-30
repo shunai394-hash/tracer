@@ -7,7 +7,7 @@ import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/clie
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
-import { normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Listing = {
   id: string;
@@ -539,12 +539,10 @@ async function syncListingRows(
       if (price === null || price <= 0) throw new Error("selling_price_invalid");
       if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) throw new Error("image_url_invalid");
 
-      const shippingText = asNumber(row.shipping_cost) === 0
-        ? "日本向け送料：仕入先の送料見積もりは0円です。最終的な配送費用は決済画面でご確認ください。"
-        : "日本向け送料：仕入先の送料見積もりは商品価格の計算に反映しています。最終的な配送費用は決済画面でご確認ください。";
       let productInput = {
         title: copy.title,
-        descriptionHtml: html(`${copy.description}\n\n${shippingText}`),
+        // Selling prices include Japan-bound shipping: one free-shipping sentence everywhere.
+        descriptionHtml: html(freeShippingText(copy.description)),
         handle: row.shopify_handle || row.slug,
         price,
         sku: sku(row),

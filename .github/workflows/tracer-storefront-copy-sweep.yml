@@ -1,0 +1,88 @@
+name: TRACER storefront copy sweep (shipping, titles, alt text)
+
+# Runs when ops/run-storefront-copy-sweep.txt changes on main. Applies only when
+# its first line is exactly "apply"; otherwise it reports what would change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/run-storefront-copy-sweep.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-storefront-copy-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ops
+      - name: Wait until production serves this commit
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            response="$(curl --fail --silent --show-error --max-time 15 https://tracer-pied-alpha.vercel.app/api/health || true)"
+            deployed_sha="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.gitCommitSha||""))}catch{}})')"
+            if [ "$deployed_sha" = "$TARGET_SHA" ]; then echo "Production serves $TARGET_SHA"; exit 0; fi
+            sleep 15
+          done
+          echo "Production does not serve target SHA; refusing to run."
+          exit 1
+      - name: Sweep Shopify and BASE
+        shell: bash
+        run: |
+          set -euo pipefail
+          first="$(head -n1 ops/run-storefront-copy-sweep.txt | tr -d '[:space:]')"
+          if [ "$first" = "apply" ]; then export APPLY=true; else export APPLY=false; fi
+          node --input-type=module <<'NODE'
+          const audience = "https://tracer-pied-alpha.vercel.app";
+          const tokenUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          tokenUrl.searchParams.set("audience", audience);
+          const getToken = async () => {
+            const r = await fetch(tokenUrl, { headers: { Authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+            if (!r.ok) throw new Error("OIDC_TOKEN_REQUEST_FAILED:" + r.status);
+            return (await r.json()).value;
+          };
+          const apply = process.env.APPLY === "true";
+          const post = async (body) => {
+            const response = await fetch(audience + "/api/admin/commerce/storefront-copy-sweep", { method: "POST", headers: { Authorization: "Bearer " + await getToken(), "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(295000) });
+            const result = await response.json().catch(() => ({}));
+            return { status: response.status, ...result };
+          };
+          let failedTotal = 0;
+          for (const channel of ["shopify", "base"]) {
+            const totals = { channel, apply, pages: 0, scanned: 0, changed: 0, failed: 0, titles: 0, shipping: 0, alts: 0, samples: [], errors: [] };
+            let cursor = null;
+            for (let page = 0; page < 120; page += 1) {
+              const result = await post({ channel, apply, cursor, limit: channel === "shopify" ? 25 : 50 });
+              if (result.status !== 200 && result.status !== 207 && !Array.isArray(result.changes)) { totals.errors.push("http_" + result.status + ":" + String(result.error ?? "")); break; }
+              totals.pages += 1;
+              totals.scanned += result.scanned ?? 0;
+              totals.changed += result.changed ?? 0;
+              totals.failed += result.failed ?? 0;
+              for (const change of result.changes ?? []) {
+                if (change.title) totals.titles += 1;
+                if (change.description || change.detail) totals.shipping += 1;
+                totals.alts += change.alts ?? 0;
+                if (change.title && totals.samples.length < 12) totals.samples.push(change.title);
+                if (change.error && totals.errors.length < 8) totals.errors.push(change.id + ":" + change.error);
+              }
+              cursor = result.nextCursor;
+              if (!cursor) break;
+            }
+            failedTotal += totals.failed + (totals.errors.length && !totals.failed ? 1 : 0);
+            console.log("::notice title=sweep " + channel + "::" + JSON.stringify(totals).replace(/[\r\n%]/g, " ").slice(0, 3800));
+          }
+          if (failedTotal) process.exitCode = 1;
+          NODE

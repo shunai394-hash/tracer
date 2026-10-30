@@ -613,6 +613,12 @@ async function fetchBaseItemPage(
   throw lastError ?? new Error("BASE_ITEMS_SNAPSHOT_FAILED");
 }
 
+/** One page of the shop's BASE items (read-only), for bounded sweeps. */
+export async function fetchBaseItemsPage(limit: number, offset: number): Promise<Record<string, unknown>[]> {
+  const token = await getBaseAccessToken();
+  return fetchBaseItemPage(token, Math.min(100, Math.max(1, Math.floor(limit))), Math.max(0, Math.floor(offset)));
+}
+
 export async function fetchBaseItemsSnapshot(options?: {
   itemPageLimit?: number;
   itemMaxPages?: number;

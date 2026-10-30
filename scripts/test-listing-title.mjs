@@ -30,3 +30,21 @@ test("manual titles keep each variant's suffix", () => {
   assert.equal(applyManualTitle("寝ながらゆる巻き サテン ヒートレスカールロッド｜コテを使わないヘアアレンジに", "サテン調 ヒートレスカールロッド（寝ながらカール）"), "寝ながらゆる巻き サテン ヒートレスカールロッド｜コテを使わないヘアアレンジに");
   assert.equal(applyManualTitle("パール装飾 レディースバッグ（ホワイト）｜忘年会・パーティーの装いに", "x（ホワイト）"), "パール装飾 レディースバッグ（ホワイト）｜忘年会・パーティーの装いに");
 });
+
+import { freeShippingHtml, freeShippingText, FREE_SHIPPING_SENTENCE } from "../lib/commerce/listing-title.ts";
+
+test("stacked importer category words collapse", () => {
+  assert.equal(normalizeListingTitle("電動クリーナー・お手入れ用品 メイクブラシ・お手入れ用品（タイプD）"), "電動メイクブラシクリーナー（タイプD）");
+  assert.equal(normalizeListingTitle("猫モチーフ・電動クリーナー メイクブラシ・お手入れ用品"), "猫モチーフ 電動メイクブラシクリーナー");
+  assert.equal(normalizeListingTitle("メイクブラシ収納・お手入れ用品"), "メイクブラシ収納・お手入れ用品");
+});
+
+test("one free-shipping sentence replaces every older shipping line", () => {
+  const legacy = "バッグです。\n\n日本向け送料：仕入先の送料見積もりは商品価格の計算に反映しています。最終的な配送費用は決済画面でご確認ください。";
+  assert.equal(freeShippingText(legacy), "バッグです。\n\n" + FREE_SHIPPING_SENTENCE);
+  assert.equal(freeShippingText("説明。\n\n" + FREE_SHIPPING_SENTENCE), "説明。\n\n" + FREE_SHIPPING_SENTENCE);
+  assert.equal(freeShippingHtml("<p>本文</p>\n<p>" + FREE_SHIPPING_SENTENCE + "</p>"), null);
+  const html = freeShippingHtml("バッグです。<br><br>日本向け送料：仕入先の送料見積もりは0円です。最終的な配送費用は決済画面でご確認ください。");
+  assert.equal(html, "バッグです。\n<p>" + FREE_SHIPPING_SENTENCE + "</p>");
+  assert.ok(!html.includes("決済画面"));
+});

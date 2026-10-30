@@ -9,7 +9,7 @@ import { hasVerifiedPositiveShopifyStock } from "@/lib/shop/live-stock-policy";
 import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
-import { applyManualTitle, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -418,7 +418,8 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const manualTitle = typeof metadata.manualTitleJa === "string" ? applyManualTitle(metadata.manualTitleJa, variant.title_ja) : "";
     const title = manualTitle || normalizeListingTitle(String(variant.title_ja || product.title_ja || ""));
     const manualDescription = typeof metadata.manualDescriptionJa === "string" && metadata.manualDescriptionJa.trim() ? metadata.manualDescriptionJa.trim() : null;
-    const description = manualDescription ?? (typeof product.description_ja === "string" ? product.description_ja : null);
+    const rawDescription = manualDescription ?? (typeof product.description_ja === "string" ? product.description_ja : null);
+    const description = rawDescription ? freeShippingText(rawDescription) : null;
     const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
