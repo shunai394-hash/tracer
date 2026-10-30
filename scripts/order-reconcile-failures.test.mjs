@@ -23,3 +23,13 @@ test("missing supplier adapters are recorded as explicit failures", () => {
   assert.match(source, /stage: "supplier_adapter_lookup"/);
   assert.match(source, /reason: "supplier_adapter_unavailable"/);
 });
+
+const baseOrders = await readFile(new URL("../lib/channels/base-orders.ts", import.meta.url), "utf8");
+
+test("BASE sync never downgrades an already confirmed payment without refund evidence", () => {
+  const existingOrderBranch = baseOrders.slice(baseOrders.indexOf("if (existing?.id)"), baseOrders.indexOf("if (summary.dispatch_status"));
+  assert.match(existingOrderBranch, /else if \(String\(existing\.payment_status\) !== "paid"\)/,
+    "pending BASE snapshots must not downgrade previously paid orders");
+  assert.match(existingOrderBranch, /if \(String\(existing\.payment_status\) !== "paid"\) \{\s*update\.payment_status = "failed";/,
+    "BASE cancellation must not overwrite confirmed payment as failed without refund evidence");
+});
