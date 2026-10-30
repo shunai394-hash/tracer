@@ -1,103 +1,62 @@
-# TRACER × MoneyPrinterTurbo × VoiceStudio — local creator pipeline
+# TRACER × MoneyPrinterTurbo × VoiceStudio × ElevenLabs SFX v3
 
 ## Goal
 
-Use MoneyPrinterTurbo as a **local short-video rendering worker** and VoiceStudio as a **local speech generation / voice workflow service** for TRACER AI-influencer content. Keep TRACER as the source of truth for product facts. Keep audio and video generation off Vercel to avoid serverless execution time and cost.
+Use MoneyPrinterTurbo as a local short-video rendering worker, VoiceStudio as a local speech workflow service, and ElevenLabs SFX v3 for explicitly requested sound-design previews. TRACER remains the source of truth for product facts. Keep local rendering off Vercel.
 
 ## Responsibilities
 
-- **TRACER**: selects only verified, published, orderable, in-stock products and supplies the public facts used in scripts.
-- **VoiceStudio**: creates locally generated narration and character voice audio; can also provide transcription/dubbing workflows where the selected engine supports the language and task.
-- **MoneyPrinterTurbo**: assembles scripts, captions, footage and generated audio into a local vertical video.
-- **AI LIVE**: separate real-time comment understanding and response path. It may use VoiceStudio's local speech endpoint only after latency and streaming behavior have been tested.
-
-These are separate workloads: prerecorded video narration can tolerate slower generation; live conversation cannot. Do not assume that a model suitable for narration is fast enough for livestream replies.
+- **TRACER**: selects only verified, published, orderable, in-stock products and supplies approved public facts.
+- **VoiceStudio / Eleven v4**: creates narration and character speech. Narration and real-time conversation are separate workloads.
+- **ElevenLabs SFX v3**: creates short environmental, foley, and designed sound effects; it is not a replacement for Japanese narration.
+- **MoneyPrinterTurbo**: assembles approved footage, captions, narration, and sound assets into a local vertical video.
+- **Human operator**: reviews factual claims, rights, audio mix, captions, and final output before posting.
 
 ## Current TRACER capabilities to reuse
 
-- Admin-protected, read-only product feed: `GET /api/admin/ai-live/products`
-- The feed only returns published, orderable, in-stock, tracked products that have a published BASE item and Japanese title.
-- AI-live comment routing and verified-facts response logic already exist.
-- ElevenLabs preview exists as an explicitly triggered, paid test path.
+- Admin-protected, read-only product feed: `GET /api/admin/ai-live/products`.
+- Existing Eleven v4 Turbo preview route.
+- New admin-only SFX v3 preview route: `POST /api/admin/ai-live/sfx-v3`.
+- No automatic generation, scheduled SFX jobs, auto-posting, livestreaming, listing, order, inventory, procurement, or price actions are enabled.
 
-Do not send supplier IDs, supplier costs, shipping costs, margin, customer/order information, or secrets to either local media worker.
+The SFX route requires the existing `TRACER_ADMIN_TOKEN` or automation authentication and server-side `ELEVENLABS_API_KEY`. It accepts only an explicit POST request, has no automatic retry, limits prompts to 600 characters, and caps each preview at 8 seconds. The documented SFX v3 rate is 40 credits per requested second, so the maximum configured preview is 320 credits; the default six-second preview is capped at 240 credits. Check the account's actual credit balance and access before testing. SFX v3 has limited account/region availability; an `Unknown model` response means the account may not have access.
+
+API: `POST https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128`, model `eleven_text_to_sound_v3`. The API returns audio bytes. Keep the API key server-side and never log prompts, keys, or audio.
+
+## Three controlled sound-design tests
+
+Use the following English prompts because SFX v3 prompt examples and guidance are English-oriented. Keep the same duration and prompt influence when comparing variants.
+
+1. **Rainy entrance / shoe dryer** (6 seconds): `Rain falling steadily outside a small Japanese apartment entrance, a door opens, wet shoes are gently placed on the floor, intimate realistic foley, no music, no intelligible speech.`
+2. **Beauty product tabletop** (6 seconds): `Quiet cozy vanity room, a small cosmetic jar is picked up and opened, a soft lid click and gentle product handling sounds, close-mic realistic foley, no music, no intelligible speech.`
+3. **Festival ambience** (6 seconds): `Distant Japanese summer festival ambience at night, a few fireworks bloom in the sky, soft crowd reaction and outdoor air, cinematic but realistic, no music, no intelligible speech.`
+
+Generate one sample per scene first. Do not batch-generate 3, 6, or 10 alternatives until quality and account cost are understood. For each sample record prompt, duration, provider status, generation latency, file size, subjective realism, unwanted artifacts, and whether speech remains intelligible when mixed with a separate narration track. The initial three tests are sound effects only; do not assume the API reliably embeds a Japanese spoken line in a specified environment. Test that separately in ElevenCreative/Studio if the account UI exposes the capability.
 
 ## Local machine fit
 
-The currently reported Windows machine has 15.7 GB RAM and Intel Iris Xe integrated graphics with 1 GB reported VRAM.
+The reported Windows PC has 15.7 GB RAM and Intel Iris Xe integrated graphics. Start with one 30–45 second 9:16 video. Do not run large video rendering and voice generation concurrently until memory use and stability have been measured. Keep VoiceStudio at loopback `http://127.0.0.1:3900` and MoneyPrinterTurbo local; do not expose local worker ports publicly.
 
-- MoneyPrinterTurbo: start with one 30–45 second 9:16 video, not batch mode. Expect slower rendering.
-- VoiceStudio: the app can run without an NVIDIA GPU, but CPU generation will be slower and the integrated Intel GPU should not be assumed to accelerate its AI engines. Start with a small/lightweight Japanese-capable TTS engine and a short test phrase. Check the selected engine's RAM, disk and model-license requirements before downloading it.
-- Do not run large video rendering and voice generation concurrently on this machine until memory use and stability have been measured.
+## Commercial and content rights
 
-## Install on Windows
+Check the ElevenLabs plan, output-use terms, account access and remaining credits before generation. Also verify the licenses of any footage, music, TTS model, voice, and reference samples. Do not clone another person's voice without permission. Keep product claims grounded in the TRACER feed. Require manual review before publishing.
 
-### MoneyPrinterTurbo
+## Windows setup
 
-Requirements: Python 3.11 or later. This repository includes:
+MoneyPrinterTurbo (Python 3.11+):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\\scripts\\setup-moneyprinterturbo.ps1
 ```
 
-The script creates an isolated environment under `%LOCALAPPDATA%\\TRACER\\MoneyPrinterTurbo`, installs the official `mpt` package, and starts the Web UI on `http://127.0.0.1:8503`. It does not install into the TRACER Python environment, alter TRACER dependencies, or configure any API keys.
-
-Official upstream: https://github.com/harry0703/MoneyPrinterTurbo
-
-### VoiceStudio
-
-Install the official Windows desktop app from https://voicestudio.sh/ or run its official PowerShell installer in a normal (non-admin) PowerShell window:
+VoiceStudio:
 
 ```powershell
 irm https://voicestudio.sh/install.ps1 | iex
 ```
 
-Use the current Windows x64 installer for this Intel/AMD PC. On first launch, allow the app to finish its managed backend setup. Choose a lightweight Japanese-capable TTS engine in the model catalogue; model availability, Japanese quality, hardware requirements and commercial terms vary by engine.
-
-When VoiceStudio is running, its local desktop API is available at `http://localhost:3900`. The OpenAI-compatible speech endpoint is `POST /v1/audio/speech`. For a local smoke test, the documented base URL is `http://localhost:3900/v1` and the local API key can be any non-empty string unless remote access is enabled. Keep this service bound to loopback; do not expose port 3900 publicly or route it through a public TRACER endpoint.
-
-Official docs:
-- https://voicestudio.sh/docs/quickstart
-- https://voicestudio.sh/docs/local-api
-
-## First audio acceptance test
-
-1. Launch VoiceStudio and confirm its local health endpoint responds at `http://localhost:3900/health`.
-2. Select a small Japanese-capable TTS engine and generate a short Japanese sample (10–20 seconds).
-3. Measure generation time, audio duration, peak memory use, pronunciation quality, stability across three repeated runs, and whether the result is suitable for the intended character.
-4. Check the exact engine/model license for commercial use. The VoiceStudio application license does not replace the individual model's license. Use only voice samples for which the user has appropriate rights and consent.
-5. Compare the same script against the existing ElevenLabs preview path. Do not incur paid generation unless explicitly requested.
-
-## First video acceptance test
-
-1. Configure only the required LLM and footage providers in the local MoneyPrinterTurbo UI. Do not paste credentials into TRACER or GitHub.
-2. Use a reviewed VoiceStudio audio file as the narration track where the local MoneyPrinterTurbo workflow supports it; otherwise add the audio in a separate local editing step.
-3. Create one vertical 9:16 Japanese product explainer using a product already present in the read-only TRACER feed.
-4. Verify product title, selling price, shipping statement, stock statement, and destination URL against the current TRACER feed before publishing.
-5. Review footage rights, music rights, voice/model commercial terms, captions, pronunciation, and factual accuracy.
-6. Save the result locally and manually review it. No automatic posting or livestreaming is enabled by this integration.
-
-## Integration boundary / next implementation
-
-The product feed is read-only and protected by TRACER automation authentication. Both media tools run on the user's PC. A safe bridge must be added only after each local API contract is inspected:
-
-- VoiceStudio: `http://127.0.0.1:3900` (local desktop API; see its OpenAPI document and local API reference).
-- MoneyPrinterTurbo: `http://127.0.0.1:8080/docs` after its local API service is started.
-
-A safe bridge should:
-- export a minimized product brief from TRACER (public title, approved description, selling price, in-stock flag, public BASE URL);
-- send only approved script text to the local VoiceStudio endpoint and keep generated audio on the local machine;
-- create a draft video job on the local MoneyPrinterTurbo worker and pass the local audio asset through a supported import path;
-- return job status and local output path;
-- require human approval before posting;
-- never expose either local worker to the public internet or place TRACER admin tokens in browser storage.
-
-Do not use either worker to create or modify listings, orders, inventory, procurement, or prices. Do not enable unattended posting until platform permissions and account eligibility are verified. Do not claim real-time AI LIVE is ready until end-to-end response latency, streaming audio, interruption handling and sustained stability have been measured.
-
-## Upstream references
-
+Official references:
+- ElevenLabs SFX documentation: https://elevenlabs.io/docs/ja/overview/capabilities/sound-effects
+- ElevenLabs Sound Generation API: https://elevenlabs.io/docs/ja/api-reference/text-to-sound-effects/convert
+- VoiceStudio: https://voicestudio.sh/docs/quickstart
 - MoneyPrinterTurbo: https://github.com/harry0703/MoneyPrinterTurbo
-- MoneyPrinterTurbo API docs: http://127.0.0.1:8080/docs after the local API service is started
-- VoiceStudio: https://github.com/debpalash/VoiceStudio
-- VoiceStudio Windows install: https://voicestudio.sh/install.ps1
-- VoiceStudio local API quickstart: https://voicestudio.sh/docs/quickstart
