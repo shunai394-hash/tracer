@@ -31,6 +31,37 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function readBoundedAudio(response: Response): Promise<Uint8Array | null> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_AUDIO_BYTES) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.body) return new Uint8Array();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_AUDIO_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const audio = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return audio;
+}
+
 /**
  * Admin-only, explicitly triggered SFX v3 preview.
  * Duration is deliberately capped at 8 seconds (up to 320 SFX credits at the
@@ -113,11 +144,11 @@ export async function POST(request: Request) {
       }, 502);
     }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_AUDIO_BYTES) {
+    const bytes = await readBoundedAudio(response);
+    if (!bytes || bytes.byteLength === 0) {
       return json({
         ok: false,
-        error: bytes.byteLength === 0 ? "empty_audio_response" : "audio_size_out_of_range",
+        error: bytes === null ? "audio_size_out_of_range" : "empty_audio_response",
         message: "The audio response was empty or exceeded the preview size limit. It was not retried.",
         generationStarted: true,
       }, 502);
