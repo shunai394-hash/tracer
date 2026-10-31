@@ -230,6 +230,59 @@ export async function editBaseItem(input: {
   );
 }
 
+export type BaseVariationInput = {
+  variationId?: string | null;
+  name: string;
+  stock: number;
+  identifier: string;
+};
+
+/** BASE keeps one item price. Variation stock is per color or size, and variation_identifier is the TRACER SKU. */
+export async function editBaseItemVariations(input: {
+  itemId: string;
+  title: string;
+  detail: string;
+  price: number;
+  visible?: boolean;
+  variations: BaseVariationInput[];
+}) {
+  const body = new URLSearchParams({
+    item_id: input.itemId,
+    title: input.title,
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    visible: input.visible === false ? "0" : "1",
+  });
+  input.variations.forEach((variation, index) => {
+    body.set(`variation_id[${index}]`, variation.variationId ?? "");
+    body.set(`variation[${index}]`, variation.name);
+    body.set(`variation_stock[${index}]`, String(Math.max(0, Math.floor(variation.stock))));
+    body.set(`variation_identifier[${index}]`, variation.identifier);
+  });
+  return requestBase("/items/edit", body, 3);
+}
+
+/** Zero one variation without hiding the other colors or sizes on the same BASE item. */
+export async function setBaseVariationStock(itemId: string, variationId: string, stock: number) {
+  const detail = await getBaseItemDetail(itemId);
+  const variations = Array.isArray(detail.variations) ? detail.variations as Array<Record<string, unknown>> : [];
+  const current = variations.find((variation) => String(variation.variation_id ?? "") === variationId);
+  if (!current) throw new Error("base_variation_not_found:" + variationId);
+  const visible = detail.visible === false || detail.visible === 0 || detail.visible === "0" ? "0" : "1";
+  const body = new URLSearchParams({
+    item_id: itemId,
+    title: String(detail.title ?? ""),
+    detail: String(detail.detail ?? ""),
+    price: String(Math.max(1, Math.round(Number(detail.price) || 1))),
+    visible,
+  });
+  body.set("variation_id[0]", variationId);
+  body.set("variation[0]", String(current.variation ?? ""));
+  body.set("variation_stock[0]", String(Math.max(0, Math.floor(stock))));
+  if (current.variation_identifier) body.set("variation_identifier[0]", String(current.variation_identifier));
+  return requestBase("/items/edit", body, 3);
+}
+
 
 /** Read one existing BASE item by ID. This is read-only and never changes listing state. */
 export async function getBaseItemDetail(itemId: string): Promise<Record<string, unknown>> {
@@ -343,6 +396,9 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number;
+    variation?: string;
+    variation_identifier?: string;
     title?: string;
     price?: number;
     amount?: number;

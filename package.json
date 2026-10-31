@@ -48,7 +48,7 @@
     "test:supply-first-quota-cooldown": "node scripts/test-supply-first-quota-cooldown.mjs",
     "test:brightdata-mcp-auth": "node scripts/test-brightdata-mcp-auth.mjs",
     "test:tracer-v2-contract": "node --experimental-strip-types --no-warnings scripts/tracer-v2-pipeline-contract.test.mjs",
-    "test:commerce-core": "node --experimental-strip-types --no-warnings --test scripts/commerce-core.test.mjs scripts/test-publishable-title-quality.mjs scripts/test-listing-title.mjs",
+    "test:commerce-core": "node --experimental-strip-types --no-warnings --test scripts/commerce-core.test.mjs scripts/test-publishable-title-quality.mjs scripts/test-listing-title.mjs scripts/test-canonical-storefront-owner.mjs scripts/test-variant-family.mjs",
     "test:minimum-listing-price": "node --experimental-strip-types --no-warnings scripts/test-minimum-listing-price.mjs",
     "test:cj-procurement-adapter": "node scripts/test-cj-procurement-adapter.mjs",
     "test:base-targeted-readback": "node scripts/test-base-targeted-readback.mjs",

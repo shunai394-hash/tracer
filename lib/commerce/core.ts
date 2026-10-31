@@ -161,7 +161,7 @@ export async function getPublicationCandidates(channel: CommerceChannel, limit =
 export async function ingestPaidOrder(input: {
   channel: CommerceChannel; externalOrderId: string; totalAmount: number; customerName?: string | null;
   shippingAddress: Record<string, unknown>; rawPayload: Record<string, unknown>;
-  lines: Array<{ externalLineId: string; variantId: string; sku?: string | null; quantity: number; unitPrice: number; offerId: string }>;
+  lines: Array<{ externalLineId: string; variantId: string; sku?: string | null; quantity: number; unitPrice: number; offerId: string; selection?: Record<string, unknown> }>;
 }) {
   required(input.externalOrderId, "external_order_id");
   if (!Number.isFinite(input.totalAmount) || input.totalAmount < 0 || input.lines.length === 0) throw new Error("invalid_order");
@@ -233,6 +233,10 @@ export async function ingestPaidOrder(input: {
       sku: line.sku ?? null, quantity: line.quantity, unit_price: Math.round(line.unitPrice), supplier_offer_id: line.offerId
     }, { onConflict: "order_id,external_line_id" }).select("id").single();
     if (lineError || !savedLine) throw new Error("order_line_upsert_failed:" + (lineError?.message ?? ""));
+    if (line.selection && Object.keys(line.selection).length > 0) {
+      const { error: selectionError } = await db.from("commerce_order_lines").update({ selection: line.selection }).eq("id", savedLine.id);
+      if (selectionError && !/selection/i.test(selectionError.message)) throw new Error("order_line_selection_save_failed:" + selectionError.message);
+    }
     const offer = offersById.get(line.offerId);
     if (!offer) throw new Error("order_line_supplier_offer_missing");
     const { error: poError } = await db.from("procurement_orders").upsert({
