@@ -28,6 +28,6 @@ assert.match(admin, /const mediaToAdd = !hasProductImage && input\.imageUrl/ , "
 assert.match(admin, /query VerifyUpdatedProductImage/, "image upload must be checked with a fresh Shopify readback");
 assert.match(admin, /shopify_image_processing_failed/, "failed Shopify image processing must fail the sync");
 assert.match(admin, /shopify_image_processing_not_ready_after_readback/, "pending Shopify image processing must not be reported as successful");
-assert.ok(publish.includes("createShopifyProduct({ title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription })"), "create path must pass SEO metadata");
+assert.ok(publish.includes("createShopifyProduct({ title, descriptionHtml: plainTextToShopifyHtml(storefrontDescription), handle, price: Number(price.selling_price), sku, imageUrl, seoTitle, seoDescription })"), "create path must pass SEO metadata");
 
 console.log("Shopify SEO publish inputs are wired.");
