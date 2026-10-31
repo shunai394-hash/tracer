@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        model: process.env.FISH_AUDIO_MODEL || "s2.1",
+        model: process.env.FISH_AUDIO_MODEL || "s2.1-pro-free",
       },
       body: JSON.stringify({ text, reference_id: referenceId, format: "mp3" }),
       cache: "no-store",
