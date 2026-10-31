@@ -14,8 +14,11 @@ assert.match(source, /process\.env\.TRACER_ADMIN_TOKEN/u);
 assert.match(source, /requireAutomationAuth\(request\)/u);
 assert.match(source, /timingSafeEqual/u);
 assert.match(source, /MAX_DURATION_SECONDS = 8/u);
+assert.match(source, /MAX_AUDIO_BYTES = 12 \* 1024 \* 1024/u);
+assert.match(source, /getReader\(\)/u);
 assert.match(source, /Math\.ceil\(durationSeconds \* 40\)/u);
 assert.match(source, /not automatically retried/u);
+assert.doesNotMatch(source, /response\.arrayBuffer\(\)/u);
 assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\(/u);
 assert.match(page, /<meta name="robots" content="noindex,nofollow">/u);
 assert.match(page, /api\/admin\/ai-live\/sfx-v3/u);
@@ -107,6 +110,16 @@ try {
   assert.equal(unavailable.body.error, "elevenlabs_request_rejected");
   assert.equal(JSON.stringify(unavailable.body).includes("account detail"), false);
   assert.equal(providerCalls, 1);
+
+  let oversizedCalls = 0;
+  globalThis.fetch = async () => {
+    oversizedCalls += 1;
+    return new Response(new Uint8Array(12 * 1024 * 1024 + 1), { status: 200 });
+  };
+  const oversized = await POST(request({ token: "admin-secret", body: { text: "Oversized audio test" } }));
+  assert.equal(oversized.status, 502);
+  assert.equal(oversized.body.error, "audio_size_out_of_range");
+  assert.equal(oversizedCalls, 1);
 } finally {
   globalThis.fetch = originalFetch;
   if (originalAdmin === undefined) delete process.env.TRACER_ADMIN_TOKEN;
@@ -114,4 +127,4 @@ try {
   if (originalKey === undefined) delete process.env.ELEVENLABS_API_KEY;
   else process.env.ELEVENLABS_API_KEY = originalKey;
 }
-console.log("AI-live SFX v3 auth, cost cap, validation, and no-retry checks passed.");
+console.log("AI-live SFX v3 auth, cost cap, bounded streaming, validation, and no-retry checks passed.");
