@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER SFX v3 Preview</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10131a;color:#eef2f7}
+body{max-width:760px;margin:0 auto;padding:28px 18px}h1{font-size:1.5rem}p{color:#b8c1cf;line-height:1.6}
+label{display:block;margin:16px 0 7px;font-weight:650}input,select,textarea{box-sizing:border-box;width:100%;padding:12px;border:1px solid #465064;border-radius:9px;background:#1a2030;color:#fff;font:inherit}
+textarea{min-height:130px;resize:vertical}button{padding:12px 18px;border:0;border-radius:9px;background:#a7d8ff;color:#10131a;font-weight:750;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.notice{padding:12px;border:1px solid #755d34;border-radius:9px;background:#2b2418;color:#f4d8a2}.status{min-height:28px;margin:14px 0;color:#b8c1cf}audio{width:100%;margin-top:14px}small{color:#aab4c4}
+</style>
+</head>
+<body>
+<h1>TRACER — ElevenLabs SFX v3 検証</h1>
+<p>効果音の単発プレビュー専用。生成はボタンを押したときだけ実行する。音声の自動生成・再試行・投稿は行わない。</p>
+<div class="notice">費用上限：既定6秒で最大240クレジット。最大8秒で320クレジット。ElevenLabs側のSFX v3利用権限と残高を確認してから実行すること。</div>
+<label for="token">TRACER管理トークン</label>
+<input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
+<label for="scene">検証シーン</label>
+<select id="scene">
+<option value="rain">雨の日の玄関・靴乾燥機</option>
+<option value="beauty">美容商品のテーブル音</option>
+<option value="festival">夏祭り・花火</option>
+</select>
+<label for="prompt">英語プロンプト（編集可能）</label>
+<textarea id="prompt">Rain falling steadily outside a small Japanese apartment entrance, a door opens, wet shoes are gently placed on the floor, intimate realistic foley, no music, no intelligible speech.</textarea>
+<div class="row">
+<div style="flex:1;min-width:160px"><label for="duration">生成秒数</label><select id="duration"><option value="6" selected>6秒（最大240クレジット）</option><option value="8">8秒（最大320クレジット）</option></select></div>
+<div style="padding-top:35px"><button id="generate" type="button">この内容で効果音を生成</button></div>
+</div>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<audio id="player" controls hidden></audio>
+<p><small>管理トークンはブラウザ内に保存しない。APIキーはサーバー側のみ。生成した音声はこのページで再生するだけで、TRACERやSNSには送信しない。</small></p>
+<script>
+(() => {
+  const prompts = {
+    rain: "Rain falling steadily outside a small Japanese apartment entrance, a door opens, wet shoes are gently placed on the floor, intimate realistic foley, no music, no intelligible speech.",
+    beauty: "Quiet cozy vanity room, a small cosmetic jar is picked up and opened, a soft lid click and gentle product handling sounds, close-mic realistic foley, no music, no intelligible speech.",
+    festival: "Distant Japanese summer festival ambience at night, a few fireworks bloom in the sky, soft crowd reaction and outdoor air, cinematic but realistic, no music, no intelligible speech."
+  };
+  const scene = document.getElementById("scene");
+  const prompt = document.getElementById("prompt");
+  const duration = document.getElementById("duration");
+  const token = document.getElementById("token");
+  const button = document.getElementById("generate");
+  const status = document.getElementById("status");
+  const player = document.getElementById("player");
+  let audioUrl = "";
+  scene.addEventListener("change", () => { prompt.value = prompts[scene.value]; });
+  button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    const secret = token.value.trim();
+    const text = prompt.value.trim();
+    if (!secret || !text) { status.textContent = "管理トークンとプロンプトを入力してください。"; return; }
+    if (!window.confirm(duration.value + "秒のSFX v3を生成する。最大" + (Number(duration.value) * 40) + "クレジットを消費する可能性がある。続行するか？")) return;
+    button.disabled = true;
+    status.textContent = "生成中。自動再試行は行いません。";
+    player.hidden = true;
+    try {
+      const response = await fetch("/api/admin/ai-live/sfx-v3", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + secret, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, durationSeconds: Number(duration.value) })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || data.error || "SFX v3 request failed (" + response.status + ")");
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("音声データが空でした。");
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = URL.createObjectURL(blob);
+      player.src = audioUrl;
+      player.hidden = false;
+      status.textContent = "生成完了。音声を再生して品質を確認してください。";
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "生成に失敗しました。";
+    } finally {
+      button.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
