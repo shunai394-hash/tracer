@@ -75,6 +75,14 @@ async function repairBaseOrderItems(
   );
   if (baseItems.length === 0) return;
 
+  // Until BASE variation_id -> TRACER/CJ identity mappings are persisted and
+  // verified, never fall back to the parent listing's supplier_variant_id.
+  // That fallback can procure a different color/size than the customer selected.
+  const variantOrderItems = baseItems.filter((item) => item.variation_id !== undefined && item.variation_id !== null);
+  if (variantOrderItems.length > 0) {
+    throw new Error("BASE_VARIANT_MAPPING_NOT_READY:procurement_blocked");
+  }
+
   const itemIds = baseItems.map((item) => String(item.item_id));
   const { data: listings, error: listingError } = await supabase
     .from("shop_listings")
