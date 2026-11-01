@@ -39,8 +39,8 @@ const complete = {
   shipTo: "JP",
   trackingSupported: true,
   currency: "JPY",
-  sellingPrice: 1000,
-  expectedProfit: 400,
+  sellingPrice: 10000,
+  expectedProfit: 3000,
 };
 assert.deepEqual(missingSaleEvidence(complete), []);
 assert.deepEqual(missingSaleEvidence({ ...complete, unitCost: 0 }), ["cost"]);
