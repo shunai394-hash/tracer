@@ -141,8 +141,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  // Only publish rows whose exact supplier listing is currently eligible for publication.
-  // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
+  // Supplier rows require exact canonical supplier eligibility. Explicitly
+  // marked merchant-held stock is independently publishable from its own
+  // on-hand quantity and does not require a supplier identity.
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => ({
     listingId: String(listing.id),
     supplierListingId: listing.supplier_listing_id == null ? null : String(listing.supplier_listing_id),
