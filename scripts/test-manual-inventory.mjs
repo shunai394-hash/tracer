@@ -31,7 +31,7 @@ assert.match(shopifySync, /manualInventoryQuantity\(row\)/, "Shopify must use ex
 assert.match(shopifySync, /pipeline_reason: isManualInventoryListing\(row\) \? "merchant_held_stock" : "sales_test_gate_passed"/, "Shopify sync must preserve the manual-stock reason");
 assert.match(shopifySync, /if \(isManualInventoryListing\(row\)\) \{[\s\S]*shopify_sync_status: "failed"/, "Shopify sync failures must not auto-unpublish merchant stock");
 assert.match(basePublisher, /!manualInventory && \(!listing\.supplier_product_id \|\| !listing\.supplier_variant_id\)/, "BASE must not hide merchant-held stock for missing supplier IDs");
-assert.match(basePublisher, /manualInventory \? availableInventory/, "BASE must publish the exact merchant-held quantity");
+assert.match(basePublisher, /manualInventory\s*\?\s*availableInventory/, "BASE must publish the exact merchant-held quantity");
 assert.match(basePublisher, /if \(isManualInventoryListing\(listing\)\) \{[\s\S]*base_last_error: message/, "BASE copy failures must not auto-hide merchant stock");
 assert.match(unpublishUnlinked, /if \(isManualInventoryListing\(row\)\) return false/, "unlinked reconciliation must skip manual inventory");
 assert.match(supplierSelection, /existing\.data\?\.manual_inventory === true\) continue/, "supplier selection must not overwrite manual listings");
