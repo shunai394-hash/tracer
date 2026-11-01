@@ -11,14 +11,18 @@ const [source, reconcile, store, page, shopIndex, patrol] = await Promise.all([
 ]);
 
 const retryGate = source.slice(source.indexOf("export async function retryPendingNewfindPromotions"), source.indexOf("export async function promoteShopListingToNewfind"));
-assert.match(retryGate, /\.select\("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status"\)/,
+assert.match(retryGate, /\.select\("id, title, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, manual_inventory, inventory"\)/,
   "retry gate checks must fetch the Japanese title and channel state they validate");
+assert.match(source, /manual_inventory === true/);
+assert.match(source, /pipeline_reason === "merchant_held_stock"/);
+assert.match(retryGate, /canPromoteListingToNewfind\(row\)/,
+  "NEWFIND may bypass supplier orderability only for explicitly verified merchant-held inventory");
 assert.match(retryGate, /shopifyStatusById\.get\(b\) === "synced"/,
   "NEWFIND retries must prioritize products already live on Shopify");
 assert.match(retryGate, /\.in\("status", \["pending", "failed", "sent", "sending"\]\)/,
   "NEWFIND retry scan must include expired sending leases so crashed attempts can be reclaimed");
-assert.match(retryGate, /shopifyStatus === "synced" && hasPassedSalesTestGate\(row\)/,
-  "NEWFIND must not retry listings whose TRACER sales page is not live");
+assert.match(retryGate, /shopifyStatus === "synced" && canPromoteListingToNewfind\(row\)/,
+  "NEWFIND retries require a live Shopify sales page and either the supplier Sales Test Gate or verified merchant-held inventory");
 assert.match(reconcile, /shopify_sync_status === "synced"/,
   "rescue must prioritize Shopify-synced products before unsynced rows");
 assert.match(reconcile, /if \(status !== "missing"\) continue;/,
