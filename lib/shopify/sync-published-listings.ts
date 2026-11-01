@@ -228,7 +228,7 @@ async function findBySku(skuValue: string): Promise<{ product: ShopifyProductNod
 
 export type ShopifySyncResult = { configured: boolean; considered: number; synced: number; failed: number; listingIds: string[]; errors: Array<{ listingId: string; error: string }> };
 
-/** Shopify is downstream-only: canonical Sales Test Gate plus live fulfillment evidence are mandatory. */
+/** Supplier listings require canonical Sales Test Gate evidence; merchant-held stock uses its own verified inventory path. */
 export async function syncPublishedListingsToShopify(limit = 10, listingIds?: string[]): Promise<ShopifySyncResult> {
   if (!isShopifyConfigured()) {
     const message = "shopify_not_configured: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN are required in production";
