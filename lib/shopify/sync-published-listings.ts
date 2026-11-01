@@ -8,6 +8,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { retireShopListingsOwnedByCommerce } from "@/lib/commerce/retire-legacy-storefront";
 
 type Listing = {
   id: string;
@@ -518,7 +519,9 @@ async function syncListingRows(
     }
   }
 
+  const retiredIds = await retireShopListingsOwnedByCommerce(candidates, "shopify", supabase);
   for (const row of candidates) {
+    if (retiredIds.has(String(row.id))) continue;
     const claim = await supabase
       .from("shop_listings")
       .update({ shopify_sync_status: "syncing", shopify_sync_error: null })

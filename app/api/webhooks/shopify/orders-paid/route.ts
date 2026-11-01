@@ -5,7 +5,7 @@ import { ingestPaidOrder } from "@/lib/commerce/core";
 
 export const runtime = "nodejs";
 
-type ShopifyLine = { id?: string | number; sku?: string | null; quantity?: number; price?: string | number; title?: string };
+type ShopifyLine = { id?: string | number; sku?: string | null; variant_id?: string | number | null; variant_title?: string | null; quantity?: number; price?: string | number; title?: string };
 function isTracerManagedSku(value: unknown): boolean {
   const sku = String(value ?? "").trim().toUpperCase();
   return sku.startsWith("TRC-") || sku.startsWith("CJ-");
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
   try {
     const lines = Array.isArray(payload.line_items) ? payload.line_items : [];
-    const canonicalLines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
+    const canonicalLines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string; selection: Record<string, unknown> }> = [];
     for (const line of lines) {
       const sku = String(line.sku ?? "").trim();
       if (!isTracerManagedSku(sku)) continue; // Ignore unrelated items in a mixed cart.
@@ -68,6 +68,18 @@ export async function POST(request: Request) {
       // Prefer the exact SKU saved by the publisher. Older Shopify listings may
       // still carry TRC-<supplier_variant_id> or CJ-<supplier_variant_id>; resolve only through an exact,
       // verified supplier-offer identity, never by title or partial SKU.
+      const shopifyVariantGid = line.variant_id === undefined || line.variant_id === null || !String(line.variant_id).trim()
+        ? null
+        : "gid://shopify/ProductVariant/" + String(line.variant_id).trim();
+      let gidVariantId: string | null = null;
+      if (shopifyVariantGid) {
+        const byGid = await db.from("channel_listings")
+          .select("variant_id").eq("channel", "shopify").eq("external_variant_id", shopifyVariantGid).eq("status", "published");
+        if (byGid.error) throw new Error("tracer_variant_mapping_read_failed:" + byGid.error.message);
+        const gidIds = [...new Set((byGid.data ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+        if (gidIds.length > 1) throw new Error("tracer_sku_mapping_ambiguous:" + sku);
+        gidVariantId = gidIds[0] ?? null;
+      }
       const exact = await db.from("channel_listings")
         .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
       if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
@@ -101,15 +113,17 @@ export async function POST(request: Request) {
         }
       }
       const uniqueVariantIds = [...new Set(listingRows.map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-      if (uniqueVariantIds.length === 0) throw new Error("tracer_sku_mapping_missing:" + sku);
+      if (!gidVariantId && uniqueVariantIds.length === 0) throw new Error("tracer_sku_mapping_missing:" + sku);
       if (uniqueVariantIds.length > 1) throw new Error("tracer_sku_mapping_ambiguous:" + sku);
-      const variantId = uniqueVariantIds[0];
+      if (gidVariantId && uniqueVariantIds.length === 1 && gidVariantId !== uniqueVariantIds[0]) throw new Error("tracer_sku_mapping_ambiguous:" + sku);
+      const variantId = gidVariantId ?? uniqueVariantIds[0];
       const { data: price, error: priceError } = await db.from("commerce_prices")
         .select("supplier_offer_id").eq("variant_id", variantId).maybeSingle();
       if (priceError || (!legacyOfferId && !price?.supplier_offer_id)) throw new Error("supplier_offer_mapping_missing:" + sku);
       canonicalLines.push({
         externalLineId: String(line.id), variantId, sku,
-        quantity, unitPrice: Math.round(unitPrice), offerId: legacyOfferId ?? String(price!.supplier_offer_id)
+        quantity, unitPrice: Math.round(unitPrice), offerId: legacyOfferId ?? String(price!.supplier_offer_id),
+        selection: { channel: "shopify", variantTitle: line.variant_title ?? null, shopifyVariantId: shopifyVariantGid, sku },
       });
     }
     if (canonicalLines.length === 0) {

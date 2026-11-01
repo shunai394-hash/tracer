@@ -227,7 +227,7 @@ assert.match(shopify, /catalog_title_not_publishable/, "Shopify sync must report
 assert.match(shopify, /isPublishableCatalogDescription\(row\.description\)/, "Shopify sync must reject generic descriptions");
 assert.match(shopify, /workflowDescription = \/商品アイデンティティが未確定/, "Shopify sync must repair persisted workflow-status descriptions");
 assert.match(shopify, /staleWorkflowCopy/, "Shopify reconciliation must resync existing products with stale workflow copy");
-assert.match(shopify, /仕入先の送料見積もりは商品価格の計算に反映しています/, "Shopify copy must not claim nonzero supplier shipping is separately charged");
+assert.match(shopify, /freeShippingText\(copy\.description\)/, "Shopify copy must use the shared free-shipping sentence because Japan-bound shipping is included in the listing price");
 assert.doesNotMatch(shopify, /送料別（仕入先条件に従います）/, "Shopify copy must not label shipping separately when supplier shipping is priced into the listing");
 assert.match(base, /isPublishableCatalogTitle\(sourceTitle\)/, "BASE must reject invalid source titles");
 assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must reject invalid translated titles");
@@ -236,7 +236,7 @@ assert.match(base, /isPublishableCatalogDescription\(translatedDetail\)/, "BASE 
 assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failure must be surfaced");
 assert.doesNotMatch(base, /title: "販売停止中の商品"/, "BASE reconciliation must never replace the buyer-facing product title with a workflow status");
 assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "商品情報確認中"/, "BASE reconciliation must preserve the existing title when a listing is hidden");
-assert.match(base, /const activeListings = publishableListings\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry freshly verified supplier-linked hidden rows instead of permanently excluding them");
+assert.match(base, /const activeListings = publishableListings\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\) && !retiredIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry freshly verified supplier-linked hidden rows while excluding listings owned by canonical commerce");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");
