@@ -30,10 +30,13 @@ export default async function HomePage() {
     .filter((category) => category.items.length > 0);
   // Pickup alternates categories so the first row is not only bags.
   const perCategory = categories.map((category) => pickDistinct(category.items, 8));
-  const pickup = Array.from({ length: 8 }, (_, round) => perCategory.map((items) => items[round]))
+  const proteinPickup = listings.find((listing) => listing.slug === "beauty-formula-chocolate-protein-300g");
+  const regularPickup = Array.from({ length: 8 }, (_, round) => perCategory.map((items) => items[round]))
     .flat()
     .filter((listing): listing is NonNullable<typeof listing> => Boolean(listing))
-    .slice(0, 8);
+    .filter((listing) => listing.slug !== "beauty-formula-chocolate-protein-300g")
+    .slice(0, proteinPickup ? 7 : 8);
+  const pickup = proteinPickup ? [proteinPickup, ...regularPickup] : regularPickup;
 
   return (
     <main className="min-h-screen bg-[#FBF6F1] text-[#3B241A]">
