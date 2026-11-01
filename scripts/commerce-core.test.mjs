@@ -336,6 +336,10 @@ test("supplier importer never substitutes a search-result product ID for unresol
   assert.match(importer, /function japaneseVariantSuffix/);
   assert.match(importer, /variantTitleJa: title \+ japaneseVariantSuffix\(exactVariant\.nameEn\)/);
   assert.doesNotMatch(importer, /variantTitleJa: exactVariant\.nameEn \? title \+ "（" \+ exactVariant\.nameEn/);
+  assert.match(importer, /const nextTitle = japaneseCommerceTitle\(sourceTitle, productType\);/);
+  assert.doesNotMatch(importer, /japaneseCommerceTitle\(sourceTitle, productType, variantNames\)/);
+  assert.match(importer, /const title = japaneseCommerceTitle\(canonicalDetail\.title, canonicalDetail\.productType\)/);
+  assert.doesNotMatch(importer, /variants\.flatMap\(\(item\).*nameEn/);
   assert.match(importer, /exactVariant\.vid !== variant\.vid/);
   assert.match(importer, /canonical_supplier_product_id_unresolved/);
   assert.match(importer, /canonical_supplier_variant_price_unresolved/);
