@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [route, store, migration, dashboard, shopifySync, basePublisher, unpublishUnlinked, supplierSelection, profitWithdraw, shopifyCron] = await Promise.all([
+const [route, store, migration, dashboard, shopifySync, basePublisher, unpublishUnlinked, supplierSelection, profitWithdraw, shopifyCron, commercePublish] = await Promise.all([
   readFile(new URL("../app/api/admin/manual-inventory/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/20261022130000_manual_tracer_inventory.sql", import.meta.url), "utf8"),
@@ -12,6 +12,7 @@ const [route, store, migration, dashboard, shopifySync, basePublisher, unpublish
   readFile(new URL("../lib/market/select-supply-sales-tests.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/commerce-minimum-profit-withdraw/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/shopify-publish/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8"),
 ]);
 
 assert.match(route, /TRACER_ADMIN_TOKEN/, "manual inventory writes must require the admin token");
@@ -36,6 +37,8 @@ assert.match(basePublisher, /if \(isManualInventoryListing\(listing\)\) \{[\s\S]
 assert.match(unpublishUnlinked, /if \(isManualInventoryListing\(row\)\) return false/, "unlinked reconciliation must skip manual inventory");
 assert.match(supplierSelection, /existing\.data\?\.manual_inventory === true\) continue/, "supplier selection must not overwrite manual listings");
 assert.match(profitWithdraw, /manualInventoryIds/, "minimum-profit withdrawal must exclude manual inventory");
+assert.match(commercePublish, /manualInventoryProtected/, "commerce stale-listing reconciliation must report protected manual inventory");
+assert.match(commercePublish, /rawCheckableListings\.filter\(\(listing\) => !manualInventoryIds\.has/, "commerce stale-listing reconciliation must skip manual inventory");
 assert.match(shopifyCron, /manual_inventory/, "Shopify cron must report the independent manual inventory publication path");
 
 console.log("TRACER manual inventory contract tests passed");
