@@ -25,7 +25,7 @@ assert.match(store, /release_manual_listing_stock/, "failed order writes must re
 assert.match(migration, /where manual_inventory = true[\s\S]*inventory >= p_quantity/, "stock reservation must be atomic and bounded by available inventory");
 assert.match(dashboard, /TRACERの商品一覧に公開する/, "dashboard must expose a manual publish control");
 assert.match(route, /pipeline_reason: "merchant_held_stock"/, "manual inventory must be explicitly tagged as merchant-held stock");
-assert.match(shopifySync, /isManualInventoryListing\(row\) \|\| supplierEligible/, "Shopify sync must not require supplier linkage for manual stock");
+assert.match(shopifySync, /isManualInventoryListing\(row\) \|\| Boolean\(row\.supplier_listing_id/, "Shopify sync must not require supplier linkage for manual stock");
 assert.match(shopifySync, /manualInventoryQuantity\(row\)/, "Shopify must use exact manual inventory rather than supplier stock caps");
 assert.match(basePublisher, /!manualInventory && \(!listing\.supplier_product_id \|\| !listing\.supplier_variant_id\)/, "BASE must not hide merchant-held stock for missing supplier IDs");
 assert.match(basePublisher, /manualInventory \? availableInventory/, "BASE must publish the exact merchant-held quantity");
