@@ -9,6 +9,7 @@ import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 import { retireShopListingsOwnedByCommerce } from "@/lib/commerce/retire-legacy-storefront";
+import { isManualInventoryListing, manualInventoryQuantity } from "@/lib/shop/manual-inventory";
 
 type Listing = {
   id: string;
@@ -25,6 +26,7 @@ type Listing = {
   pipeline_reason: string | null;
   selection_reasons: unknown;
   supplier_listing_id: string | null;
+  manual_inventory: boolean | null;
   supplier_product_id: string | null;
   supplier_variant_id: string | null;
   inventory: number | null;
@@ -41,6 +43,11 @@ type Listing = {
   contribution_profit?: number | string | null;
   contribution_margin?: number | string | null;
 };
+
+function storefrontQuantityForListing(row: Pick<Listing, "inventory" | "manual_inventory">): number {
+  if (isManualInventoryListing(row)) return manualInventoryQuantity(row) ?? 0;
+  return storefrontQuantityForListing(row);
+}
 
 type ShopifyProductNode = {
   id: string;
@@ -246,7 +253,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,manual_inventory,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
@@ -303,7 +310,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
         const status = String(row.shopify_sync_status ?? "");
         if (status === "syncing") return false;
         const supplierEligible = Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.id)));
-        const listingEligible = supplierEligible && blockReasons(row).length === 0;
+        const listingEligible = (isManualInventoryListing(row) || supplierEligible) && blockReasons(row).length === 0;
         if (row.published === true) {
           // Reconcile already-synced products when supplier evidence/orderability expires,
           // even if Shopify's current inventory still matches the stale TRACER quantity.
@@ -316,7 +323,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
           const expectedPrice = asNumber(row.selling_price);
           const staleWorkflowCopy = /商品アイデンティティが未確定|選定対象外|観測された需要と供給データに基づいて販売テスト候補になる|sales_test_gate_not_passed|identity_pending/i.test(String(row.description ?? ""));
           return staleWorkflowCopy
-            || liveState.quantity !== toStorefrontStockQuantity(row.inventory, getStorefrontStockCap())
+            || liveState.quantity !== storefrontQuantityForListing(row)
             || expectedPrice === null
             || liveState.price !== expectedPrice
             || liveState.sku !== sku(row);
@@ -344,28 +351,36 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  */
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
-  if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
-  if (row.orderable !== true) reasons.push("supplier_not_orderable");
-  if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
+  const manualInventory = isManualInventoryListing(row);
+  if (!manualInventory) {
+    if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
+    if (row.orderable !== true) reasons.push("supplier_not_orderable");
+    if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
+  }
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
   if (!isPublishableCatalogDescription(row.description)) reasons.push("catalog_description_not_publishable");
   // Publication is a catalog operation. Do not hide a profitable, precisely
   // linked product merely because live procurement verification is pending.
   // Order-time fulfillment remains responsible for current stock and API checks.
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
-  if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
-  if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
   const sellingPrice = asNumber(row.selling_price);
-  const sourceCost = asNumber(row.source_cost);
-  const shippingCost = asNumber(row.shipping_cost);
-  const recordedProfit = asNumber(row.contribution_profit);
-  const contributionProfit = recordedProfit ?? (sellingPrice !== null && sourceCost !== null && shippingCost !== null
-    ? sellingPrice - sourceCost - shippingCost
-    : null);
-  if (contributionProfit === null) reasons.push("profit_unknown");
-  else if (contributionProfit < 2500) reasons.push("minimum_contribution_profit_below_2500");
-  const inventory = asNumber(row.inventory);
-  if (inventory === null || inventory <= 0) reasons.push("inventory_not_positive");
+  if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_invalid");
+  if (manualInventory) {
+    if (manualInventoryQuantity(row) === null) reasons.push("manual_inventory_quantity_invalid");
+  } else {
+    if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
+    if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
+    const sourceCost = asNumber(row.source_cost);
+    const shippingCost = asNumber(row.shipping_cost);
+    const recordedProfit = asNumber(row.contribution_profit);
+    const contributionProfit = recordedProfit ?? (sellingPrice !== null && sourceCost !== null && shippingCost !== null
+      ? sellingPrice - sourceCost - shippingCost
+      : null);
+    if (contributionProfit === null) reasons.push("profit_unknown");
+    else if (contributionProfit < 2500) reasons.push("minimum_contribution_profit_below_2500");
+    const inventory = asNumber(row.inventory);
+    if (inventory === null || inventory <= 0) reasons.push("inventory_not_positive");
+  }
   return reasons;
 }
 
@@ -395,7 +410,7 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("shop_listings")
-    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
+    .select("id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,manual_inventory,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_error")
     .is("archived_at", null)
     .or("published.eq.true,and(published.eq.false,supplier_product_id.not.is.null,supplier_variant_id.not.is.null)")
     .or("shopify_sync_status.is.null,shopify_sync_status.neq.syncing")
@@ -415,10 +430,10 @@ export async function previewShopifySync(limit = 150): Promise<{ considered: num
   const rows = previewRows.map((rawRow) => {
     const row = rawRow;
     const reasons = blockReasons(row);
-    if (!supplierStatuses.has(String(row.id))) reasons.push("supplier_identity_unlinked");
+    if (!isManualInventoryListing(row) && !supplierStatuses.has(String(row.id))) reasons.push("supplier_identity_unlinked");
     if (typeof row.image_url !== "string" || !/^https?:\/\//i.test(row.image_url)) reasons.push("image_url_invalid");
     if (!(asNumber(row.selling_price) !== null && (asNumber(row.selling_price) ?? 0) > 0)) reasons.push("selling_price_invalid");
-    if (!row.supplier_variant_id) reasons.push("supplier_variant_missing");
+    if (!isManualInventoryListing(row) && !row.supplier_variant_id) reasons.push("supplier_variant_missing");
     for (const reason of reasons) reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
     return {
       listingId: row.id,
@@ -457,7 +472,7 @@ async function syncListingRows(
     supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
   })));
   const candidates = rows.filter((row) =>
-    Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.id)))
+    (isManualInventoryListing(row) || Boolean(row.supplier_listing_id && supplierStatuses.has(String(row.id))))
     && blockReasons(row).length === 0
   );
   const blocked = rows.filter((row) => !candidates.includes(row));
@@ -519,7 +534,7 @@ async function syncListingRows(
     }
   }
 
-  const retiredIds = await retireShopListingsOwnedByCommerce(candidates, "shopify", supabase);
+  const retiredIds = await retireShopListingsOwnedByCommerce(candidates.filter((row) => !isManualInventoryListing(row)), "shopify", supabase);
   for (const row of candidates) {
     if (retiredIds.has(String(row.id))) continue;
     const claim = await supabase
