@@ -7,6 +7,15 @@ import {
 
 export type { BaseSnapshotCheckpoint };
 
+export type BaseItemVariantInput = {
+  /** Existing BASE variation_id. Required when editing an item with existing variations. */
+  variationId?: string | number;
+  variation: string;
+  stock: number;
+  identifier: string;
+  barcode?: string;
+};
+
 type BaseItemInput = {
   title: string;
   identifier?: string;
@@ -14,7 +23,33 @@ type BaseItemInput = {
   price: number;
   stock?: number;
   visible?: boolean;
+  /** BASE's indexed variation[] fields; omitted to preserve legacy single-variant behavior. */
+  variations?: BaseItemVariantInput[];
 };
+
+function appendBaseVariations(body: URLSearchParams, variations: BaseItemVariantInput[] | undefined) {
+  if (!variations) return;
+  if (variations.length === 0) throw new Error("BASE_VARIATIONS_EMPTY");
+  const seenIdentifiers = new Set<string>();
+  variations.forEach((variant, index) => {
+    const label = variant.variation.trim();
+    const identifier = variant.identifier.trim();
+    const stock = Number(variant.stock);
+    if (!label || !identifier || !Number.isSafeInteger(stock) || stock < 0) {
+      throw new Error("BASE_VARIATION_INVALID:" + index);
+    }
+    if (seenIdentifiers.has(identifier)) throw new Error("BASE_VARIATION_IDENTIFIER_DUPLICATE:" + identifier);
+    seenIdentifiers.add(identifier);
+    if (variant.variationId !== undefined && !/^\\d+$/.test(String(variant.variationId))) {
+      throw new Error("BASE_VARIATION_ID_INVALID:" + index);
+    }
+    body.set(`variation[${index}]`, label);
+    body.set(`variation_stock[${index}]`, String(stock));
+    body.set(`variation_identifier[${index}]`, identifier);
+    if (variant.barcode?.trim()) body.set(`barcode[${index}]`, variant.barcode.trim());
+    if (variant.variationId !== undefined) body.set(`variation_id[${index}]`, String(variant.variationId));
+  });
+}
 
 type BaseItemResponse = {
   item?: {
@@ -195,17 +230,16 @@ async function requestBase(
 }
 
 export async function createBaseItem(input: BaseItemInput) {
-  return requestBase(
-    "/items/add",
-    new URLSearchParams({
-      title: input.title,
-      ...(input.identifier ? { identifier: input.identifier } : {}),
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-  );
+  const body = new URLSearchParams({
+    title: input.title,
+    ...(input.identifier ? { identifier: input.identifier } : {}),
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  appendBaseVariations(body, input.variations);
+  return requestBase("/items/add", body);
 }
 
 export async function editBaseItem(input: {
@@ -215,19 +249,18 @@ export async function editBaseItem(input: {
   price: number;
   stock?: number;
   visible?: boolean;
+  variations?: BaseItemVariantInput[];
 }) {
-  return requestBase(
-    "/items/edit",
-    new URLSearchParams({
-      item_id: input.itemId,
-      title: input.title,
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-    3,
-  );
+  const body = new URLSearchParams({
+    item_id: input.itemId,
+    title: input.title,
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  appendBaseVariations(body, input.variations);
+  return requestBase("/items/edit", body, 3);
 }
 
 
@@ -343,6 +376,11 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number;
+    variation?: string;
+    variation_identifier?: string;
+    barcode?: string;
+    options?: Array<{ name?: string; value?: string; [key: string]: unknown }>;
     title?: string;
     price?: number;
     amount?: number;
