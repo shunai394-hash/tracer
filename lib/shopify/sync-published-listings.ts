@@ -486,6 +486,18 @@ async function syncListingRows(
   };
 
   for (const row of blocked) {
+    if (isManualInventoryListing(row)) {
+      const reasons = blockReasons(row);
+      const message = reasons.length ? reasons.join(",") : "manual_inventory_sync_not_selected";
+      await supabase.from("shop_listings").update({
+        shopify_sync_status: "failed",
+        shopify_sync_error: message,
+        shopify_synced_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      results.failed += 1;
+      results.errors.push({ listingId: row.id, error: message });
+      continue;
+    }
     if (!row.shopify_product_id) {
       await supabase.from("shop_listings").update({
         published: false,
@@ -678,7 +690,7 @@ async function syncListingRows(
           published: true,
           pipeline_stage: "PUBLISHED",
           pipeline_status: "published",
-          pipeline_reason: "sales_test_gate_passed",
+          pipeline_reason: isManualInventoryListing(row) ? "merchant_held_stock" : "sales_test_gate_passed",
           pipeline_updated_at: new Date().toISOString(),
         } : {}),
       }).eq("id", row.id);
@@ -690,6 +702,18 @@ async function syncListingRows(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "japanese_catalog_title_localization_failed" || message === "japanese_catalog_copy_invalid") {
+        if (isManualInventoryListing(row)) {
+          // A copy-validation retry must not silently delist merchant-owned stock.
+          await supabase.from("shop_listings").update({
+            shopify_sync_status: "failed",
+            shopify_sync_error: message,
+            shopify_synced_at: new Date().toISOString(),
+            pipeline_reason: "merchant_held_stock",
+          }).eq("id", row.id);
+          results.failed += 1;
+          results.errors.push({ listingId: row.id, error: message });
+          continue;
+        }
         if (row.shopify_product_id) await unpublishShopifyProduct(String(row.shopify_product_id));
         await supabase.from("shop_listings").update({
           published: false,
