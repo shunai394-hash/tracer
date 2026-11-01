@@ -347,7 +347,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
   if (!brand) {
-    const titleBrand = /^([A-Z][A-Z0-9& .'-]{1,40})\\s+/.exec(rawListingTitle)?.[1]?.trim();
+    const titleBrand = /^([A-Z][A-Z0-9& .'-]{1,40})\s+/.exec(rawListingTitle)?.[1]?.trim();
     brand = titleBrand || null;
   }
   if (!category) category = rawListingTitle.includes("プロテイン") ? "food" : "other";
