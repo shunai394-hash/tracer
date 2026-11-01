@@ -388,7 +388,6 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     payload: {
       source: "tracer",
       product_name: japaneseProductName,
-      brand: brand || undefined,
       seller_name: "TRACER ONLINE STORE",
       product_url: productUrl,
       canonical_url: productUrl,
@@ -399,9 +398,6 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
       currency: String(listing.currency ?? "JPY"),
       brand: brand || undefined,
       category: category || "other",
-      merchant_held_stock: isMerchantHeldStockListing(listing),
-      fulfillment_mode: isMerchantHeldStockListing(listing) ? "merchant_held_stock" : "supplier_fulfillment",
-      available_inventory: isMerchantHeldStockListing(listing) ? Number(listing.inventory) : undefined,
       discovery_reason: discoveryReason(listing),
       tracer_url: tracerUrl,
       sales_url: productUrl,
