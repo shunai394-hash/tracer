@@ -346,6 +346,11 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     category = typeof bestseller?.category === "string" ? bestseller.category : null;
     brand = typeof bestseller?.brand === "string" ? bestseller.brand : null;
   }
+  if (!brand) {
+    const titleBrand = /^([A-Z][A-Z0-9& .'-]{1,40})\\s+/.exec(rawListingTitle)?.[1]?.trim();
+    brand = titleBrand || null;
+  }
+  if (!category) category = rawListingTitle.includes("プロテイン") ? "food" : "other";
 
   // The storefront route explicitly resolves stable listing UUIDs, avoiding
   // URL-encoding ambiguity for Japanese slugs used by external integrations.
@@ -360,7 +365,12 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
 
-  const japaneseProductName = localizeProductTitle(String(listing.title ?? ""));
+  const rawListingTitle = String(listing.title ?? "").trim();
+  // Preserve the registered brand spelling for this self-stock product while
+  // still localizing ordinary supplier titles as before.
+  const japaneseProductName = rawListingTitle.startsWith("BEAUTY FORMULA ")
+    ? rawListingTitle
+    : localizeProductTitle(rawListingTitle);
   if (!japaneseProductName || !isJapaneseProductTitle(japaneseProductName)) {
     const reason = "newfind_japanese_product_title_unavailable";
     await supabase.from("newfind_promotion_deliveries")
@@ -378,6 +388,8 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     payload: {
       source: "tracer",
       product_name: japaneseProductName,
+      brand: brand || undefined,
+      seller_name: "TRACER ONLINE STORE",
       product_url: productUrl,
       canonical_url: productUrl,
       official_url: productUrl,
@@ -387,6 +399,9 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
       currency: String(listing.currency ?? "JPY"),
       brand: brand || undefined,
       category: category || "other",
+      merchant_held_stock: isMerchantHeldStockListing(listing),
+      fulfillment_mode: isMerchantHeldStockListing(listing) ? "merchant_held_stock" : "supplier_fulfillment",
+      available_inventory: isMerchantHeldStockListing(listing) ? Number(listing.inventory) : undefined,
       discovery_reason: discoveryReason(listing),
       tracer_url: tracerUrl,
       sales_url: productUrl,
