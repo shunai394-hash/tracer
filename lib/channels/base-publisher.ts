@@ -253,7 +253,22 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
-      // Fail closed for existing BASE items too: a catalog validation failure
+      if (isManualInventoryListing(listing)) {
+        // A copy-service outage must not delist verified merchant-owned stock.
+        // Preserve the existing public item and surface the sync error for repair.
+        await supabase.from("shop_listings").update({
+          base_last_error: message,
+          base_publication_status: listing.base_item_id ? "published" : "failed",
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "failed",
+          pipeline_reason: "merchant_held_stock",
+          pipeline_error: message,
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        results.push({ listingId, ok: false, error: message });
+        continue;
+      }
+      // Fail closed for supplier-backed items: a catalog validation failure
       // must not leave a previously visible product available for purchase.
       if (listing.base_item_id) {
         try {
