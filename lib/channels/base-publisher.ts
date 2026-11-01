@@ -414,7 +414,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const availableInventory = manualInventory
-      ? manualInventoryQuantity(listing)
+      ? (manualInventoryQuantity(listing) ?? 0)
       : typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
     if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory < 0 || (!manualInventory && availableInventory <= 0)) {
       if (listing.base_item_id) {
