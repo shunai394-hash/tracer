@@ -81,7 +81,7 @@ async function addBaseImageWithFormatFallback(input: {
 }
 
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
-  const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  const result = { checked: 0, unpublished: 0, failed: 0, manualInventoryProtected: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel)
@@ -93,12 +93,20 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   // Reconcile previously published listings whose safety stop failed or whose
   // DB state changed before external visibility was verified. Only explicit
   // supplier-safety error prefixes are eligible outside the published state.
-  const checkableListings = (listings ?? []).filter((listing) =>
+  const rawCheckableListings = (listings ?? []).filter((listing) =>
     listing.status === "published" ||
     String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_disable_failed:")
   );
+  const candidateVariantIds = [...new Set(rawCheckableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
+  const { data: manualInventoryRows, error: manualInventoryError } = candidateVariantIds.length
+    ? await db.from("shop_listings").select("id").in("id", candidateVariantIds).eq("manual_inventory", true)
+    : { data: [], error: null };
+  if (manualInventoryError) throw new Error("manual_inventory_protection_read_failed:" + manualInventoryError.message);
+  const manualInventoryIds = new Set((manualInventoryRows ?? []).map((row) => String(row.id)));
+  result.manualInventoryProtected = rawCheckableListings.filter((listing) => manualInventoryIds.has(String(listing.variant_id))).length;
+  const checkableListings = rawCheckableListings.filter((listing) => !manualInventoryIds.has(String(listing.variant_id)));
   result.checked = checkableListings.length;
   const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
   if (variantIds.length === 0) return result;
