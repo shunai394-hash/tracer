@@ -273,6 +273,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "shopify_listing_not_live" };
   }
 
+  const rawListingTitle = String(listing.title ?? "").trim();
   const { error: deliveryUpsertError } = await supabase
     .from("newfind_promotion_deliveries")
     .upsert({ listing_id: listingId, event_id: id, status: "pending", attempts: 0 }, { onConflict: "listing_id", ignoreDuplicates: true });
@@ -365,7 +366,6 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: true, sent: false, eventId: sendEventId, status: null, ackStatus: null, detail: reason };
   }
 
-  const rawListingTitle = String(listing.title ?? "").trim();
   // Preserve the registered brand spelling for this self-stock product while
   // still localizing ordinary supplier titles as before.
   const japaneseProductName = rawListingTitle.startsWith("BEAUTY FORMULA ")
