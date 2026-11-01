@@ -46,7 +46,7 @@ type Listing = {
 
 function storefrontQuantityForListing(row: Pick<Listing, "inventory" | "manual_inventory">): number {
   if (isManualInventoryListing(row)) return manualInventoryQuantity(row) ?? 0;
-  return storefrontQuantityForListing(row);
+  return toStorefrontStockQuantity(row.inventory, getStorefrontStockCap());
 }
 
 type ShopifyProductNode = {
@@ -662,7 +662,7 @@ async function syncListingRows(
       if (!variant?.id) throw new Error("shopify_variant_missing_for_inventory_sync");
       await setShopifyVariantInventory({
         variantId: variant.id,
-        quantity: toStorefrontStockQuantity(row.inventory, getStorefrontStockCap()),
+        quantity: storefrontQuantityForListing(row),
         reference: `tracer://shop-listing/${row.id}`,
       });
 
