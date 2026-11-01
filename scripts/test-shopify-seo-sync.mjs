@@ -22,7 +22,8 @@ console.log("Shopify SEO write, bounds, and readback guards are present.");
 
 assert.match(publish, /const seoTitle =/, "publishing must build a bounded branded SEO title");
 assert.match(publish, /const seoDescription = storefrontDescription/, "SEO description must come from actual product copy");
-assert.ok(publish.includes("updateWithHandleCollisionRecovery({ productId, title, descriptionHtml: storefrontDescription, handle, price: Number(price.selling_price), variantId, sku, imageUrl, seoTitle, seoDescription }"), "update path must pass source image and SEO metadata");
+assert.match(publish, /updateWithHandleCollisionRecovery\(\{ productId, title, descriptionHtml: plainTextToShopifyHtml\(storefrontDescription\), handle, price: Number\(price\.selling_price\), variantId, sku, imageUrl, seoTitle, seoDescription \}\)/, "matched update path must pass source image and SEO metadata");
+assert.match(publish, /updateWithHandleCollisionRecovery\(\{ productId: recoveredProduct\.id, title, descriptionHtml: plainTextToShopifyHtml\(storefrontDescription\), handle, price: Number\(price\.selling_price\), variantId: recoveredVariantId, sku, imageUrl: null, seoTitle, seoDescription \}\)/, "recovered product update must avoid duplicating source media");
 assert.match(admin, /query TracerProductImagePreflight/ , "update must check existing media before adding a missing image");
 assert.match(admin, /const mediaToAdd = !hasProductImage && input\.imageUrl/ , "existing products without images should receive the source image without duplicating media");
 assert.match(admin, /query VerifyUpdatedProductImage/, "image upload must be checked with a fresh Shopify readback");
