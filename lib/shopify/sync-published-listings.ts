@@ -365,9 +365,7 @@ function blockReasons(row: Listing): string[] {
   if (String(row.currency ?? "").trim().toUpperCase() !== "JPY") reasons.push("currency_not_jpy");
   const sellingPrice = asNumber(row.selling_price);
   if (sellingPrice === null || sellingPrice <= 0) reasons.push("selling_price_invalid");
-  if (manualInventory) {
-    if (manualInventoryQuantity(row) === null) reasons.push("manual_inventory_quantity_invalid");
-  } else {
+  if (!manualInventory) {
     if (asNumber(row.shipping_cost) === null) reasons.push("shipping_cost_unknown");
     if (asNumber(row.source_cost) === null) reasons.push("source_cost_unknown");
     const sourceCost = asNumber(row.source_cost);
