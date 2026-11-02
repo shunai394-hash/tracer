@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
-import { createBaseItem, editBaseItem, addBaseItemImage, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
+import { createBaseItem, editBaseItem, getBaseItemDetail, addBaseItemImage, getBasePublicShopUrl, isBaseConfigured } from "@/lib/channels/base";
 import { generateStructuredJson, isGeminiConfigured } from "@/lib/ai/gemini/client";
 import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
@@ -134,6 +134,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       "and(base_item_id.is.null,supplier_product_id.not.is.null,supplier_variant_id.not.is.null,published.eq.false)",
       "and(pipeline_status.eq.selected,base_item_id.is.null)",
       "and(base_item_id.is.null,base_last_error.like.base_create_id_persist_failed:*)",
+      "id.eq.1ae04dd1-a228-43b7-b003-3a2fb75da98a",
     ].join(","));
   }
   const safeLimit = Math.min(15, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 10)));
@@ -158,13 +159,70 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
-  const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
+  const publishableListings = standardListings.map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
   const identityUnlinkedIds = new Set<string>(publishableListings
     .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
+
+  // Permanent BASE exception for the manually stocked protein listing.
+  // Reassert its known merchant stock and visible state on every reconciliation,
+  // then read the exact BASE item back before recording success.
+  const proteinListing = (listings ?? []).find((listing) =>
+    String(listing.id) === "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
+  );
+  if (proteinListing) {
+    const itemId = String(proteinListing.base_item_id ?? "164777558");
+    const price = Number(proteinListing.selling_price);
+    const stock = Number(proteinListing.inventory);
+    try {
+      if (!/^\\d+$/.test(itemId)) throw new Error("protein_base_item_id_invalid");
+      if (!Number.isFinite(price) || price <= 0) throw new Error("protein_base_price_invalid");
+      if (!Number.isInteger(stock) || stock < 1) throw new Error("protein_merchant_stock_not_positive");
+      await editBaseItem({
+        itemId,
+        title: String(proteinListing.title ?? "").trim(),
+        detail: String(proteinListing.description ?? proteinListing.title ?? "").trim(),
+        price,
+        stock,
+        visible: true,
+      });
+      const actual = await getBaseItemDetail(itemId);
+      const actualVisible = actual.visible === true || actual.visible === 1 || actual.visible === "1";
+      const actualStock = Number(actual.stock);
+      const actualPrice = Number(actual.price);
+      if (!actualVisible || actualStock !== stock || actualPrice !== price) {
+        throw new Error("protein_base_readback_mismatch");
+      }
+      const now = new Date().toISOString();
+      const { error: updateError } = await supabase.from("shop_listings").update({
+        base_item_id: itemId,
+        inventory: stock,
+        manual_inventory: true,
+        published: true,
+        orderable: true,
+        pipeline_stage: "PUBLISHED",
+        pipeline_status: "published",
+        pipeline_reason: "merchant_held_stock",
+        pipeline_updated_at: now,
+        published_at: now,
+        base_publication_status: "published",
+        base_publication_lease_until: null,
+        base_last_error: null,
+        updated_at: now,
+      }).eq("id", String(proteinListing.id));
+      if (updateError) throw new Error("protein_base_db_state_update_failed");
+      results.push({ listingId: String(proteinListing.id), ok: true, baseItemId: itemId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ listingId: String(proteinListing.id), ok: false, baseItemId: itemId, error: message });
+    }
+  }
+  const standardListings = (listings ?? []).filter((listing) =>
+    String(listing.id) !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
+  );
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
   if (identityUnlinkedIds.size > 0) {
@@ -245,7 +303,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }));
   const copyByListingId = new Map(copyResults.map((item) => [item.listingId, item]));
 
-  for (const listing of listings ?? []) {
+  for (const listing of standardListings) {
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
