@@ -9,6 +9,8 @@ assert.ok(legacyBaseOrderSync.includes('event_type: "base_order_unmapped_item"')
 assert.ok(legacyBaseOrderSync.includes('status: "needs_review"'), "legacy BASE sync must keep unmapped paid lines visible for human resolution");
 assert.ok(legacyBaseOrderSync.includes('base_order_unmapped_item:${baseOrderKey}:${orderItemId}'), "legacy BASE review events must be idempotent per order line");
 assert.ok(legacyBaseOrderSync.includes("if (unresolvedItems.length > 0)"), "legacy BASE sync must stop the full order when any line is unmapped");
+assert.ok(legacyBaseOrderSync.includes("return false;"), "existing BASE orders with unmapped lines must stop repair");
+assert.ok(legacyBaseOrderSync.includes("if (!itemsComplete)"), "existing BASE orders with unmapped lines must not reach procurement");
 
 const baseReadbackRoute = readFileSync(new URL("../app/api/cron/base-channel-external-readback/route.ts", import.meta.url), "utf8");
 assert.ok(baseReadbackRoute.includes(String.raw`if (!/^\d+$/.test(baseItemId))`), "BASE readback must accept numeric external item IDs");
