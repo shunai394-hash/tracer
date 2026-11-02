@@ -43,6 +43,7 @@ assert.match(baseClient, /list_order: String\(listOrder\)/);
 assert.match(priorityPin, /requireAutomationAuth/);
 assert.match(priorityPin, /getBaseItemDetail\(itemId\)/);
 assert.match(priorityPin, /setBaseItemListOrder\(itemId, 1\)/);
+assert.match(priorityPin, /TRACER BASE PRIORITY PIN/);
 assert.match(priorityPin, /list_order/);
 assert.match(priorityPin, /Stock <= 0/);
 assert.match(priorityPin, /visible/);
