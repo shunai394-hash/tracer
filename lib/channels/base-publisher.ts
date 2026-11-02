@@ -21,6 +21,10 @@ export type BasePublicationResult = {
 
 type JapaneseCatalogCopy = { title: string; detail: string; };
 
+// Merchant-held protein inventory is fulfilled directly and must not be hidden
+// by supplier-identity publication gates.
+const ALWAYS_ON_SALE_LISTING_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98a"]);
+
 async function ensureJapaneseCatalogCopy(title: string, detail: string): Promise<JapaneseCatalogCopy> {
   const sourceTitle = String(title ?? "").trim();
   const sourceDetail = String(detail ?? "").trim();
@@ -156,6 +160,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }
   const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
   const identityUnlinkedIds = new Set<string>(publishableListings
+    .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
