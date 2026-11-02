@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const MIN_EXPECTED_PROFIT_JPY = 2500;
+// This manually stocked protein item remains listed regardless of supplier-profit evidence.
+const ALWAYS_ON_SALE_VARIANT_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98a"]);
 const CHANNELS = ["base", "shopify"] as const;
 
 async function withdrawBatch(channel: (typeof CHANNELS)[number], limit: number) {
@@ -38,6 +40,7 @@ async function withdrawBatch(channel: (typeof CHANNELS)[number], limit: number) 
   }
 
   const targets = variantIds.filter((id) => {
+    if (ALWAYS_ON_SALE_VARIANT_IDS.has(id)) return false;
     const price = latestPrice.get(id);
     return !price || price.currency !== "JPY" || !Number.isFinite(price.expected_profit) ||
       price.expected_profit < MIN_EXPECTED_PROFIT_JPY;
