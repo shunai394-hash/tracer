@@ -74,10 +74,11 @@ async function handleCheckoutCompleted(
 
   const { data: order } = await supabase
     .from("shop_orders")
-    .select("id, payment_status, order_status")
+    .select("id, payment_status, order_status, manual_inventory_released_at")
     .eq("id", shopOrderId)
     .maybeSingle();
   if (!order) return shopOrderId;
+  if (order.manual_inventory_released_at) return shopOrderId;
 
   // Payment confirmation is idempotent, but fulfillment must remain retryable.
   // A prior delivery may have confirmed payment and then failed during PO creation
