@@ -225,7 +225,7 @@ test("stale listing eligibility uses batched supplier, price, and variant reads"
   assert.match(audit, /stale_listing_check_timestamp_failed/);
   assert.match(publish, /markCheckedError/);
   assert.match(audit, /legacy-shop-listing:/, "legacy manual stock listings must be linked to their source shop listing");
-  assert.match(audit, /merchant_held_stock === true[\\s\\S]*?manualInventory\\?\\.manual_inventory === true[\\s\\S]*?manualInventory\\.pipeline_reason === "merchant_held_stock"[\\s\\S]*?Number\\(manualInventory\\.inventory\\) > 0/, "positive merchant-held stock must bypass supplier-only delisting");
+  assert.match(audit, /merchant_held_stock === true[\s\S]*?manualInventory\?\.manual_inventory === true[\s\S]*?manualInventory\.pipeline_reason === "merchant_held_stock"[\s\S]*?Number\(manualInventory\.inventory\) > 0/, "positive merchant-held stock must bypass supplier-only delisting");
   assert.match(audit, /merchant_held_stock_manual_fulfillment_protected/, "protected manual stock must be recorded for audit");
   assert.ok(
     audit.indexOf("merchant_held_stock_manual_fulfillment_protected") < audit.indexOf("shopifyGraphQL"),
