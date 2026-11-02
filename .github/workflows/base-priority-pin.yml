@@ -28,12 +28,9 @@ permissions:
 jobs:
   pin:
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.merged == true
-      && (
-        github.event_name != 'issue_comment' ||
-        (github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-base-priority-pin'))
-      )
+      (github.event_name != 'pull_request' && github.event_name != 'issue_comment') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-base-priority-pin'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
