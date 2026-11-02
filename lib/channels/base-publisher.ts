@@ -143,6 +143,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // batch and starve fresh products waiting for their first BASE item.
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
+  const standardListings = (listings ?? []).filter((listing) =>
+    String(listing.id) !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
+  );
 
   // Only publish rows whose exact supplier listing is currently eligible for publication.
   // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
@@ -220,9 +223,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId: String(proteinListing.id), ok: false, baseItemId: itemId, error: message });
     }
   }
-  const standardListings = (listings ?? []).filter((listing) =>
-    String(listing.id) !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
-  );
+
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
   if (identityUnlinkedIds.size > 0) {
