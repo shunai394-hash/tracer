@@ -56,25 +56,6 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#FBF6F1] text-[#3B241A]">
-      <section className="relative overflow-hidden">
-        <picture>
-          <source media="(min-width: 768px)" srcSet={STOREFRONT_IMAGES.heroWide} />
-          <img src={STOREFRONT_IMAGES.heroTall} alt="窓辺で小ぶりのバッグを持つ女性" fetchPriority="high" className="h-[78vh] max-h-[760px] min-h-[520px] w-full object-cover object-bottom md:h-[70vh] md:object-center" />
-        </picture>
-        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF6F1]/65 via-[#FBF6F1]/15 to-transparent md:bg-gradient-to-r md:from-[#FBF6F1]/78 md:via-[#FBF6F1]/20 md:to-transparent" />
-        <div className="absolute inset-0 mx-auto flex max-w-6xl flex-col justify-start px-6 pt-12 md:justify-center md:pt-0">
-          <p className="text-xs font-semibold tracking-[0.3em] text-[#75402F]">TRACER SELECT</p>
-          <h1 className="mt-4 font-serif text-[34px] leading-tight sm:text-5xl">毎日を、<br />少しだけ上品に。</h1>
-          <p className="mt-5 max-w-sm text-sm font-medium leading-7 text-[#4A2C21]">
-            バッグ、ヘアアクセサリー、メイク小物。<br />いつもの装いに寄り添うアイテムを集めました。
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">すべての商品を見る</Link>
-            <Link href="/shop?cat=bags" className="rounded-full border-2 border-[#3B241A]/50 bg-white/90 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
-          </div>
-        </div>
-      </section>
-
       {(
         <section aria-label="おすすめ商品" className="border-b border-[#EADBD3] bg-[#F2E6DE]">
           <div className="mx-auto grid max-w-6xl items-center gap-6 px-6 py-8 sm:py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-12">
@@ -94,6 +75,26 @@ export default async function HomePage() {
           </div>
         </section>
       )}
+      <section className="relative overflow-hidden">
+        <picture>
+          <source media="(min-width: 768px)" srcSet={STOREFRONT_IMAGES.heroWide} />
+          <img src={STOREFRONT_IMAGES.heroTall} alt="窓辺で小ぶりのバッグを持つ女性" fetchPriority="high" className="h-[78vh] max-h-[760px] min-h-[520px] w-full object-cover object-bottom md:h-[70vh] md:object-center" />
+        </picture>
+        <div className="absolute inset-0 bg-gradient-to-b from-[#FBF6F1]/65 via-[#FBF6F1]/15 to-transparent md:bg-gradient-to-r md:from-[#FBF6F1]/78 md:via-[#FBF6F1]/20 md:to-transparent" />
+        <div className="absolute inset-0 mx-auto flex max-w-6xl flex-col justify-start px-6 pt-12 md:justify-center md:pt-0">
+          <p className="text-xs font-semibold tracking-[0.3em] text-[#75402F]">TRACER SELECT</p>
+          <h1 className="mt-4 font-serif text-[34px] leading-tight sm:text-5xl">毎日を、<br />少しだけ上品に。</h1>
+          <p className="mt-5 max-w-sm text-sm font-medium leading-7 text-[#4A2C21]">
+            バッグ、ヘアアクセサリー、メイク小物。<br />いつもの装いに寄り添うアイテムを集めました。
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/shop" className="rounded-full bg-[#3B241A] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">すべての商品を見る</Link>
+            <Link href="/shop?cat=bags" className="rounded-full border-2 border-[#3B241A]/50 bg-white/90 px-7 py-3 text-sm font-medium backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4 motion-reduce:transition-none">バッグを見る</Link>
+          </div>
+        </div>
+      </section>
+
+
 
       <section aria-label="お買い物のご案内" className="border-y border-[#EADBD3] bg-white">
         <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-2 px-6 py-4 text-center text-xs text-[#5C4035] sm:grid-cols-3 sm:text-sm">
