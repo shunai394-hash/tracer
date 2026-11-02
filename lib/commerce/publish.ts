@@ -13,6 +13,10 @@ import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-pr
 import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Channel = "base" | "shopify";
+
+// This merchant-held protein product is an explicit permanent catalog exception:
+// supplier-profit checks must never delist it or zero its storefront inventory.
+const ALWAYS_ON_SALE_VARIANT_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98a"]);
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
@@ -84,6 +88,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel)
+    .neq("variant_id", "1ae04dd1-a228-43b7-b003-3a2fb75da98a")
     .or("status.eq.published,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%,last_error.like.supplier_offer_disable_failed%")
     .not("external_product_id", "is", null)
     .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(5);
@@ -390,8 +395,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Recovery runs should publish missing/pending/error listings only. Reprocessing
   // already-published products repeatedly resets their status to pending and wastes
   // the channel API budget without increasing the public catalog.
-  const candidatesToProcess = onlyUnpublished
-    ? sortedCandidates.filter((candidate) => {
+  const candidatesToProcess = sortedCandidates.filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)).filter((candidate) => !onlyUnpublished || (() => {
         const state = stateByVariant.get(candidate.id);
         if (state?.status !== "published") return true;
         const offers = asRelationRows(candidate.supplier_offers);
@@ -416,9 +420,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           Number(price.expected_profit) >= 2500 && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
-        return !saleable;
-      })
-    : sortedCandidates;
+        return state?.status !== "published" || !saleable;
+      })());
   const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
