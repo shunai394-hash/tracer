@@ -68,9 +68,9 @@ export default async function HomePage() {
               <h2 className="mt-3 font-serif text-2xl leading-snug text-[#3B241A] sm:text-3xl">{proteinPickup.title}</h2>
               <p className="mt-3 text-2xl font-semibold tracking-tight text-[#3B241A]">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: proteinPickup.currency ?? "JPY", maximumFractionDigits: 0 }).format(proteinPickup.sellingPrice ?? 3400)}</p>
               <p className="mt-2 text-sm text-[#5C4035]">{proteinPickupIsLive ? "販売ページで在庫を確認できます" : "在庫・販売状態を確認中"}</p>
-              <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-8 text-sm font-semibold text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
-                商品詳細・購入へ →
-              </Link>
+              <a href="https://ieufrg-tb.myshopify.com/products/beauty-formula-%E3%83%81%E3%83%A7%E3%82%B3%E3%83%AC%E3%83%BC%E3%83%88%E9%A2%A8%E5%91%B3%E3%83%97%E3%83%AD%E3%83%86%E3%82%A4%E3%83%B3-300g" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-8 text-sm font-semibold text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
+                Shopifyで購入する ↗
+              </a>
             </div>
           </div>
         </section>
