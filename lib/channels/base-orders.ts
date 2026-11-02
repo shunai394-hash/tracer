@@ -52,6 +52,8 @@ function isBaseOrderPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>):
     case "bnpl":
     case "bnpl_installment":
       return order.bnpl_payment_transaction?.status === "captured";
+    case "corporate_billing":
+      return order.corporate_billing_payment_transaction?.status === "captured";
     case "atobarai":
       return false;
     case "cod":
