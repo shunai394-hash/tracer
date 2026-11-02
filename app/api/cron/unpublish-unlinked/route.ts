@@ -38,6 +38,7 @@ export async function GET(request: Request) {
     if (repairError) return NextResponse.json({ ok: false, stage: "native_cj_repair", error: repairError.message }, { status: 500 });
   }
   const unlinked = (data ?? []).filter((row) => {
+    if (String(row.id) === "1ae04dd1-a228-43b7-b003-3a2fb75da98a") return false;
     if (!row.supplier_listing_id) return true;
     const status = supplierStatuses.get(String(row.id));
     if (!status) return true;
