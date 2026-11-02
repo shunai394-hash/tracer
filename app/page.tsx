@@ -49,7 +49,10 @@ export default async function HomePage() {
     .filter((listing): listing is NonNullable<typeof listing> => Boolean(listing))
     .filter((listing) => listing.id !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a")
     .slice(0, 7);
-  const pickup = proteinPickup ? [proteinPickup, ...regularPickup] : regularPickup;
+  // The pinned item is rendered in its dedicated hero-adjacent slot above.
+  // Keep the regular grid limited to live catalog records so fallback display data
+  // is never passed to ProductCard as if it were a complete purchasable listing.
+  const pickup = regularPickup;
 
   return (
     <main className="min-h-screen bg-[#FBF6F1] text-[#3B241A]">
