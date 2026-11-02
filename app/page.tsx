@@ -59,6 +59,26 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {proteinPickup ? (
+        <section aria-label="おすすめ商品" className="border-b border-[#EADBD3] bg-[#F2E6DE]">
+          <div className="mx-auto grid max-w-6xl items-center gap-6 px-6 py-8 sm:py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-12">
+            <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="group block overflow-hidden rounded-2xl bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
+              <ProductImage src={proteinPickup.imageUrl} alt={proteinPickup.title} eager className="aspect-[5/4] w-full object-contain transition duration-500 group-hover:scale-[1.025] motion-reduce:transition-none" />
+            </Link>
+            <div className="py-2">
+              <p className="text-[11px] font-semibold tracking-[0.28em] text-[#8A5948]">FEATURED ITEM</p>
+              <p className="mt-3 text-xs font-semibold tracking-[0.16em] text-[#75402F]">TRACER SELECT · おすすめ商品</p>
+              <h2 className="mt-3 font-serif text-2xl leading-snug text-[#3B241A] sm:text-3xl">{proteinPickup.title}</h2>
+              <p className="mt-3 text-2xl font-semibold tracking-tight text-[#3B241A]">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: proteinPickup.currency, maximumFractionDigits: 0 }).format(proteinPickup.sellingPrice)}</p>
+              <p className="mt-2 text-sm text-[#5C4035]">{proteinPickup.inventory > 0 ? "在庫あり" : "在庫切れ"}</p>
+              <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-8 text-sm font-semibold text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
+                商品詳細・購入へ →
+              </Link>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <section aria-label="お買い物のご案内" className="border-y border-[#EADBD3] bg-white">
         <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-2 px-6 py-4 text-center text-xs text-[#5C4035] sm:grid-cols-3 sm:text-sm">
           <li>価格はすべて税込表示</li>
