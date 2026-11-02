@@ -193,6 +193,26 @@ async function handlePaymentFailed(
   return shopOrderId;
 }
 
+async function handleCheckoutSessionEnded(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  session: Stripe.Checkout.Session,
+): Promise<string | null> {
+  // A failed PaymentIntent can be retried inside Checkout. Release only when
+  // Stripe says the Checkout Session itself has reached a terminal failure/expiry.
+  const candidateId = session.metadata?.shop_order_id ?? session.client_reference_id ?? null;
+  let query = supabase.from("shop_orders").select("id").eq("stripe_checkout_session_id", session.id);
+  if (candidateId) query = supabase.from("shop_orders").select("id").eq("id", candidateId);
+  const { data: order, error: lookupError } = await query.maybeSingle();
+  if (lookupError) throw new Error(lookupError.message);
+  if (!order?.id) return null;
+
+  const { data: released, error: releaseError } = await supabase.rpc("release_manual_inventory_for_order", {
+    p_order_id: String(order.id),
+  });
+  if (releaseError) throw new Error(releaseError.message);
+  return String(order.id);
+}
+
 async function handleChargeRefunded(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   charge: Stripe.Charge,
@@ -257,6 +277,13 @@ export async function POST(request: Request) {
         break;
       case "payment_intent.payment_failed":
         shopOrderId = await handlePaymentFailed(supabase, event.data.object as Stripe.PaymentIntent);
+        break;
+      case "checkout.session.expired":
+      case "checkout.session.async_payment_failed":
+        shopOrderId = await handleCheckoutSessionEnded(supabase, event.data.object as Stripe.Checkout.Session);
+        break;
+      case "checkout.session.async_payment_succeeded":
+        shopOrderId = await handleCheckoutCompleted(supabase, event.data.object as Stripe.Checkout.Session);
         break;
       case "charge.refunded":
         shopOrderId = await handleChargeRefunded(supabase, event.data.object as Stripe.Charge);
