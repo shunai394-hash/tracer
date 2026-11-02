@@ -38,14 +38,18 @@ assert.match(report.results.find((item) => item.commentType === "unknown").answe
 
 const deployedPreview = readFileSync(new URL("../public/ai-live-preview.html", import.meta.url), "utf8");
 assert.match(deployedPreview, /<meta name="robots" content="noindex,nofollow">/);
-assert.match(deployedPreview, /架空のデモデータ/);
-assert.match(deployedPreview, /id="soak30"/);
-assert.match(deployedPreview, /id="soak60"/);
-assert.match(deployedPreview, /id="stopSoak"/);
-assert.match(deployedPreview, /setInterval\(speakNext, 45000\)/);
-assert.match(deployedPreview, /minutes \* 60 \* 1000/);
-assert.match(deployedPreview, /連続テストを手動停止/);
-assert.doesNotMatch(deployedPreview, /fetch\s*\(|WebSocket|EventSource|https?:\/\//);
+assert.match(deployedPreview, /TRACER AIライブ販売コンソール/);
+assert.match(deployedPreview, /\/api\/admin\/ai-live\/products/);
+assert.match(deployedPreview, /\/api\/admin\/ai-live\/comments/);
+assert.match(deployedPreview, /\/api\/admin\/ai-live\/speak-reply/);
+assert.match(deployedPreview, /Authorization:\s*'Bearer '/);
+assert.match(deployedPreview, /run30/);
+assert.match(deployedPreview, /run60/);
+assert.match(deployedPreview, /runDeadline/);
+assert.match(deployedPreview, /手動停止/);
+assert.match(deployedPreview, /pagehide/);
+assert.doesNotMatch(deployedPreview, /localStorage|sessionStorage/);
+assert.match(deployedPreview, /publicStreaming|公開配信|SNS投稿/);
 const dramaPreview = readFileSync(new URL("../public/ai-live-drama-preview.html", import.meta.url), "utf8");
 assert.match(deployedPreview, /href="\/ai-live-drama-preview\.html"/);
 assert.match(dramaPreview, /<meta name="robots" content="noindex,nofollow">/);
