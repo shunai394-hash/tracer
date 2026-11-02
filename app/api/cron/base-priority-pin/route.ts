@@ -24,6 +24,10 @@ export async function GET(request: Request) {
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!listing || listing.published !== true || listing.base_publication_status !== "published" || !listing.base_item_id) {
+      console.warn("[TRACER BASE PRIORITY PIN SKIPPED]", {
+        reason: "priority_listing_not_published_on_BASE",
+        listingId: PRIORITY_LISTING_ID,
+      });
       return NextResponse.json({
         ok: false,
         skipped: true,
@@ -37,6 +41,13 @@ export async function GET(request: Request) {
     const beforeVisible = before.visible === true || Number(before.visible) === 1;
     const beforeStock = Number(before.stock);
     if (!beforeVisible || !Number.isFinite(beforeStock) || beforeStock <= 0) {
+      console.warn("[TRACER BASE PRIORITY PIN SKIPPED]", {
+        reason: !beforeVisible ? "BASE_item_not_visible" : "BASE_stock_not_positive",
+        listingId: PRIORITY_LISTING_ID,
+        baseItemId: itemId,
+        visible: beforeVisible,
+        stock: Number.isFinite(beforeStock) ? beforeStock : null,
+      });
       return NextResponse.json({
         ok: false,
         skipped: true,
@@ -59,6 +70,15 @@ export async function GET(request: Request) {
       throw new Error("BASE_PRIORITY_PIN_READBACK_MISMATCH");
     }
 
+    console.info("[TRACER BASE PRIORITY PIN]", {
+      ok: true,
+      listingId: PRIORITY_LISTING_ID,
+      baseItemId: itemId,
+      listOrder: afterOrder,
+      visible: afterVisible,
+      stock: afterStock,
+      writePerformed: beforeOrder !== 1,
+    });
     return NextResponse.json({
       ok: true,
       pinned: true,
@@ -70,6 +90,10 @@ export async function GET(request: Request) {
       writePerformed: beforeOrder !== 1,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    console.error("[TRACER BASE PRIORITY PIN FAILED]", {
+      listingId: PRIORITY_LISTING_ID,
+      error: error instanceof Error ? error.message : "BASE_PRIORITY_PIN_FAILED",
+    });
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : "BASE_PRIORITY_PIN_FAILED",
