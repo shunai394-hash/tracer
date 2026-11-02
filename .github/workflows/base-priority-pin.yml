@@ -1,0 +1,64 @@
+name: BASE priority item pin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/api/cron/base-priority-pin/route.ts"
+      - "lib/channels/base.ts"
+      - "vercel.json"
+      - ".github/workflows/base-priority-pin.yml"
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - "app/api/cron/base-priority-pin/route.ts"
+      - "lib/channels/base.ts"
+      - "vercel.json"
+      - ".github/workflows/base-priority-pin.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  pin:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Authenticate to the deployed BASE pin route with GitHub OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_response="$(curl -fsS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app")"
+          oidc_token="$(printf '%s' "$token_response" | jq -r '.value')"
+          test -n "$oidc_token"
+          for attempt in $(seq 1 18); do
+            http_code="$(curl -sS -o /tmp/base-pin-result.json -w '%{http_code}' \
+              -H "Authorization: Bearer $oidc_token" \
+              "https://tracer-pied-alpha.vercel.app/api/cron/base-priority-pin" || true)"
+            response="$(cat /tmp/base-pin-result.json 2>/dev/null || true)"
+            if [[ "$http_code" == "200" ]]; then
+              echo "BASE priority pin readback: $response"
+              gh api "repos/${GITHUB_REPOSITORY}/issues/2067/comments" \
+                --method POST -f body="BASE priority pin result: `$response`"
+              exit 0
+            fi
+            if [[ "$http_code" == "409" || "$http_code" == "502" ]]; then
+              echo "BASE priority pin returned HTTP $http_code: $response"
+              gh api "repos/${GITHUB_REPOSITORY}/issues/2067/comments" \
+                --method POST -f body="BASE priority pin did not complete (HTTP $http_code): `$response`"
+              exit 1
+            fi
+            echo "BASE pin route not ready (HTTP $http_code; attempt $attempt/18); retrying in 10 seconds."
+            sleep 10
+          done
+          echo "BASE priority pin route did not become ready after deployment."
+          exit 1

@@ -602,6 +602,9 @@ export async function placeShopOrder(args: {
     reserved.push({ listingId: String(line.listing.id), qty: line.qty });
   }
 
+  const isDomesticFreeShippingOrder = String(args.shippingCountryCode ?? "").trim().toUpperCase() === "JP" &&
+    lines.length === 1 && String(lines[0].listing.id) === "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
+
   let orderId: string | null = null;
   try {
     const { data: order, error: orderError } = await supabase
@@ -623,11 +626,11 @@ export async function placeShopOrder(args: {
         shipping_zip: args.shippingZip ?? null,
         shipping_line1: args.shippingLine1 ?? null,
         subtotal,
-        shipping_cost: null,
+        shipping_cost: isDomesticFreeShippingOrder ? 0 : null,
         total: subtotal,
         currency,
         notes: args.notes ?? null,
-        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier" },
+        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier", ...(isDomesticFreeShippingOrder ? { shippingPolicy: "domestic_free_shipping" } : {}) },
       })
       .select("id")
       .single();

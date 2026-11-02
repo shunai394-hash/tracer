@@ -232,6 +232,7 @@ assert.match(shopify, /descriptionHtml: html\(freeShippingText\(copy\.descriptio
 assert.match(listingTitle, /送料込み・送料無料。日本向け送料は商品価格に含まれています。/, "all storefronts must use the single agreed free-shipping sentence");
 assert.match(listingTitle, /export function freeShippingText\(/, "shared shipping-copy normalizer must remain available");
 assert.doesNotMatch(listingTitle, /送料別（仕入先条件に従います）/, "shared storefront copy must not claim shipping is charged separately");
+assert.doesNotMatch(shopify, /送料別（仕入先条件に従います）/, "Shopify copy must not label shipping separately when supplier shipping is priced into the listing");
 assert.match(base, /isPublishableCatalogTitle\(sourceTitle\)/, "BASE must reject invalid source titles");
 assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must reject invalid translated titles");
 assert.match(base, /isPublishableCatalogDescription\(sourceDetail\)/, "BASE must reject generic source descriptions");

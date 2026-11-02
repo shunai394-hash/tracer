@@ -101,6 +101,7 @@ export default async function ShopProductPage({
     ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
     : null;
 
+  const isDomesticFreeShippingItem = listing.id === "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
   const storefrontBaseUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
   const productUrl = new URL(`/shop/${encodeURIComponent(listing.slug)}`, storefrontBaseUrl).toString();
   const productJsonLd = {
@@ -117,6 +118,7 @@ export default async function ShopProductPage({
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       url: productUrl,
+      ...(isDomesticFreeShippingItem ? { shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "JPY" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "JP" } } } : {}),
     } : undefined,
   };
 
@@ -184,6 +186,7 @@ export default async function ShopProductPage({
             <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
               {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
             </p>
+            {isDomesticFreeShippingItem ? <p className="mt-3 inline-flex items-center rounded-full border border-[#D7B9A8] bg-white px-4 py-2 text-sm font-semibold text-[#75402F]">国内送料無料</p> : null}
 
             <div className="mt-6">
               {shopifyProductUrl ? (
