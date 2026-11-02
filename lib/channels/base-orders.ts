@@ -71,11 +71,11 @@ async function repairBaseOrderItems(
   shopOrderId: string,
   baseOrderKey: string,
   order: Awaited<ReturnType<typeof getBaseOrderDetail>>,
-): Promise<void> {
+): Promise<boolean> {
   const baseItems = (order.order_items ?? []).filter(
     (item) => item.status !== "cancelled" && item.item_id !== undefined,
   );
-  if (baseItems.length === 0) return;
+  if (baseItems.length === 0) return true;
 
   const itemIds = baseItems.map((item) => String(item.item_id));
   const { data: listings, error: listingError } = await supabase
@@ -87,6 +87,27 @@ async function repairBaseOrderItems(
   const listingByBaseItem = new Map(
     (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
   );
+  const unresolvedItems = baseItems.filter((item) => !listingByBaseItem.has(String(item.item_id)));
+  if (unresolvedItems.length > 0) {
+    for (const item of unresolvedItems) {
+      const orderItemId = String(item.order_item_id ?? item.item_id);
+      const { error: reviewError } = await supabase.from("commerce_events").upsert({
+        event_key: `base_order_unmapped_item:${baseOrderKey}:${orderItemId}`,
+        event_type: "base_order_unmapped_item",
+        entity_type: "base_order",
+        entity_id: baseOrderKey,
+        status: "needs_review",
+        detail: {
+          baseItemId: String(item.item_id),
+          orderItemId,
+          quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))),
+          source: "legacy_dropship_sync_existing_order",
+        },
+      }, { onConflict: "event_key", ignoreDuplicates: true });
+      if (reviewError) throw new Error(`base_unmapped_item_record_failed:${reviewError.message}`);
+    }
+    return false;
+  }
 
   for (const baseItem of baseItems) {
     const listing = listingByBaseItem.get(String(baseItem.item_id));
@@ -112,6 +133,7 @@ async function repairBaseOrderItems(
 
     if (itemError) throw new Error(itemError.message);
   }
+  return true;
 }
 
 export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncResult> {
@@ -147,7 +169,17 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       if (existing?.id) {
         const detail = await getBaseOrderDetail(baseOrderKey);
         const paid = isBaseOrderPaid(detail);
-        await repairBaseOrderItems(supabase, String(existing.id), baseOrderKey, detail);
+        const itemsComplete = await repairBaseOrderItems(supabase, String(existing.id), baseOrderKey, detail);
+        if (!itemsComplete) {
+          results.push({
+            baseOrderKey,
+            ok: false,
+            imported: false,
+            shopOrderId: String(existing.id),
+            error: "base_existing_order_has_unmapped_items",
+          });
+          continue;
+        }
         const canceled =
           detail.dispatch_status === "cancelled" ||
           detail.dispatch_status === "unshippable";
