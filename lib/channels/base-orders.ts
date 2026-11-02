@@ -229,13 +229,33 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
       const listingByBaseItem = new Map(
         (listings ?? []).map((listing) => [String(listing.base_item_id), listing]),
       );
-      const unresolved = itemIds.filter((id) => !listingByBaseItem.has(id));
-      if (unresolved.length > 0) {
+      const unresolvedItems = baseItems.filter((item) => !listingByBaseItem.has(String(item.item_id)));
+      if (unresolvedItems.length > 0) {
+        // Match the canonical commerce-base-orders importer: every paid BASE
+        // line without a TRACER listing is durably queued for human resolution.
+        // Never import/procure a partial multi-line order.
+        for (const item of unresolvedItems) {
+          const orderItemId = String(item.order_item_id ?? item.item_id);
+          const { error: reviewError } = await supabase.from("commerce_events").upsert({
+            event_key: `base_order_unmapped_item:${baseOrderKey}:${orderItemId}`,
+            event_type: "base_order_unmapped_item",
+            entity_type: "base_order",
+            entity_id: baseOrderKey,
+            status: "needs_review",
+            detail: {
+              baseItemId: String(item.item_id),
+              orderItemId,
+              quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))),
+              source: "legacy_dropship_sync",
+            },
+          }, { onConflict: "event_key", ignoreDuplicates: true });
+          if (reviewError) throw new Error(`base_unmapped_item_record_failed:${reviewError.message}`);
+        }
         results.push({
           baseOrderKey,
           ok: false,
           imported: false,
-          error: `base_items_not_mapped:${unresolved.join(",")}`,
+          error: `base_items_not_mapped:${unresolvedItems.map((item) => String(item.item_id)).join(",")}`,
         });
         continue;
       }
