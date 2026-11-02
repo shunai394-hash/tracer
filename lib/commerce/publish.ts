@@ -115,7 +115,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       .in("variant_id", variantIds)
       .order("last_checked_at", { ascending: false }),
       db.from("commerce_variants")
-      .select("id,sku,title_ja,commerce_products!inner(title_ja,description_ja)")
+      .select("id,sku,title_ja,commerce_products!inner(title_ja,description_ja,source_key,metadata)")
       .in("id", variantIds),
   ]);
   if (pricesRead.error) throw new Error("stale_price_batch_read_failed:" + pricesRead.error.message);
@@ -124,7 +124,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
   type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; margin_rate: number; calculated_at: string | null };
   type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
-  type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
+  type StaleProduct = { title_ja?: string | null; description_ja?: string | null; source_key?: string | null; metadata?: Record<string, unknown> | null };
+  type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: StaleProduct | StaleProduct[] | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
   for (const price of (pricesRead.data ?? []) as StalePrice[]) {
     const rows = pricesByVariant.get(price.variant_id) ?? [];
@@ -138,12 +139,52 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     offersByVariant.set(offer.variant_id, rows);
   }
   const variantsById = new Map(((variantsRead.data ?? []) as StaleVariant[]).map((variant) => [variant.id, variant]));
+  const legacyManualListingIds = [...new Set([...variantsById.values()]
+    .map((variant) => asRelationRows(variant.commerce_products)[0] ?? null)
+    .filter((product) => product?.metadata?.merchant_held_stock === true && String(product.source_key ?? "").startsWith("legacy-shop-listing:"))
+    .map((product) => String(product?.source_key).slice("legacy-shop-listing:".length))
+    .filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  const manualInventoryById = new Map<string, { manual_inventory: boolean; pipeline_reason: string | null; inventory: number | null }>();
+  if (legacyManualListingIds.length > 0) {
+    const { data: manualRows, error: manualRowsError } = await db.from("shop_listings")
+      .select("id,manual_inventory,pipeline_reason,inventory")
+      .in("id", legacyManualListingIds);
+    if (manualRowsError) throw new Error("stale_manual_inventory_read_failed:" + manualRowsError.message);
+    for (const row of manualRows ?? []) {
+      manualInventoryById.set(String(row.id), {
+        manual_inventory: row.manual_inventory === true,
+        pipeline_reason: row.pipeline_reason == null ? null : String(row.pipeline_reason),
+        inventory: Number.isFinite(Number(row.inventory)) ? Number(row.inventory) : null,
+      });
+    }
+  }
 
   for (const listing of checkableListings) {
     try {
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
       const variantForEvidence = variantsById.get(String(listing.variant_id));
+      const productForEvidence = asRelationRows(variantForEvidence?.commerce_products)[0] ?? null;
+      const sourceKey = String(productForEvidence?.source_key ?? "");
+      const legacyListingId = sourceKey.startsWith("legacy-shop-listing:")
+        ? sourceKey.slice("legacy-shop-listing:".length)
+        : null;
+      const manualInventory = legacyListingId ? manualInventoryById.get(legacyListingId) : null;
+      if (
+        productForEvidence?.metadata?.merchant_held_stock === true &&
+        manualInventory?.manual_inventory === true &&
+        manualInventory.pipeline_reason === "merchant_held_stock" &&
+        Number(manualInventory.inventory) > 0
+      ) {
+        const checkedAt = new Date().toISOString();
+        const { error: protectedStateError } = await db.from("channel_listings").update({
+          last_error: "merchant_held_stock_manual_fulfillment_protected",
+          last_synced_at: checkedAt,
+          updated_at: checkedAt,
+        }).eq("id", listing.id);
+        if (protectedStateError) throw new Error("manual_inventory_protection_state_failed:" + protectedStateError.message);
+        continue;
+      }
       const evaluated = offers.map((offer) => {
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id) ?? null;
         const raw = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data : {};
