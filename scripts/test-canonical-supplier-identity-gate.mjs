@@ -126,7 +126,7 @@ assert.match(shopify, /orderable: true,[\s\S]*?tracking_available: true/, "Shopi
 assert.doesNotMatch(shopify, /supplier_not_cj/, "profitable linked products from any supplier may be listed");
 assert.match(shopify, /supplier_variant_missing/, "exact supplier product and variant IDs remain required");
 assert.match(shopify, /inventory_not_positive/, "storefront inventory must be positive");
-assert.match(shopify, /profit_not_positive/, "catalog publication requires positive contribution profit");
+assert.match(shopify, /minimum_contribution_profit_below_2500/, "catalog publication requires at least ¥2,500 contribution profit");
 assert.match(base, /identityUnlinkedIds/);
 assert.match(base, /supplier_product_id.not.is.null,supplier_variant_id.not.is.null/, "BASE retries linked catalog rows regardless of old hidden error markers");
 assert.match(base, /getPublishableSupplierListingStatuses/, "BASE publication must require a linked or freshly verified native supplier listing");
