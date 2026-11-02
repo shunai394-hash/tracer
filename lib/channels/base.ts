@@ -329,6 +329,7 @@ export type BaseOrderDetail = BaseOrderSummary & {
   paypay_payment_transaction?: { status?: string };
   bnpl_payment_transaction?: { status?: string };
   coin_payment_transaction?: { status?: string };
+  corporate_billing_payment_transaction?: { status?: string };
   order_receiver?: {
     first_name?: string;
     last_name?: string;
