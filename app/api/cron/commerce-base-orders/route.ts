@@ -27,6 +27,7 @@ function isPaid(order: Awaited<ReturnType<typeof getBaseOrderDetail>>): boolean 
     case "paypay": return order.paypay_payment_transaction?.status === "captured";
     case "bnpl":
     case "bnpl_installment": return order.bnpl_payment_transaction?.status === "captured";
+    case "corporate_billing": return order.corporate_billing_payment_transaction?.status === "captured";
     default: return false;
   }
 }
