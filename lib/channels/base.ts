@@ -231,6 +231,20 @@ export async function editBaseItem(input: {
 }
 
 
+/** Move one existing BASE item to the first storefront position without changing price, stock, title, or visibility. */
+export async function setBaseItemListOrder(itemId: string, listOrder: number): Promise<void> {
+  const normalizedId = String(itemId ?? "").trim();
+  if (!/^\\d+$/.test(normalizedId)) throw new Error("BASE_ITEM_LIST_ORDER_ID_INVALID");
+  if (!Number.isInteger(listOrder) || listOrder < 1 || listOrder > 10_000) {
+    throw new Error("BASE_ITEM_LIST_ORDER_VALUE_INVALID");
+  }
+  await requestBase(
+    "/items/edit",
+    new URLSearchParams({ item_id: normalizedId, list_order: String(listOrder) }),
+    3,
+  );
+}
+
 /** Read one existing BASE item by ID. This is read-only and never changes listing state. */
 export async function getBaseItemDetail(itemId: string): Promise<Record<string, unknown>> {
   const normalizedId = String(itemId ?? "").trim();
