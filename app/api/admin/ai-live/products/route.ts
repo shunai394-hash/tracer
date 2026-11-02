@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -12,9 +13,22 @@ export const maxDuration = 15;
  * costs, margin/profit, credentials, order data, or internal gate diagnostics.
  * It never mutates listings or calls an external commerce API.
  */
+
+function hasAdminToken(request: Request): boolean {
+  const expected = process.env.TRACER_ADMIN_TOKEN;
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!expected || !supplied) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!hasAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") ?? "10");
   const limit = Number.isFinite(requestedLimit)
