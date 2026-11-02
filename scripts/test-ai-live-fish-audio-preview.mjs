@@ -21,7 +21,7 @@ test("Fish Audio preview is server-side, authenticated, bounded and one-shot", (
 
 test("Fish Audio preview page never exposes provider credentials or triggers generation automatically", () => {
   assert.ok(page.includes("noindex,nofollow"));
-  assert.ok(page.includes("/api/admin/ai-live/fish-audio/"));
+  assert.ok(page.includes("/api/admin/ai-live/fish-audio"));
   assert.ok(page.includes("Authorization"));
   assert.doesNotMatch(page, /FISH_AUDIO_API_KEY\s*=/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
