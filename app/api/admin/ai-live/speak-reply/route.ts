@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { routeAiLiveComment } from "@/lib/ai-live/comment-router";
@@ -120,9 +121,22 @@ async function readAudioBodyLimited(response: Response, maxBytes: number): Promi
  * This route is never called automatically by the preview. No order/customer data,
  * external comment ingestion, public posting, retries, or commerce writes.
  */
+
+function hasAdminToken(request: Request): boolean {
+  const expected = process.env.TRACER_ADMIN_TOKEN;
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!expected || !supplied) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!hasAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   const apiKey = process.env.FISH_API_KEY;
   const referenceId = process.env.AI_LIVE_FISH_REFERENCE_ID;
