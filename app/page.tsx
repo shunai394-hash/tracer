@@ -82,7 +82,7 @@ export default async function HomePage() {
               <p className="text-[11px] font-semibold tracking-[0.28em] text-[#8A5948]">FEATURED ITEM</p>
               <p className="mt-3 text-xs font-semibold tracking-[0.16em] text-[#75402F]">TRACER SELECT · おすすめ商品</p>
               <h2 className="mt-3 font-serif text-2xl leading-snug text-[#3B241A] sm:text-3xl">{proteinPickup.title}</h2>
-              <p className="mt-3 text-2xl font-semibold tracking-tight text-[#3B241A]">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: proteinPickup.currency, maximumFractionDigits: 0 }).format(proteinPickup.sellingPrice)}</p>
+              <p className="mt-3 text-2xl font-semibold tracking-tight text-[#3B241A]">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: proteinPickup.currency ?? "JPY", maximumFractionDigits: 0 }).format(proteinPickup.sellingPrice ?? 3400)}</p>
               <p className="mt-2 text-sm text-[#5C4035]">{proteinPickupIsLive ? "販売ページで在庫を確認できます" : "在庫・販売状態を確認中"}</p>
               <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-8 text-sm font-semibold text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
                 商品詳細・購入へ →
