@@ -4,6 +4,12 @@ import { classifyBaseIdentifier, decideCommerceSkuLink } from "../lib/channels/b
 import { classifyBaseMappingCounts } from "../lib/channels/base-mapping-audit.ts";
 import { nextShopifyVendorPage, SHOPIFY_VENDOR_SCAN_MAX_PAGES } from "../lib/shopify/catalog-scan.ts";
 
+const legacyBaseOrderSync = readFileSync(new URL("../lib/channels/base-orders.ts", import.meta.url), "utf8");
+assert.ok(legacyBaseOrderSync.includes('event_type: "base_order_unmapped_item"'), "legacy BASE sync must persist unmapped paid lines for review");
+assert.ok(legacyBaseOrderSync.includes('status: "needs_review"'), "legacy BASE sync must keep unmapped paid lines visible for human resolution");
+assert.ok(legacyBaseOrderSync.includes('base_order_unmapped_item:${baseOrderKey}:${orderItemId}'), "legacy BASE review events must be idempotent per order line");
+assert.ok(legacyBaseOrderSync.includes("if (unresolvedItems.length > 0)"), "legacy BASE sync must stop the full order when any line is unmapped");
+
 const baseReadbackRoute = readFileSync(new URL("../app/api/cron/base-channel-external-readback/route.ts", import.meta.url), "utf8");
 assert.ok(baseReadbackRoute.includes(String.raw`if (!/^\d+$/.test(baseItemId))`), "BASE readback must accept numeric external item IDs");
 assert.equal(/^\d+$/.test("123456789"), true);
