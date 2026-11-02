@@ -19,6 +19,7 @@ type Listing = {
   currency: string | null;
   slug: string;
   published: boolean;
+  manual_inventory?: boolean | null;
   pipeline_stage: string | null;
   pipeline_status: string | null;
   pipeline_reason: string | null;
@@ -245,7 +246,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error";
+  const baseSelect = "id,product_id,title,description,image_url,selling_price,currency,slug,published,manual_inventory,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons,supplier_listing_id,supplier_product_id,supplier_variant_id,inventory,orderable,tracking_available,supplier_name,shipping_cost,source_cost,contribution_profit,contribution_margin,shopify_product_id,shopify_variant_id,shopify_handle,shopify_sync_status,shopify_sync_error";
   let query = supabase
     .from("shop_listings")
     .select(baseSelect)
@@ -470,6 +471,17 @@ async function syncListingRows(
   };
 
   for (const row of blocked) {
+    // TRACER-held inventory is fulfilled manually, not through a supplier.
+    // Missing CJ/source-cost evidence must not cause a live merchant-held
+    // product to be unpublished by the dropship reconciliation job.
+    if (row.manual_inventory === true && row.pipeline_reason === "merchant_held_stock") {
+      await supabase.from("shop_listings").update({
+        shopify_sync_status: "manual_inventory_protected",
+        shopify_sync_error: "manual_inventory_requires_merchant_fulfillment",
+        shopify_synced_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      continue;
+    }
     if (!row.shopify_product_id) {
       await supabase.from("shop_listings").update({
         published: false,
