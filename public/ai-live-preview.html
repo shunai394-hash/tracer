@@ -1,136 +1,213 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>TRACER AIライブ販売コンソール</title>
+<title>TRACER AI配信ローカルプレビュー</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101827;color:#f8fafc}*{box-sizing:border-box}
-body{margin:0;padding:22px}main{max-width:1100px;margin:auto;display:grid;gap:16px;grid-template-columns:1.1fr .9fr}
-section{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:20px}h1{font-size:1.45rem;margin:0 0 8px}h2{font-size:1.05rem;margin:0 0 12px}
-p{line-height:1.6}.muted{color:#cbd5e1;font-size:.9rem}.warning{color:#fbbf24}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-input,select,button{font:inherit;padding:11px;border-radius:9px;border:1px solid #475569;background:#0f172a;color:#fff}input,select{width:100%}
-button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}button:disabled{opacity:.45;cursor:not-allowed}
-#productList{display:grid;gap:8px;max-height:320px;overflow:auto}.product{padding:12px;border:1px solid #475569;border-radius:10px;cursor:pointer}.product.active{border-color:#60a5fa;background:#172554}
-#avatar{height:130px;display:grid;place-items:center;background:radial-gradient(#475569,#0f172a);border-radius:12px;font-size:72px}
-#avatar.talking{animation:pulse .25s infinite alternate}@keyframes pulse{to{transform:scale(1.015)}}
-#reply{min-height:100px;background:#0f172a;padding:12px;border-radius:10px;line-height:1.7;overflow-wrap:anywhere}
-.status{font-size:.85rem;color:#cbd5e1;white-space:pre-wrap}a{color:#93c5fd}
-@media(max-width:760px){main{grid-template-columns:1fr}body{padding:10px}}
-</style></head>
-<body><main>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111827;color:#f9fafb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+main{width:min(920px,100%);display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.9fr);gap:24px}
+section{background:#1f2937;border:1px solid #374151;border-radius:18px;padding:22px}
+h1{font-size:1.35rem;margin:0 0 8px}h2{font-size:1rem;margin:0 0 14px}.notice{color:#fde68a;font-size:.9rem;line-height:1.6}
+.avatar-wrap{display:grid;place-items:center;min-height:280px;background:radial-gradient(circle at 50% 35%,#374151,#111827);border-radius:14px;margin:16px 0}
+.avatar{width:160px;height:190px;position:relative;display:grid;place-items:center}
+.head{width:132px;height:145px;border-radius:48% 48% 43% 43%;background:#f3c9a7;position:relative;box-shadow:inset -10px -6px #dfaa88}
+.hair{position:absolute;top:-9px;left:-4px;width:140px;height:62px;border-radius:60% 60% 35% 25%;background:#312e81}
+.eye{position:absolute;top:62px;width:9px;height:12px;border-radius:50%;background:#1f2937}.eye.left{left:34px}.eye.right{right:34px}
+.mouth{position:absolute;left:50%;top:99px;transform:translateX(-50%);width:28px;height:7px;border-radius:0 0 16px 16px;background:#7f1d1d}
+.speaking .mouth{animation:talk .18s infinite alternate}
+@keyframes talk{from{height:4px;width:19px}to{height:20px;width:27px}}
+.shoulders{position:absolute;bottom:-2px;width:160px;height:64px;border-radius:55% 55% 16px 16px;background:#60a5fa}
+.avatar .head{z-index:1;margin-top:-12px}
+button,select{font:inherit;border-radius:10px;border:1px solid #4b5563;padding:11px 13px;background:#374151;color:#fff;cursor:pointer}
+button:hover{background:#4b5563}button:focus-visible,select:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.controls{display:flex;flex-wrap:wrap;gap:9px}.primary{background:#1d4ed8;border-color:#2563eb}
+.answer{min-height:86px;line-height:1.65;padding:14px;background:#111827;border-radius:10px;margin:14px 0;overflow-wrap:anywhere}
+label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{font-size:.85rem;color:#9ca3af;margin-top:12px}
+@media(max-width:700px){main{grid-template-columns:1fr}body{padding:14px}}
+</style>
+</head>
+<body>
+<main>
 <section>
-<h1>TRACER AIライブ販売コンソール</h1>
-<p><a href="/ai-live-drama-preview.html">Drama 3 音声プレビューを開く</a></p><p class="warning">管理者専用。外部ライブ配信・SNS投稿は行わない。音声生成は操作した時だけ実行され、Fish Audioの利用枠を消費する場合がある。</p>
-<label for="token">TRACER管理トークン（この画面のメモリ内だけで使用。保存しない）</label>
-<input id="token" type="password" autocomplete="off" placeholder="管理トークン">
-<div class="row"><button class="primary" id="connect">商品データを読み込む</button><button id="clear">トークン消去</button></div>
-<p class="status" id="connection">未接続</p>
-<h2>販売可能商品（TRACER読み取り専用）</h2>
-<div id="productList">接続後、販売可能な日本語商品を表示する。</div>
+<h1>TRACER AI配信プレビュー</h1>
+<p class="notice">ローカル動作確認用。商品・価格・在庫はすべて架空のデモデータです。TikTokには接続せず、この画面自体は外部通信を行いません。</p>
+<p><a href="/ai-live-drama-preview.html" style="color:#93c5fd">自然な抑揚を比較する：Fish Audio Drama 3 音声テスト（管理トークンが必要・生成ごとに料金が発生する場合あり）</a></p>
+<div class="avatar-wrap">
+  <div class="avatar" id="avatar" role="img" aria-label="音声に合わせて口が動く簡易デモアバター">
+    <div class="shoulders"></div><div class="head"><div class="hair"></div><div class="eye left"></div><div class="eye right"></div><div class="mouth"></div></div>
+  </div>
+</div>
+<h2>デモ商品：架空の商品</h2>
+<p>表示価格：2,980円（テスト用の仮価格）</p>
+<div class="controls">
+<button class="primary" id="intro">商品紹介を読み上げる</button>
+<button id="stop">音声停止</button>
+</div>
+<div class="controls" aria-label="連続動作テスト" style="margin-top:10px">
+<button id="soak30">30分テスト開始</button>
+<button id="soak60">60分テスト開始</button>
+<button id="stopSoak">連続テスト終了</button>
+</div>
+<p class="status" id="soakStatus" role="status">連続テスト未実行</p>
+<p class="status" id="status" role="status">待機中。音声はお使いのブラウザの日本語音声を使用します。</p>
 </section>
 <section>
-<h2>AI販売員</h2>
-<div id="avatar" role="img" aria-label="AI販売員の音声再生状態">🧑🏻‍💼</div>
-<p id="selected" class="muted">商品を選択してください。</p>
-<h2>コメント対応テスト</h2>
-<div class="row">
-<button data-comment="いくらですか？">価格</button><button data-comment="どんな商品ですか？">商品説明</button>
-<button data-comment="在庫ありますか？">在庫</button><button data-comment="どこで買えますか？">購入方法</button>
-<button data-comment="明日届きますか？">配送質問</button>
+<h2>模擬コメントに回答</h2>
+<label for="voice">音声</label>
+<select id="voice"><option value="">自動選択（自然な日本語音声を優先）</option></select>
+<div class="controls" style="margin-top:14px">
+<button data-type="price">「いくら？」</button>
+<button data-type="features">「どんな商品？」</button>
+<button data-type="stock">「在庫ある？」</button>
+<button data-type="purchase">「どこで買える？」</button>
+<button data-type="delivery">「明日届く？」</button>
 </div>
-<div id="reply" aria-live="polite">商品を選び、質問ボタンを押すと、登録情報に基づく回答を音声化する。</div>
-<audio id="audio" controls></audio>
-<div class="row">
-<button class="primary" id="run30">30分連続応答テスト</button><button id="run60">60分連続応答テスト</button><button id="stop">停止</button>
-</div>
-<p id="runStatus" class="status">連続テスト未実行</p>
-<p class="muted">連続テストは1分ごとに模擬質問を送り、応答を音声化する。実際の配信コメント取得や公開配信ではない。停止ボタンでいつでも中断できる。</p>
-</section></main>
+<div class="answer" id="answer" aria-live="polite">コメントボタンを押すと、デモ回答を表示して音声で読み上げます。</div>
+<p class="status">実商品データのAPI接続、生成AI、TikTokコメント取得はまだ未接続です。</p>
+</section>
+</main>
 <script>
-(()=> {
- const $=id=>document.getElementById(id), token=$('token'), list=$('productList'), audio=$('audio'), avatar=$('avatar');
- let products=[], selected=null, runTimer=null, runDeadline=0, runCount=0, busy=false, runIndex=0, activeUrl=null;
- const questions=['いくらですか？','どんな商品ですか？','在庫ありますか？','どこで買えますか？','明日届きますか？'];
- function auth(){return {Authorization:'Bearer '+token.value.trim()};}
- async function api(path,options={}) {
-  const response=await fetch(path,{...options,headers:{...auth(),...(options.headers||{})},cache:'no-store'});
-  if(!response.ok) throw new Error(response.status===401?'認証エラー。管理トークンを確認。':'APIエラー '+response.status);
-  return response;
- }
- function stopRun(message='停止しました。') {
-  if(runTimer) clearTimeout(runTimer);runTimer=null;
-  $('run30').disabled=false;$('run60').disabled=false;
-  $('runStatus').textContent=message;
- }
- function clearAudio(){
-  audio.pause();audio.removeAttribute('src');audio.load();
-  if(activeUrl){URL.revokeObjectURL(activeUrl);activeUrl=null;}
-  avatar.classList.remove('talking');
- }
- async function loadProducts(){
-  if(!token.value.trim()) throw new Error('管理トークンを入力してください。');
-  $('connection').textContent='TRACER商品データを確認中…';
-  const res=await api('/api/admin/ai-live/products?limit=20');
-  const data=await res.json();
-  if(!data.ok) throw new Error(data.error||'商品取得に失敗');
-  products=data.products||[];list.replaceChildren();
-  if(!products.length){list.textContent='現在、条件を満たす販売可能な日本語商品はありません。';}
-  products.forEach((p,i)=>{
-   const el=document.createElement('div');el.className='product';el.tabIndex=0;
-   const title=document.createElement('strong');title.textContent=p.title;
-   const meta=document.createElement('div');meta.className='muted';meta.textContent=p.sellingPrice.toLocaleString('ja-JP')+'円 · 在庫あり';
-   el.append(title,meta);el.addEventListener('click',()=>choose(p,el));
-   el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(p,el);}});
-   list.append(el);if(i===0)choose(p,el);
-  });
-  $('connection').textContent='接続済み：'+products.length+'商品 / 読み取り専用 / '+new Date(data.generatedAt).toLocaleString('ja-JP');
- }
- function choose(p,el){
-  selected=p;document.querySelectorAll('.product').forEach(x=>x.classList.remove('active'));el.classList.add('active');
-  $('selected').textContent=p.title+' / '+p.sellingPrice.toLocaleString('ja-JP')+'円';
-  $('reply').textContent='選択中の商品：'+p.title;
- }
- async function respond(comment){
-  if(!selected) throw new Error('先に商品を選択してください。');
-  if(busy) return;
-  busy=true;clearAudio();$('reply').textContent='コメントを確認し、商品情報と照合中…';
-  try{
-   const facts=await api('/api/admin/ai-live/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment,productId:selected.id})});
-   const result=await facts.json();
-   const reply=result.suggestedReply;
-   if(!reply){$('reply').textContent='自動回答対象外：'+(result.route?.reason||'担当者確認が必要です');return false;}
-   $('reply').textContent=reply;
-   const speech=await api('/api/admin/ai-live/speak-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment,productId:selected.id})});
-   const blob=await speech.blob();if(!blob.type.startsWith('audio/'))throw new Error('音声データではありません。');
-   activeUrl=URL.createObjectURL(blob);audio.src=activeUrl;avatar.classList.add('talking');
-   await audio.play();
-   await new Promise(resolve=>{audio.onended=resolve;audio.onerror=resolve;});
-   avatar.classList.remove('talking');runCount++;return true;
-  }finally{busy=false;avatar.classList.remove('talking');}
- }
- document.querySelectorAll('[data-comment]').forEach(b=>b.addEventListener('click',async()=>{
-  stopRun('手動応答中');try{await respond(b.dataset.comment);}catch(e){$('reply').textContent=e.message;}
- }));
- $('connect').addEventListener('click',async()=>{try{await loadProducts();}catch(e){$('connection').textContent=e.message;}});
- $('clear').addEventListener('click',()=>{stopRun('トークンを消去');token.value='';products=[];selected=null;list.textContent='未接続';$('connection').textContent='未接続';clearAudio();});
- async function startRun(minutes){
-  stopRun();if(!selected){$('runStatus').textContent='先に商品を読み込んで選択してください。';return;}
-  runDeadline=Date.now()+minutes*60000;runCount=0;runIndex=0;
-  $('run30').disabled=true;$('run60').disabled=true;
-  const tick=async()=>{
-   if(Date.now()>=runDeadline){stopRun(minutes+'分テスト完了。応答 '+runCount+'回');return;}
-   $('runStatus').textContent=minutes+'分テスト実行中 / '+runCount+'回完了';
-   try{await respond(questions[runIndex++%questions.length]);}
-   catch(e){stopRun('エラーで停止：'+e.message);return;}
-   if(Date.now()<runDeadline)runTimer=setTimeout(tick,60000);
-   else stopRun(minutes+'分テスト完了。応答 '+runCount+'回');
+(() => {
+  const avatar = document.getElementById('avatar');
+  const answer = document.getElementById('answer');
+  const status = document.getElementById('status');
+  const voiceSelect = document.getElementById('voice');
+  const synth = window.speechSynthesis;
+  const replies = {
+    price: 'こちらは動作確認用の架空商品です。テスト用の表示価格は2,980円です。',
+    features: 'これはデモ画面のため、実在の商品特徴は設定していません。実際の商品情報は商品ページでご確認ください。',
+    stock: 'このデモでは実際の在庫を確認していません。最新の在庫は商品ページでご確認ください。',
+    purchase: '購入先の表示テストです。実際の商品ではありませんので、購入はできません。',
+    delivery: 'お届け予定日はこのデモでは確認できません。実際の商品ページでご確認ください。'
   };
-  await tick();
- }
- $('run30').addEventListener('click',()=>startRun(30));
- $('run60').addEventListener('click',()=>startRun(60));
- $('stop').addEventListener('click',()=>{stopRun('手動停止。応答 '+runCount+'回');clearAudio();});
- window.addEventListener('pagehide',()=>{stopRun();clearAudio();token.value='';});
+  function japaneseVoices() {
+    return (synth ? synth.getVoices() : []).filter(v =>
+      v.lang && v.lang.toLowerCase().startsWith('ja')
+    );
+  }
+  function voiceScore(voice) {
+    const name = voice.name.toLowerCase();
+    let score = 0;
+    if (/natural|online/.test(name)) score += 100;
+    if (/nanami/.test(name)) score += 35;
+    if (/google.*日本語|日本語.*google/.test(name)) score += 30;
+    if (/kyoko|haruka|keita|otoya/.test(name)) score += 20;
+    if (/microsoft/.test(name)) score += 10;
+    if (voice.default) score += 1;
+    return score;
+  }
+  function preferredJapaneseVoice() {
+    return japaneseVoices().sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null;
+  }
+  function loadVoices() {
+    const old = voiceSelect.value;
+    const voices = japaneseVoices().sort((a, b) => voiceScore(b) - voiceScore(a));
+    voiceSelect.replaceChildren(new Option('自動選択（自然な日本語音声を優先）', ''));
+    voices.forEach((v, index) => {
+      const suffix = index === 0 ? ' — おすすめ' : '';
+      voiceSelect.add(new Option(v.name + ' (' + v.lang + ')' + suffix, v.name));
+    });
+    if ([...voiceSelect.options].some(o => o.value === old)) {
+      voiceSelect.value = old;
+    } else {
+      const preferred = preferredJapaneseVoice();
+      voiceSelect.value = preferred ? preferred.name : '';
+    }
+    if (voices.length === 0) {
+      status.textContent = '日本語音声が見つかりません。Microsoft Edgeの日本語音声を追加するか、ブラウザの音声設定を確認してください。';
+    }
+  }
+  function speak(text) {
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+      status.textContent = 'このブラウザは音声合成に対応していません。Chrome / Edgeなどでお試しください。';
+      return;
+    }
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+    const selected = voiceSelect.value;
+    const voice = japaneseVoices().find(v => v.name === selected) || preferredJapaneseVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || 'ja-JP';
+    } else {
+      status.textContent = '利用できる日本語音声がありません。ブラウザの日本語音声を追加してください。';
+      return;
+    }
+    utterance.onstart = () => { avatar.classList.add('speaking'); status.textContent = '読み上げ中（' + voice.name + '）'; };
+    utterance.onend = () => { avatar.classList.remove('speaking'); status.textContent = '読み上げ完了（' + voice.name + '）'; };
+    utterance.onerror = () => { avatar.classList.remove('speaking'); status.textContent = '音声再生に失敗しました。別の日本語音声を選択してください。'; };
+    synth.speak(utterance);
+  }
+  document.getElementById('intro').addEventListener('click', () => {
+    const text = 'こんにちは。TRACER AI配信のローカル動作テストです。こちらは架空のデモ商品で、表示価格は2,980円という設定です。実際の商品情報や販売状況はまだ読み込んでいません。';
+    answer.textContent = text; speak(text);
+  });
+  document.getElementById('stop').addEventListener('click', () => {
+    if (synth) synth.cancel();
+    avatar.classList.remove('speaking'); status.textContent = '音声を停止しました。';
+  });
+  document.querySelectorAll('button[data-type]').forEach(button => button.addEventListener('click', () => {
+    const text = replies[button.dataset.type];
+    answer.textContent = text; speak(text);
+  }));
+  let soakTimer = null;
+  let soakInterval = null;
+  let soakStartedAt = 0;
+  let soakDurationMs = 0;
+  let soakCount = 0;
+  const soakStatus = document.getElementById('soakStatus');
+  const soakTypes = ['price', 'features', 'stock', 'delivery'];
+  function stopSoak(message) {
+    if (soakTimer) clearTimeout(soakTimer);
+    if (soakInterval) clearInterval(soakInterval);
+    soakTimer = null; soakInterval = null;
+    document.getElementById('soak30').disabled = false;
+    document.getElementById('soak60').disabled = false;
+    if (message) soakStatus.textContent = message;
+  }
+  function startSoak(minutes) {
+    stopSoak();
+    if (synth) synth.cancel();
+    soakStartedAt = Date.now(); soakDurationMs = minutes * 60 * 1000; soakCount = 0;
+    document.getElementById('soak30').disabled = true;
+    document.getElementById('soak60').disabled = true;
+    const tick = () => {
+      const elapsed = Date.now() - soakStartedAt;
+      soakStatus.textContent = minutes + '分テスト: ' + Math.floor(elapsed / 60000) + '分' + Math.floor((elapsed % 60000) / 1000) + '秒経過 / 応答 ' + soakCount + '回';
+    };
+    const speakNext = () => {
+      if (Date.now() - soakStartedAt >= soakDurationMs) return;
+      const text = replies[soakTypes[soakCount % soakTypes.length]];
+      soakCount += 1; answer.textContent = text; speak(text); tick();
+    };
+    speakNext();
+    soakInterval = setInterval(speakNext, 45000);
+    soakTimer = setTimeout(() => {
+      stopSoak(minutes + '分テスト完了。模擬応答 ' + soakCount + '回。ブラウザを閉じると記録は保持されません。');
+      if (synth) synth.cancel();
+      avatar.classList.remove('speaking');
+    }, soakDurationMs);
+  }
+  document.getElementById('soak30').addEventListener('click', () => startSoak(30));
+  document.getElementById('soak60').addEventListener('click', () => startSoak(60));
+  document.getElementById('stopSoak').addEventListener('click', () => {
+    stopSoak('連続テストを手動停止。模擬応答 ' + soakCount + '回。');
+    if (synth) synth.cancel();
+    avatar.classList.remove('speaking');
+  });
+  window.addEventListener('pagehide', () => {
+    stopSoak();
+    if (synth) synth.cancel();
+  });
+  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+  else status.textContent = 'このブラウザは音声合成に対応していません。';
 })();
-</script></body></html>
+</script>
+</body>
+</html>
