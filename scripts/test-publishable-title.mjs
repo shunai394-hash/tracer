@@ -220,6 +220,7 @@ assert.match(titleRepairRoute, /sourceCandidates[\s\S]*?\.map\(\(sourceTitle\) =
 assert.match(titleRepairRoute, /isSpecificJapaneseProductTitle\(title\) && !hasEnglishWords\(title\)/, "fallback titles must pass the same Japanese-specificity gate");
 
 const shopify = await readFile(new URL("../lib/shopify/sync-published-listings.ts", import.meta.url), "utf8");
+const listingTitle = await readFile(new URL("../lib/commerce/listing-title.ts", import.meta.url), "utf8");
 const base = await readFile(new URL("../lib/channels/base-publisher.ts", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 assert.match(shopify, /isPublishableCatalogTitle\(row\.title\)/, "Shopify sync must enforce publishable title guard");
@@ -227,7 +228,10 @@ assert.match(shopify, /catalog_title_not_publishable/, "Shopify sync must report
 assert.match(shopify, /isPublishableCatalogDescription\(row\.description\)/, "Shopify sync must reject generic descriptions");
 assert.match(shopify, /workflowDescription = \/商品アイデンティティが未確定/, "Shopify sync must repair persisted workflow-status descriptions");
 assert.match(shopify, /staleWorkflowCopy/, "Shopify reconciliation must resync existing products with stale workflow copy");
-assert.match(shopify, /freeShippingText\(copy\.description\)/, "Shopify copy must use the shared Japan-shipping-inclusive wording");
+assert.match(shopify, /descriptionHtml: html\(freeShippingText\(copy\.description\)\)/, "Shopify descriptions must use the shared shipping-copy normalizer");
+assert.match(listingTitle, /送料込み・送料無料。日本向け送料は商品価格に含まれています。/, "all storefronts must use the single agreed free-shipping sentence");
+assert.match(listingTitle, /export function freeShippingText\(/, "shared shipping-copy normalizer must remain available");
+assert.doesNotMatch(listingTitle, /送料別（仕入先条件に従います）/, "shared storefront copy must not claim shipping is charged separately");
 assert.doesNotMatch(shopify, /送料別（仕入先条件に従います）/, "Shopify copy must not label shipping separately when supplier shipping is priced into the listing");
 assert.match(base, /isPublishableCatalogTitle\(sourceTitle\)/, "BASE must reject invalid source titles");
 assert.match(base, /isPublishableCatalogTitle\(translatedTitle\)/, "BASE must reject invalid translated titles");

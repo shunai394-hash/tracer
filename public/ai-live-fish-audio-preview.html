@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER Fish Audio 音声プレビュー</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111827;color:#f9fafb}
+*{box-sizing:border-box}body{margin:0;padding:24px;display:grid;place-items:center;min-height:100vh}
+main{width:min(760px,100%);background:#1f2937;border:1px solid #374151;border-radius:18px;padding:clamp(18px,4vw,30px)}
+h1{font-size:1.35rem;margin:0 0 8px}p{line-height:1.65}.notice{color:#fde68a;font-size:.9rem}
+label{display:block;margin:16px 0 6px;font-size:.9rem}input,textarea,button{font:inherit;border-radius:9px;border:1px solid #4b5563;padding:11px 12px;width:100%;background:#111827;color:#fff}
+textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4ed8;border-color:#2563eb;cursor:pointer;margin-top:16px}button:disabled{opacity:.55;cursor:wait}
+.status{font-size:.9rem;color:#d1d5db;overflow-wrap:anywhere}.small{font-size:.8rem;color:#9ca3af}audio{width:100%;margin-top:16px}
+</style>
+</head>
+<body>
+<main>
+<h1>TRACER AI音声プレビュー — Fish Audio</h1>
+<p class="notice">管理者が生成ボタンを押した場合のみ、Fish Audioへ1回リクエストします。自動生成・自動再試行・公開投稿は行いません。生成料金が発生する場合があります。</p>
+<form id="form" autocomplete="off">
+<label for="token">TRACER管理トークン</label>
+<input id="token" type="password" autocomplete="off" required placeholder="TRACER_ADMIN_TOKEN">
+<label for="script">読み上げ原稿（最大1,200文字）</label>
+<textarea id="script" maxlength="1200" required>こんにちは、TRACER AI配信です。気になる商品について、価格や特徴をわかりやすくご案内します。商品情報を確認してから、正確にお伝えします。</textarea>
+<button id="generate" type="submit">Fish Audioで音声を生成</button>
+</form>
+<p id="status" class="status" role="status" aria-live="polite">待機中。生成ボタンを押すまでAPI通信は行いません。</p>
+<audio id="audio" controls hidden></audio>
+<p class="small">APIキーとFish Audioのreference_idはサーバー環境変数からのみ読み込みます。このページには保存しません。清美本人または権利者の許可を得た音声モデルだけを使用してください。</p>
+<script>
+(() => {
+  const form = document.getElementById("form");
+  const token = document.getElementById("token");
+  const script = document.getElementById("script");
+  const button = document.getElementById("generate");
+  const status = document.getElementById("status");
+  const audio = document.getElementById("audio");
+  let audioUrl = null;
+  let pending = false;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (pending || !form.reportValidity()) return;
+    pending = true;
+    button.disabled = true;
+    status.textContent = "Fish Audioへリクエスト中です。自動再試行はしません。";
+    audio.pause();
+    audio.hidden = true;
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    audioUrl = null;
+    try {
+      const response = await fetch("/api/admin/ai-live/fish-audio", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token.value.trim(), "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ text: script.value.trim() })
+      });
+      const type = response.headers.get("content-type") || "";
+      if (!response.ok || !type.toLowerCase().includes("audio/")) {
+        let data = null;
+        try { data = await response.json(); } catch {}
+        if (response.status === 401 || response.status === 403) throw new Error("認証に失敗しました。管理トークンを確認してください。");
+        if (data?.error === "fish_audio_not_configured") throw new Error("サーバー設定が未完了です。FISH_AUDIO_REFERENCE_IDを設定してください。");
+        throw new Error(data?.message || data?.error || "音声生成に失敗しました。自動再試行はしません。");
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error("音声データが空でした。");
+      audioUrl = URL.createObjectURL(blob);
+      audio.src = audioUrl;
+      audio.hidden = false;
+      token.value = "";
+      status.textContent = "生成完了。音声を再生できます。";
+      try { await audio.play(); } catch { status.textContent = "生成完了。下のプレーヤーで再生してください。"; }
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "通信に失敗しました。";
+    } finally {
+      pending = false;
+      button.disabled = false;
+    }
+  });
+  window.addEventListener("pagehide", () => { if (audioUrl) URL.revokeObjectURL(audioUrl); });
+})();
+</script>
+</main>
+</body>
+</html>
