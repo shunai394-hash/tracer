@@ -224,6 +224,22 @@ export async function syncBaseOrdersToTracer(limit = 50): Promise<BaseOrderSyncR
         continue;
       }
 
+      // Until BASE variation_id -> TRACER/CJ identity mappings are persisted and
+      // verified, never create a shop order using the parent listing's supplier
+      // variant for a customer's selected child variation.
+      const variantOrderItems = baseItems.filter(
+        (item) => item.variation_id !== undefined && item.variation_id !== null,
+      );
+      if (variantOrderItems.length > 0) {
+        results.push({
+          baseOrderKey,
+          ok: false,
+          imported: false,
+          error: "BASE_VARIANT_MAPPING_NOT_READY:procurement_blocked",
+        });
+        continue;
+      }
+
       const itemIds = baseItems.map((item) => String(item.item_id));
       const { data: listings, error: listingError } = await supabase
         .from("shop_listings")
