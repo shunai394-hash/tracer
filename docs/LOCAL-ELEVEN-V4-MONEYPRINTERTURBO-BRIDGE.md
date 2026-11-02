@@ -37,3 +37,17 @@ After generation, transcribe the MP3 files with faster-whisper and compare each 
 - Credentials are sent only in the Authorization header and are never written to output files.
 - No retry, parallel generation, scheduled generation, product mutation, order action, video upload, or social posting is performed.
 - The bridge does not call MoneyPrinterTurbo private internals. It produces local MP3 assets for the next, separately validated integration step.
+
+## Automatic transcript comparison
+
+Install faster-whisper on the Windows PC (CPU int8 is used; the default `base` model is intentionally modest):
+
+```powershell
+py -m pip install faster-whisper
+py .\scripts\check-eleven-v4-transcripts.py --self-test
+py .\scripts\check-eleven-v4-transcripts.py --input-json .\scripts\video-script.example.json
+```
+
+The checker reads matching `{id}.mp3` files from `artifacts/eleven-v4`, transcribes Japanese, and writes `artifacts/eleven-v4/transcription-report.json`. It normalizes Unicode, whitespace, and punctuation, then computes a character similarity score. The default review threshold is 0.88; adjust only after listening to representative clips. Missing files and transcription failures are reported as non-passing. Exit code 1 means at least one clip needs review.
+
+A PASS is only an automated screening result: similar text can still contain a wrong kanji reading, unnatural intonation, or a clipped ending. Listen to every clip. If a line fails, review the transcript and regenerate only that line manually, after confirming the additional ElevenLabs credit cost. The checker never calls ElevenLabs and never regenerates audio.
