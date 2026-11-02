@@ -250,6 +250,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(sync, /channel_listing_identity_backup/);
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
+  assert.match(sync, /base_variant_price_mismatch_requires_separate_parents/);
   assert.match(sync, /cj_variant_id/);
   assert.doesNotMatch(sync, /\.delete\(/);
   assert.match(publish, /syncQueuedVariantFamilies/);
