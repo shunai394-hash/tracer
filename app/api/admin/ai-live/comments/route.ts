@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { routeAiLiveComment } from "@/lib/ai-live/comment-router";
@@ -14,9 +15,22 @@ export const maxDuration = 15;
  * approved listing facts. It never reads customer orders, calls an LLM,
  * posts comments, or mutates commerce data.
  */
+
+function hasAdminToken(request: Request): boolean {
+  const expected = process.env.TRACER_ADMIN_TOKEN;
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!expected || !supplied) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function POST(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!hasAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   let body: unknown;
   try {
