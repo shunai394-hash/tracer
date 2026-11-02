@@ -30,13 +30,29 @@ export default async function HomePage() {
     .filter((category) => category.items.length > 0);
   // Pickup alternates categories so the first row is not only bags.
   const perCategory = categories.map((category) => pickDistinct(category.items, 8));
-  const proteinPickup = listings.find((listing) => listing.slug === "beauty-formula-chocolate-protein-300g");
+  // Pinned merchandising slot: keep this exact priority product on the homepage
+  // even if a catalog filter or sort rule changes. The fallback is display-only;
+  // stock/order eligibility must still come from the live listing record.
+  const proteinPickupListing = listings.find((listing) => listing.id === "1ae04dd1-a228-43b7-b003-3a2fb75da98a");
+  const proteinPickup = proteinPickupListing ?? {
+    id: "1ae04dd1-a228-43b7-b003-3a2fb75da98a",
+    slug: "beauty-formula-chocolate-protein-300g",
+    title: "BEAUTY FORMULA チョコレート風味プロテイン 300g",
+    imageUrl: "https://cdn.shopify.com/s/files/1/0746/2443/4220/files/beauty-formula-protein-chocolate-300g-set.png?v=1792777066",
+    sellingPrice: 3400,
+    currency: "JPY",
+    inventory: 0,
+  };
+  const proteinPickupIsLive = Boolean(proteinPickupListing);
   const regularPickup = Array.from({ length: 8 }, (_, round) => perCategory.map((items) => items[round]))
     .flat()
     .filter((listing): listing is NonNullable<typeof listing> => Boolean(listing))
-    .filter((listing) => listing.slug !== "beauty-formula-chocolate-protein-300g")
-    .slice(0, proteinPickup ? 7 : 8);
-  const pickup = proteinPickup ? [proteinPickup, ...regularPickup] : regularPickup;
+    .filter((listing) => listing.id !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a")
+    .slice(0, 7);
+  // The pinned item is rendered in its dedicated hero-adjacent slot above.
+  // Keep the regular grid limited to live catalog records so fallback display data
+  // is never passed to ProductCard as if it were a complete purchasable listing.
+  const pickup = regularPickup;
 
   return (
     <main className="min-h-screen bg-[#FBF6F1] text-[#3B241A]">
@@ -58,6 +74,26 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {(
+        <section aria-label="おすすめ商品" className="border-b border-[#EADBD3] bg-[#F2E6DE]">
+          <div className="mx-auto grid max-w-6xl items-center gap-6 px-6 py-8 sm:py-10 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-12">
+            <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="group block overflow-hidden rounded-2xl bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
+              <ProductImage src={proteinPickup.imageUrl} alt={proteinPickup.title} eager className="aspect-[5/4] w-full object-contain transition duration-500 group-hover:scale-[1.025] motion-reduce:transition-none" />
+            </Link>
+            <div className="py-2">
+              <p className="text-[11px] font-semibold tracking-[0.28em] text-[#8A5948]">FEATURED ITEM</p>
+              <p className="mt-3 text-xs font-semibold tracking-[0.16em] text-[#75402F]">TRACER SELECT · おすすめ商品</p>
+              <h2 className="mt-3 font-serif text-2xl leading-snug text-[#3B241A] sm:text-3xl">{proteinPickup.title}</h2>
+              <p className="mt-3 text-2xl font-semibold tracking-tight text-[#3B241A]">{new Intl.NumberFormat("ja-JP", { style: "currency", currency: proteinPickup.currency ?? "JPY", maximumFractionDigits: 0 }).format(proteinPickup.sellingPrice ?? 3400)}</p>
+              <p className="mt-2 text-sm text-[#5C4035]">{proteinPickupIsLive ? "販売ページで在庫を確認できます" : "在庫・販売状態を確認中"}</p>
+              <Link href={`/shop/${encodeURIComponent(proteinPickup.slug)}`} className="mt-6 inline-flex min-h-12 items-center justify-center rounded-full bg-[#3B241A] px-8 text-sm font-semibold text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-4">
+                商品詳細・購入へ →
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section aria-label="お買い物のご案内" className="border-y border-[#EADBD3] bg-white">
         <ul className="mx-auto grid max-w-6xl grid-cols-1 gap-2 px-6 py-4 text-center text-xs text-[#5C4035] sm:grid-cols-3 sm:text-sm">
