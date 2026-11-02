@@ -33,3 +33,18 @@ assert.ok(targets.every((id) => /^\d+$/.test(id)));
 assert.equal(/^\d+$/.test("163159664x"), false);
 
 console.log("BASE targeted readback static safety checks: 22 assertions passed");
+
+
+const baseClient = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+const priorityPin = readFileSync(new URL("../app/api/cron/base-priority-pin/route.ts", import.meta.url), "utf8");
+const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.match(baseClient, /export async function setBaseItemListOrder/);
+assert.match(baseClient, /list_order: String\(listOrder\)/);
+assert.match(priorityPin, /requireAutomationAuth/);
+assert.match(priorityPin, /getBaseItemDetail\(itemId\)/);
+assert.match(priorityPin, /setBaseItemListOrder\(itemId, 1\)/);
+assert.match(priorityPin, /list_order/);
+assert.match(priorityPin, /Stock <= 0/);
+assert.match(priorityPin, /visible/);
+assert.ok(!/stock:\s*50|stock:\s*1/.test(priorityPin), "priority pin must not fabricate or alter BASE inventory");
+assert.ok(vercel.crons.some((cron) => cron.path === "/api/cron/base-priority-pin" && cron.schedule === "*/5 * * * *"), "BASE priority order must be re-enforced every five minutes");
