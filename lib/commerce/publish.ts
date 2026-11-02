@@ -395,7 +395,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Recovery runs should publish missing/pending/error listings only. Reprocessing
   // already-published products repeatedly resets their status to pending and wastes
   // the channel API budget without increasing the public catalog.
-  const candidatesToProcess = sortedCandidates.filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)).filter((candidate) => !onlyUnpublished || (() => {
+  const candidatesToProcess = onlyUnpublished
+    ? sortedCandidates.filter((candidate) => {
         const state = stateByVariant.get(candidate.id);
         if (state?.status !== "published") return true;
         const offers = asRelationRows(candidate.supplier_offers);
@@ -406,7 +407,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const offer = offers.find((item) => String(item.id) === String(price?.supplier_offer_id ?? ""));
         const data = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
           ? offer.raw_data as Record<string, unknown> : {};
-         const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
+        const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
           data.shippingKnown === true ||
           (data.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
@@ -420,9 +421,10 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           Number(price.expected_profit) >= 2500 && Number(price.margin_rate) >= 0.5);
         // Recovery may revisit a published item only when supplier evidence says it
         // is no longer genuinely purchasable, so it can be hidden rather than skipped.
-        return state?.status !== "published" || !saleable;
-      })());
-  const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+        return !saleable;
+      })
+    : sortedCandidates;
+  const candidates = candidatesToProcess.filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
