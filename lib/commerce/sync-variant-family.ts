@@ -411,6 +411,23 @@ async function syncOneFamily(db: Db, channel: Channel, productId: string, candid
     withheldReason: variation.sellingPrice > 0 ? variation.withheldReason : "price_unavailable",
   }));
   const plan: Plan = { ...planned, variations: familyVariations };
+  // BASE has one parent-item price. Never publish a mixed-price family at the
+  // highest variant price: that would silently overcharge lower-priced variants.
+  // Until per-price BASE parent splitting is implemented, fail closed and leave
+  // every member unpublished rather than flattening distinct prices.
+  if (channel === "base") {
+    const baseSellablePrices = [...new Set(plan.variations
+      .filter((variation) => variation.sellable)
+      .map((variation) => Math.round(variation.sellingPrice)))];
+    if (baseSellablePrices.length > 1) {
+      await rememberBlocked(db, channel, productId, "base_variant_price_mismatch_requires_separate_parents");
+      return variantIds.filter(touched).map((variantId) => ({
+        variantId,
+        ok: false,
+        error: "variant_family_blocked:base_variant_price_mismatch_requires_separate_parents",
+      }));
+    }
+  }
   if (!isJapaneseProductTitle(plan.productTitle) || !isPublishableCatalogTitle(plan.productTitle)) {
     await rememberBlocked(db, channel, productId, "japanese_product_title_invalid");
     return variantIds.filter(touched).map((variantId) => ({ variantId, ok: false, error: "japanese_product_title_invalid" }));
