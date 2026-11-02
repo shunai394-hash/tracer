@@ -44,7 +44,7 @@ assert.match(priorityPin, /requireAutomationAuth/);
 assert.match(priorityPin, /getBaseItemDetail\(itemId\)/);
 assert.match(priorityPin, /setBaseItemListOrder\(itemId, 1\)/);
 assert.match(priorityPin, /list_order/);
-assert.match(priorityPin, /stock <= 0/);
+assert.match(priorityPin, /Stock <= 0/);
 assert.match(priorityPin, /visible/);
 assert.ok(!/stock:\s*50|stock:\s*1/.test(priorityPin), "priority pin must not fabricate or alter BASE inventory");
 assert.ok(vercel.crons.some((cron) => cron.path === "/api/cron/base-priority-pin" && cron.schedule === "*/5 * * * *"), "BASE priority order must be re-enforced every five minutes");
