@@ -103,7 +103,7 @@ async function handleCheckoutCompleted(
     const paymentIntentId =
       typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
-    const { error: paymentUpdateError } = await supabase
+    const { data: paidOrder, error: paymentUpdateError } = await supabase
       .from("shop_orders")
       .update({
         payment_status: "paid",
@@ -111,11 +111,19 @@ async function handleCheckoutCompleted(
         paid_at: new Date().toISOString(),
         stripe_payment_intent_id: paymentIntentId,
       })
-      .eq("id", shopOrderId);
+      .eq("id", shopOrderId)
+      .eq("payment_status", "pending")
+      .eq("order_status", "pending_payment")
+      .is("manual_inventory_released_at", null)
+      .select("id")
+      .maybeSingle();
 
     if (paymentUpdateError) {
       throw new Error(paymentUpdateError.message);
     }
+    // The expiry RPC and this conditional UPDATE serialize on the order row.
+    // If expiry won, do not record a purchase or start fulfillment.
+    if (!paidOrder) return shopOrderId;
   }
 
   const { data: items } = await supabase
