@@ -10,10 +10,12 @@ assert.match(webhook, /checkout\.session\.expired/, "expired Checkout Sessions m
 assert.match(webhook, /checkout\.session\.async_payment_failed/, "terminal async payment failures must release reserved stock");
 assert.match(webhook, /checkout\.session\.async_payment_succeeded/, "delayed successful payments must enter the paid fulfillment path");
 assert.match(webhook, /release_manual_inventory_for_order/, "webhook must use the order-level idempotent release RPC");
-assert.match(webhook, /\.eq\("payment_status", "pending"\)[\\s\\S]*?\.eq\("order_status", "pending_payment"\)[\\s\\S]*?\.is\("manual_inventory_released_at", null\)/, "payment success must atomically compete with expiry release");
-const paymentFailureHandler = webhook.match(/async function handlePaymentFailed\\([\\s\\S]*?\\n}\\n/);
-assert.ok(paymentFailureHandler, "PaymentIntent failure handler must exist");
-assert.doesNotMatch(paymentFailureHandler[0], /\.update\(/, "attempt-level card failures must not fail the order or release its reservation");
+assert.match(webhook, /\.eq\("payment_status", "pending"\)[\s\S]*?\.eq\("order_status", "pending_payment"\)[\s\S]*?\.is\("manual_inventory_released_at", null\)/, "payment success must atomically compete with expiry release");
+const paymentFailureStart = webhook.indexOf("async function handlePaymentFailed(");
+const paymentFailureEnd = webhook.indexOf("\nasync function handleCheckoutSessionEnded", paymentFailureStart);
+const paymentFailureHandler = webhook.slice(paymentFailureStart, paymentFailureEnd);
+assert.ok(paymentFailureStart >= 0 && paymentFailureEnd > paymentFailureStart, "PaymentIntent failure handler must exist");
+assert.doesNotMatch(paymentFailureHandler, /\.update\(/, "attempt-level card failures must not fail the order or release its reservation");
 
 assert.match(migration, /for update/, "release RPC must lock the order row");
 assert.match(migration, /manual_inventory_released_at is not null/, "release RPC must reject duplicate stock returns");
