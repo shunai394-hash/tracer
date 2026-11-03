@@ -194,11 +194,10 @@ async function handlePaymentFailed(
   const shopOrderId = order?.id ? String(order.id) : null;
   if (!shopOrderId) return null;
 
-  await supabase
-    .from("shop_orders")
-    .update({ payment_status: "failed", order_status: "order_failed" })
-    .eq("id", shopOrderId);
-
+  // A PaymentIntent failure is an attempt-level event: Checkout may still
+  // allow the customer to retry with another card. Keep the order and its
+  // reserved stock pending until the Checkout Session itself expires or
+  // reports a terminal asynchronous failure.
   return shopOrderId;
 }
 
