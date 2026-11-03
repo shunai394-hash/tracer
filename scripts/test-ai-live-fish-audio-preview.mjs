@@ -29,7 +29,7 @@ test("voice catalogue is authenticated and restricts results to licensed public 
   assert.ok(voiceLibrary.includes('url.searchParams.set("language", "ja")'));
   assert.ok(voiceLibrary.includes('url.searchParams.set("licensed", "true")'));
   assert.ok(voiceLibrary.includes('visibility !== "public"'));
-  assert.ok(voiceLibrary.includes("/female|woman|women|女性|女声|feminine/"));
+  assert.ok(voiceLibrary.includes("/(female|woman|women|女性|女声|feminine)/u"));
 });
 
 test("Fish Audio preview page requires explicit voice selection and explicit generation", () => {
