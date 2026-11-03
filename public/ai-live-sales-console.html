@@ -28,6 +28,14 @@ button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}butto
 <p class="status" id="connection">未接続</p>
 <h2>販売可能商品（TRACER読み取り専用）</h2>
 <div id="productList">接続後、販売可能な日本語商品を表示する。</div>
+<div class="row" aria-label="商品ローテーション操作">
+<label for="rotationSeconds">商品切替間隔</label>
+<select id="rotationSeconds"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="60">60秒</option><option value="120">120秒</option></select>
+<button class="primary" id="rotationStart" disabled>商品ローテーション開始</button>
+<button id="rotationNext" disabled>次の商品</button>
+<button id="rotationStop" disabled>ローテーション停止</button>
+</div>
+<p class="status" id="rotationStatus">商品ローテーション停止中。音声生成・コメント送信は行わない。</p>
 </section>
 <section>
 <h2>AI販売員</h2>
@@ -50,7 +58,7 @@ button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}butto
 <script>
 (()=> {
  const $=id=>document.getElementById(id), token=$('token'), list=$('productList'), audio=$('audio'), avatar=$('avatar');
- let products=[], selected=null, runTimer=null, runDeadline=0, runCount=0, busy=false, runIndex=0, activeUrl=null;
+ let products=[], selected=null, runTimer=null, runDeadline=0, runCount=0, busy=false, runIndex=0, activeUrl=null, rotationTimer=null, rotationIndex=0;
  const questions=['いくらですか？','どんな商品ですか？','在庫ありますか？','どこで買えますか？','明日届きますか？'];
  function auth(){return {Authorization:'Bearer '+token.value.trim()};}
  async function api(path,options={}) {
@@ -91,6 +99,26 @@ button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}butto
   $('selected').textContent=p.title+' / '+p.sellingPrice.toLocaleString('ja-JP')+'円';
   $('reply').textContent='選択中の商品：'+p.title;
  }
+ function stopRotation(message='商品ローテーション停止中。'){
+  if(rotationTimer)clearInterval(rotationTimer);rotationTimer=null;
+  $('rotationStart').disabled=products.length<2;$('rotationNext').disabled=products.length<2;$('rotationStop').disabled=true;
+  $('rotationStatus').textContent=message;
+ }
+ function rotateNext(){
+  if(products.length<2)return;
+  rotationIndex=(rotationIndex+1)%products.length;
+  const p=products[rotationIndex], el=list.children[rotationIndex];
+  if(p&&el)choose(p,el);
+  $('rotationStatus').textContent='商品紹介対象を切替中：'+(rotationIndex+1)+' / '+products.length+'（音声・投稿なし）';
+ }
+ function startRotation(){
+  if(products.length<2){$('rotationStatus').textContent='ローテーションには販売可能商品が2件以上必要です。';return;}
+  stopRotation();rotationIndex=Math.max(0,products.findIndex(p=>p.id===selected?.id));
+  const seconds=Math.max(15,Math.min(120,Number($('rotationSeconds').value)||30));
+  $('rotationStart').disabled=true;$('rotationNext').disabled=false;$('rotationStop').disabled=false;
+  $('rotationStatus').textContent='商品ローテーション実行中：'+seconds+'秒間隔。音声生成・コメント送信・商品更新は行わない。';
+  rotationTimer=setInterval(rotateNext,seconds*1000);
+ }
  async function respond(comment){
   if(!selected) throw new Error('先に商品を選択してください。');
   if(busy) return;
@@ -112,8 +140,11 @@ button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}butto
  document.querySelectorAll('[data-comment]').forEach(b=>b.addEventListener('click',async()=>{
   stopRun('手動応答中');try{await respond(b.dataset.comment);}catch(e){$('reply').textContent=e.message;}
  }));
- $('connect').addEventListener('click',async()=>{try{await loadProducts();}catch(e){$('connection').textContent=e.message;}});
- $('clear').addEventListener('click',()=>{stopRun('トークンを消去');token.value='';products=[];selected=null;list.textContent='未接続';$('connection').textContent='未接続';clearAudio();});
+ $('connect').addEventListener('click',async()=>{stopRotation();try{await loadProducts();$('rotationStart').disabled=products.length<2;$('rotationNext').disabled=products.length<2;}catch(e){$('connection').textContent=e.message;}});
+ $('rotationStart').addEventListener('click',startRotation);
+ $('rotationNext').addEventListener('click',rotateNext);
+ $('rotationStop').addEventListener('click',()=>stopRotation('手動停止。商品選択は維持。'));
+ $('clear').addEventListener('click',()=>{stopRun('トークンを消去');stopRotation('トークン消去により停止。');token.value='';products=[];selected=null;list.textContent='未接続';$('connection').textContent='未接続';clearAudio();});
  async function startRun(minutes){
   stopRun();if(!selected){$('runStatus').textContent='先に商品を読み込んで選択してください。';return;}
   runDeadline=Date.now()+minutes*60000;runCount=0;runIndex=0;
@@ -131,6 +162,6 @@ button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}butto
  $('run30').addEventListener('click',()=>startRun(30));
  $('run60').addEventListener('click',()=>startRun(60));
  $('stop').addEventListener('click',()=>{stopRun('手動停止。応答 '+runCount+'回');clearAudio();});
- window.addEventListener('pagehide',()=>{stopRun();clearAudio();token.value='';});
+ window.addEventListener('pagehide',()=>{stopRun();stopRotation();clearAudio();token.value='';});
 })();
 </script></body></html>
