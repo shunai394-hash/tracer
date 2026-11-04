@@ -253,11 +253,13 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   const variantPicker = readFileSync("components/product-variant-selector.tsx", "utf8");
   const storefrontDisplay = readFileSync("lib/shop/storefront-display.ts", "utf8");
   const productPage = readFileSync("app/shop/[slug]/page.tsx", "utf8");
+  const productImage = readFileSync("components/product-image.tsx", "utf8");
   assert.match(sync, /channel_listing_identity_backup/);
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
   assert.match(sync, /base_variant_price_mismatch_requires_separate_parents/);
   assert.match(sync, /base_variant_image_binding_unsupported/);
+  assert.match(sync, /shopify_variant_image_missing/);
   assert.match(sync, /shopify_variant_image_readback_mismatch/);
   assert.match(sync, /file: \\{ originalSource: variation.imageUrl/);
   assert.match(sync, /cj_variant_id/);
@@ -276,4 +278,5 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(variantPicker, /variant=\$\{variantNumber\}/);
   assert.match(storefrontDisplay, /supplier-product:\$\{listing\.productId\}:\$\{supplierProductId\}/);
   assert.match(productPage, /ProductVariantSelector/);
+  assert.match(productImage, /\\}, \\[src\\]\\);/);
 });
