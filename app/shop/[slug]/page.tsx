@@ -2,11 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { AddToCartButton } from "@/components/add-to-cart-button";
+import { ProductVariantSelector } from "@/components/product-variant-selector";
 import { getShopifyConfig } from "@/lib/config/env";
 import { getShopListingBySlug, listPublishedShopListings, recordShopFunnelEvent, type ShopListing } from "@/lib/shop/store";
 import { ProductCard } from "@/components/product-card";
-import { ProductImage } from "@/components/product-image";
 import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct, variantFamily } from "@/lib/shop/storefront-display";
 import { formatMoney } from "@/lib/intelligence/format-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
@@ -166,84 +165,39 @@ export default async function ShopProductPage({
           ) : null}
         </nav>
 
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
-          <div className="md:sticky md:top-24 md:self-start">
-            <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-[4/5] w-full object-cover" />
-            </div>
-          </div>
+        <ProductVariantSelector
+          listing={listing}
+          variants={listing.variants ?? []}
+          categoryLabel={category?.label ?? null}
+          shopifyDomain={shopifyDomain}
+        />
 
-          <div>
-            {category ? <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{category.label}</p> : null}
-            <h1 className="mt-2 font-serif text-2xl leading-snug sm:text-[28px]">{listing.title}</h1>
+        {listing.description ? (
+          <section aria-labelledby="description-heading" className="mt-10 border-t border-[#EADBD3] pt-6">
+            <h2 id="description-heading" className="font-serif text-lg">商品説明</h2>
+            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[#5C4035]">{listing.description}</p>
+          </section>
+        ) : null}
 
-            <div className="mt-5 flex items-baseline gap-2">
-              <p className="text-[28px] font-semibold tracking-tight">{formatMoney(listing.sellingPrice, listing.currency)}</p>
-              <span className="text-xs text-neutral-500">表示価格</span>
-            </div>
-            <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
-              {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
+        <div className="mt-6 divide-y divide-[#EADBD3] border-y border-[#EADBD3] text-sm">
+          <details className="group py-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+              サイズ・素材・カラー
+              <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
+            </summary>
+            <p className="mt-3 leading-7 text-[#5C4035]">
+              色を選択すると、対応する商品画像・価格・在庫が表示されます。商品画像はモニター環境により実物と色味が異なって見える場合があります。
             </p>
-
-            <div className="mt-6">
-              {shopifyProductUrl ? (
-                <a
-                  href={shopifyProductUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"
-                >
-                  Shopifyで購入する
-                </a>
-              ) : (
-                <AddToCartButton
-                  listingId={listing.id}
-                  slug={listing.slug}
-                  title={listing.title}
-                  unitPrice={listing.sellingPrice}
-                  currency={listing.currency}
-                  imageUrl={listing.imageUrl}
-                />
-              )}
-              <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                注文内容・配送条件は、購入手続き画面でご確認ください。
-              </p>
-            </div>
-
-            <ul className="mt-6 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#5C4035] sm:text-xs">
-              <li className="rounded-xl bg-white/70 px-2 py-3">価格・配送条件を<br />購入前に確認</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">配送情報を<br />購入前に確認</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">商品情報を<br />掲載前に確認</li>
-            </ul>
-
-            {listing.description ? (
-              <section aria-labelledby="description-heading" className="mt-8 border-t border-[#EADBD3] pt-6">
-                <h2 id="description-heading" className="font-serif text-lg">商品説明</h2>
-                <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[#5C4035]">{listing.description}</p>
-              </section>
-            ) : null}
-
-            <div className="mt-6 divide-y divide-[#EADBD3] border-y border-[#EADBD3] text-sm">
-              <details className="group py-4">
-                <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
-                  サイズ・素材・カラー
-                  <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
-                </summary>
-                <p className="mt-3 leading-7 text-[#5C4035]">
-                  サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。商品画像はモニター環境により実物と色味が異なって見える場合があります。
-                </p>
-              </details>
-              <details className="group py-4">
-                <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
-                  配送・送料・返品について
-                  <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
-                </summary>
-                <p className="mt-3 leading-7 text-[#5C4035]">
-                  在庫・配送日数・送料・返品条件は商品や配送先によって異なります。送料・配送条件は購入手続き画面でご確認ください。
-                </p>
-              </details>
-            </div>
-          </div>
+          </details>
+          <details className="group py-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+              配送・送料・返品について
+              <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
+            </summary>
+            <p className="mt-3 leading-7 text-[#5C4035]">
+              在庫・配送日数・送料・返品条件は商品や配送先によって異なります。送料・配送条件は購入手続き画面でご確認ください。
+            </p>
+          </details>
         </div>
 
         {related.length > 0 ? (
