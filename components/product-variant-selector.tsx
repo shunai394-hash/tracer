@@ -23,6 +23,7 @@ export function ProductVariantSelector({
       slug: listing.slug,
       title: listing.title,
       label: listing.variantLabel || "標準",
+      optionType: listing.variantOptionType ?? "種類",
       imageUrl: listing.imageUrl,
       sellingPrice: listing.sellingPrice,
       currency: listing.currency,
@@ -61,9 +62,9 @@ export function ProductVariantSelector({
         {categoryLabel ? <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{categoryLabel}</p> : null}
         <h1 className="mt-2 font-serif text-2xl leading-snug sm:text-[28px]">{listing.title}</h1>
         {choices.length > 1 ? (
-          <section className="mt-6" aria-label="カラー選択">
+          <section className="mt-6" aria-label={`${choices[0].optionType}選択`}>
             <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold text-[#3B241A]">カラーを選択</h2>
+              <h2 className="text-sm font-semibold text-[#3B241A]">{choices[0].optionType}を選択</h2>
               <span className="text-sm text-[#5C4035]">選択中：{selected.label}</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
