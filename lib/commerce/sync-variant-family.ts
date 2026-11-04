@@ -23,6 +23,7 @@ type FamilyVariation = {
   label: string;
   options: Record<string, string>;
   imageAlt: string;
+  imageUrl: string | null;
   attributes?: Record<string, unknown>;
 };
 type Plan = {
@@ -118,6 +119,7 @@ function memberFromRow(row: Record<string, unknown>, listing: Record<string, unk
     missingEvidence: [...new Set(missing)],
     existingExternalProductId: text(listing?.external_product_id) || null,
     existingExternalVariantId: text(listing?.external_variant_id) || null,
+    imageUrl: text(raw.variantImageUrl || raw.variant_image_url || attributes.variantImageUrl || attributes.imageUrl) || null,
     attributes,
   };
 }
@@ -245,11 +247,19 @@ async function syncShopifyFamily(plan: Plan, canonicalHint: string | null) {
       price: variation.sellingPrice.toFixed(2),
       inventoryPolicy: "DENY",
       optionValues: Object.entries(variation.options).map(([optionName, name]) => ({ optionName, name })),
+      ...(variation.imageUrl ? { file: { originalSource: variation.imageUrl, alt: variation.imageAlt, contentType: "IMAGE" } } : {}),
       inventoryItem: { sku: variation.sku, tracked: true },
     })),
   };
   if (canonical) input.id = canonical;
-  else if (plan.imageUrl) input.files = [{ originalSource: plan.imageUrl, alt: plan.productTitle, contentType: "IMAGE" }];
+  const productFiles = [...new Set([plan.imageUrl, ...plan.variations.map((variation) => variation.imageUrl)].filter((url): url is string => Boolean(url)))];
+  if (productFiles.length > 0) {
+    input.files = productFiles.map((url) => ({
+      originalSource: url,
+      alt: plan.variations.find((variation) => variation.imageUrl === url)?.imageAlt ?? plan.productTitle,
+      contentType: "IMAGE",
+    }));
+  }
   const written = await shopifyGraphQL<{ productSet: { product: ShopifyNode | null; userErrors: Array<{ message: string }> } }>(
     `mutation FamilyProductSet($input: ProductSetInput!, $synchronous: Boolean!) {
       productSet(input: $input, synchronous: $synchronous) {
