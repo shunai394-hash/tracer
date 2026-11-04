@@ -54,21 +54,17 @@ def json_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False).encode("utf-8")
 
 
-def load_or_create_config(data_dir: Path) -> None:
+def load_or_create_config(data_dir: Path, mpt_exe: Path) -> None:
     config_path = data_dir / "config.toml"
     if not config_path.exists():
-        try:
-            import importlib.util
-            spec = importlib.util.find_spec("app")
-            package_file = Path(spec.origin).resolve() if spec and spec.origin else None
-            template = package_file.parent / "_assets" / "config.example.toml" if package_file else None
-        except (ImportError, OSError, ValueError):
-            template = None
-
-        if not template or not template.is_file():
+        # Resolve the template from the same isolated venv as mpt.exe, not from
+        # this bridge's interpreter. The bridge itself uses only Python stdlib.
+        venv_root = mpt_exe.parent.parent
+        template = venv_root / "Lib" / "site-packages" / "app" / "_assets" / "config.example.toml"
+        if not template.is_file():
             raise RuntimeError(
                 "MoneyPrinterTurboの初期設定ファイルが見つかりません。"
-                "セットアップスクリプトで mpt==1.3.9 が入っているか確認してください。"
+                "mpt==1.3.9のインストール先を確認してください。"
             )
         config_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(template, config_path)
@@ -526,7 +522,7 @@ def main() -> int:
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        load_or_create_config(DATA_DIR)
+        load_or_create_config(DATA_DIR, MPT_EXE)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
