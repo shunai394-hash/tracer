@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-MAX_REQUEST_BYTES = 180 * 1024 * 1024
+MAX_REQUEST_BYTES = 185 * 1024 * 1024
 MAX_FILE_BYTES = 60 * 1024 * 1024
 MAX_FILES = 8
 MAX_SCRIPT_CHARS = 12_000
