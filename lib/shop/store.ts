@@ -49,6 +49,7 @@ export type ShopVariantOption = {
   slug: string;
   title: string;
   label: string;
+  optionType: "カラー" | "サイズ" | "種類";
   imageUrl: string | null;
   sellingPrice: number | null;
   currency: string | null;
@@ -84,6 +85,7 @@ export type ShopListing = {
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
   variantLabel?: string | null;
+  variantOptionType?: "カラー" | "サイズ" | "種類";
   variantImageUrl?: string | null;
   variants?: ShopVariantOption[];
 };
@@ -316,6 +318,7 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     slug: candidate.slug,
     title: candidate.title,
     label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] || "標準",
+    optionType: candidate.variantOptionType ?? "種類",
     imageUrl: candidate.variantImageUrl ?? null,
     sellingPrice: candidate.sellingPrice,
     currency: candidate.currency,
@@ -503,6 +506,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
       ? attributes.variationLabel.trim()
       : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
+    const variantOptionType = attributes.color ? "カラー" : attributes.size ? "サイズ" : "種類";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
@@ -530,6 +534,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       imageUrl,
       variantImageUrl,
       variantLabel,
+      variantOptionType,
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
