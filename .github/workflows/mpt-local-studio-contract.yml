@@ -17,6 +17,8 @@ on:
       - "scripts/setup-mpt-local-studio.ps1"
       - "scripts/test-mpt-local-studio.py"
       - "scripts/mpt-local-studio.html"
+      - ".github/workflows/mpt-cloud-video.yml"
+      - ".github/workflows/mpt-local-studio-contract.yml"
 
 permissions:
   contents: read
