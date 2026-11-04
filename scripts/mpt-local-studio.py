@@ -122,6 +122,7 @@ def update_task(task_id: str, **changes: Any) -> None:
 
 
 def create_cli_command(
+    mpt_exe: Path,
     task_id: str,
     title: str,
     script: str,
@@ -133,7 +134,7 @@ def create_cli_command(
     bgm_filename: str | None,
 ) -> list[str]:
     command = [
-        str(MPT_EXE), "cli",
+        str(mpt_exe), "cli",
         "--video-subject", title,
         "--video-script", script,
         "--video-language", "ja-JP",
@@ -466,7 +467,7 @@ class Handler(BaseHTTPRequestHandler):
                 log_dir.mkdir(parents=True, exist_ok=True)
                 log_path = log_dir / f"{task_id}.log"
                 command = create_cli_command(
-                    task_id, title, script, asset_paths, voice, aspect,
+                    MPT_EXE, task_id, title, script, asset_paths, voice, aspect,
                     clip_duration, subtitles, bgm_filename,
                 )
                 task = {
