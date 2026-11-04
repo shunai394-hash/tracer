@@ -502,7 +502,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
     const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
       ? attributes.variationLabel.trim()
-      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] ?? null;
+      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
