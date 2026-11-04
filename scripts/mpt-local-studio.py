@@ -385,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         if parsed.path in {"/", "/index.html"}:
-            page_path = Path(__file__).resolve().parent.parent / "public" / "mpt-local-studio.html"
+            page_path = Path(__file__).resolve().with_name("mpt-local-studio.html")
             if not page_path.is_file():
                 self._json(500, {"error": "制作画面ファイルが見つかりません。"})
                 return
