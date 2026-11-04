@@ -12,6 +12,8 @@ export type CJProductVariant = {
   sellPrice: string | null;
   /** CJ's documented numeric variant barcode. */
   barcode: string | null;
+  /** Exact CJ variant image when the variant API supplies one. */
+  imageUrl?: string | null;
   /** Sum of CJ-owned stock in verified warehouses only; factory stock is excluded. */
   inventory: number | null;
   /** Verified warehouse stock used to choose a real shipping origin. */
