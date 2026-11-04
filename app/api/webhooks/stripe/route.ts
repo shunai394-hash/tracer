@@ -12,14 +12,31 @@ async function claimEvent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   event: Stripe.Event,
 ): Promise<{ alreadyProcessed: boolean }> {
-  const { data: existing } = await supabase
+  const leaseExpiredAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: existing, error: lookupError } = await supabase
     .from("stripe_webhook_events")
-    .select("processed")
+    .select("processed, processed_at")
     .eq("stripe_event_id", event.id)
     .maybeSingle();
 
+  if (lookupError) throw new Error(lookupError.message);
+  if (existing?.processed) return { alreadyProcessed: true };
+
   if (existing) {
-    return { alreadyProcessed: existing.processed === true };
+    // Atomically acquire/re-acquire a processing lease. The conditional UPDATE
+    // ensures concurrent deliveries cannot both run the same handler. Failed
+    // attempts become retryable after the lease expires.
+    const { data: claimed, error: claimError } = await supabase
+      .from("stripe_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("stripe_event_id", event.id)
+      .eq("processed", false)
+      .or(`processed_at.is.null,processed_at.lt.${leaseExpiredAt}`)
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) throw new Error(claimError.message);
+    return { alreadyProcessed: !claimed };
   }
 
   const { error: insertError } = await supabase.from("stripe_webhook_events").insert({
@@ -27,15 +44,12 @@ async function claimEvent(
     event_type: event.type,
     payload: event as unknown as Record<string, unknown>,
     processed: false,
+    processed_at: new Date().toISOString(),
   });
 
-  // Two identical Stripe deliveries can arrive concurrently. The unique
-  // stripe_event_id constraint makes the loser a duplicate; it must not
-  // execute the event handler a second time.
+  // If another delivery inserted first, it owns the processing lease.
   if (insertError) {
-    if (insertError.code === "23505") {
-      return { alreadyProcessed: true };
-    }
+    if (insertError.code === "23505") return { alreadyProcessed: true };
     throw new Error(insertError.message);
   }
 
