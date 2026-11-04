@@ -180,7 +180,7 @@ async function rememberBlocked(db: Db, channel: Channel, productId: string, reas
   }, { onConflict: "event_key" });
 }
 
-type ShopifyNode = { id: string; handle?: string | null; status?: string | null; vendor?: string | null; tags?: string[]; variants?: { nodes: Array<{ id: string; sku?: string | null; price?: string | null }> } };
+type ShopifyNode = { id: string; handle?: string | null; status?: string | null; vendor?: string | null; tags?: string[]; variants?: { nodes: Array<{ id: string; sku?: string | null; price?: string | null; media?: { nodes: Array<{ alt?: string | null; status?: string | null }> } }> } };
 
 async function findShopifyProduct(query: string): Promise<ShopifyNode[]> {
   const found = await shopifyGraphQL<{ products: { nodes: ShopifyNode[] } }>(
@@ -263,7 +263,7 @@ async function syncShopifyFamily(plan: Plan, canonicalHint: string | null) {
   const written = await shopifyGraphQL<{ productSet: { product: ShopifyNode | null; userErrors: Array<{ message: string }> } }>(
     `mutation FamilyProductSet($input: ProductSetInput!, $synchronous: Boolean!) {
       productSet(input: $input, synchronous: $synchronous) {
-        product { id handle status variants(first: 100) { nodes { id sku price } } }
+        product { id handle status variants(first: 100) { nodes { id sku price media(first: 5) { nodes { alt status } } } } }
         userErrors { message }
       }
     }`,
@@ -273,17 +273,20 @@ async function syncShopifyFamily(plan: Plan, canonicalHint: string | null) {
     throw new Error("shopify_family_upsert_failed:" + (written.productSet.userErrors.map((error) => error.message).join("; ") || "product_missing"));
   }
   const product = written.productSet.product;
-  const bySku = new Map<string, { id: string; price: number }>();
+  const bySku = new Map<string, { id: string; price: number; mediaAlts: string[] }>();
   for (const variant of product.variants?.nodes ?? []) {
     const sku = text(variant.sku);
     if (!sku || bySku.has(sku)) throw new Error("shopify_variant_sku_readback_mismatch:" + (sku || "blank"));
     const price = Math.round(Number(variant.price));
     if (!Number.isFinite(price)) throw new Error("shopify_variant_price_readback_invalid:" + sku);
-    bySku.set(sku, { id: variant.id, price });
+    bySku.set(sku, { id: variant.id, price, mediaAlts: (variant.media?.nodes ?? []).map((media) => text(media.alt)).filter(Boolean) });
   }
   const mapped = plan.variations.map((variation) => {
     const live = bySku.get(variation.sku);
     if (!live || live.price !== Math.round(variation.sellingPrice)) throw new Error("shopify_variant_price_readback_mismatch:" + variation.sku);
+    if (variation.imageUrl && !live.mediaAlts.includes(variation.imageAlt)) {
+      throw new Error("shopify_variant_image_readback_mismatch:" + variation.sku);
+    }
     return { ...variation, externalVariantId: live.id };
   });
   const cap = getStorefrontStockCap();
@@ -421,6 +424,17 @@ async function syncOneFamily(db: Db, channel: Channel, productId: string, candid
     withheldReason: variation.sellingPrice > 0 ? variation.withheldReason : "price_unavailable",
   }));
   const plan: Plan = { ...planned, variations: familyVariations };
+  // BASE's official item variation API exposes variation labels, identifiers and stock,
+  // but no per-variation image association. Do not sell multiple colors there until
+  // BASE can display the selected color's matching image.
+  if (channel === "base" && plan.variations.filter((variation) => variation.sellable).length > 1) {
+    await rememberBlocked(db, channel, productId, "base_variant_image_binding_unsupported");
+    return variantIds.filter(touched).map((variantId) => ({
+      variantId,
+      ok: false,
+      error: "variant_family_blocked:base_variant_image_binding_unsupported",
+    }));
+  }
   // BASE has one parent-item price. Never publish a mixed-price family at the
   // highest variant price: that would silently overcharge lower-priced variants.
   // Until per-price BASE parent splitting is implemented, fail closed and leave
