@@ -6,7 +6,7 @@ import { ProductVariantSelector } from "@/components/product-variant-selector";
 import { getShopifyConfig } from "@/lib/config/env";
 import { getShopListingBySlug, listPublishedShopListings, recordShopFunnelEvent, type ShopListing } from "@/lib/shop/store";
 import { ProductCard } from "@/components/product-card";
-import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct, variantFamily } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf, pickOnePerSupplierProduct, variantFamily } from "@/lib/shop/storefront-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -118,7 +118,7 @@ export default async function ShopProductPage({
   try {
     const family = variantFamily(listing.title);
     const category = categoryOf(listing.title);
-    related = pickDistinct(
+    related = pickOnePerSupplierProduct(
       (await listPublishedShopListings()).filter((item) => item.id !== listing.id && categoryOf(item.title) === category && variantFamily(item.title) !== family),
       4,
     );
