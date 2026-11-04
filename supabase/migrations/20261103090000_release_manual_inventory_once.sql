@@ -12,6 +12,7 @@ as $$
 declare
   target_order public.shop_orders%rowtype;
   item record;
+  updated_rows integer;
 begin
   select * into target_order
   from public.shop_orders
@@ -40,7 +41,16 @@ begin
       and l.manual_inventory = true
     group by i.listing_id
   loop
-    perform public.release_manual_listing_stock(item.listing_id, item.qty);
+    update public.shop_listings
+    set inventory = inventory + item.qty,
+        updated_at = now()
+    where id = item.listing_id
+      and manual_inventory = true;
+
+    get diagnostics updated_rows = row_count;
+    if updated_rows <> 1 then
+      raise exception 'Manual inventory listing % was not restored', item.listing_id;
+    end if;
   end loop;
 
   return true;
