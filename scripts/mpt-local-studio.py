@@ -238,6 +238,22 @@ def run_generation(
             finished_at=utc_now(),
         )
     finally:
+        # MPT's local video source accepts files only from storage/local_videos.
+        # Remove this task's private subdirectory after the CLI has stopped.
+        with TASKS_LOCK:
+            task = TASKS.get(task_id, {})
+            input_dir_value = task.get("input_dir")
+            bgm_path_value = task.get("bgm_path")
+        local_root = (DATA_DIR / "storage" / "local_videos").resolve()
+        if input_dir_value:
+            candidate = Path(input_dir_value).resolve()
+            if candidate.parent == local_root and candidate.is_dir():
+                shutil.rmtree(candidate, ignore_errors=True)
+        bgm_root = (DATA_DIR / "storage" / "bgm").resolve()
+        if bgm_path_value:
+            candidate_bgm = Path(bgm_path_value).resolve()
+            if candidate_bgm.parent == bgm_root and candidate_bgm.is_file():
+                candidate_bgm.unlink(missing_ok=True)
         with ACTIVE_LOCK:
             if ACTIVE_TASK == task_id:
                 ACTIVE_TASK = None
@@ -444,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("素材は最大8ファイルまでです。")
 
                 task_id = str(uuid.uuid4())
-                input_dir = DATA_DIR / "studio" / "inputs" / task_id
+                input_dir = DATA_DIR / "storage" / "local_videos" / task_id
                 input_dir.mkdir(parents=True, exist_ok=False)
                 asset_paths: list[Path] = []
 
@@ -478,6 +494,7 @@ class Handler(BaseHTTPRequestHandler):
                     "created_at": utc_now(),
                     "updated_at": utc_now(),
                     "input_dir": str(input_dir),
+                    "bgm_path": str((DATA_DIR / "storage" / "bgm" / bgm_filename).resolve()) if bgm_filename else None,
                     "log_path": str(log_path),
                 }
                 with TASKS_LOCK:
