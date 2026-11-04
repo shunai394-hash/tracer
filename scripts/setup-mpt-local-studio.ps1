@@ -51,7 +51,8 @@ New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 if (-not (Test-Path $venvPython -PathType Leaf)) {
   Write-Host "Creating an isolated Python environment..."
-  & $python.Command @($python.Args) -m venv $venvDir
+  $pythonArgs = $python.Args
+  & $python.Command @pythonArgs -m venv $venvDir
   if ($LASTEXITCODE -ne 0) { throw "Failed to create the Python virtual environment." }
 }
 
