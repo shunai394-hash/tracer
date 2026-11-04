@@ -40,19 +40,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      MPT_HOME: \${{ runner.temp }}/mpt-home
+      MPT_HOME: ${{ runner.temp }}/mpt-home
       PYTHONUTF8: "1"
-      PEXELS_API_KEY: \${{ secrets.PEXELS_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
     steps:
       - name: Check required key and inputs
         shell: bash
         env:
-          TITLE: \${{ inputs.title }}
-          SCRIPT: \${{ inputs.script }}
-          SCENE_TERMS: \${{ inputs.scene_terms }}
+          TITLE: ${{ inputs.title }}
+          SCRIPT: ${{ inputs.script }}
+          SCENE_TERMS: ${{ inputs.scene_terms }}
         run: |
           set -euo pipefail
-          if [[ -z "\${PEXELS_API_KEY:-}" ]]; then
+          if [[ -z "${PEXELS_API_KEY:-}" ]]; then
             echo "::error::Repository secret PEXELS_API_KEY is not configured."
             exit 1
           fi
@@ -114,11 +114,11 @@ jobs:
       - name: Generate MP4 with free Pexels stock footage
         shell: bash
         env:
-          TITLE: \${{ inputs.title }}
-          SCRIPT: \${{ inputs.script }}
-          SCENE_TERMS: \${{ inputs.scene_terms }}
-          ASPECT: \${{ inputs.aspect }}
-          CLIP_DURATION: \${{ inputs.clip_duration }}
+          TITLE: ${{ inputs.title }}
+          SCRIPT: ${{ inputs.script }}
+          SCENE_TERMS: ${{ inputs.scene_terms }}
+          ASPECT: ${{ inputs.aspect }}
+          CLIP_DURATION: ${{ inputs.clip_duration }}
         run: |
           set -euo pipefail
           task_id="$(python -c 'import uuid; print(uuid.uuid4())')"
@@ -163,6 +163,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: moneyprinterturbo-video
-          path: \${{ runner.temp }}/mpt-output/final.mp4
+          path: ${{ runner.temp }}/mpt-output/final.mp4
           if-no-files-found: error
           retention-days: 3
