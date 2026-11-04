@@ -1350,3 +1350,30 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
   assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
   assert.doesNotMatch(route, /\.delete\(/);
 });
+
+test("channel resync preserves existing external identities and persists the exact sellable variant", async () => {
+  const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+  const shopify = await readFile(new URL("../lib/shopify/admin.ts", import.meta.url), "utf8");
+
+  // Claiming an existing channel row must not write null/empty external IDs.
+  const claimStart = publish.indexOf('from("channel_listings").upsert({');
+  assert.notEqual(claimStart, -1, "channel listing claim must use the unique channel/variant row");
+  const claimEnd = publish.indexOf('}, { onConflict: "channel,variant_id" })', claimStart);
+  assert.notEqual(claimEnd, -1, "channel listing claim must retain its conflict target");
+  const claim = publish.slice(claimStart, claimEnd);
+  assert.doesNotMatch(claim, /external_product_id|external_variant_id/);
+
+  // A successful sync must save both IDs and the channel-specific sellable key.
+  assert.match(publish, /const mappedExternalVariantId = channel === "base" ? externalProductId : externalVariantId/);
+  assert.match(publish, /external_product_id: externalProductId, external_variant_id: mappedExternalVariantId, external_sku: sku/);
+  assert.match(publish, /\.eq\("id", listing\.id\)/);
+
+  // BASE recovery must persist a recovered ID only when the current row is still empty.
+  assert.match(publish, /\.is\("external_product_id", null\)/);
+  assert.match(publish, /base_existing_item_id_recovery_race/);
+
+  // Shopify updates must resolve the existing variant by SKU and/or its stored ID,
+  // then update that exact variant instead of blindly selecting the first variant.
+  assert.match(shopify, /resolveShopifyVariantIdentity\([\s\S]*?input\.sku[\s\S]*?input\.variantId/);
+  assert.match(shopify, /variants: \[\{ id: variantId, price: input\.price\.toFixed\(2\)/);
+});
