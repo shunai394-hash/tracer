@@ -1,36 +1,31 @@
-# Fish Audio manual voice preview
+# TRACER Fish Audio Japanese voice picker
 
-This adds a separate, admin-triggered Fish Audio TTS preview. The existing ElevenLabs route and preview remain unchanged.
+This admin-only preview now lets an operator select a Japanese female voice from Fish Audio's public voice library before generating a short MP3. The existing ElevenLabs route and preview remain unchanged.
 
-## Vercel Production environment
+## Production environment
 
-Set these server-side variables:
+Set the server-side variable:
 
 - `FISH_AUDIO_API_KEY` — Fish Audio API key (Secret).
-- `FISH_AUDIO_REFERENCE_ID` — ID returned after creating the authorized voice model in Fish Audio (Secret/Config; do not put it in browser code).
-- `FISH_AUDIO_MODEL` — optional model header; defaults to `s2.1-pro-free`.
 
-The API key is never sent to the browser. Do not paste it into chat, source control, logs, or client-side settings.
+The API key is never sent to the browser. The preview no longer requires a fixed `FISH_AUDIO_REFERENCE_ID`; the operator selects a voice at runtime.
 
-## Voice model setup
+## Voice selection
 
-Create a private Fish Audio voice model using audio that the speaker or rights holder has authorized for voice cloning. Keep the model private. Use a clean, single-speaker Japanese recording and its matching transcript where the provider supports transcript input. Copy the returned model ID into `FISH_AUDIO_REFERENCE_ID`.
+Open `/ai-live-fish-audio-preview.html`, enter the TRACER admin token, and press **許諾済み日本語ボイスを読み込む**. The server queries Fish Audio's public model library with Japanese-language and licensed-only filters. The returned candidates are further restricted to public models whose language metadata includes Japanese and whose title, description, or tags explicitly indicate a female voice.
 
-The model creation step is separate from TTS generation. This repository does not upload or train on a voice sample automatically.
+Only the selected model ID and display metadata are returned to the browser. Before TTS, the server independently reloads the licensed Japanese list and rejects any ID not present in that list. Voice-list loading does not generate audio. The operator must press Generate for one TTS request.
 
-## Manual preview
+## Safety and limits
 
-Open `/ai-live-fish-audio-preview.html` while signed into the admin environment, enter the TRACER admin token, and press Generate once. The route:
-
-- requires TRACER admin-token or existing automation authentication;
-- accepts only a text field up to 1,200 characters;
-- has a 25-second provider timeout and a 12 MiB audio response limit;
-- makes one provider request, with no automatic retry;
-- does not log text, credentials, reference IDs, or audio;
-- returns audio only; it does not publish, post, update listings, or trigger commerce actions.
-
-If `FISH_AUDIO_REFERENCE_ID` is missing, the route returns a configuration error without contacting Fish Audio.
+- Admin-token or existing automation authentication is required for both voice listing and generation.
+- The API key stays server-side; no credentials or audio are logged.
+- Text is limited to 1,200 characters, audio to 12 MiB, and the TTS request times out after 25 seconds.
+- No automatic generation, retries, public posting, or commerce writes occur.
+- The library query uses Fish Audio's licensed-only filter; voice results are additionally checked for public visibility and Japanese language metadata.
+- Availability and licensing status are provider-controlled and can change. Confirm the voice's current usage terms in Fish Audio before commercial use.
+- This picker selects an existing licensed public voice; it does not clone a person's voice or create a custom model.
 
 ## Validation
 
-`npm run test:ai-live-fish-audio-preview` checks the route and preview page contract. The normal `prebuild` runs this check before the production build. A successful build does not prove that the Fish Audio account can access the selected model; that requires one deliberate manual preview after the voice model is configured.
+`npm run test:ai-live-fish-audio-preview` checks authentication, the licensed Japanese voice filter, server-side credential handling, explicit voice selection, and one-shot generation. A successful build does not prove the Fish Audio account has API access; one deliberate admin preview is still required.
