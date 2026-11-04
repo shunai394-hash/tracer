@@ -112,7 +112,7 @@ console.log(JSON.stringify({
   sampleFamilies: ready.slice(0, 27).map((plan) => ({
     productId: plan.productId, title: plan.productTitle, supplierProductId: plan.supplierProductId, axes: plan.axes,
     variations: plan.variations.map((variation) => ({
-      variantId: variation.variantId, label: variation.label, supplierVariantId: variation.supplierVariantId,
+      variantId: variation.variantId, label: variation.label, imageUrl: variation.imageUrl, supplierVariantId: variation.supplierVariantId,
       base: listingByVariant.get("base:" + variation.variantId) ?? null,
       shopify: listingByVariant.get("shopify:" + variation.variantId) ?? null,
     })),
