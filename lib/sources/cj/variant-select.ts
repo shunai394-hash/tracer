@@ -9,6 +9,8 @@ export type CJProductVariant = {
   productId: string;
   sku: string | null;
   nameEn: string | null;
+  /** Exact CJ image URL for this supplier variant; never inferred from its color label. */
+  variantImage: string | null;
   sellPrice: string | null;
   /** CJ's documented numeric variant barcode. */
   barcode: string | null;
