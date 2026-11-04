@@ -1380,7 +1380,7 @@ test("channel resync preserves existing external identities and persists the exa
   assert.doesNotMatch(claim, /external_product_id|external_variant_id/);
 
   // A successful sync must save both IDs and the channel-specific sellable key.
-  assert.match(publish, /const mappedExternalVariantId = channel === "base" ? externalProductId : externalVariantId/);
+  assert.match(publish, /const mappedExternalVariantId = channel === "base" \? externalProductId : externalVariantId/);
   assert.match(publish, /external_product_id: externalProductId, external_variant_id: mappedExternalVariantId, external_sku: sku/);
   assert.match(publish, /\.eq\("id", listing\.id\)/);
 
