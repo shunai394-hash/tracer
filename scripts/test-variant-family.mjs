@@ -274,6 +274,8 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(shopStore, /offerRaw\.variantImageUrl/);
   assert.match(shopStore, /imageComplete = variants.length > 1/);
   assert.match(variantPicker, /src=\{selected\.imageUrl \|\| listing\.imageUrl\}/);
+  assert.match(variantPicker, /choices\[0\]\.optionType/);
+  assert.match(shopStore, /variantOptionType = attributes\.color/);
   assert.match(variantPicker, /listingId=\{selected\.id\}/);
   assert.match(variantPicker, /variant=\$\{variantNumber\}/);
   assert.match(storefrontDisplay, /supplier-product:\$\{listing\.productId\}:\$\{supplierProductId\}/);
