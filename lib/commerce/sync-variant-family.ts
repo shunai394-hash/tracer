@@ -425,12 +425,14 @@ async function syncOneFamily(db: Db, channel: Channel, productId: string, candid
   }));
   const plan: Plan = { ...planned, variations: familyVariations };
   const sellableVariants = plan.variations.filter((variation) => variation.sellable);
-  if (channel === "shopify" && plan.axes.includes("色") && sellableVariants.length > 1 && sellableVariants.some((variation) => !variation.imageUrl)) {
-    await rememberBlocked(db, channel, productId, "shopify_variant_image_missing");
+  const distinctColorImages = new Set(sellableVariants.map((variation) => variation.imageUrl).filter(Boolean));
+  if (channel === "shopify" && plan.axes.includes("色") && sellableVariants.length > 1 &&
+      (sellableVariants.some((variation) => !variation.imageUrl) || distinctColorImages.size !== sellableVariants.length)) {
+    await rememberBlocked(db, channel, productId, "shopify_variant_image_missing_or_duplicate");
     return variantIds.filter(touched).map((variantId) => ({
       variantId,
       ok: false,
-      error: "variant_family_blocked:shopify_variant_image_missing",
+      error: "variant_family_blocked:shopify_variant_image_missing_or_duplicate",
     }));
   }
   // BASE's official item variation API exposes variation labels, identifiers and stock,
