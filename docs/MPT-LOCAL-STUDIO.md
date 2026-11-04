@@ -5,7 +5,8 @@ TRACER本体の24時間AIライブ販売機能とは独立した、Windows向け
 ## できること
 
 - 日本語台本を使ったEdge TTSナレーション（APIキー不要）
-- アップロードした動画・画像の順番どおりの編集
+- アップロードした動画・画像の順番どおりの編集（ローカル素材モード）
+- Pexelsの無料ストック映像を検索キーワード順に取得して編集（Pexelsモード）
 - 9:16 / 16:9 / 1:1 のMP4出力
 - 日本語字幕、手持ちBGM、画像のズーム演出
 - 完成MP4のプレビューと保存
@@ -14,12 +15,14 @@ TRACER本体の24時間AIライブ販売機能とは独立した、Windows向け
 ## この版では行わないこと
 
 - 文章から新しい動画クリップを生成すること
-- Pexels / Pixabay / Coverr などのオンライン素材検索
+- Pixabay / Coverr などのオンライン素材検索
 - Seedance / MiniMax / WaveSpeed / OFox / MuAPI 等の外部動画生成API
 - 有料音楽・効果音APIの呼び出し
 - TikTok / Instagram / YouTubeへの自動投稿
 
-この版の「無料」は、外部の動画生成APIを呼ばず、ユーザーが用意した映像・画像をローカル編集する意味です。台本だけからAI映像を生成するには、別途ローカルで動かせる動画生成モデルと、それを実行できるGPUまたは計算環境が必要です。MoneyPrinterTurbo本体は動画生成モデルそのものではありません。
+Pexelsモードは、無料のストック映像を検索して台本に合わせて編集します。文章から新しい映像を生成する機能ではありません。Pexelsモードには既存のPexels APIキーが必要です。キーはチャットに貼らず、ローカル画面へ入力してください。キーはこのPCの専用 `config.toml` に保存されます。Pexelsの素材・APIは無料ですが、デフォルトで1時間200リクエスト、月20,000リクエストの制限があります。Pexelsと撮影者のクレジット表示も確認してください。
+
+手持ち素材モードは外部素材APIを使いません。どちらのモードも、台本だけからAI映像を生成するものではありません。新規のAI映像クリップには別の動画生成モデルと、それを実行できるGPUまたは計算環境が必要です。MoneyPrinterTurbo本体は動画生成モデルそのものではありません。
 
 Edge TTSはAPIキー不要ですが、音声を作るときはインターネット接続が必要です。完全オフラインではありません。
 
@@ -44,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-mpt-local-studio.ps1 -P
 
 ## 素材と完成ファイル
 
-映像素材はMP4 / MOV / AVI / MKV / WEBM、画像素材はJPG / PNG / BMP / WEBPに対応します。BGMはMP3 / WAV / M4A / AAC / FLAC / OGGです。
+ローカル素材モードはMP4 / MOV / AVI / MKV / WEBM、画像はJPG / PNG / BMP / WEBPに対応します。Pexelsモードは1〜12個のシーン検索キーワードを受け取り、順番にストック映像を検索します。BGMはMP3 / WAV / M4A / AAC / FLAC / OGGです。
 
 - 素材: 1〜8ファイル、1ファイル60MB以下、アップロード合計180MB以下
 - 台本: 12,000文字以下
@@ -66,6 +69,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-mpt-local-studio.ps1 -P
 - Pythonが見つからない: Python 3.11以上をインストールして、PowerShellを開き直します。
 - CLIセルフチェック失敗: インストール先の \`.venv\` を削除する前に、エラー全文を確認します。既存のMPTデータフォルダは削除しないでください。
 - 素材が小さすぎる: MPTの素材処理に通る解像度の動画・画像に差し替えます。
+- Pexels検索に失敗する: 保存済みAPIキーの有効性とPexelsの利用制限を確認します。キーワードは英語の短い場面描写も試してください。
 - 音声が生成できない: Edge TTSへのネットワーク接続を確認します。APIキーは不要です。
 - MP4ができない: ローカル制作画面のエラーと \`%LOCALAPPDATA%\TRACER\MPTStudioData\studio\logs\` の該当タスクログを確認します。
 
