@@ -33,20 +33,43 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
     <h1>MoneyPrinterTurbo 動画スタジオ</h1>
     <span class="muted">ローカル制作 / MPT 1.3.9</span>
   </div>
-  <p>台本と映像素材をまとめて、TikTok・Reels・Shorts向けのMP4をPC内で制作します。</p>
+  <p>台本、ナレーション、映像素材を組み合わせ、TikTok・Reels・Shorts向けのMP4を制作します。</p>
   <div class="notice">
-    <strong>このモードはローカル素材編集です。</strong><br>
-    自分で用意した動画・画像を台本に沿ってつなぎ、ナレーション、字幕、BGMを付けます。文章だけから新しい映像を生成するAIモデルではありません。Pexelsなどの素材API、外部有料動画生成API、自動SNS投稿は呼び出しません。
+    <strong>有料の動画生成APIは使用しません。</strong><br>
+    「手持ち素材」は自分の動画・画像を編集します。「Pexels無料素材」はキーワードに合う既存のストック映像を集めて編集します。どちらも文章から新しいAI映像クリップを生成する機能ではありません。
   </div>
 
   <form id="form" class="panel">
     <h2>動画の内容</h2>
     <label for="title">動画タイトル</label>
-    <input id="title" name="title" maxlength="160" required placeholder="例：春の新生活、少しだけ暮らしが変わる話">
+    <input id="title" name="title" maxlength="160" required placeholder="例：雨の夜、届かなかったメッセージ">
 
     <label for="script">ナレーション台本</label>
     <textarea id="script" name="script" maxlength="12000" required placeholder="完成した台本を入力してください。日本語で最大12,000文字。"></textarea>
-    <p class="small">台本は音声・字幕の元になります。複数人物の演技、口パク、文章からの新規映像生成はこの段階では行いません。</p>
+    <p class="small">台本は音声・字幕の元になります。複数人物の演技や口パクを自動生成する機能は含みません。</p>
+
+    <label for="source">映像素材の取得方法</label>
+    <select id="source" name="source">
+      <option value="local">手持ち素材を使う</option>
+      <option value="pexels">Pexelsの無料ストック映像を使う</option>
+    </select>
+
+    <section id="local-fields">
+      <label for="assets">映像・画像素材（1〜8ファイル）</label>
+      <input id="assets" name="assets" type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.jpg,.jpeg,.png,.bmp,.webp" multiple>
+      <p class="small">選んだ順番で編集します。動画はMP4 / MOV / AVI / MKV / WEBM、画像はJPG / PNG / BMP / WEBP。</p>
+    </section>
+
+    <section id="pexels-fields" class="hidden">
+      <label for="terms">シーン検索キーワード（1〜12個）</label>
+      <textarea id="terms" name="terms" maxlength="1200" style="min-height:110px" placeholder="lonely man at rainy train station&#10;Japanese apartment at night&#10;woman looking at smartphone"></textarea>
+      <p class="small">1行に1シーン、またはカンマ区切りで入力。映像検索は英語キーワードの方が見つけやすい場合があります。台本の展開順に並べてください。</p>
+
+      <label for="pexels_key">Pexels APIキー（初回のみ）</label>
+      <input id="pexels_key" name="pexels_key" type="password" autocomplete="off" placeholder="既存のPexels APIキー。保存済みなら空欄でOK">
+      <p class="small" id="pexels-key-status">Pexels APIキーの設定状態を確認中…</p>
+      <p class="small">Pexels映像は無料ですが、新しい動画をAI生成するものではありません。Pexelsの利用条件に従い、作品説明などで素材提供元を明示してください。 <a href="https://www.pexels.com/" target="_blank" rel="noopener noreferrer">Pexels</a> · <a href="https://www.pexels.com/api/documentation/" target="_blank" rel="noopener noreferrer">API利用条件</a></p>
+    </section>
 
     <div class="grid">
       <div>
@@ -73,13 +96,10 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
         </select>
       </div>
       <div>
-        <label for="assets">映像・画像素材（1〜8ファイル）</label>
-        <input id="assets" name="assets" type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.jpg,.jpeg,.png,.bmp,.webp" multiple required>
+        <label for="bgm">BGM（任意・自分で用意した音源）</label>
+        <input id="bgm" name="bgm" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg">
       </div>
     </div>
-
-    <label for="bgm">BGM（任意・自分で用意した音源）</label>
-    <input id="bgm" name="bgm" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg">
     <label class="check"><input type="checkbox" id="subtitles" name="subtitles" checked> 日本語字幕を付ける</label>
 
     <div class="actions">
@@ -95,8 +115,8 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
 
   <section class="panel">
     <h2>制作時の注意</h2>
-    <p class="muted">素材は選択した順番で編集されます。画像はズーム演出で動画化されます。ナレーションのEdge TTSはAPIキー不要ですが、音声合成時にはインターネット接続が必要です。完全オフラインではありません。</p>
-    <p class="muted">PC負荷を抑えるため同時制作は1本、FFmpegは1スレッドです。完成動画はPC内に保存され、SNSへ自動投稿されません。</p>
+    <p class="muted">ナレーションのEdge TTSはAPIキー不要ですが、音声合成時にはインターネット接続が必要です。完全オフラインではありません。PC負荷を抑えるため同時制作は1本、FFmpegは1スレッド。SNSへの自動投稿は行いません。</p>
+    <p class="muted">Pexels APIは無料プランでも利用回数制限があります。保存済みの既存APIキーを使ってください。新規キー発行が停止中の場合は、手持ち素材モードを利用してください。</p>
   </section>
 </main>
 <script>
@@ -108,7 +128,14 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
   const result = document.getElementById("result");
   const player = document.getElementById("player");
   const download = document.getElementById("download");
+  const source = document.getElementById("source");
+  const localFields = document.getElementById("local-fields");
+  const pexelsFields = document.getElementById("pexels-fields");
   const assetInput = document.getElementById("assets");
+  const termsInput = document.getElementById("terms");
+  const pexelsKey = document.getElementById("pexels_key");
+  const pexelsKeyStatus = document.getElementById("pexels-key-status");
+  let pexelsConfigured = false;
 
   function status(message, isError = false) {
     statusBox.textContent = message;
@@ -116,14 +143,28 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
     if (isError) statusBox.classList.add("error");
   }
 
+  function updateSourceMode() {
+    const usePexels = source.value === "pexels";
+    localFields.classList.toggle("hidden", usePexels);
+    pexelsFields.classList.toggle("hidden", !usePexels);
+    assetInput.required = !usePexels;
+    termsInput.required = usePexels;
+  }
+  source.addEventListener("change", updateSourceMode);
+
   async function checkHealth() {
     try {
       const response = await fetch("/api/health", { cache: "no-store" });
       if (!response.ok) throw new Error();
       const data = await response.json();
-      health.textContent = data.ready ? "接続済み・ローカル素材のみ" : "未接続";
+      pexelsConfigured = data.pexels_configured === true;
+      health.textContent = data.ready ? "接続済み・外部有料動画APIなし" : "未接続";
+      pexelsKeyStatus.textContent = pexelsConfigured
+        ? "Pexels APIキー：このPCの専用設定に保存済み"
+        : "Pexels APIキー：未設定。既存キーを上の欄に入力してください。";
     } catch {
       health.textContent = "エンジンに接続できません";
+      pexelsKeyStatus.textContent = "Pexels APIキーの状態を確認できません。";
     }
   }
 
@@ -146,34 +187,47 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
   form.addEventListener("submit", async event => {
     event.preventDefault();
     if (button.disabled || !form.reportValidity()) return;
+    const usePexels = source.value === "pexels";
     const assets = [...assetInput.files];
-    if (assets.length < 1 || assets.length > 8) {
+    if (!usePexels && (assets.length < 1 || assets.length > 8)) {
       status("映像・画像素材は1〜8ファイル選択してください。", true);
       return;
     }
-    const total = assets.reduce((sum, file) => sum + file.size, 0) + (document.getElementById("bgm").files[0]?.size || 0);
-    if (total > 180 * 1024 * 1024 || assets.some(file => file.size > 60 * 1024 * 1024)) {
+    const bgm = document.getElementById("bgm").files[0];
+    const total = (usePexels ? 0 : assets.reduce((sum, file) => sum + file.size, 0)) + (bgm?.size || 0);
+    if (total > 180 * 1024 * 1024 || (!usePexels && assets.some(file => file.size > 60 * 1024 * 1024)) || (bgm && bgm.size > 60 * 1024 * 1024)) {
       status("素材合計180MB以下、1ファイル60MB以下にしてください。", true);
+      return;
+    }
+    if (usePexels && !pexelsConfigured && !pexelsKey.value.trim()) {
+      status("Pexels APIキーを入力してください。キーはチャットに貼らず、このPCの画面に入力します。", true);
       return;
     }
 
     button.disabled = true;
     result.classList.add("hidden");
-    status("素材をローカル制作エンジンへ送信しています。");
+    status(usePexels ? "検索キーワードと台本をMoneyPrinterTurboへ送信しています。" : "素材をローカル制作エンジンへ送信しています。");
     try {
       const formData = new FormData();
       for (const key of ["title", "script", "voice", "aspect", "clip_duration"]) {
         formData.append(key, document.getElementById(key).value);
       }
+      formData.append("source", source.value);
+      formData.append("terms", termsInput.value);
+      if (usePexels && pexelsKey.value.trim()) formData.append("pexels_key", pexelsKey.value.trim());
       formData.append("subtitles", document.getElementById("subtitles").checked ? "true" : "false");
-      assets.forEach(file => formData.append("assets", file, file.name));
-      const bgm = document.getElementById("bgm").files[0];
+      if (!usePexels) assets.forEach(file => formData.append("assets", file, file.name));
       if (bgm) formData.append("bgm", bgm, bgm.name);
 
       const response = await fetch("/api/tasks", { method: "POST", body: formData, cache: "no-store" });
       const submitted = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(submitted.error || "制作を開始できませんでした。");
-      status("素材を受け取りました。MoneyPrinterTurboで編集を開始します。");
+      if (usePexels && pexelsKey.value.trim()) {
+        pexelsConfigured = true;
+        pexelsKeyStatus.textContent = "Pexels APIキー：このPCの専用設定に保存済み";
+      }
+      pexelsKey.value = "";
+      status(usePexels ? "Pexelsから無料ストック映像を取得し、編集を開始します。" : "素材を受け取り、編集を開始します。");
       const completed = await waitForTask(submitted.task_id);
       const videoUrl = completed.video_url;
       player.src = videoUrl;
@@ -184,10 +238,13 @@ a{color:#b9d9ff}.hidden{display:none!important}.small{font-size:.82rem;color:#9e
     } catch (error) {
       status(error instanceof Error ? error.message : "動画制作に失敗しました。", true);
     } finally {
+      pexelsKey.value = "";
       button.disabled = false;
+      checkHealth();
     }
   });
 
+  updateSourceMode();
   checkHealth();
 })();
 </script>
