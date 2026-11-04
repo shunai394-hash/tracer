@@ -10,6 +10,9 @@ assert.match(webhook, /checkout\.session\.expired/, "expired Checkout Sessions m
 assert.match(webhook, /checkout\.session\.async_payment_failed/, "terminal async payment failures must release reserved stock");
 assert.match(webhook, /checkout\.session\.async_payment_succeeded/, "delayed successful payments must enter the paid fulfillment path");
 assert.match(webhook, /release_manual_inventory_for_order/, "webhook must use the order-level idempotent release RPC");
+assert.match(webhook, /processed_at\.lt\./, "duplicate webhook deliveries must acquire an expired processing lease atomically");
+assert.match(webhook, /10 \* 60 \* 1000/, "failed webhook attempts must become retryable after the processing lease expires");
+assert.match(webhook, /\.or\(\`processed_at\.is\.null,processed_at\.lt\.\$\{leaseExpiredAt\}\`\)/, "existing unprocessed events must use a conditional lease claim");
 assert.match(webhook, /\.eq\("payment_status", "pending"\)[\s\S]*?\.eq\("order_status", "pending_payment"\)[\s\S]*?\.is\("manual_inventory_released_at", null\)/, "payment success must atomically compete with expiry release");
 const paymentFailureStart = webhook.indexOf("async function handlePaymentFailed(");
 const paymentFailureEnd = webhook.indexOf("\nasync function handleCheckoutSessionEnded", paymentFailureStart);
