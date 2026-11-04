@@ -247,6 +247,10 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   const baseOrders = readFileSync("app/api/cron/commerce-base-orders/route.ts", "utf8");
   const paid = readFileSync("app/api/webhooks/shopify/orders-paid/route.ts", "utf8");
   const procurement = readFileSync("app/api/cron/commerce-procurement/route.ts", "utf8");
+  const shopStore = readFileSync("lib/shop/store.ts", "utf8");
+  const variantPicker = readFileSync("components/product-variant-selector.tsx", "utf8");
+  const storefrontDisplay = readFileSync("lib/shop/storefront-display.ts", "utf8");
+  const productPage = readFileSync("app/shop/[slug]/page.tsx", "utf8");
   assert.match(sync, /channel_listing_identity_backup/);
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
@@ -260,4 +264,11 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(paid, /tracer_sku_mapping_missing/);
   assert.match(procurement, /offer\.supplier_variant_id !== row\.supplier_variant_id/);
   assert.match(procurement, /liveMarginRate < 0\.5/);
+  assert.match(shopStore, /offerRaw\.variantImageUrl/);
+  assert.match(shopStore, /imageComplete = variants.length > 1/);
+  assert.match(variantPicker, /src=\{selected\.imageUrl \|\| listing\.imageUrl\}/);
+  assert.match(variantPicker, /listingId=\{selected\.id\}/);
+  assert.match(variantPicker, /variant=\$\{variantNumber\}/);
+  assert.match(storefrontDisplay, /supplier-product:\$\{listing\.productId\}:\$\{supplierProductId\}/);
+  assert.match(productPage, /ProductVariantSelector/);
 });
