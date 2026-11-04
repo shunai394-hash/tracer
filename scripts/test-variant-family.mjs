@@ -274,6 +274,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(procurement, /liveMarginRate < 0\.5/);
   assert.match(shopStore, /offerRaw\.variantImageUrl/);
   assert.match(liveAudit, /imageUrl: String\(attributes\.variantImageUrl.*raw\.variantImageUrl/);
+  assert.match(liveAudit, /label: variation\.label, imageUrl: variation\.imageUrl/);
   assert.match(shopStore, /new Set\(imageUrls\).size === variants.length/);
   assert.match(variantPicker, /src=\{selected\.imageUrl \|\| listing\.imageUrl\}/);
   assert.match(variantPicker, /choices\[0\]\.optionType/);
