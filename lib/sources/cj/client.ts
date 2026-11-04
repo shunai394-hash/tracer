@@ -498,6 +498,7 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
     productId: parentProductId,
     sku: row.variantSku?.trim() || row.sku?.trim() || null,
     nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
+    variantImage: typeof row.variantImage === "string" && /^https?:\/\//i.test(row.variantImage.trim()) ? row.variantImage.trim() : null,
     sellPrice:
       row.variantSellPrice === undefined || row.variantSellPrice === null
         ? null
@@ -1148,6 +1149,7 @@ type CJVariantRow = {
   sku?: string;
   variantNameEn?: string;
   variantKey?: string;
+  variantImage?: string | null;
   variantSellPrice?: string | number;
   barcode?: string | number;
   variantBarcode?: string | number;
@@ -1191,6 +1193,7 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
     productId: row.pid?.trim() || row.productId?.trim() || pid,
     sku: row.variantSku?.trim() || row.sku?.trim() || null,
     nameEn: row.variantNameEn?.trim() || row.variantKey?.trim() || null,
+    variantImage: typeof row.variantImage === "string" && /^https?:\/\//i.test(row.variantImage.trim()) ? row.variantImage.trim() : null,
     sellPrice:
       row.variantSellPrice === undefined || row.variantSellPrice === null
         ? null
