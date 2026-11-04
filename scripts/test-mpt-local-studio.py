@@ -18,7 +18,9 @@ class LocalStudioContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             exe = root / ".venv" / "Scripts" / "mpt.exe"
-            files = [root / "asset-01.mp4", root / "asset-02.jpg"]
+            local_dir = root / "storage" / "local_videos" / "12345678-1234-1234-1234-123456789012"
+            local_dir.mkdir(parents=True)
+            files = [local_dir / "asset-01.mp4", local_dir / "asset-02.jpg"]
             command = mpt.create_cli_command(
                 exe,
                 "12345678-1234-1234-1234-123456789012",
@@ -36,6 +38,9 @@ class LocalStudioContractTests(unittest.TestCase):
         self.assertIn("--video-source", command)
         self.assertEqual(command[command.index("--video-source") + 1], "local")
         self.assertIn("--video-materials", command)
+        material_argument = command[command.index("--video-materials") + 1]
+        self.assertTrue(all(str(path) in material_argument for path in files))
+        self.assertTrue(all(path.is_relative_to(local_dir) for path in files))
         self.assertEqual(command[command.index("--bgm-type") + 1], "none")
         self.assertIn("--voice-name", command)
         self.assertIn("ja-JP-NanamiNeural", command)
@@ -44,6 +49,9 @@ class LocalStudioContractTests(unittest.TestCase):
         self.assertNotIn("--confirm-metaso-minimax-charge", command)
         self.assertNotIn("--confirm-wavespeed-charge", command)
         self.assertNotIn("--upload-post-enabled", command)
+        worker_source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('DATA_DIR / "storage" / "local_videos" / task_id', worker_source)
+        self.assertIn("cleanup_task_inputs(task)", worker_source)
 
     def test_private_mpt_config_is_created_from_the_isolated_venv(self):
         with tempfile.TemporaryDirectory() as temp:
