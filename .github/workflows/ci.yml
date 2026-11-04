@@ -50,7 +50,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql postgresql-client
-          sudo pg_ctlcluster 16 main start
+          read -r PG_VERSION PG_CLUSTER _ <<< "$(pg_lsclusters --no-header | head -n 1)"
+          if [ -z "$PG_VERSION" ] || [ -z "$PG_CLUSTER" ]; then
+            echo "PostgreSQL cluster was not created by the package install" >&2
+            exit 1
+          fi
+          sudo pg_ctlcluster "$PG_VERSION" "$PG_CLUSTER" start
           sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'ci-postgres-password';"
           sudo -u postgres createdb tracer_test
           sudo -u postgres createdb tracer_ingestion_test
