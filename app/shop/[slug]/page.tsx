@@ -7,7 +7,6 @@ import { getShopifyConfig } from "@/lib/config/env";
 import { getShopListingBySlug, listPublishedShopListings, recordShopFunnelEvent, type ShopListing } from "@/lib/shop/store";
 import { ProductCard } from "@/components/product-card";
 import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct, variantFamily } from "@/lib/shop/storefront-display";
-import { formatMoney } from "@/lib/intelligence/format-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -96,10 +95,6 @@ export default async function ShopProductPage({
 
   const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
   const shopifyDomain = (rawShopifyDomain || "ieufrg-tb.myshopify.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const shopifyProductUrl = listing.shopifySyncStatus === "synced" && listing.shopifyHandle && shopifyDomain
-    ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
-    : null;
-
   const storefrontBaseUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
   const productUrl = new URL(`/shop/${encodeURIComponent(listing.slug)}`, storefrontBaseUrl).toString();
   const productJsonLd = {
