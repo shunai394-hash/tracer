@@ -424,6 +424,15 @@ async function syncOneFamily(db: Db, channel: Channel, productId: string, candid
     withheldReason: variation.sellingPrice > 0 ? variation.withheldReason : "price_unavailable",
   }));
   const plan: Plan = { ...planned, variations: familyVariations };
+  const sellableVariants = plan.variations.filter((variation) => variation.sellable);
+  if (channel === "shopify" && sellableVariants.length > 1 && sellableVariants.some((variation) => !variation.imageUrl)) {
+    await rememberBlocked(db, channel, productId, "shopify_variant_image_missing");
+    return variantIds.filter(touched).map((variantId) => ({
+      variantId,
+      ok: false,
+      error: "variant_family_blocked:shopify_variant_image_missing",
+    }));
+  }
   // BASE's official item variation API exposes variation labels, identifiers and stock,
   // but no per-variation image association. Do not sell multiple colors there until
   // BASE can display the selected color's matching image.
