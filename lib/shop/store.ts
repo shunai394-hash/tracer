@@ -84,6 +84,7 @@ export type ShopListing = {
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
   variantLabel?: string | null;
+  variantImageUrl?: string | null;
   variants?: ShopVariantOption[];
 };
 
@@ -115,6 +116,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     canonicalCommerce: false,
     manualInventory: row.manual_inventory === true,
     variantLabel: typeof row.variant_label === "string" ? row.variant_label : null,
+    variantImageUrl: firstImageUrl(row.variant_image_url),
   };
 }
 
@@ -313,8 +315,8 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     id: candidate.id,
     slug: candidate.slug,
     title: candidate.title,
-    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] || "標準",
-    imageUrl: candidate.imageUrl,
+    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] || "標準",
+    imageUrl: candidate.variantImageUrl ?? null,
     sellingPrice: candidate.sellingPrice,
     currency: candidate.currency,
     inventory: candidate.inventory,
@@ -322,7 +324,10 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     shopifyVariantId: candidate.shopifyVariantId,
     shopifyHandle: candidate.shopifyHandle,
   }));
-  return { ...listing, variants: variants.length > 1 ? variants : [] };
+  // Only expose a color picker when every choice has its own verified image.
+  // A shared parent image is not evidence that it depicts the selected color.
+  const imageComplete = variants.length > 1 && variants.every((variant) => Boolean(variant.imageUrl));
+  return { ...listing, variants: imageComplete ? variants : [] };
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
@@ -523,6 +528,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       title,
       description,
       imageUrl,
+      variantImageUrl,
       variantLabel,
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
