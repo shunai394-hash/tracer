@@ -79,7 +79,9 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
 
   const activeCategory = STOREFRONT_CATEGORIES.find((category) => category.slug === cat) ?? null;
   const counts = new Map<string, number>();
-  for (const listing of listings) counts.set(categoryOf(listing.title), (counts.get(categoryOf(listing.title)) ?? 0) + 1);
+  for (const listing of pickOnePerSupplierProduct(listings, 1800)) {
+    counts.set(categoryOf(listing.title), (counts.get(categoryOf(listing.title)) ?? 0) + 1);
+  }
   const needle = q.normalize("NFKC").toLocaleLowerCase();
   let shown = listings
     .filter((listing) => !activeCategory || categoryOf(listing.title) === activeCategory.slug)
