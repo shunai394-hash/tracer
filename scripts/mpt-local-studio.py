@@ -108,7 +108,7 @@ def save_pexels_api_key(api_key: str) -> None:
         keys.append(key)
     replacement = "pexels_api_keys = " + json.dumps(keys, ensure_ascii=True)
     updated, count = re.subn(
-        r"(?m)^pexels_api_keys\\s*=\\s*\\[[^\\r\\n]*\\]\\s*$",
+        r"(?m)^pexels_api_keys\s*=\s*\[[^\r\n]*\]\s*$",
         lambda _: replacement,
         raw,
         count=1,
@@ -124,8 +124,8 @@ def safe_child_environment(data_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["MPT_HOME"] = str(data_dir)
     env["PYTHONUTF8"] = "1"
-    # This workflow uses --video-source local and Edge TTS only. Do not let
-    # unrelated shell credentials activate paid or remote providers.
+    # Pexels is enabled only through the locally stored config.toml key.
+    # Do not inherit arbitrary shell credentials that could activate paid providers.
     blocked_fragments = (
         "PEXELS", "PIXABAY", "COVERR", "WAVESPEED", "SEEDANCE",
         "VOLCENGINE", "OFOX", "METASO", "MUAPI", "INFISTAR",
@@ -496,7 +496,7 @@ class Handler(BaseHTTPRequestHandler):
                 subtitles = fields.get("subtitles", "true").lower() == "true"
                 video_source = fields.get("source", "local").strip()
                 video_terms = [
-                    term.strip() for term in re.split(r"[,，、\\n]", fields.get("terms", ""))
+                    term.strip() for term in re.split(r"[,，、\r\n]", fields.get("terms", ""))
                     if term.strip()
                 ]
 
