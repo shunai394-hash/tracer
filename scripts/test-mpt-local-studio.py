@@ -20,6 +20,7 @@ class LocalStudioContractTests(unittest.TestCase):
             exe = root / ".venv" / "Scripts" / "mpt.exe"
             files = [root / "asset-01.mp4", root / "asset-02.jpg"]
             command = mpt.create_cli_command(
+                exe,
                 "12345678-1234-1234-1234-123456789012",
                 "Japanese short drama",
                 "これはテスト台本です。",
