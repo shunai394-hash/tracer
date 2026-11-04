@@ -72,6 +72,8 @@ for (const row of variants) {
     sku: String(row.sku ?? ""),
     title: String(row.title_ja ?? ""),
     supplierVariantName: String(attributes.supplierVariantName ?? ""),
+    // Use the exact CJ variant image persisted by the importer; never substitute a sibling color image.
+    imageUrl: String(attributes.variantImageUrl ?? attributes.variant_image_url ?? raw.variantImageUrl ?? raw.variant_image_url ?? "") || null,
     sellingPrice: Number(price.selling_price) || 0,
     marginRate: Number(price.margin_rate),
     inventory: Number(offer.inventory) || 0,
