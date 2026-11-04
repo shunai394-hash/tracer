@@ -1350,3 +1350,19 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
   assert.match(route, /syncCommerceListings\(channel, targets\.length, false, targets\)/);
   assert.doesNotMatch(route, /\.delete\(/);
 });
+
+
+test("CJ variant image URLs are preserved by exact VID and used by the TRACER storefront", async () => {
+  const cjTypes = await readFile(new URL("../lib/sources/cj/variant-select.ts", import.meta.url), "utf8");
+  const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  assert.match(cjTypes, /variantImage\?: string \| null/);
+  assert.match(cjClient, /variantImage: typeof row\.variantImage === "string"/);
+  assert.match(cjClient, /const row = rows\.find\(\(item\) => \(item\.vid\?\.trim\(\) \|\| item\.variantId\?\.trim\(\)\) === normalizedVid\)/);
+  assert.match(core, /variantImageUrl \? \{ variantImageUrl: input\.variantImageUrl \} : \{\}/);
+  assert.match(importer, /variantImageUrl: exactVariant\.variantImage/);
+  assert.match(store, /attributes\.variantImageUrl/);
+  assert.match(store, /const imageUrl = variantImageUrl \?\? \(typeof product\.image_url === "string" \? product\.image_url : null\)/);
+});
