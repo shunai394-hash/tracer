@@ -6,7 +6,7 @@ on:
       - "scripts/mpt-local-studio.py"
       - "scripts/setup-mpt-local-studio.ps1"
       - "scripts/test-mpt-local-studio.py"
-      - "public/mpt-local-studio.html"
+      - "scripts/mpt-local-studio.html"
       - ".github/workflows/mpt-local-studio-contract.yml"
   push:
     branches:
@@ -15,7 +15,7 @@ on:
       - "scripts/mpt-local-studio.py"
       - "scripts/setup-mpt-local-studio.ps1"
       - "scripts/test-mpt-local-studio.py"
-      - "public/mpt-local-studio.html"
+      - "scripts/mpt-local-studio.html"
 
 permissions:
   contents: read
