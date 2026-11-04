@@ -329,7 +329,10 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
   }));
   // Only expose a color picker when every choice has its own verified image.
   // A shared parent image is not evidence that it depicts the selected color.
-  const imageComplete = variants.length > 1 && variants.every((variant) => Boolean(variant.imageUrl));
+  const imageUrls = variants.map((variant) => variant.imageUrl).filter((url): url is string => Boolean(url));
+  const imageComplete = variants.length > 1 &&
+    imageUrls.length === variants.length &&
+    new Set(imageUrls).size === variants.length;
   return { ...listing, variants: imageComplete ? variants : [] };
 }
 
