@@ -53,7 +53,7 @@ export async function upsertSupplierOffer(input: {
   sourceKey: string; titleJa: string; descriptionJa?: string; brand?: string | null;
   category?: string | null; imageUrl?: string | null; sourceUrl?: string | null;
   sourceVariantKey: string; variantTitleJa?: string; sku?: string | null;
-  attributes?: Record<string, unknown>; metadata?: Record<string, unknown>; offer: OfferInput;
+  attributes?: Record<string, unknown>; variantImageUrl?: string | null; metadata?: Record<string, unknown>; offer: OfferInput;
 }) {
   const sourceKey = required(input.sourceKey, "source_key");
   const supplierCode = required(input.offer.supplierCode, "supplier_code").toLowerCase();
@@ -78,7 +78,8 @@ export async function upsertSupplierOffer(input: {
   if (productError || !product) throw new Error("product_upsert_failed:" + (productError?.message ?? "no_row"));
   const { data: variant, error: variantError } = await supabase.from("commerce_variants").upsert({
     product_id: product.id, source_variant_key: required(input.sourceVariantKey, "source_variant_key"),
-    title_ja: input.variantTitleJa ?? "標準", sku: input.sku ?? null, attributes: input.attributes ?? {},
+    title_ja: input.variantTitleJa ?? "標準", sku: input.sku ?? null,
+    attributes: { ...(input.attributes ?? {}), ...(input.variantImageUrl ? { variantImageUrl: input.variantImageUrl } : {}) },
     updated_at: new Date().toISOString()
   }, { onConflict: "product_id,source_variant_key" }).select("id").single();
   if (variantError || !variant) throw new Error("variant_upsert_failed:" + (variantError?.message ?? "no_row"));

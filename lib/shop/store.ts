@@ -354,7 +354,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       { data: batchPrices, error: priceError },
     ] = await Promise.all([
       supabase.from("commerce_variants")
-        .select("id,product_id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active,metadata)")
+        .select("id,product_id,source_variant_key,title_ja,sku,attributes,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,category,active,metadata)")
         .in("id", batch)
         .eq("commerce_products.active", true),
       supabase.from("supplier_offers")
@@ -420,7 +420,11 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const manualDescription = typeof metadata.manualDescriptionJa === "string" && metadata.manualDescriptionJa.trim() ? metadata.manualDescriptionJa.trim() : null;
     const rawDescription = manualDescription ?? (typeof product.description_ja === "string" ? product.description_ja : null);
     const description = rawDescription ? freeShippingText(rawDescription) : null;
-    const imageUrl = typeof product.image_url === "string" ? product.image_url : null;
+    const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
+      ? variant.attributes as Record<string, unknown> : {};
+    const variantImageUrl = typeof attributes.variantImageUrl === "string" && /^https?:\/\//i.test(attributes.variantImageUrl)
+      ? attributes.variantImageUrl : null;
+    const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
