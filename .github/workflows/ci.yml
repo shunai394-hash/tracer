@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/chrome-extension-ec-pulse
+      - fix/manual-inventory-release-on-stripe-expiry
   pull_request:
 
 jobs:
