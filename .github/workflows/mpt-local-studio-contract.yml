@@ -1,0 +1,48 @@
+name: MoneyPrinterTurbo local studio contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/mpt-local-studio.py"
+      - "scripts/setup-mpt-local-studio.ps1"
+      - "scripts/test-mpt-local-studio.py"
+      - "public/mpt-local-studio.html"
+      - ".github/workflows/mpt-local-studio-contract.yml"
+  push:
+    branches:
+      - "feat/mpt-local-studio-complete"
+    paths:
+      - "scripts/mpt-local-studio.py"
+      - "scripts/setup-mpt-local-studio.ps1"
+      - "scripts/test-mpt-local-studio.py"
+      - "public/mpt-local-studio.html"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile worker and run local-only contract tests
+        run: |
+          python -m py_compile scripts/mpt-local-studio.py
+          python scripts/test-mpt-local-studio.py
+      - name: Validate PowerShell setup script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "scripts/setup-mpt-local-studio.ps1",
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
