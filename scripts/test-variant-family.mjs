@@ -254,6 +254,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   const storefrontDisplay = readFileSync("lib/shop/storefront-display.ts", "utf8");
   const productPage = readFileSync("app/shop/[slug]/page.tsx", "utf8");
   const productImage = readFileSync("components/product-image.tsx", "utf8");
+  const liveAudit = readFileSync("scripts/audit-variant-families-live.mjs", "utf8");
   assert.match(sync, /channel_listing_identity_backup/);
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
@@ -272,6 +273,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(procurement, /offer\.supplier_variant_id !== row\.supplier_variant_id/);
   assert.match(procurement, /liveMarginRate < 0\.5/);
   assert.match(shopStore, /offerRaw\.variantImageUrl/);
+  assert.match(liveAudit, /imageUrl: String\(attributes\.variantImageUrl.*raw\.variantImageUrl/);
   assert.match(shopStore, /new Set\(imageUrls\).size === variants.length/);
   assert.match(variantPicker, /src=\{selected\.imageUrl \|\| listing\.imageUrl\}/);
   assert.match(variantPicker, /choices\[0\]\.optionType/);
