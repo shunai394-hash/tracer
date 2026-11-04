@@ -122,6 +122,19 @@ class LocalStudioContractTests(unittest.TestCase):
                 else:
                     mpt.DATA_DIR = original
 
+    def test_cloud_workflow_uses_only_free_pexels_and_never_paid_video_apis(self):
+        workflow = (SCRIPT.parent.parent / ".github" / "workflows" / "mpt-cloud-video.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("secrets.PEXELS_API_KEY", workflow)
+        self.assertIn("--video-source pexels", workflow)
+        self.assertIn("--video-terms", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("retention-days: 3", workflow)
+        self.assertNotIn("--confirm-seedance-charge", workflow)
+        self.assertNotIn("--confirm-metaso-minimax-charge", workflow)
+        self.assertNotIn("--confirm-wavespeed-charge", workflow)
+        self.assertNotIn("upload_post_auto_upload = true", workflow)
+
     def test_private_mpt_config_is_created_from_the_isolated_venv(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
