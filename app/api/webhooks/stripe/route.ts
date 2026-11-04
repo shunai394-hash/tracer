@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 async function claimEvent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   event: Stripe.Event,
-): Promise<{ alreadyProcessed: boolean }> {
+): Promise<{ status: "claimed" | "processed" | "busy" }> {
   const leaseExpiredAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: existing, error: lookupError } = await supabase
     .from("stripe_webhook_events")
@@ -20,7 +20,7 @@ async function claimEvent(
     .maybeSingle();
 
   if (lookupError) throw new Error(lookupError.message);
-  if (existing?.processed) return { alreadyProcessed: true };
+  if (existing?.processed) return { status: "processed" };
 
   if (existing) {
     // Atomically acquire/re-acquire a processing lease. The conditional UPDATE
@@ -36,7 +36,7 @@ async function claimEvent(
       .maybeSingle();
 
     if (claimError) throw new Error(claimError.message);
-    return { alreadyProcessed: !claimed };
+    return { status: claimed ? "claimed" : "busy" };
   }
 
   const { error: insertError } = await supabase.from("stripe_webhook_events").insert({
@@ -49,11 +49,11 @@ async function claimEvent(
 
   // If another delivery inserted first, it owns the processing lease.
   if (insertError) {
-    if (insertError.code === "23505") return { alreadyProcessed: true };
+    if (insertError.code === "23505") return { status: "busy" };
     throw new Error(insertError.message);
   }
 
-  return { alreadyProcessed: false };
+  return { status: "claimed" };
 }
 
 async function markProcessed(
@@ -287,8 +287,13 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const claim = await claimEvent(supabase, event);
-  if (claim.alreadyProcessed) {
+  if (claim.status === "processed") {
     return NextResponse.json({ ok: true, deduped: true });
+  }
+  if (claim.status === "busy") {
+    // Do not acknowledge an in-flight or recently failed event: Stripe must
+    // retry it after the processing lease expires if the first delivery fails.
+    return NextResponse.json({ ok: false, retry: true }, { status: 500 });
   }
 
   let shopOrderId: string | null = null;
