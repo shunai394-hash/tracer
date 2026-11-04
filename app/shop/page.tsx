@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
-import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf, pickOnePerSupplierProduct } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +86,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
     .filter((listing) => !needle || `${listing.title} ${listing.description ?? ""}`.normalize("NFKC").toLocaleLowerCase().includes(needle));
   if (sort === "price_asc") shown = [...shown].sort((a, b) => (a.sellingPrice ?? 0) - (b.sellingPrice ?? 0));
   if (sort === "price_desc") shown = [...shown].sort((a, b) => (b.sellingPrice ?? 0) - (a.sellingPrice ?? 0));
+  shown = pickOnePerSupplierProduct(shown, 1800);
 
   // Exact duplicate supplier variants are removed in listPublishedShopListings.
   // Distinct variants must not be hidden merely because their titles normalize to one family.
