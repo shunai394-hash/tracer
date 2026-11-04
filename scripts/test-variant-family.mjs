@@ -259,7 +259,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(sync, /variation_identifier/);
   assert.match(sync, /base_variant_price_mismatch_requires_separate_parents/);
   assert.match(sync, /base_variant_image_binding_unsupported/);
-  assert.match(sync, /shopify_variant_image_missing/);
+  assert.match(sync, /shopify_variant_image_missing_or_duplicate/);
   assert.match(sync, /shopify_variant_image_readback_mismatch/);
   assert.match(sync, /file: \{ originalSource: variation.imageUrl/);
   assert.match(sync, /cj_variant_id/);
@@ -272,7 +272,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(procurement, /offer\.supplier_variant_id !== row\.supplier_variant_id/);
   assert.match(procurement, /liveMarginRate < 0\.5/);
   assert.match(shopStore, /offerRaw\.variantImageUrl/);
-  assert.match(shopStore, /imageComplete = variants.length > 1/);
+  assert.match(shopStore, /new Set\(imageUrls\).size === variants.length/);
   assert.match(variantPicker, /src=\{selected\.imageUrl \|\| listing\.imageUrl\}/);
   assert.match(variantPicker, /choices\[0\]\.optionType/);
   assert.match(shopStore, /variantOptionType = attributes\.color/);
