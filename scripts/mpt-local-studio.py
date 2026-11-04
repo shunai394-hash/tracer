@@ -81,6 +81,45 @@ def load_or_create_config(data_dir: Path, mpt_exe: Path) -> None:
         )
 
 
+def pexels_key_configured() -> bool:
+    config_path = DATA_DIR / "config.toml"
+    try:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    keys = config.get("pexels_api_keys", [])
+    return isinstance(keys, list) and any(isinstance(key, str) and key.strip() for key in keys)
+
+
+def save_pexels_api_key(api_key: str) -> None:
+    key = api_key.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{16,256}", key):
+        raise ValueError("Pexels APIキーの形式を確認してください。")
+    config_path = DATA_DIR / "config.toml"
+    try:
+        raw = config_path.read_text(encoding="utf-8")
+        config = tomllib.loads(raw)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError("MoneyPrinterTurboの設定ファイルを読み込めません。") from exc
+
+    existing = config.get("pexels_api_keys", [])
+    keys = [item for item in existing if isinstance(item, str) and item.strip()] if isinstance(existing, list) else []
+    if key not in keys:
+        keys.append(key)
+    replacement = "pexels_api_keys = " + json.dumps(keys, ensure_ascii=True)
+    updated, count = re.subn(
+        r"(?m)^pexels_api_keys\\s*=\\s*\\[[^\\r\\n]*\\]\\s*$",
+        lambda _: replacement,
+        raw,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError("config.toml内のPexels設定行を安全に更新できません。")
+    temp = config_path.with_suffix(".toml.tmp")
+    temp.write_text(updated, encoding="utf-8")
+    temp.replace(config_path)
+
+
 def safe_child_environment(data_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["MPT_HOME"] = str(data_dir)
@@ -144,6 +183,8 @@ def create_cli_command(
     title: str,
     script: str,
     asset_paths: list[Path],
+    video_source: str,
+    video_terms: list[str],
     voice: str,
     aspect: str,
     clip_duration: int,
@@ -155,8 +196,7 @@ def create_cli_command(
         "--video-subject", title,
         "--video-script", script,
         "--video-language", "ja-JP",
-        "--video-source", "local",
-        "--video-materials", ",".join(str(path.resolve()) for path in asset_paths),
+        "--video-source", video_source,
         "--video-aspect", aspect,
         "--video-fit-mode", "cover",
         "--video-concat-mode", "sequential",
@@ -173,6 +213,10 @@ def create_cli_command(
         "--stop-at", "video",
         "--task-id", task_id,
     ]
+    if video_source == "local":
+        command.extend(["--video-materials", ",".join(str(path.resolve()) for path in asset_paths)])
+    elif video_source == "pexels":
+        command.extend(["--video-terms", ",".join(video_terms), "--match-materials-to-script"])
     if subtitles:
         command.append("--subtitle-enabled")
     else:
@@ -359,7 +403,8 @@ class Handler(BaseHTTPRequestHandler):
                 "ready": True,
                 "engine": "MoneyPrinterTurbo",
                 "engine_version": "1.3.9",
-                "mode": "local-assets-only",
+                "mode": "local-assets-and-free-pexels",
+                "pexels_configured": pexels_key_configured(),
                 "max_upload_bytes": MAX_REQUEST_BYTES,
             })
             return
@@ -449,6 +494,11 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     raise ValueError("1カットの長さは整数で指定してください。") from exc
                 subtitles = fields.get("subtitles", "true").lower() == "true"
+                video_source = fields.get("source", "local").strip()
+                video_terms = [
+                    term.strip() for term in re.split(r"[,，、\\n]", fields.get("terms", ""))
+                    if term.strip()
+                ]
 
                 if not title:
                     raise ValueError("動画タイトルを入力してください。")
@@ -460,21 +510,35 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("画面比率が不正です。")
                 if not 1 <= clip_duration <= 15:
                     raise ValueError("1カットの長さは1〜15秒で指定してください。")
-                if not uploads:
-                    raise ValueError("動画または画像素材を1つ以上アップロードしてください。")
-                if len(uploads) > MAX_FILES:
-                    raise ValueError("素材は最大8ファイルまでです。")
+                if video_source not in {"local", "pexels"}:
+                    raise ValueError("素材モードが不正です。")
+                if video_source == "local":
+                    if not uploads:
+                        raise ValueError("ローカル素材モードでは動画または画像を1つ以上選択してください。")
+                    if len(uploads) > MAX_FILES:
+                        raise ValueError("素材は最大8ファイルまでです。")
+                else:
+                    submitted_key = fields.get("pexels_key", "").strip()
+                    if submitted_key:
+                        save_pexels_api_key(submitted_key)
+                    if not pexels_key_configured():
+                        raise ValueError("Pexels APIキーが未設定です。既存のキーを画面に入力してください。")
+                    if uploads:
+                        raise ValueError("Pexelsモードでは映像ファイルを添付せず、検索キーワードを使ってください。")
+                    if not video_terms or len(video_terms) > 12 or any(len(term) > 100 for term in video_terms):
+                        raise ValueError("Pexels検索キーワードを1〜12個入力してください（各100文字以内）。")
 
                 task_id = str(uuid.uuid4())
-                input_dir = DATA_DIR / "storage" / "local_videos" / task_id
-                input_dir.mkdir(parents=True, exist_ok=False)
+                input_dir = None
                 asset_paths: list[Path] = []
-
-                for index, (original_name, payload) in enumerate(uploads, start=1):
-                    ext = safe_extension(original_name, VIDEO_EXTENSIONS | IMAGE_EXTENSIONS)
-                    target = input_dir / f"asset-{index:02d}{ext}"
-                    target.write_bytes(payload)
-                    asset_paths.append(target)
+                if video_source == "local":
+                    input_dir = DATA_DIR / "storage" / "local_videos" / task_id
+                    input_dir.mkdir(parents=True, exist_ok=False)
+                    for index, (original_name, payload) in enumerate(uploads, start=1):
+                        ext = safe_extension(original_name, VIDEO_EXTENSIONS | IMAGE_EXTENSIONS)
+                        target = input_dir / f"asset-{index:02d}{ext}"
+                        target.write_bytes(payload)
+                        asset_paths.append(target)
 
                 bgm_filename: str | None = None
                 if bgm_upload:
@@ -489,14 +553,15 @@ class Handler(BaseHTTPRequestHandler):
                 log_dir.mkdir(parents=True, exist_ok=True)
                 log_path = log_dir / f"{task_id}.log"
                 command = create_cli_command(
-                    MPT_EXE, task_id, title, script, asset_paths, voice, aspect,
-                    clip_duration, subtitles, bgm_filename,
+                    MPT_EXE, task_id, title, script, asset_paths, video_source, video_terms,
+                    voice, aspect, clip_duration, subtitles, bgm_filename,
                 )
                 task = {
                     "id": task_id,
                     "status": "queued",
                     "message": "動画制作を受け付けました。",
                     "title": title,
+                    "source": video_source,
                     "created_at": utc_now(),
                     "updated_at": utc_now(),
                     "input_dir": str(input_dir),
