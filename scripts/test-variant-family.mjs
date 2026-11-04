@@ -22,6 +22,7 @@ function member(overrides) {
     sku: "",
     title: "ヘアクリップ（ブラック）",
     supplierVariantName: "Black",
+    imageUrl: "https://images.example.test/black.jpg",
     sellingPrice: 4980,
     marginRate: 0.52,
     inventory: 8,
@@ -82,6 +83,7 @@ test("same supplier product keeps color variants on one parent and withholds inc
   assert.equal(plan.excluded[0].reason, "supplier_identity_incomplete");
   assert.notEqual(plan.variations[0].sku, plan.variations[1].sku);
   assert.match(plan.variations[0].imageAlt, /ヘアクリップ/);
+  assert.equal(plan.variations[0].imageUrl, "https://images.example.test/black.jpg");
 });
 
 test("different supplier product ids are never merged, even when the titles match", () => {
@@ -255,6 +257,9 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
   assert.match(sync, /base_variant_price_mismatch_requires_separate_parents/);
+  assert.match(sync, /base_variant_image_binding_unsupported/);
+  assert.match(sync, /shopify_variant_image_readback_mismatch/);
+  assert.match(sync, /file: \\{ originalSource: variation.imageUrl/);
   assert.match(sync, /cj_variant_id/);
   assert.doesNotMatch(sync, /\.delete\(/);
   assert.match(publish, /syncQueuedVariantFamilies/);
