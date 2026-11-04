@@ -34,9 +34,11 @@ Edge TTSはAPIキー不要ですが、音声を作るときはインターネッ
 2. GitHubの `Actions → MoneyPrinterTurbo cloud video → Run workflow` を開き、タイトル、台本、シーン検索キーワード、比率、カット秒数を入力して実行します。
 3. 成功したら同じ実行画面の `Artifacts` から `moneyprinterturbo-video` を取得します。成果物は3日で期限切れになります。
 
+この手動ワークフローはGitHubの既定ブランチに登録されてから `Actions` に表示されます。PRがDraftの間はまだ実行できません。TRACER本番へ入れる前に、PR内でコードとCI結果を確認します。
+
 この方法はGitHubの標準クラウド実行環境で動画を編集するので、PCにはMPTのPython環境やFFmpegを常駐させません。実行時だけPexelsから素材を取得し、Edge TTSでナレーションを作ります。常時サーバーは作りません。
 
-Pexels APIは無料ですが、既定の上限は1時間200リクエスト・月20,000リクエストです。新規APIキー発行は現在一時停止中のため、既存キーが必要です。<Link>などを使わず、公式案内を直接確認してください: https://help.pexels.com/hc/en-us/articles/47677890260761-Is-the-Pexels-API-free-to-use 、 https://help.pexels.com/hc/en-us/articles/900004904026-How-do-I-get-an-API-key
+Pexels APIは無料ですが、既定の上限は1時間200リクエスト・月20,000リクエストです。新規APIキー発行は現在一時停止中のため、既存キーが必要です。公式案内: https://help.pexels.com/hc/en-us/articles/47677890260761-Is-the-Pexels-API-free-to-use 、 https://help.pexels.com/hc/en-us/articles/900004904026-How-do-I-get-an-API-key
 
 GitHubの標準ランナーは公開リポジトリでは無料ですが、Freeアカウントの成果物ストレージは500MBです。成果物を3日で削除する設定にしているのは、その容量を圧迫しないためです。大きなMP4を何本も連続保存する用途には向きません。
 
