@@ -18,6 +18,8 @@ assert.match(routeSource, /authorizedAdminToken\(request\)/u);
 assert.match(routeSource, /timingSafeEqual\(expectedBytes, suppliedBytes\)/u);
 assert.match(routeSource, /requireAutomationAuth\(request\)/u);
 assert.match(routeSource, /process\.env\.ELEVENLABS_API_KEY/u);
+assert.match(routeSource, /ALLOWED_MODEL_IDS = new Set\(\["eleven_v4", "eleven_v4_turbo"\]\)/u);
+assert.match(routeSource, /error: "unsupported_model_id"/u);
 assert.match(routeSource, /error: "elevenlabs_not_configured"/u);
 assert.match(routeSource, /"elevenlabs_timeout"/u);
 assert.match(routeSource, /"empty_audio_response"/u);
@@ -40,9 +42,13 @@ assert.match(page, /<meta name="robots" content="noindex,nofollow">/);
 assert.match(page, /type="password"/);
 assert.match(page, new RegExp(`value="${KIYOMI_VOICE_ID}"`));
 assert.match(page, /こんにちは、TRACER AI配信です。/);
+assert.match(page, /<select id="model"/);
+assert.match(page, /value="eleven_v4"/);
+assert.match(page, /value="eleven_v4_turbo"/);
 assert.match(page, /<textarea id="script"/);
 assert.match(page, /fetch\("\/api\/admin\/ai-live\/eleven-v4-turbo"/);
 assert.match(page, /voiceId/);
+assert.match(page, /modelId: model\.value/);
 assert.match(page, /<audio id="audio"/);
 assert.match(page, /認証に失敗しました。管理トークンを確認してください。/);
 assert.match(page, /サーバーにElevenLabsのAPIキーが設定されていません。/);
@@ -275,6 +281,14 @@ try {
   assert.equal(invalidObject.status, 400);
   assert.equal(invalidObject.body.error, "invalid_json_object");
 
+  const unsupportedModel = await post({
+    authorization: "Bearer admin-token-value",
+    body: validBody({ modelId: "unknown_model" }),
+  });
+  assert.equal(unsupportedModel.status, 400);
+  assert.equal(unsupportedModel.body.error, "unsupported_model_id");
+  assert.equal(FakeSocket.sockets.length, 0);
+
   for (const text of ["", "   ", "あ".repeat(1201)]) {
     const rejected = await post({
       authorization: "Bearer admin-token-value",
@@ -317,6 +331,14 @@ try {
   const httpBody = Buffer.from(audio.body).toString("utf8");
   assert.equal(httpBody.includes("server-side-elevenlabs-key"), false);
   assert.equal(httpBody.includes("admin-token-value"), false);
+
+  const standardV4 = await post({
+    authorization: "Bearer admin-token-value",
+    body: validBody({ modelId: "eleven_v4" }),
+  });
+  assert.equal(standardV4.status, 200);
+  assert.equal(standardV4.headers.get("x-ai-voice-model"), "eleven_v4");
+  assert.match(FakeSocket.sockets[0].url, /model_id=eleven_v4(?:&|$)/);
 
   automation.allow = true;
   automation.calls = 0;
