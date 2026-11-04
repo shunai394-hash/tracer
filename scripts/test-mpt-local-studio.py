@@ -35,7 +35,7 @@ class LocalStudioContractTests(unittest.TestCase):
         self.assertIn("--video-source", command)
         self.assertEqual(command[command.index("--video-source") + 1], "local")
         self.assertIn("--video-materials", command)
-        self.assertIn("--no-bgm", command) if "--no-bgm" in command else None
+        self.assertEqual(command[command.index("--bgm-type") + 1], "none")
         self.assertIn("--voice-name", command)
         self.assertIn("ja-JP-NanamiNeural", command)
         self.assertIn("--subtitle-enabled", command)
