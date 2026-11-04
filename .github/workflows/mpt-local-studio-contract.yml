@@ -34,7 +34,8 @@ jobs:
           python -m py_compile scripts/mpt-local-studio.py
           python scripts/test-mpt-local-studio.py
       - name: Parse cloud video workflow YAML
-        run: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/mpt-cloud-video.yml", aliases: true); puts "Cloud workflow YAML parsed."'
+        run: |
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/mpt-cloud-video.yml", aliases: true); puts "Cloud workflow YAML parsed."'
       - name: Validate PowerShell setup script
         shell: pwsh
         run: |
