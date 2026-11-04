@@ -26,6 +26,20 @@ Pexelsモードは、無料のストック映像を検索して台本に合わ�
 
 Edge TTSはAPIキー不要ですが、音声を作るときはインターネット接続が必要です。完全オフラインではありません。
 
+## PCを重くせずにクラウドで1本作る
+
+このリポジトリには、GitHub ActionsでMPTを1回だけ起動し、完成MP4を短期間の成果物として受け取る手動ワークフローもあります。
+
+1. GitHubのリポジトリ設定で `Settings → Secrets and variables → Actions → New repository secret` を開き、名前を `PEXELS_API_KEY` にして既存のPexels APIキーを保存します。キーはチャットやソースコードに貼りません。
+2. GitHubの `Actions → MoneyPrinterTurbo cloud video → Run workflow` を開き、タイトル、台本、シーン検索キーワード、比率、カット秒数を入力して実行します。
+3. 成功したら同じ実行画面の `Artifacts` から `moneyprinterturbo-video` を取得します。成果物は3日で期限切れになります。
+
+この方法はGitHubの標準クラウド実行環境で動画を編集するので、PCにはMPTのPython環境やFFmpegを常駐させません。実行時だけPexelsから素材を取得し、Edge TTSでナレーションを作ります。常時サーバーは作りません。
+
+Pexels APIは無料ですが、既定の上限は1時間200リクエスト・月20,000リクエストです。新規APIキー発行は現在一時停止中のため、既存キーが必要です。<Link>などを使わず、公式案内を直接確認してください: https://help.pexels.com/hc/en-us/articles/47677890260761-Is-the-Pexels-API-free-to-use 、 https://help.pexels.com/hc/en-us/articles/900004904026-How-do-I-get-an-API-key
+
+GitHubの標準ランナーは公開リポジトリでは無料ですが、Freeアカウントの成果物ストレージは500MBです。成果物を3日で削除する設定にしているのは、その容量を圧迫しないためです。大きなMP4を何本も連続保存する用途には向きません。
+
 ## Windowsでの起動
 
 このリポジトリをPCにクローンし、リポジトリのルートでPowerShellを開きます。
