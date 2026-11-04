@@ -27,6 +27,8 @@ class LocalStudioContractTests(unittest.TestCase):
                 "Japanese short drama",
                 "これはテスト台本です。",
                 files,
+                "local",
+                [],
                 "ja-JP-NanamiNeural",
                 "9:16",
                 5,
@@ -52,6 +54,73 @@ class LocalStudioContractTests(unittest.TestCase):
         worker_source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('DATA_DIR / "storage" / "local_videos" / task_id', worker_source)
         self.assertIn("cleanup_task_inputs(task)", worker_source)
+
+    def test_pexels_mode_uses_user_terms_and_never_local_upload_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            exe = Path(temp) / ".venv" / "Scripts" / "mpt.exe"
+            command = mpt.create_cli_command(
+                exe,
+                "12345678-1234-1234-1234-123456789012",
+                "Japanese short drama",
+                "これはテスト台本です。",
+                [],
+                "pexels",
+                ["rainy Japanese train station", "lonely man at night"],
+                "ja-JP-NanamiNeural",
+                "9:16",
+                5,
+                True,
+                None,
+            )
+        self.assertEqual(command[command.index("--video-source") + 1], "pexels")
+        self.assertEqual(
+            command[command.index("--video-terms") + 1],
+            "rainy Japanese train station,lonely man at night",
+        )
+        self.assertIn("--match-materials-to-script", command)
+        self.assertNotIn("--video-materials", command)
+        self.assertNotIn("--confirm-seedance-charge", command)
+        self.assertNotIn("--confirm-metaso-minimax-charge", command)
+
+    def test_pexels_key_is_saved_only_in_the_private_mpt_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp)
+            (data / "config.toml").write_text(
+                'pexels_api_keys = []\nupload_post_enabled = false\nupload_post_auto_upload = false\n',
+                encoding="utf-8",
+            )
+            original = getattr(mpt, "DATA_DIR", None)
+            mpt.DATA_DIR = data
+            secret = "PEXELS-API-KEY-1234567890123456"
+            try:
+                mpt.save_pexels_api_key(secret)
+                self.assertTrue(mpt.pexels_key_configured())
+                import tomllib
+                saved = tomllib.loads((data / "config.toml").read_text(encoding="utf-8"))
+                self.assertEqual(saved["pexels_api_keys"], [secret])
+            finally:
+                if original is None:
+                    delattr(mpt, "DATA_DIR")
+                else:
+                    mpt.DATA_DIR = original
+
+    def test_pexels_key_is_never_accepted_as_an_arbitrary_multiline_value(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp)
+            (data / "config.toml").write_text(
+                'pexels_api_keys = []\nupload_post_enabled = false\nupload_post_auto_upload = false\n',
+                encoding="utf-8",
+            )
+            original = getattr(mpt, "DATA_DIR", None)
+            mpt.DATA_DIR = data
+            try:
+                with self.assertRaises(ValueError):
+                    mpt.save_pexels_api_key('bad-key\npexels_api_keys = ["injected"]')
+            finally:
+                if original is None:
+                    delattr(mpt, "DATA_DIR")
+                else:
+                    mpt.DATA_DIR = original
 
     def test_private_mpt_config_is_created_from_the_isolated_venv(self):
         with tempfile.TemporaryDirectory() as temp:
