@@ -1012,6 +1012,7 @@ export async function GET(request: Request) {
               sourceVariantKey: exactVariant.vid,
               variantTitleJa: title + japaneseVariantSuffix(exactVariant.nameEn),
               sku: exactVariant.sku,
+              variantImageUrl: exactVariant.variantImage,
               attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
               offer: {
                 supplierCode: "cj", supplierProductId,
