@@ -111,6 +111,23 @@ def write_manifest(task_id: str, task: dict[str, Any]) -> None:
     temp.replace(target)
 
 
+def cleanup_task_inputs(task: dict[str, Any]) -> None:
+    """Remove this task's uploaded inputs without touching other MPT files."""
+    local_root = (DATA_DIR / "storage" / "local_videos").resolve()
+    input_dir_value = task.get("input_dir")
+    if input_dir_value:
+        candidate = Path(input_dir_value).resolve()
+        if candidate.parent == local_root and candidate.is_dir():
+            shutil.rmtree(candidate, ignore_errors=True)
+
+    bgm_root = (DATA_DIR / "storage" / "bgm").resolve()
+    bgm_path_value = task.get("bgm_path")
+    if bgm_path_value:
+        candidate_bgm = Path(bgm_path_value).resolve()
+        if candidate_bgm.parent == bgm_root and candidate_bgm.is_file():
+            candidate_bgm.unlink(missing_ok=True)
+
+
 def update_task(task_id: str, **changes: Any) -> None:
     with TASKS_LOCK:
         task = TASKS.get(task_id)
@@ -241,19 +258,8 @@ def run_generation(
         # MPT's local video source accepts files only from storage/local_videos.
         # Remove this task's private subdirectory after the CLI has stopped.
         with TASKS_LOCK:
-            task = TASKS.get(task_id, {})
-            input_dir_value = task.get("input_dir")
-            bgm_path_value = task.get("bgm_path")
-        local_root = (DATA_DIR / "storage" / "local_videos").resolve()
-        if input_dir_value:
-            candidate = Path(input_dir_value).resolve()
-            if candidate.parent == local_root and candidate.is_dir():
-                shutil.rmtree(candidate, ignore_errors=True)
-        bgm_root = (DATA_DIR / "storage" / "bgm").resolve()
-        if bgm_path_value:
-            candidate_bgm = Path(bgm_path_value).resolve()
-            if candidate_bgm.parent == bgm_root and candidate_bgm.is_file():
-                candidate_bgm.unlink(missing_ok=True)
+            task = dict(TASKS.get(task_id, {}))
+        cleanup_task_inputs(task)
         with ACTIVE_LOCK:
             if ACTIVE_TASK == task_id:
                 ACTIVE_TASK = None
@@ -557,6 +563,7 @@ def main() -> int:
                     task["updated_at"] = utc_now()
                     manifest.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
                 TASKS[task["id"]] = task
+                cleanup_task_inputs(task)
             except (OSError, ValueError, KeyError, TypeError):
                 continue
 
