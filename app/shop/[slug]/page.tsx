@@ -184,6 +184,7 @@ export default async function ShopProductPage({
             </summary>
             <p className="mt-3 leading-7 text-[#5C4035]">
               色を選択すると、対応する商品画像・価格・在庫が表示されます。商品画像はモニター環境により実物と色味が異なって見える場合があります。
+              サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。
             </p>
           </details>
           <details className="group py-4">
