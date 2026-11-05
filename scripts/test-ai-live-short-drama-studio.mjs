@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { Script } from "node:vm";
 
 const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
@@ -56,4 +57,11 @@ test("BGM API is admin-protected, private-storage based, and MP3-size bounded", 
   assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
   assert.ok(bgmRoute.includes("metadata: { genre:"));
   assert.ok(bgmRoute.includes("createSignedUrl"));
+});
+
+
+test("short drama studio inline JavaScript parses without syntax errors", () => {
+  const scripts = [...page.matchAll(/<script>([\\s\\S]*?)<\\/script>/gi)].map((match) => match[1]);
+  assert.ok(scripts.length > 0, "studio inline script exists");
+  for (const source of scripts) new Script(source);
 });
