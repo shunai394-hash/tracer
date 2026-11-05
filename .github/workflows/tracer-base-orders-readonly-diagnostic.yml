@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/tracer-base-orders-readonly-diagnostic.yml
+      - app/api/admin/channels/base/orders-diagnostic/route.ts
 
 permissions:
   contents: read
