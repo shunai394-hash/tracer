@@ -1,0 +1,62 @@
+name: MPT動画制作依頼
+description: 日本語台本からMoneyPrinterTurboで縦型・横型MP4を制作します
+title: "MPT動画制作依頼"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        このフォームはMoneyPrinterTurboのクラウド動画制作を開始します。
+        Pexelsの既存ストック映像を検索・編集し、日本語ナレーションと字幕を付けます。
+        文章から新しいAI映像を生成する機能ではありません。有料動画生成APIは使用しません。
+  - type: input
+    id: title
+    attributes:
+      label: 動画タイトル
+      placeholder: 雨の夜、届かなかったメッセージ
+    validations:
+      required: true
+  - type: textarea
+    id: script
+    attributes:
+      label: ナレーション台本
+      description: 日本語で最大12,000文字。ここに完成台本を貼り付けてください。
+      placeholder: 台本を入力
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: terms
+    attributes:
+      label: シーン検索キーワード
+      description: 英語推奨。1行に1つ、またはカンマ区切りで1〜12個。
+      placeholder: |
+        lonely man at rainy train station
+        Japanese apartment at night
+        woman looking at smartphone
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: aspect
+    attributes:
+      label: 動画比率
+      options:
+        - "9:16"
+        - "16:9"
+        - "1:1"
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: duration
+    attributes:
+      label: 1カットの最大秒数
+      options:
+        - "3"
+        - "5"
+        - "7"
+        - "10"
+        - "15"
+      default: 1
+    validations:
+      required: true
