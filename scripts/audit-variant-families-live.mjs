@@ -48,7 +48,7 @@ for (const row of variants) {
   const price = prices[0] ?? {};
   const offer = offers.find((item) => String(item.id) === String(price.supplier_offer_id)) ?? offers[0] ?? {};
   const raw = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data : {};
-  const nativeIdsValid = offer.supplier_code !== "cj" || (/^\\d{8,}$/.test(String(offer.supplier_product_id ?? "")) && /^\\d{8,}$/.test(String(offer.supplier_variant_id ?? "")));
+  const nativeIdsValid = offer.supplier_code !== "cj" || (/^\d{8,}$/.test(String(offer.supplier_product_id ?? "")) && /^\d{8,}$/.test(String(offer.supplier_variant_id ?? "")));
   const shippingKnown = raw.shippingEstimated !== true && (raw.shippingKnown === true || (raw.shippingKnown === undefined && offer.source_status === "verified" && Number(offer.shipping_cost) > 0));
   const stockKnown = raw.stockKnown === true || (raw.stockKnown === undefined && offer.source_status === "verified");
   const missing = offer.id ? missingSaleEvidence({
