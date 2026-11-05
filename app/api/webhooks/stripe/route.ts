@@ -11,15 +11,29 @@ export const runtime = "nodejs";
 async function claimEvent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   event: Stripe.Event,
-): Promise<{ alreadyProcessed: boolean }> {
-  const { data: existing } = await supabase
+): Promise<{ status: "claimed" | "processed" | "busy" }> {
+  const leaseExpiredAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: existing, error: lookupError } = await supabase
     .from("stripe_webhook_events")
-    .select("processed")
+    .select("processed, processed_at")
     .eq("stripe_event_id", event.id)
     .maybeSingle();
 
+  if (lookupError) throw new Error(lookupError.message);
+  if (existing?.processed) return { status: "processed" };
+
   if (existing) {
-    return { alreadyProcessed: existing.processed === true };
+    const { data: claimed, error: claimError } = await supabase
+      .from("stripe_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("stripe_event_id", event.id)
+      .eq("processed", false)
+      .or(`processed_at.is.null,processed_at.lt.${leaseExpiredAt}`)
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) throw new Error(claimError.message);
+    return { status: claimed ? "claimed" : "busy" };
   }
 
   const { error: insertError } = await supabase.from("stripe_webhook_events").insert({
@@ -27,19 +41,15 @@ async function claimEvent(
     event_type: event.type,
     payload: event as unknown as Record<string, unknown>,
     processed: false,
+    processed_at: new Date().toISOString(),
   });
 
-  // Two identical Stripe deliveries can arrive concurrently. The unique
-  // stripe_event_id constraint makes the loser a duplicate; it must not
-  // execute the event handler a second time.
   if (insertError) {
-    if (insertError.code === "23505") {
-      return { alreadyProcessed: true };
-    }
+    if (insertError.code === "23505") return { status: "busy" };
     throw new Error(insertError.message);
   }
 
-  return { alreadyProcessed: false };
+  return { status: "claimed" };
 }
 
 async function markProcessed(
@@ -74,10 +84,11 @@ async function handleCheckoutCompleted(
 
   const { data: order } = await supabase
     .from("shop_orders")
-    .select("id, payment_status, order_status")
+    .select("id, payment_status, order_status, manual_inventory_released_at")
     .eq("id", shopOrderId)
     .maybeSingle();
   if (!order) return shopOrderId;
+  if (order.manual_inventory_released_at) return shopOrderId;
 
   // Payment confirmation is idempotent, but fulfillment must remain retryable.
   // A prior delivery may have confirmed payment and then failed during PO creation
@@ -102,7 +113,7 @@ async function handleCheckoutCompleted(
     const paymentIntentId =
       typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
-    const { error: paymentUpdateError } = await supabase
+    const { data: paidOrder, error: paymentUpdateError } = await supabase
       .from("shop_orders")
       .update({
         payment_status: "paid",
@@ -110,11 +121,15 @@ async function handleCheckoutCompleted(
         paid_at: new Date().toISOString(),
         stripe_payment_intent_id: paymentIntentId,
       })
-      .eq("id", shopOrderId);
+      .eq("id", shopOrderId)
+      .eq("payment_status", "pending")
+      .eq("order_status", "pending_payment")
+      .is("manual_inventory_released_at", null)
+      .select("id")
+      .maybeSingle();
 
-    if (paymentUpdateError) {
-      throw new Error(paymentUpdateError.message);
-    }
+    if (paymentUpdateError) throw new Error(paymentUpdateError.message);
+    if (!paidOrder) return shopOrderId;
   }
 
   const { data: items } = await supabase
@@ -185,11 +200,23 @@ async function handlePaymentFailed(
   const shopOrderId = order?.id ? String(order.id) : null;
   if (!shopOrderId) return null;
 
-  await supabase
-    .from("shop_orders")
-    .update({ payment_status: "failed", order_status: "order_failed" })
-    .eq("id", shopOrderId);
+  // A PaymentIntent failure can be one failed attempt while Checkout
+  // remains open for another payment method. Do not fail the order or release
+  // its inventory until the Checkout Session reaches a terminal state.
+  return shopOrderId;
+}
 
+async function handleCheckoutSessionEnded(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  session: Stripe.Checkout.Session,
+): Promise<string | null> {
+  const shopOrderId = session.metadata?.shop_order_id ?? session.client_reference_id ?? null;
+  if (!shopOrderId) return null;
+
+  const { error } = await supabase.rpc("release_manual_inventory_for_order", {
+    p_order_id: shopOrderId,
+  });
+  if (error) throw new Error(error.message);
   return shopOrderId;
 }
 
@@ -245,8 +272,11 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const claim = await claimEvent(supabase, event);
-  if (claim.alreadyProcessed) {
+  if (claim.status === "processed") {
     return NextResponse.json({ ok: true, deduped: true });
+  }
+  if (claim.status === "busy") {
+    return NextResponse.json({ ok: false, retry: true }, { status: 500 });
   }
 
   let shopOrderId: string | null = null;
@@ -257,6 +287,13 @@ export async function POST(request: Request) {
         break;
       case "payment_intent.payment_failed":
         shopOrderId = await handlePaymentFailed(supabase, event.data.object as Stripe.PaymentIntent);
+        break;
+      case "checkout.session.expired":
+      case "checkout.session.async_payment_failed":
+        shopOrderId = await handleCheckoutSessionEnded(supabase, event.data.object as Stripe.Checkout.Session);
+        break;
+      case "checkout.session.async_payment_succeeded":
+        shopOrderId = await handleCheckoutCompleted(supabase, event.data.object as Stripe.Checkout.Session);
         break;
       case "charge.refunded":
         shopOrderId = await handleChargeRefunded(supabase, event.data.object as Stripe.Charge);
