@@ -262,40 +262,90 @@ export async function editBaseItemVariations(input: {
   return requestBase("/items/edit", body, 3);
 }
 
-/** Zero one variation without hiding the other colors or sizes on the same BASE item. */
+/** Update one BASE variation's stock and verify the complete variation snapshot by readback. */
 export async function setBaseVariationStock(itemId: string, variationId: string, stock: number) {
-  const detail = await getBaseItemDetail(itemId);
-  const variations = Array.isArray(detail.variations) ? detail.variations as Array<Record<string, unknown>> : [];
-  const current = variations.find((variation) => String(variation.variation_id ?? "") === variationId);
-  if (!current) throw new Error("base_variation_not_found:" + variationId);
-  const visible = detail.visible === false || detail.visible === 0 || detail.visible === "0" ? "0" : "1";
-  const body = new URLSearchParams({
-    item_id: itemId,
-    title: String(detail.title ?? ""),
-    detail: String(detail.detail ?? ""),
-    price: String(Math.max(1, Math.round(Number(detail.price) || 1))),
-    visible,
-  });
-  // BASE item edits submit the variation collection as a whole. Preserve every
-  // sibling variation and change only the requested variation's stock; sending
-  // a single variation here can silently remove the other colors/sizes.
-  const targetStock = Math.max(0, Math.floor(stock));
-  variations.forEach((variation, index) => {
+  const normalizedItemId = String(itemId ?? "").trim();
+  const normalizedVariationId = String(variationId ?? "").trim();
+  if (!/^\\d+$/.test(normalizedItemId) || !normalizedVariationId) {
+    throw new Error("base_variation_update_identity_invalid");
+  }
+  if (!Number.isFinite(stock) || stock < 0) {
+    throw new Error("base_variation_stock_invalid");
+  }
+
+  const before = await getBaseItemDetail(normalizedItemId);
+  const variations = Array.isArray(before.variations)
+    ? before.variations as Array<Record<string, unknown>>
+    : [];
+  if (variations.length === 0) throw new Error("base_variation_snapshot_empty");
+
+  const expected = new Map<string, {
+    name: string;
+    stock: number;
+    identifier: string;
+    barcode: string;
+  }>();
+  for (const [index, variation] of variations.entries()) {
     const id = String(variation.variation_id ?? "").trim();
     const name = String(variation.variation ?? "");
-    const identifier = String(variation.variation_identifier ?? "").trim();
-    const barcode = String(variation.barcode ?? "").trim();
     const currentStock = Number(variation.stock ?? variation.variation_stock ?? Number.NaN);
-    if (!id || !name || !Number.isFinite(currentStock) || currentStock < 0) {
+    if (!id || !name || !Number.isFinite(currentStock) || currentStock < 0 || expected.has(id)) {
       throw new Error("base_variation_snapshot_invalid:" + index);
     }
-    body.set(`variation_id[${index}]`, id);
-    body.set(`variation[${index}]`, name);
-    body.set(`variation_stock[${index}]`, String(id === variationId ? targetStock : Math.floor(currentStock)));
-    if (identifier) body.set(`variation_identifier[${index}]`, identifier);
-    if (barcode) body.set(`barcode[${index}]`, barcode);
+    expected.set(id, {
+      name,
+      stock: Math.floor(currentStock),
+      identifier: String(variation.variation_identifier ?? "").trim(),
+      barcode: String(variation.barcode ?? "").trim(),
+    });
+  }
+  const target = expected.get(normalizedVariationId);
+  if (!target) throw new Error("base_variation_not_found:" + normalizedVariationId);
+
+  const targetStock = Math.floor(stock);
+  const body = new URLSearchParams({
+    item_id: normalizedItemId,
+    variation_id: normalizedVariationId,
+    variation_stock: String(targetStock),
   });
-  return requestBase("/items/edit", body, 3);
+
+  // Use BASE's stock-only endpoint so title, description, price, SKU and barcode
+  // are not rewritten as a side effect of changing one color's inventory.
+  const updateResult = await requestBase("/items/edit_stock", body, 3);
+
+  // Read back once after a successful write. Never repeat the mutation merely
+  // because the readback differs; report the mismatch for safe reconciliation.
+  const after = await getBaseItemDetail(normalizedItemId);
+  const actualVariations = Array.isArray(after.variations)
+    ? after.variations as Array<Record<string, unknown>>
+    : [];
+  if (actualVariations.length !== expected.size) {
+    throw new Error("base_variation_readback_count_mismatch");
+  }
+  const seen = new Set<string>();
+  for (const [index, variation] of actualVariations.entries()) {
+    const id = String(variation.variation_id ?? "").trim();
+    const expectedVariation = expected.get(id);
+    const actualStock = Number(variation.stock ?? variation.variation_stock ?? Number.NaN);
+    const actualName = String(variation.variation ?? "");
+    const actualIdentifier = String(variation.variation_identifier ?? "").trim();
+    const actualBarcode = String(variation.barcode ?? "").trim();
+    if (!id || seen.has(id) || !expectedVariation || !Number.isFinite(actualStock)) {
+      throw new Error("base_variation_readback_identity_mismatch:" + index);
+    }
+    seen.add(id);
+    const expectedStock = id === normalizedVariationId ? targetStock : expectedVariation.stock;
+    if (
+      actualName !== expectedVariation.name ||
+      Math.floor(actualStock) !== expectedStock ||
+      actualIdentifier !== expectedVariation.identifier ||
+      actualBarcode !== expectedVariation.barcode
+    ) {
+      throw new Error("base_variation_readback_mismatch:" + id);
+    }
+  }
+  if (seen.size !== expected.size) throw new Error("base_variation_readback_incomplete");
+  return { ...updateResult, verified: true, itemId: normalizedItemId, variationId: normalizedVariationId, stock: targetStock };
 }
 
 
