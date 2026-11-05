@@ -1,0 +1,186 @@
+name: MoneyPrinterTurbo browser studio
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: mpt-browser-studio
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    if: github.actor == 'shunai394-hash' && github.event.issue.title == 'MPT動画制作依頼'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MPT_HOME: ${{ github.workspace }}/.mpt-home
+      PYTHONUTF8: "1"
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY || secrets.PEXELS }}
+    steps:
+      - name: Parse and validate browser form
+        id: form
+        shell: bash
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re, uuid
+          from pathlib import Path
+
+          body = os.environ.get("ISSUE_BODY", "")
+          def field(name):
+              pattern = rf"(?ms)^### {re.escape(name)}\s*\n(.*?)(?=^### |\Z)"
+              match = re.search(pattern, body)
+              if not match:
+                  raise SystemExit(f"入力欄が見つかりません: {name}")
+              value = match.group(1).strip()
+              if not value or value == "_No response_":
+                  raise SystemExit(f"入力が必要です: {name}")
+              return value
+
+          title = field("動画タイトル")
+          script = field("ナレーション台本")
+          terms = field("シーン検索キーワード")
+          aspect = field("動画比率")
+          duration = field("1カットの最大秒数")
+
+          if len(title) > 160 or len(script) > 12000:
+              raise SystemExit("タイトルは160文字以内、台本は12,000文字以内です。")
+          keywords = [x.strip() for x in re.split(r"[,，、\r\n]+", terms) if x.strip()]
+          if not 1 <= len(keywords) <= 12 or any(len(x) > 100 for x in keywords):
+              raise SystemExit("検索キーワードは1〜12個、各100文字以内にしてください。")
+          if aspect not in {"9:16", "16:9", "1:1"}:
+              raise SystemExit("動画比率の値が不正です。")
+          if duration not in {"3", "5", "7", "10", "15"}:
+              raise SystemExit("カット秒数の値が不正です。")
+
+          values = {
+              "title": title,
+              "script": script,
+              "scene_terms": ",".join(keywords),
+              "aspect": aspect,
+              "clip_duration": duration,
+          }
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as f:
+              for key, value in values.items():
+                  delimiter = "MPT_" + uuid.uuid4().hex
+                  f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
+          PY
+
+      - name: Check required Pexels key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${PEXELS_API_KEY:-}" ]]; then
+            echo "::error::Repository secret PEXELS_API_KEY or PEXELS is not configured."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MoneyPrinterTurbo and FFmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install "mpt==1.3.9"
+
+      - name: Configure private runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$MPT_HOME"
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          import app.paths
+          template = app.paths.config_template()
+          target = Path(os.environ["MPT_HOME"]) / "config.toml"
+          config = template.read_text(encoding="utf-8")
+          replacement = "pexels_api_keys = " + json.dumps([os.environ["PEXELS_API_KEY"]])
+          config, count = re.subn(
+              r"(?m)^pexels_api_keys\s*=\s*\[[^\r\n]*\]\s*$",
+              lambda _: replacement, config, count=1
+          )
+          if count != 1:
+              raise SystemExit("Could not configure the Pexels key in the private runtime.")
+          target.write_text(config, encoding="utf-8")
+          PY
+
+      - name: Generate MP4 with free Pexels stock footage
+        shell: bash
+        env:
+          TITLE: ${{ steps.form.outputs.title }}
+          SCRIPT: ${{ steps.form.outputs.script }}
+          SCENE_TERMS: ${{ steps.form.outputs.scene_terms }}
+          ASPECT: ${{ steps.form.outputs.aspect }}
+          CLIP_DURATION: ${{ steps.form.outputs.clip_duration }}
+        run: |
+          set -euo pipefail
+          task_id="$(python -c 'import uuid; print(uuid.uuid4())')"
+          mpt cli \
+            --video-subject "$TITLE" \
+            --video-script "$SCRIPT" \
+            --video-language ja-JP \
+            --video-source pexels \
+            --video-terms "$SCENE_TERMS" \
+            --match-materials-to-script \
+            --video-count 1 \
+            --video-aspect "$ASPECT" \
+            --video-fit-mode cover \
+            --video-concat-mode sequential \
+            --video-clip-duration "$CLIP_DURATION" \
+            --video-clip-speed 1 \
+            --video-transition-mode fade-in \
+            --n-threads 1 \
+            --voice-name ja-JP-NanamiNeural \
+            --voice-volume 1 \
+            --voice-rate 1 \
+            --bgm-type none \
+            --subtitle-enabled \
+            --subtitle-position bottom \
+            --stop-at video \
+            --task-id "$task_id"
+          video_path="$MPT_HOME/storage/tasks/$task_id/final-1.mp4"
+          if [[ ! -s "$video_path" ]]; then
+            echo "::error::MoneyPrinterTurbo finished without a non-empty final MP4."
+            exit 1
+          fi
+          mkdir -p mpt-output
+          cp "$video_path" mpt-output/final.mp4
+
+      - name: Upload finished MP4
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneyprinterturbo-video
+          path: mpt-output/final.mp4
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Post result link to request
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const success = ${{ job.status == 'success' }};
+            const message = success
+              ? `動画制作が完了しました。\n\n[実行結果とArtifacts（MP4）を開く](${runUrl})\n\nArtifacts内の \`moneyprinterturbo-video\` をダウンロードしてください。保存期限は3日です。`
+              : `動画制作が完了しませんでした。\n\n[実行ログを確認する](${runUrl})`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
