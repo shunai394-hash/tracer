@@ -60,6 +60,18 @@ test("BGM API is admin-protected, private-storage based, and MP3-size bounded", 
 });
 
 
+
+test("studio can export a finished dialogue and BGM mix without modifying source dialogue", () => {
+  assert.ok(page.includes('id="mixExport"'));
+  assert.ok(page.includes('id="mixBgmVolume"'));
+  assert.ok(page.includes("async function createDramaMix"));
+  assert.ok(page.includes("OfflineAudioContext"));
+  assert.ok(page.includes("function encodeWav"));
+  assert.ok(page.includes("未生成のセリフ"));
+  assert.ok(page.includes("duration>300"));
+  assert.ok(page.includes('download="tracer-short-drama-mix.wav"'));
+});
+
 test("short drama studio inline JavaScript parses without syntax errors", () => {
   const scriptStart = page.indexOf("<script>");
   const scriptEnd = page.indexOf("</script>", scriptStart);
