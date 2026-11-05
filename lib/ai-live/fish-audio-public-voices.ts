@@ -50,8 +50,6 @@ export async function listLicensedJapaneseVoices(apiKey: string): Promise<FishAu
     const tags = Array.isArray(model.tags)
       ? model.tags.filter((value): value is string => typeof value === "string").slice(0, 12)
       : [];
-    const genderEvidence = [title, typeof model.description === "string" ? model.description : "", ...tags].join(" ").toLowerCase();
-    if (!/(female|woman|women|女性|女声|feminine)/u.test(genderEvidence)) return [];
     return [{
       id,
       title: title.slice(0, 100),

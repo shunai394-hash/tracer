@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
+import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,14 +98,17 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "text_length_out_of_range", maxCharacters: MAX_TEXT_CHARS }, 400);
   }
 
-  let licensedVoices;
-  try {
-    licensedVoices = await listLicensedJapaneseVoices(apiKey);
-  } catch {
-    return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected voice could not be verified. No TTS generation was requested." }, 502);
-  }
-  if (!licensedVoices.some((voice) => voice.id === referenceId)) {
-    return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Only currently listed, licensed Japanese public voices can be used." }, 400);
+  const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
+  if (!isCustomVoice) {
+    let licensedVoices;
+    try {
+      licensedVoices = await listLicensedJapaneseVoices(apiKey);
+    } catch {
+      return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
+    }
+    if (!licensedVoices.some((voice) => voice.id === referenceId)) {
+      return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a currently licensed public Japanese voice or a consent-confirmed registered custom voice." }, 400);
+    }
   }
 
   const controller = new AbortController();

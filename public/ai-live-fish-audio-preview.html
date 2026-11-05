@@ -18,15 +18,16 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 <body>
 <main>
 <h1>TRACER 日本語AI音声選択・プレビュー</h1>
-<p class="notice">Fish Audioの公開ライブラリから、日本語対応かつライセンス済みとして返された音声だけを表示します。生成は管理者が明示的に実行した場合のみ。自動生成・自動再試行・公開投稿は行いません。</p>
+<p><a href="/ai-live-short-drama-studio.html" style="color:#93c5fd">ショートドラマ音声スタジオを開く →</a></p>
+<p class="notice">Fish Audioの公開ライセンス済み音声と、本人の許可を確認したTRACER専用クローン音声を分けて表示します。生成は管理者が明示的に実行した場合のみ。自動生成・自動再試行・公開投稿は行いません。</p>
 <label for="token">TRACER管理トークン</label>
 <input id="token" type="password" autocomplete="off" required placeholder="TRACER_ADMIN_TOKEN">
 <button id="loadVoices" class="secondary" type="button">許諾済み日本語ボイスを読み込む</button>
-<label for="voice">使用する日本語女性ボイス候補</label>
+<label for="voice">使用する日本語ボイス候補</label>
 <select id="voice" required disabled>
 <option value="">先にボイス一覧を読み込んでください</option>
 </select>
-<p id="voiceInfo" class="small">候補はFish Audioの公開・ライセンス済み日本語モデルに限定します。</p>
+<p id="voiceInfo" class="small">公開ライセンス音声と、許可確認済みカスタム音声を区別して表示します。</p>
 <form id="form" autocomplete="off">
 <label for="script">読み上げ原稿（最大1,200文字）</label>
 <textarea id="script" maxlength="1200" required>こんにちは、TRACER AI配信です。気になる商品について、価格や特徴をわかりやすくご案内します。商品情報を確認してから、正確にお伝えします。</textarea>
@@ -35,7 +36,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 <p id="status" class="status" role="status" aria-live="polite">待機中。ボイス一覧を読み込むまでAPI通信は行いません。</p>
 <audio id="audio" controls hidden></audio>
 <a id="downloadAudio" href="#" download="tracer-fish-audio-preview.mp3" hidden style="display:block;margin-top:12px;text-align:center;padding:12px;border-radius:9px;background:#047857;color:#fff;text-decoration:none;font-weight:600">MP3をダウンロード</a>
-<p class="small">APIキーはサーバー側に保持し、ブラウザへ返しません。選択した音声IDは生成時にサーバー側でライセンス済み日本語一覧と照合します。利用条件は提供元の最新規約に従ってください。</p>
+<p class="small">APIキーはサーバー側に保持し、ブラウザへ返しません。選択した音声IDは生成時にサーバー側で公開ライセンス一覧または許可確認済みクローン登録簿と照合します。利用条件は提供元の最新規約に従ってください。</p>
 <script>
 (() => {
   const token = document.getElementById("token");
@@ -62,7 +63,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
     loadButton.disabled = true;
     voice.disabled = true;
     generate.disabled = true;
-    status.textContent = "ライセンス済み日本語ボイスを確認しています。音声生成は行いません。";
+    status.textContent = "公開ライセンス済みの日本語音声を確認しています。音声生成は行いません。";
     try {
       const response = await fetch("/api/admin/ai-live/fish-audio/voices", {
         method: "GET",
@@ -79,20 +80,39 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       placeholder.value = "";
       placeholder.textContent = "使用する声を選択";
       voice.append(placeholder);
+      const groups = new Map();
       for (const item of data.voices) {
+        const evidence = [item.title, item.description, ...(Array.isArray(item.tags) ? item.tags : [])].join(" ").toLowerCase();
+        const personaLabel = /(child|kid|children|子供|こども|幼児|少年|少女)/u.test(evidence)
+          ? "子供・少年少女の声"
+          : /(grandmother|grandma|おばあちゃん|祖母|老婆|老婦人)/u.test(evidence)
+            ? "おばあちゃんの声"
+            : /(grandfather|grandpa|おじいさん|祖父|老人|老紳士)/u.test(evidence)
+              ? "おじいさんの声"
+              : "その他の日本語ボイス";
+        const groupLabel = item.source === "user_provided_clone"
+          ? "本人許可確認済み・TRACERカスタム音声"
+          : "Fish Audio公開ライセンス音声／" + personaLabel;
+        if (!groups.has(groupLabel)) {
+          const group = document.createElement("optgroup");
+          group.label = groupLabel;
+          groups.set(groupLabel, group);
+          voice.append(group);
+        }
         const option = document.createElement("option");
         option.value = item.id;
         option.textContent = item.title;
+        option.dataset.source = item.source || "public_licensed";
         option.dataset.description = item.description || "";
         option.dataset.tags = Array.isArray(item.tags) ? item.tags.join(" / ") : "";
-        voice.append(option);
+        groups.get(groupLabel).append(option);
       }
       voicesLoaded = true;
       voice.disabled = data.voices.length === 0;
       status.textContent = data.voices.length
-        ? data.voices.length + "件のライセンス済み日本語ボイスを取得しました。音声を選んで試聴してください。"
+        ? data.voices.length + "件の日本語ボイスを取得しました。公開音声と許可確認済みクローンを選択できます。"
         : "条件に合うボイスが見つかりませんでした。音声生成は行っていません。";
-      voiceInfo.textContent = "候補は" + data.count + "件。声を選択すると説明が表示されます。";
+      voiceInfo.textContent = "公開音声 " + data.publicLicensedCount + "件／許可確認済みクローン " + data.consentedCustomCount + "件。子供・おばあちゃん・おじいさんの声は、提供元の説明・タグで確認できたものを分類表示します。";
       generate.disabled = data.voices.length === 0 || !voice.value;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : "通信に失敗しました。";
