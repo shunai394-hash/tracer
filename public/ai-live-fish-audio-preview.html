@@ -18,15 +18,15 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 <body>
 <main>
 <h1>TRACER 日本語AI音声選択・プレビュー</h1>
-<p class="notice">Fish Audioの公開ライブラリから、日本語対応かつライセンス済みとして返された音声だけを表示します。生成は管理者が明示的に実行した場合のみ。自動生成・自動再試行・公開投稿は行いません。</p>
+<p class="notice">Fish Audioの公開ライセンス済み音声と、本人の許可を確認したTRACER専用クローン音声を分けて表示します。生成は管理者が明示的に実行した場合のみ。自動生成・自動再試行・公開投稿は行いません。</p>
 <label for="token">TRACER管理トークン</label>
 <input id="token" type="password" autocomplete="off" required placeholder="TRACER_ADMIN_TOKEN">
 <button id="loadVoices" class="secondary" type="button">許諾済み日本語ボイスを読み込む</button>
-<label for="voice">使用する日本語女性ボイス候補</label>
+<label for="voice">使用する日本語ボイス候補</label>
 <select id="voice" required disabled>
 <option value="">先にボイス一覧を読み込んでください</option>
 </select>
-<p id="voiceInfo" class="small">候補はFish Audioの公開・ライセンス済み日本語モデルに限定します。</p>
+<p id="voiceInfo" class="small">公開ライセンス音声と、許可確認済みカスタム音声を区別して表示します。</p>
 <form id="form" autocomplete="off">
 <label for="script">読み上げ原稿（最大1,200文字）</label>
 <textarea id="script" maxlength="1200" required>こんにちは、TRACER AI配信です。気になる商品について、価格や特徴をわかりやすくご案内します。商品情報を確認してから、正確にお伝えします。</textarea>
@@ -82,17 +82,17 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       for (const item of data.voices) {
         const option = document.createElement("option");
         option.value = item.id;
-        option.textContent = item.title;
+        option.textContent = item.title;\n        option.dataset.source = item.source || "public_licensed";
         option.dataset.description = item.description || "";
         option.dataset.tags = Array.isArray(item.tags) ? item.tags.join(" / ") : "";
-        voice.append(option);
+        groups.get(groupLabel).append(option);
       }
       voicesLoaded = true;
       voice.disabled = data.voices.length === 0;
       status.textContent = data.voices.length
         ? data.voices.length + "件のライセンス済み日本語ボイスを取得しました。音声を選んで試聴してください。"
         : "条件に合うボイスが見つかりませんでした。音声生成は行っていません。";
-      voiceInfo.textContent = "候補は" + data.count + "件。声を選択すると説明が表示されます。";
+      voiceInfo.textContent = "公開音声 " + data.publicLicensedCount + "件／許可確認済みクローン " + data.consentedCustomCount + "件。声を選択すると説明が表示されます。";
       generate.disabled = data.voices.length === 0 || !voice.value;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : "通信に失敗しました。";
