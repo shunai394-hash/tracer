@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
+import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,8 +37,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const voices = await listLicensedJapaneseVoices(apiKey);
-    return json({ ok: true, voices, count: voices.length, licensedOnly: true, language: "ja" });
+    const publicVoices = await listLicensedJapaneseVoices(apiKey);
+    const customVoices = getConsentedCustomJapaneseVoices();
+    const voices = [...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })), ...customVoices];
+    return json({ ok: true, voices, count: voices.length, publicLicensedCount: publicVoices.length, consentedCustomCount: customVoices.length, language: "ja" });
   } catch {
     return json({
       ok: false,
