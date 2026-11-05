@@ -98,13 +98,15 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "text_length_out_of_range", maxCharacters: MAX_TEXT_CHARS }, 400);
   }
 
-  let licensedVoices;
-  try {
-    licensedVoices = await listLicensedJapaneseVoices(apiKey);
-  } catch {
-    return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected voice could not be verified. No TTS generation was requested." }, 502);
-  }
-  if (!licensedVoices.some((voice) => voice.id === referenceId) && !isConsentedCustomJapaneseVoice(referenceId)) {
+  const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
+  if (!isCustomVoice) {
+    let licensedVoices;
+    try {
+      licensedVoices = await listLicensedJapaneseVoices(apiKey);
+    } catch {
+      return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
+    }
+    if (!licensedVoices.some((voice) => voice.id === referenceId)) {
     return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Only currently listed, licensed Japanese public voices can be used." }, 400);
   }
 
