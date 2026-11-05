@@ -5,7 +5,8 @@ import test from "node:test";
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const voiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
-const page = readFileSync("public/ai-live-fish-audio-preview.html", "utf8");\nconst customVoices = readFileSync("lib/ai-live/fish-audio-consented-custom-voices.ts", "utf8");
+const page = readFileSync("public/ai-live-fish-audio-preview.html", "utf8");
+const customVoices = readFileSync("lib/ai-live/fish-audio-consented-custom-voices.ts", "utf8");
 
 test("Fish Audio preview is server-side, authenticated, bounded and one-shot", () => {
   assert.ok(route.includes("authorizedAdminToken(request)"));
@@ -22,14 +23,15 @@ test("Fish Audio preview is server-side, authenticated, bounded and one-shot", (
   assert.doesNotMatch(route, /ELEVENLABS_API_KEY/);
 });
 
-test("voice catalogue is authenticated and restricts results to licensed public Japanese female voices", () => {
+test("voice catalogue is authenticated and restricts results to licensed public Japanese voices", () => {
   assert.ok(voicesRoute.includes("authorizedAdminToken(request)"));
   assert.ok(voicesRoute.includes("requireAutomationAuth(request)"));
   assert.ok(voicesRoute.includes("listLicensedJapaneseVoices(apiKey)"));
   assert.ok(voiceLibrary.includes('url.searchParams.set("language", "ja")'));
   assert.ok(voiceLibrary.includes('url.searchParams.set("licensed", "true")'));
   assert.ok(voiceLibrary.includes('visibility !== "public"'));
-  assert.doesNotMatch(voiceLibrary, /female\\|woman\\|women/);\n  assert.ok(voiceLibrary.includes("licensed"));
+  assert.doesNotMatch(voiceLibrary, /female|woman|women/);
+  assert.ok(voiceLibrary.includes("licensed"));
 });
 
 test("Fish Audio preview page requires explicit voice selection and explicit generation", () => {
