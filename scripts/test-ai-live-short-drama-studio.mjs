@@ -44,7 +44,7 @@ test("studio provides a separate multi-file BGM library with preview controls", 
   assert.ok(page.includes('id="bgmVolume"'));
   assert.ok(page.includes('id="bgmLoop"'));
   assert.ok(page.includes('id="bgmPreview"'));
-  assert.ok(page.includes("BGM音源"));
+  assert.ok(page.includes("MP3音源"));
   assert.ok(page.includes("台詞音声には自動で合成"));
 });
 
