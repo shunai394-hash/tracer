@@ -107,7 +107,8 @@ export async function POST(request: Request) {
       return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
     }
     if (!licensedVoices.some((voice) => voice.id === referenceId)) {
-    return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Only currently listed, licensed Japanese public voices can be used." }, 400);
+      return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a currently licensed public Japanese voice or a consent-confirmed registered custom voice." }, 400);
+    }
   }
 
   const controller = new AbortController();
