@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
+import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected voice could not be verified. No TTS generation was requested." }, 502);
   }
-  if (!licensedVoices.some((voice) => voice.id === referenceId)) {
+  if (!licensedVoices.some((voice) => voice.id === referenceId) && !isConsentedCustomJapaneseVoice(referenceId)) {
     return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Only currently listed, licensed Japanese public voices can be used." }, 400);
   }
 
