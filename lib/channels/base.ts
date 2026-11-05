@@ -266,7 +266,7 @@ export async function editBaseItemVariations(input: {
 export async function setBaseVariationStock(itemId: string, variationId: string, stock: number) {
   const normalizedItemId = String(itemId ?? "").trim();
   const normalizedVariationId = String(variationId ?? "").trim();
-  if (!/^\\d+$/.test(normalizedItemId) || !normalizedVariationId) {
+  if (!/^\d+$/.test(normalizedItemId) || !normalizedVariationId) {
     throw new Error("base_variation_update_identity_invalid");
   }
   if (!Number.isFinite(stock) || stock < 0) {
