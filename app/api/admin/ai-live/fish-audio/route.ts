@@ -91,6 +91,13 @@ export async function POST(request: Request) {
 
   const text = typeof input.text === "string" ? input.text.trim() : "";
   const referenceId = typeof input.referenceId === "string" ? input.referenceId.trim() : "";
+  const speed = typeof input.prosody === "object" && input.prosody !== null && !Array.isArray(input.prosody)
+    ? (input.prosody as Record<string, unknown>).speed
+    : undefined;
+  const prosodySpeed = typeof speed === "number" && Number.isFinite(speed) ? speed : 1;
+  if (prosodySpeed < 0.5 || prosodySpeed > 2) {
+    return json({ ok: false, error: "prosody_speed_out_of_range", message: "Speaking speed must be between 0.5 and 2." }, 400);
+  }
   if (!/^[a-zA-Z0-9_-]{8,128}$/.test(referenceId)) {
     return json({ ok: false, error: "licensed_japanese_voice_required", message: "Choose a voice from the licensed Japanese voice list." }, 400);
   }
@@ -121,7 +128,7 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
         model: process.env.FISH_AUDIO_MODEL || "s2.1-pro-free",
       },
-      body: JSON.stringify({ text, reference_id: referenceId, format: "mp3" }),
+      body: JSON.stringify({ text, reference_id: referenceId, format: "mp3", prosody: { speed: prosodySpeed } }),
       cache: "no-store",
       signal: controller.signal,
     });
