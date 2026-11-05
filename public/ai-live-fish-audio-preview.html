@@ -35,7 +35,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 <p id="status" class="status" role="status" aria-live="polite">待機中。ボイス一覧を読み込むまでAPI通信は行いません。</p>
 <audio id="audio" controls hidden></audio>
 <a id="downloadAudio" href="#" download="tracer-fish-audio-preview.mp3" hidden style="display:block;margin-top:12px;text-align:center;padding:12px;border-radius:9px;background:#047857;color:#fff;text-decoration:none;font-weight:600">MP3をダウンロード</a>
-<p class="small">APIキーはサーバー側に保持し、ブラウザへ返しません。選択した音声IDは生成時にサーバー側でライセンス済み日本語一覧と照合します。利用条件は提供元の最新規約に従ってください。</p>
+<p class="small">APIキーはサーバー側に保持し、ブラウザへ返しません。選択した音声IDは生成時にサーバー側で公開ライセンス一覧または許可確認済みクローン登録簿と照合します。利用条件は提供元の最新規約に従ってください。</p>
 <script>
 (() => {
   const token = document.getElementById("token");
@@ -79,10 +79,21 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       placeholder.value = "";
       placeholder.textContent = "使用する声を選択";
       voice.append(placeholder);
+      const groups = new Map();
       for (const item of data.voices) {
+        const groupLabel = item.source === "user_provided_clone"
+          ? "本人許可確認済み・TRACERカスタム音声"
+          : "Fish Audio公開ライセンス音声";
+        if (!groups.has(groupLabel)) {
+          const group = document.createElement("optgroup");
+          group.label = groupLabel;
+          groups.set(groupLabel, group);
+          voice.append(group);
+        }
         const option = document.createElement("option");
         option.value = item.id;
-        option.textContent = item.title;\n        option.dataset.source = item.source || "public_licensed";
+        option.textContent = item.title;
+        option.dataset.source = item.source || "public_licensed";
         option.dataset.description = item.description || "";
         option.dataset.tags = Array.isArray(item.tags) ? item.tags.join(" / ") : "";
         groups.get(groupLabel).append(option);
@@ -90,7 +101,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       voicesLoaded = true;
       voice.disabled = data.voices.length === 0;
       status.textContent = data.voices.length
-        ? data.voices.length + "件のライセンス済み日本語ボイスを取得しました。音声を選んで試聴してください。"
+        ? data.voices.length + "件の日本語ボイスを取得しました。公開音声と許可確認済みクローンを選択できます。"
         : "条件に合うボイスが見つかりませんでした。音声生成は行っていません。";
       voiceInfo.textContent = "公開音声 " + data.publicLicensedCount + "件／許可確認済みクローン " + data.consentedCustomCount + "件。声を選択すると説明が表示されます。";
       generate.disabled = data.voices.length === 0 || !voice.value;
