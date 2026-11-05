@@ -34,6 +34,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 </form>
 <p id="status" class="status" role="status" aria-live="polite">待機中。ボイス一覧を読み込むまでAPI通信は行いません。</p>
 <audio id="audio" controls hidden></audio>
+<a id="downloadAudio" href="#" download="tracer-fish-audio-preview.mp3" hidden style="display:block;margin-top:12px;text-align:center;padding:12px;border-radius:9px;background:#047857;color:#fff;text-decoration:none;font-weight:600">MP3をダウンロード</a>
 <p class="small">APIキーはサーバー側に保持し、ブラウザへ返しません。選択した音声IDは生成時にサーバー側でライセンス済み日本語一覧と照合します。利用条件は提供元の最新規約に従ってください。</p>
 <script>
 (() => {
@@ -46,6 +47,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
   const generate = document.getElementById("generate");
   const status = document.getElementById("status");
   const audio = document.getElementById("audio");
+  const downloadAudio = document.getElementById("downloadAudio");
   let audioUrl = null;
   let pending = false;
   let voicesLoaded = false;
@@ -121,6 +123,8 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
     status.textContent = "選択した日本語ボイスで音声を生成中です。自動再試行はしません。";
     audio.pause();
     audio.hidden = true;
+    downloadAudio.hidden = true;
+    downloadAudio.removeAttribute("href");
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = null;
     try {
@@ -140,6 +144,9 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       if (!blob.size) throw new Error("音声データが空でした。");
       audioUrl = URL.createObjectURL(blob);
       audio.src = audioUrl;
+      downloadAudio.href = audioUrl;
+      downloadAudio.hidden = false;
+      downloadAudio.download = "tracer-fish-audio-" + new Date().toISOString().replace(/[:.]/g, "-") + ".mp3";
       audio.hidden = false;
       status.textContent = "生成完了。再生して日本語の自然さを確認してください。";
       try { await audio.play(); } catch { status.textContent = "生成完了。下のプレーヤーで再生してください。"; }
