@@ -29,7 +29,7 @@ test("voice catalogue is authenticated and restricts results to licensed public 
   assert.ok(voiceLibrary.includes('url.searchParams.set("language", "ja")'));
   assert.ok(voiceLibrary.includes('url.searchParams.set("licensed", "true")'));
   assert.ok(voiceLibrary.includes('visibility !== "public"'));
-  assert.ok(voiceLibrary.includes("/(female|woman|women|女性|女声|feminine)/u"));
+  assert.doesNotMatch(voiceLibrary, /female\\|woman\\|women/);\n  assert.ok(voiceLibrary.includes("licensed"));
 });
 
 test("Fish Audio preview page requires explicit voice selection and explicit generation", () => {
@@ -55,4 +55,12 @@ test("private clone voices are separately registered with confirmed consent and 
   assert.ok(voicesRoute.includes("getConsentedCustomJapaneseVoices()"));
   assert.ok(page.includes("本人許可確認済み・TRACERカスタム音声"));
   assert.ok(page.includes("publicLicensedCount"));
+});
+
+test("public Japanese voice picker supports child and senior voice classifications", () => {
+  for (const label of ["子供・少年少女の声", "おばあちゃんの声", "おじいさんの声"]) {
+    assert.ok(page.includes(label));
+  }
+  assert.ok(voiceLibrary.includes('url.searchParams.set("language", "ja")'));
+  assert.ok(voiceLibrary.includes('url.searchParams.set("licensed", "true")'));
 });
