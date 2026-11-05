@@ -46,6 +46,8 @@ jobs:
 
           title = field("動画タイトル")
           script = field("ナレーション台本")
+          # GitHub form text may contain Markdown code fences; never send those to TTS/subtitles.
+          script = re.sub(r"(?m)^\\s*```[^\\r\\n]*\\s*$", "", script).strip()
           terms = field("シーン検索キーワード")
           aspect = field("動画比率")
           duration = field("1カットの最大秒数")
