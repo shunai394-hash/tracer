@@ -34,3 +34,18 @@ test("studio does not auto-publish, schedule, or retry generated audio", () => {
   assert.doesNotMatch(page, /setInterval\(|setTimeout\(/);
   assert.doesNotMatch(page, /\/api\/.*publish|social\/post/i);
 });
+
+test("project bundle saves and restores generated audio without server storage", () => {
+  assert.ok(page.includes('id="saveProject"'));
+  assert.ok(page.includes('id="loadProject"'));
+  assert.ok(page.includes('id="projectFile"'));
+  assert.ok(page.includes('format="tracer-short-drama-project"') || page.includes('format="tracer-short-drama-project"'));
+  assert.ok(page.includes('data.format="tracer-short-drama-project"'));
+  assert.ok(page.includes("bytesToBase64"));
+  assert.ok(page.includes("base64ToBytes"));
+  assert.ok(page.includes("row.audioUrl=URL.createObjectURL(blob)"));
+  assert.ok(page.includes("52*1024*1024"));
+  assert.ok(page.includes("12*1024*1024"));
+  assert.ok(page.includes("speakerIdMap"));
+  assert.ok(page.includes("現在の脚本・生成音声を置き換えて作品データを読み込みます"));
+});
