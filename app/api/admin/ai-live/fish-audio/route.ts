@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,13 +68,12 @@ export async function POST(request: Request) {
   }
 
   const apiKey = process.env.FISH_AUDIO_API_KEY;
-  const referenceId = process.env.FISH_AUDIO_REFERENCE_ID;
-  if (!apiKey || !referenceId) {
+  if (!apiKey) {
     return json({
       ok: false,
       error: "fish_audio_not_configured",
-      message: "Set FISH_AUDIO_API_KEY and FISH_AUDIO_REFERENCE_ID. No provider request was sent.",
-      missing: [!apiKey ? "FISH_AUDIO_API_KEY" : null, !referenceId ? "FISH_AUDIO_REFERENCE_ID" : null].filter(Boolean),
+      message: "Set FISH_AUDIO_API_KEY. No provider request was sent.",
+      missing: ["FISH_AUDIO_API_KEY"],
     }, 503);
   }
 
@@ -89,8 +89,22 @@ export async function POST(request: Request) {
   }
 
   const text = typeof input.text === "string" ? input.text.trim() : "";
+  const referenceId = typeof input.referenceId === "string" ? input.referenceId.trim() : "";
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(referenceId)) {
+    return json({ ok: false, error: "licensed_japanese_voice_required", message: "Choose a voice from the licensed Japanese voice list." }, 400);
+  }
   if (!text || text.length > MAX_TEXT_CHARS) {
     return json({ ok: false, error: "text_length_out_of_range", maxCharacters: MAX_TEXT_CHARS }, 400);
+  }
+
+  let licensedVoices;
+  try {
+    licensedVoices = await listLicensedJapaneseVoices(apiKey);
+  } catch {
+    return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected voice could not be verified. No TTS generation was requested." }, 502);
+  }
+  if (!licensedVoices.some((voice) => voice.id === referenceId)) {
+    return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Only currently listed, licensed Japanese public voices can be used." }, 400);
   }
 
   const controller = new AbortController();
