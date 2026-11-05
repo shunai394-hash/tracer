@@ -41,7 +41,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </section>
 <section class="panel">
 <h2>脚本・セリフ</h2>
-<p class="muted">セリフごとに感情、話速、間の演出を指定します。感情・話速・間は音声モデルへの演技指示としてテキストに付加します。モデルが各指示を厳密に再現する保証はありません。</p>
+<p class="muted">セリフごとに感情、話速、間の演出を指定します。感情はFish Audioの角括弧ディレクションタグ、話速はAPIのprosody.speed、間は演技タグとして送信します。声や間の再現度はモデル・ボイスにより変わるため、生成音声を必ず試聴してください。</p>
 <div id="lines"></div>
 <button id="addLine" class="secondary" type="button">セリフを追加</button>
 <div class="grid">
@@ -86,7 +86,8 @@ function addLine(text="セリフを入力してください",speakerId=character
  for(const cls of ["emotion","pace","pause"])el.querySelector("."+cls).addEventListener("change",e=>row[cls]=e.target.value);
  lines.append(el);return row;
 }
-function buildSpokenText(row){const pace={ゆっくり:"ゆっくり、言葉を丁寧に",標準:"自然な話速で",速め:"少しテンポよく"}[row.pace];const pause={短い間:"間は短めに",通常:"自然な間で",長い間:"セリフの前後に長めの間を感じさせて"}[row.pause];return "【演技指示："+row.emotion+"。"+pace+"。"+pause+"。】\n"+row.text.trim();}
+function buildSpokenText(row){const emotion={自然:"[natural conversational delivery]",喜び:"[happy, bright and warm]",悲しみ:"[sad, restrained, slightly trembling voice]",怒り:"[angry, tense and forceful]",驚き:"[surprised, startled reaction]",不安:"[anxious, hesitant delivery]",ささやき:"[whispering]",緊張:"[nervous, tense delivery]"}[row.emotion]||"[natural delivery]";const pause={短い間:"[brief pause]",通常:"",長い間:"[long dramatic pause]"}[row.pause];return [emotion,pause,row.text.trim()].filter(Boolean).join("\n");}
+function buildProsody(row){return {speed:{ゆっくり:0.82,標準:1,速め:1.18}[row.pace]||1};}
 async function generateLine(row,el,fromBatch=false){
  if(pending&&!fromBatch)return;
  const character=characterRows.find(c=>c.id===row.speakerId);
@@ -95,7 +96,7 @@ async function generateLine(row,el,fromBatch=false){
  if(!row.text.trim()){status.textContent="セリフ本文を入力してください。";return;}
  if(!fromBatch){pending=true;setControls(true);}el.querySelector(".result").textContent="生成中…";status.textContent="Fish Audioへ1件送信中。自動再試行はしません。";
  try{
-  const response=await fetch("/api/admin/ai-live/fish-audio",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({text:buildSpokenText(row),referenceId:character.voiceId})});
+  const response=await fetch("/api/admin/ai-live/fish-audio",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({text:buildSpokenText(row),referenceId:character.voiceId,prosody:buildProsody(row)})});
   if(!response.ok){const data=await response.json().catch(()=>null);throw new Error(data?.message||data?.error||"音声生成に失敗しました");}
   const blob=await response.blob();if(!blob.size)throw new Error("音声データが空です");
   if(row.audioUrl)URL.revokeObjectURL(row.audioUrl);row.audioUrl=URL.createObjectURL(blob);
