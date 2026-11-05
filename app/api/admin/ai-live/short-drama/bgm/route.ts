@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const tracks = await Promise.all((data ?? []).filter((item) => item.name.toLowerCase().endsWith(".mp3")).map(async (item) => {
       const { data: signed, error: signedError } = await supabase.storage.from(BUCKET).createSignedUrl(item.name, 60 * 60);
       if (signedError) throw signedError;
-      return { name: item.name, title: item.name.replace(/\.mp3$/i, ""), url: signed.signedUrl };
+      return { name: item.name, title: item.name.replace(/\.mp3$/i, ""), genre: typeof item.metadata?.genre === "string" ? item.metadata.genre : "未分類", url: signed.signedUrl };
     }));
     return json({ ok: true, tracks });
   } catch {
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     const objectName = safeBase + "-" + crypto.randomUUID() + ".mp3";
     const bytes = new Uint8Array(await file.arrayBuffer());
     const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.storage.from(BUCKET).upload(objectName, bytes, { contentType: "audio/mpeg", upsert: false });
+    const { error } = await supabase.storage.from(BUCKET).upload(objectName, bytes, { contentType: "audio/mpeg", upsert: false, metadata: { genre: String(form.get("genre") || "未分類").slice(0, 40) } });
     if (error) throw error;
     const { data: signed, error: signedError } = await supabase.storage.from(BUCKET).createSignedUrl(objectName, 60 * 60);
     if (signedError) throw signedError;
