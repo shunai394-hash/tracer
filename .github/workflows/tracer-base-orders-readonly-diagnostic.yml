@@ -1,0 +1,40 @@
+name: TRACER BASE Orders API Diagnostic (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-base-orders-readonly-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call production read-only BASE orders diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl --fail-with-body --silent --show-error --max-time 20 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl --silent --show-error --max-time 60 -o result.json -w "%{http_code}" \
+            -H "Authorization: Bearer $token" \
+            "$BASE/api/admin/channels/base/orders-diagnostic")"
+          echo "HTTP $code"
+          python3 - <<'PY'
+          import json,sys
+          d=json.load(open("result.json", encoding="utf-8"))
+          # Response contains aggregate counts only; never print credentials or order/customer data.
+          print(json.dumps(d, ensure_ascii=False, indent=2))
+          if d.get("ok") is not True:
+              sys.exit(1)
+          PY
+          [[ "$code" =~ ^2 ]]
