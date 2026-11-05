@@ -10,6 +10,7 @@ import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 import { retireShopListingsOwnedByCommerce } from "@/lib/commerce/retire-legacy-storefront";
+import { isManualInventoryListing, manualInventoryQuantity } from "@/lib/shop/manual-inventory";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -108,7 +109,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   }
 
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
+  let query = supabase.from("shop_listings").select("id,product_id,title,description,selling_price,image_url,published,base_item_id,base_publication_status,base_publication_lease_until,base_last_error,inventory,manual_inventory,orderable,tracking_available,shipping_cost,supplier_name,supplier_listing_id,supplier_product_id,supplier_variant_id,source_cost,contribution_profit,shopify_product_id,pipeline_stage,pipeline_status,pipeline_reason,selection_reasons").is("archived_at", null);
   if (listingIds && listingIds.length > 0) {
     // Explicit admin retries can target an exact listing regardless of its
     // current publication status.
@@ -140,8 +141,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
 
-  // Only publish rows whose exact supplier listing is currently eligible for publication.
-  // Missing, unlinked, or unverified supplier evidence must be hidden on BASE.
+  // Supplier rows require exact canonical supplier eligibility. Explicitly
+  // marked merchant-held stock is independently publishable from its own
+  // on-hand quantity and does not require a supplier identity.
   const supplierStatuses = await getPublishableSupplierListingStatuses((listings ?? []).map((listing) => ({
     listingId: String(listing.id),
     supplierListingId: listing.supplier_listing_id == null ? null : String(listing.supplier_listing_id),
@@ -156,9 +158,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
   const publishableListings = (listings ?? []).map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
-  const retiredIds = await retireShopListingsOwnedByCommerce(publishableListings, "base", supabase);
+  const retiredIds = await retireShopListingsOwnedByCommerce(publishableListings.filter((listing) => !isManualInventoryListing(listing)), "base", supabase);
   const identityUnlinkedIds = new Set<string>(publishableListings
-    .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
+    .filter((listing) => !isManualInventoryListing(listing) && (!listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true))
     .map((listing) => String(listing.id)));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
@@ -251,7 +253,22 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
-      // Fail closed for existing BASE items too: a catalog validation failure
+      if (isManualInventoryListing(listing)) {
+        // A copy-service outage must not delist verified merchant-owned stock.
+        // Preserve the existing public item and surface the sync error for repair.
+        await supabase.from("shop_listings").update({
+          base_last_error: message,
+          base_publication_status: listing.base_item_id ? "published" : "failed",
+          pipeline_stage: "BASE_PUBLICATION",
+          pipeline_status: "failed",
+          pipeline_reason: "merchant_held_stock",
+          pipeline_error: message,
+          pipeline_updated_at: new Date().toISOString(),
+        }).eq("id", listingId);
+        results.push({ listingId, ok: false, error: message });
+        continue;
+      }
+      // Fail closed for supplier-backed items: a catalog validation failure
       // must not leave a previously visible product available for purchase.
       if (listing.base_item_id) {
         try {
@@ -305,7 +322,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
     // BASE publication is a sales-channel operation, not procurement authorization.
     // Publication is based on concrete supplier linkage, stock and positive contribution profit. Fulfillment revalidates live availability at order time.
-    if (!listing.supplier_product_id || !listing.supplier_variant_id) {
+    const manualInventory = isManualInventoryListing(listing);
+    if (!manualInventory && (!listing.supplier_product_id || !listing.supplier_variant_id)) {
       await supabase.from("shop_listings").update({
         published: false,
         orderable: false,
@@ -333,7 +351,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     const shippingCost = listing.shipping_cost === null || listing.shipping_cost === undefined ? null : Number(listing.shipping_cost);
-    if (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0) {
+    if (!manualInventory && (shippingCost === null || !Number.isFinite(shippingCost) || shippingCost < 0)) {
       if (listing.base_item_id) {
         try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
@@ -353,7 +371,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       : sourceCost !== null && Number.isFinite(sourceCost) && shippingCost !== null
         ? price - sourceCost - shippingCost
         : null;
-    if (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit < minimumExpectedProfitJpy) {
+    if (!manualInventory && (contributionProfit === null || !Number.isFinite(contributionProfit) || contributionProfit < minimumExpectedProfitJpy)) {
       const reason = contributionProfit === null
         ? "profit_unknown"
         : contributionProfit < minimumExpectedProfitJpy
@@ -395,8 +413,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       continue;
     }
 
-    const availableInventory = typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
-    if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory <= 0) {
+    const availableInventory = manualInventory
+      ? (manualInventoryQuantity(listing) ?? 0)
+      : typeof listing.inventory === "number" ? Math.floor(listing.inventory) : typeof listing.inventory === "string" && listing.inventory.trim() !== "" ? Math.floor(Number(listing.inventory)) : null;
+    if (availableInventory === null || !Number.isFinite(availableInventory) || availableInventory < 0 || (!manualInventory && availableInventory <= 0)) {
       if (listing.base_item_id) {
         try { await editBaseItem({ itemId: String(listing.base_item_id), title: catalogCopy.title, detail: catalogCopy.detail, price, stock: 0, visible: false }); }
         catch (error) {
@@ -412,10 +432,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     // Supplier warehouse inventory is not the merchant's storefront stock.
     // Keep BASE conservative and bounded just like Shopify; supplier inventory
     // is re-verified separately before any procurement attempt.
-    const storefrontInventory = toStorefrontStockQuantity(
-      availableInventory,
-      getStorefrontStockCap(),
-    );
+    const storefrontInventory = manualInventory
+      ? availableInventory
+      : toStorefrontStockQuantity(availableInventory, getStorefrontStockCap());
 
     const leaseUntil = new Date(Date.now() + 2 * 60_000).toISOString();
 
@@ -430,7 +449,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           base_publication_lease_until: leaseUntil,
           pipeline_stage: "BASE_PUBLICATION",
           pipeline_status: "publishing",
-          pipeline_reason: "profitable_supplier_linked_catalog",
+          pipeline_reason: manualInventory ? "merchant_held_stock" : "profitable_supplier_linked_catalog",
           pipeline_updated_at: new Date().toISOString(),
         })
         .eq("id", listingId)
@@ -471,7 +490,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         if (persistIdError) throw new Error(`base_create_id_persist_failed:${baseItemId}:${persistIdError.message}`);
       }
       if (listing.image_url) await addBaseItemImageWithFallback({ itemId: baseItemId, imageUrl: listing.image_url, shopifyProductId: typeof listing.shopify_product_id === "string" ? listing.shopify_product_id : null });
-      const { error: finalizeError } = await supabase.from("shop_listings").update({ published: true, published_at: new Date().toISOString(), base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: "profitable_supplier_linked_catalog", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      const { error: finalizeError } = await supabase.from("shop_listings").update({ published: true, published_at: new Date().toISOString(), base_item_id: baseItemId, base_published_at: new Date().toISOString(), base_publication_status: "published", base_publication_lease_until: null, base_last_error: null, pipeline_stage: "BASE_PUBLISHED", pipeline_status: "published", pipeline_reason: manualInventory ? "merchant_held_stock" : "profitable_supplier_linked_catalog", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
       if (finalizeError) throw new Error(`base_publication_finalize_failed: ${finalizeError.message}`);
       results.push({ listingId, ok: true, baseItemId });
     } catch (error) {

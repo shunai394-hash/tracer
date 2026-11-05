@@ -39,8 +39,8 @@ export async function GET(request: Request) {
       ok: result.failed === 0,
       phase: "shopify_channel_sync",
       ...result,
-      storefrontContract: "published + gate-passed + synced + in-stock + orderable + trackable",
-      note: "Only TRACER Sales Test Gate-passed PUBLISHED listings with live fulfillment evidence are synchronized.",
+      storefrontContract: "published + (supplier Sales Test Gate or verified merchant-held inventory) + synced; manual stock uses exact on-hand quantity",
+      note: "Supplier listings require Sales Test Gate and fulfillment evidence. Merchant-held stock is independently synchronized from manual_inventory and does not require supplier orderability or supplier tracking.",
     }, { status: result.failed === 0 ? 200 : 207, headers });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

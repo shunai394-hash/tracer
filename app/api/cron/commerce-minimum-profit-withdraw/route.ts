@@ -21,8 +21,22 @@ async function withdrawBatch(channel: (typeof CHANNELS)[number], limit: number) 
     .limit(1000);
   if (listingError) throw new Error(channel + "_listing_read_failed:" + listingError.message);
 
-  const variantIds = [...new Set((listings ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
-  if (variantIds.length === 0) return { channel, examined: 0, targeted: 0, result: null };
+  const allVariantIds = [...new Set((listings ?? []).map((row) => String(row.variant_id ?? "")).filter(Boolean))];
+  if (allVariantIds.length === 0) return { channel, examined: 0, targeted: 0, manualInventoryProtected: 0, result: null };
+
+  // Legacy channel rows may point directly at shop_listings IDs. Those rows
+  // are merchant-owned inventory, not commerce supplier variants, and must
+  // never be withdrawn by the supplier minimum-profit job.
+  const { data: manualRows, error: manualError } = await db.from("shop_listings")
+    .select("id")
+    .in("id", allVariantIds)
+    .eq("manual_inventory", true);
+  if (manualError) throw new Error(channel + "_manual_inventory_read_failed:" + manualError.message);
+  const manualInventoryIds = new Set((manualRows ?? []).map((row) => String(row.id)));
+  const variantIds = allVariantIds.filter((id) => !manualInventoryIds.has(id));
+  if (variantIds.length === 0) {
+    return { channel, examined: allVariantIds.length, targeted: 0, manualInventoryProtected: manualInventoryIds.size, result: null };
+  }
 
   const { data: prices, error: priceError } = await db.from("commerce_prices")
     .select("variant_id,currency,expected_profit,calculated_at")
@@ -43,9 +57,9 @@ async function withdrawBatch(channel: (typeof CHANNELS)[number], limit: number) 
       price.expected_profit < MIN_EXPECTED_PROFIT_JPY;
   }).slice(0, limit);
 
-  if (targets.length === 0) return { channel, examined: variantIds.length, targeted: 0, result: null };
+  if (targets.length === 0) return { channel, examined: allVariantIds.length, targeted: 0, manualInventoryProtected: manualInventoryIds.size, result: null };
   const result = await syncCommerceListings(channel, targets.length, false, targets);
-  return { channel, examined: variantIds.length, targeted: targets.length, result };
+  return { channel, examined: allVariantIds.length, targeted: targets.length, manualInventoryProtected: manualInventoryIds.size, result };
 }
 
 export async function GET(request: Request) {

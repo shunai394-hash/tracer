@@ -149,7 +149,12 @@ export async function POST(request: Request) {
     orderable: false,
     tracking_available: false,
     updated_at: now,
-    selection_reasons: ["manual_inventory"],
+    selection_reasons: ["manual_inventory", "merchant_held_stock"],
+    pipeline_stage: published ? "PUBLISHED" : "DRAFT",
+    pipeline_status: published ? "published" : "draft",
+    pipeline_reason: "merchant_held_stock",
+    pipeline_error: null,
+    pipeline_updated_at: now,
     missing: [],
   };
 

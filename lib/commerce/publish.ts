@@ -81,7 +81,7 @@ async function addBaseImageWithFormatFallback(input: {
 }
 
 async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<typeof createSupabaseAdminClient>) {
-  const result = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  const result = { checked: 0, unpublished: 0, failed: 0, manualInventoryProtected: 0, errors: [] as string[] };
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel)
@@ -93,12 +93,20 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   // Reconcile previously published listings whose safety stop failed or whose
   // DB state changed before external visibility was verified. Only explicit
   // supplier-safety error prefixes are eligible outside the published state.
-  const checkableListings = (listings ?? []).filter((listing) =>
+  const rawCheckableListings = (listings ?? []).filter((listing) =>
     listing.status === "published" ||
     String(listing.last_error ?? "").startsWith("supplier_offer_not_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_no_longer_fulfillable:") ||
     String(listing.last_error ?? "").startsWith("supplier_offer_disable_failed:")
   );
+  const candidateVariantIds = [...new Set(rawCheckableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
+  const { data: manualInventoryRows, error: manualInventoryError } = candidateVariantIds.length
+    ? await db.from("shop_listings").select("id").in("id", candidateVariantIds).eq("manual_inventory", true)
+    : { data: [], error: null };
+  if (manualInventoryError) throw new Error("manual_inventory_protection_read_failed:" + manualInventoryError.message);
+  const manualInventoryIds = new Set((manualInventoryRows ?? []).map((row) => String(row.id)));
+  result.manualInventoryProtected = rawCheckableListings.filter((listing) => manualInventoryIds.has(String(listing.variant_id))).length;
+  const checkableListings = rawCheckableListings.filter((listing) => !manualInventoryIds.has(String(listing.variant_id)));
   result.checked = checkableListings.length;
   const variantIds = [...new Set(checkableListings.map((listing) => String(listing.variant_id)).filter(Boolean))];
   if (variantIds.length === 0) return result;
@@ -297,13 +305,16 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       });
     }
   }
-  // A published listing stays purchasable only when supplier identity, stock, Japan shipping, tracking and profit are all present. Anything missing is removed from sale without deleting the product.
-  const staleListings = { checked: 0, unpublished: 0, failed: 0, errors: [] as string[] };
+  // Supplier-backed listings require supplier identity, stock, Japan shipping,
+  // tracking and profit. Merchant-held shop_listings are protected by their own
+  // manual_inventory flag and exact on-hand quantity.
+  const staleListings = { checked: 0, unpublished: 0, failed: 0, manualInventoryProtected: 0, errors: [] as string[] };
   // Hide listings with missing/invalid supplier identity before publishing the next batch.
   const identityCleanup = await unpublishUnfulfillableListings(channel, db);
   staleListings.checked += identityCleanup.checked;
   staleListings.unpublished += identityCleanup.unpublished;
   staleListings.failed += identityCleanup.failed;
+  staleListings.manualInventoryProtected += identityCleanup.manualInventoryProtected;
   staleListings.errors.push(...identityCleanup.errors);
   const candidateSelect = "id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
   let candidateQuery = db.from("commerce_variants")

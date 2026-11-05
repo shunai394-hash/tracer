@@ -6,6 +6,7 @@ import { syncPublishedListingsToShopify } from "@/lib/shopify/sync-published-lis
 import { publishPublishedListingsToBase } from "@/lib/channels/base-publisher";
 import { BASE_AUTH_REAUTH_REQUIRED, isBaseAuthenticationFailure } from "@/lib/channels/base-auth-failure";
 import { BASE_ITEMS_MAX_PAGES, editBaseItem, getBaseItemDetail, fetchBaseItemsSnapshot, isBaseConfigured } from "@/lib/channels/base";
+import { isManualInventoryListing } from "@/lib/shop/manual-inventory";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
 
   const db = createSupabaseAdminClient();
   const { data, error } = await db.from("shop_listings")
-    .select("id,product_id,supplier_listing_id,supplier_product_id,supplier_variant_id,published,orderable,tracking_available,pipeline_reason,shopify_product_id,shopify_sync_status,shopify_sync_error,base_item_id,base_publication_status,base_last_error")
+    .select("id,product_id,supplier_listing_id,manual_inventory,supplier_product_id,supplier_variant_id,published,orderable,tracking_available,pipeline_reason,shopify_product_id,shopify_sync_status,shopify_sync_error,base_item_id,base_publication_status,base_last_error")
     .or("published.eq.true,and(shopify_product_id.not.is.null,shopify_sync_status.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.neq.blocked,shopify_sync_status.neq.synced),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.is.null),and(shopify_product_id.not.is.null,shopify_sync_status.eq.blocked,shopify_sync_error.neq.shopify_unpublished_verified),and(base_item_id.not.is.null,base_last_error.is.null),and(base_item_id.not.is.null,base_last_error.neq.supplier_identity_unlinked_hidden,base_last_error.neq.tracer_unpublished_hidden,base_last_error.neq.base_auth_invalid_reauthorization_required)")
     .order("created_at", { ascending: true })
     .limit(1000);
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
     if (repairError) return NextResponse.json({ ok: false, stage: "native_cj_repair", error: repairError.message }, { status: 500 });
   }
   const unlinked = (data ?? []).filter((row) => {
+    if (isManualInventoryListing(row)) return false;
     if (!row.supplier_listing_id) return true;
     const status = supplierStatuses.get(String(row.id));
     if (!status) return true;
@@ -123,6 +125,7 @@ export async function GET(request: Request) {
         supplier_listing_id: string | null;
         supplier_product_id: string | null;
         supplier_variant_id: string | null;
+        manual_inventory: boolean | null;
         orderable: boolean | null;
         tracking_available: boolean | null;
         base_item_id: string | number | null;
@@ -130,7 +133,7 @@ export async function GET(request: Request) {
       for (let offset = 0; offset < 10_000; offset += 1000) {
         const { data: page, error: pageError } = await db
           .from("shop_listings")
-          .select("id,product_id,published,supplier_listing_id,supplier_product_id,supplier_variant_id,orderable,tracking_available,base_item_id")
+          .select("id,product_id,published,supplier_listing_id,manual_inventory,supplier_product_id,supplier_variant_id,orderable,tracking_available,base_item_id")
           .order("created_at", { ascending: true })
           .range(offset, offset + 999);
         if (pageError) throw new Error("TRACER_LISTING_SNAPSHOT_READ_FAILED");
@@ -146,8 +149,10 @@ export async function GET(request: Request) {
         supplierVariantId: row.supplier_variant_id == null ? null : String(row.supplier_variant_id),
       })));
       const eligibleIdentifiers = new Set(allListings
-        .filter((row) => row.published === true && row.orderable === true && row.tracking_available === true
-          && row.supplier_listing_id && statuses.has(String(row.id)))
+        .filter((row) => row.published === true && (
+          isManualInventoryListing(row) ||
+          (row.orderable === true && row.tracking_available === true && row.supplier_listing_id && statuses.has(String(row.id)))
+        ))
         .map((row) => `TRC-${String(row.id).toLowerCase()}`));
       const knownBaseIds = new Set(allListings
         .map((row) => String(row.base_item_id ?? "").trim())
