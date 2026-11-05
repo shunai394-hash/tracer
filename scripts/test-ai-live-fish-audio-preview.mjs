@@ -59,10 +59,12 @@ test("private clone voices are separately registered with confirmed consent and 
   assert.ok(page.includes("publicLicensedCount"));
 });
 
-test("public Japanese voice picker supports child and senior voice classifications", () => {
-  for (const label of ["子供・少年少女の声", "おばあちゃんの声", "おじいさんの声"]) {
-    assert.ok(page.includes(label));
-  }
+test("Japanese voice picker classifies female, male, and unconfirmed voices", () => {
+  assert.ok(page.includes('"女性"'));
+  assert.ok(page.includes('"男性"'));
+  assert.ok(page.includes('"性別未確認"'));
+  assert.ok(page.includes("genderLabel"));
+  assert.ok(page.includes("本人許可確認済み・TRACERカスタム音声"));
   assert.ok(voiceLibrary.includes('url.searchParams.set("language", "ja")'));
   assert.ok(voiceLibrary.includes('url.searchParams.set("licensed", "true")'));
 });
