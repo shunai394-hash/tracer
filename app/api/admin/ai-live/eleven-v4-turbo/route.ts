@@ -41,6 +41,49 @@ async function messageText(data: unknown): Promise<string> {
   throw new Error("unsupported_provider_message");
 }
 
+async function synthesizeDialogueHttp(apiKey: string, modelId: string, voiceId: string, text: string): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  try {
+    const response = await fetch("https://api.elevenlabs.io/v1/text-to-dialogue/stream", {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        model_id: modelId,
+        output_format: OUTPUT_FORMAT,
+        inputs: [{ text, voice_id: voiceId }],
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const raw = await response.text().catch(() => "");
+      const safeMessage = raw
+        .replaceAll(apiKey, "[redacted]")
+        .replaceAll(voiceId, "[voice]")
+        .replaceAll(text, "[text]")
+        .replace(/\s+/gu, " ")
+        .slice(0, 180);
+      const error = new Error("provider_rejected_request");
+      Object.assign(error, { providerCode: String(response.status), providerMessage: safeMessage });
+      throw error;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength === 0) throw new Error("empty_audio_response");
+    if (bytes.byteLength > MAX_AUDIO_BYTES) throw new Error("audio_size_limit_exceeded");
+    return bytes;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("provider_timeout");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function synthesizeDialogue(apiKey: string, modelId: string, voiceId: string, text: string): Promise<Uint8Array> {
   const url = new URL(ELEVEN_TTD_WS_URL);
   url.searchParams.set("model_id", modelId);
@@ -214,7 +257,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const bytes = await synthesizeDialogue(apiKey, modelId, voiceId, text);
+    const bytes = modelId === "eleven_v4"
+      ? await synthesizeDialogueHttp(apiKey, modelId, voiceId, text)
+      : await synthesizeDialogue(apiKey, modelId, voiceId, text);
     if (bytes.byteLength === 0) {
       return json({
         ok: false,
