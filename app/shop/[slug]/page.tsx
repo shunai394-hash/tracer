@@ -95,6 +95,7 @@ export default async function ShopProductPage({
 
   const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
   const shopifyDomain = (rawShopifyDomain || "ieufrg-tb.myshopify.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const isDomesticFreeShippingItem = listing.id === "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
   const storefrontBaseUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
   const productUrl = new URL(`/shop/${encodeURIComponent(listing.slug)}`, storefrontBaseUrl).toString();
   const productJsonLd = {
@@ -111,6 +112,7 @@ export default async function ShopProductPage({
       priceCurrency: listing.currency,
       availability: listing.inventory > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       url: productUrl,
+      ...(isDomesticFreeShippingItem ? { shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "JPY" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "JP" } } } : {}),
     } : undefined,
   };
 
