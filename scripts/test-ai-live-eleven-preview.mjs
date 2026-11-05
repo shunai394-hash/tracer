@@ -34,6 +34,8 @@ assert.match(page, /providerDiagnostic/u);
 assert.doesNotMatch(routeSource, /console\.(log|debug|info|warn|error)\(/u);
 assert.doesNotMatch(routeSource, /NEXT_PUBLIC_ELEVENLABS|localStorage|sessionStorage/u);
 assert.equal(routeSource.split("new WebSocket(").length - 1, 1);
+assert.match(routeSource, /v1\/text-to-dialogue\/stream"/u);
+assert.match(routeSource, /modelId === "eleven_v4"/u);
 const adminGate = routeSource.indexOf("if (!authorizedAdminToken(request))");
 const automationGate = routeSource.indexOf("requireAutomationAuth(request)", adminGate);
 assert.ok(adminGate > 0 && automationGate > adminGate);
@@ -157,6 +159,7 @@ FakeSocket.CLOSING = 2;
 FakeSocket.CLOSED = 3;
 
 const originalWebSocket = globalThis.WebSocket;
+const originalFetch = globalThis.fetch;
 const originalAdmin = process.env.TRACER_ADMIN_TOKEN;
 const originalKey = process.env.ELEVENLABS_API_KEY;
 const realSetTimeout = globalThis.setTimeout;
@@ -200,6 +203,11 @@ async function waitForSocket() {
 
 try {
   globalThis.WebSocket = FakeSocket;
+  const httpCalls = [];
+  globalThis.fetch = async (url, options) => {
+    httpCalls.push({ url: String(url), options, body: JSON.parse(options.body) });
+    return new Response(FakeSocket.audioBytes, { status: 200, headers: { "content-type": "audio/mpeg" } });
+  };
   process.env.TRACER_ADMIN_TOKEN = "admin-token-value";
   process.env.ELEVENLABS_API_KEY = "server-side-elevenlabs-key";
   automation.allow = false;
@@ -338,7 +346,16 @@ try {
   });
   assert.equal(standardV4.status, 200);
   assert.equal(standardV4.headers.get("x-ai-voice-model"), "eleven_v4");
-  assert.match(FakeSocket.sockets[0].url, /model_id=eleven_v4(?:&|$)/);
+  assert.equal(FakeSocket.sockets.length, 0);
+  assert.equal(httpCalls.length, 1);
+  assert.equal(httpCalls[0].url, "https://api.elevenlabs.io/v1/text-to-dialogue/stream");
+  assert.equal(httpCalls[0].options.method, "POST");
+  assert.equal(httpCalls[0].options.headers["xi-api-key"], "server-side-elevenlabs-key");
+  assert.deepEqual(httpCalls[0].body, {
+    model_id: "eleven_v4",
+    output_format: "mp3_44100_128",
+    inputs: [{ text: "こんにちは。清美の音声テストです。", voice_id: KIYOMI_VOICE_ID }],
+  });
 
   automation.allow = true;
   automation.calls = 0;
@@ -412,6 +429,7 @@ try {
   assert.equal(FakeSocket.sockets.length, 1);
 } finally {
   globalThis.WebSocket = originalWebSocket;
+  globalThis.fetch = originalFetch;
   globalThis.setTimeout = realSetTimeout;
   globalThis.clearTimeout = realClearTimeout;
   if (originalAdmin === undefined) delete process.env.TRACER_ADMIN_TOKEN;
