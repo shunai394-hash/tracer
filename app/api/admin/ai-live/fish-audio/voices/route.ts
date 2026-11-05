@@ -36,16 +36,22 @@ export async function GET(request: Request) {
     return json({ ok: false, error: "fish_audio_not_configured", message: "FISH_AUDIO_API_KEY is not configured." }, 503);
   }
 
+  const customVoices = getConsentedCustomJapaneseVoices();
+  let publicVoices = [];
+  let publicLibraryAvailable = true;
   try {
-    const publicVoices = await listLicensedJapaneseVoices(apiKey);
-    const customVoices = getConsentedCustomJapaneseVoices();
-    const voices = [...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })), ...customVoices];
-    return json({ ok: true, voices, count: voices.length, publicLicensedCount: publicVoices.length, consentedCustomCount: customVoices.length, language: "ja" });
+    publicVoices = await listLicensedJapaneseVoices(apiKey);
   } catch {
-    return json({
-      ok: false,
-      error: "fish_audio_voice_library_unavailable",
-      message: "The licensed Japanese voice list could not be loaded. No TTS generation was requested.",
-    }, 502);
+    publicLibraryAvailable = false;
   }
+  const voices = [...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })), ...customVoices];
+  return json({
+    ok: true,
+    voices,
+    count: voices.length,
+    publicLicensedCount: publicVoices.length,
+    consentedCustomCount: customVoices.length,
+    publicLibraryAvailable,
+    language: "ja",
+  });
 }
