@@ -340,10 +340,24 @@ try {
   assert.equal(httpBody.includes("server-side-elevenlabs-key"), false);
   assert.equal(httpBody.includes("admin-token-value"), false);
 
+  const standardFetchCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    standardFetchCalls.push({ url: String(input), init });
+    return new Response(Buffer.from(FakeSocket.audioBytes), {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg" },
+    });
+  };
   const standardV4 = await post({
     authorization: "Bearer admin-token-value",
     body: validBody({ modelId: "eleven_v4" }),
   });
+  globalThis.fetch = originalFetch;
+  assert.equal(standardFetchCalls.length, 1);
+  assert.match(standardFetchCalls[0].url, /\/v1\/text-to-dialogue\/stream$/);
+  assert.equal(standardFetchCalls[0].init.method, "POST");
+  assert.equal(standardFetchCalls[0].init.headers["xi-api-key"], "server-side-elevenlabs-key");
+  assert.equal(JSON.parse(standardFetchCalls[0].init.body).model_id, "eleven_v4");
   assert.equal(standardV4.status, 200);
   assert.equal(standardV4.headers.get("x-ai-voice-model"), "eleven_v4");
   assert.equal(FakeSocket.sockets.length, 0);
