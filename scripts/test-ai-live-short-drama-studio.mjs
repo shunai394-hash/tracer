@@ -61,7 +61,8 @@ test("BGM API is admin-protected, private-storage based, and MP3-size bounded", 
 
 
 test("short drama studio inline JavaScript parses without syntax errors", () => {
-  const scripts = [...page.matchAll(/<script>([\\s\\S]*?)<\\/script>/gi)].map((match) => match[1]);
-  assert.ok(scripts.length > 0, "studio inline script exists");
-  for (const source of scripts) new Script(source);
+  const scriptStart = page.indexOf("<script>");
+  const scriptEnd = page.indexOf("</script>", scriptStart);
+  assert.ok(scriptStart >= 0 && scriptEnd > scriptStart, "studio inline script exists");
+  new Script(page.slice(scriptStart + "<script>".length, scriptEnd));
 });
