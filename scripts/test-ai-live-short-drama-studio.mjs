@@ -34,3 +34,26 @@ test("studio does not auto-publish, schedule, or retry generated audio", () => {
   assert.doesNotMatch(page, /setInterval\(|setTimeout\(/);
   assert.doesNotMatch(page, /\/api\/.*publish|social\/post/i);
 });
+
+test("studio provides a separate multi-file BGM library with preview controls", () => {
+  assert.ok(page.includes('id="bgmPanel"'));
+  assert.ok(page.includes('id="bgmFiles"'));
+  assert.ok(page.includes('multiple'));
+  assert.ok(page.includes("async function uploadBgmFiles"));
+  assert.ok(page.includes('fetch("/api/admin/ai-live/short-drama/bgm"'));
+  assert.ok(page.includes('id="bgmVolume"'));
+  assert.ok(page.includes('id="bgmLoop"'));
+  assert.ok(page.includes('id="bgmPreview"'));
+  assert.ok(page.includes("BGM音源"));
+  assert.ok(page.includes("台詞音声には自動で合成"));
+});
+
+test("BGM API is admin-protected, private-storage based, and MP3-size bounded", () => {
+  const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
+  assert.ok(bgmRoute.includes('const BUCKET = "tracer-drama-bgm"'));
+  assert.ok(bgmRoute.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
+  assert.ok(bgmRoute.includes("await authorize(request)"));
+  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(bgmRoute.includes("metadata: { genre:"));
+  assert.ok(bgmRoute.includes("createSignedUrl"));
+});
