@@ -1,0 +1,168 @@
+name: MoneyPrinterTurbo cloud video
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "動画タイトル"
+        required: true
+        type: string
+      script:
+        description: "日本語ナレーション台本"
+        required: true
+        type: string
+      scene_terms:
+        description: "Pexels検索語（英語推奨、カンマ区切り、1〜12個）"
+        required: true
+        type: string
+      aspect:
+        description: "出力比率"
+        required: true
+        type: choice
+        options: ["9:16", "16:9", "1:1"]
+        default: "9:16"
+      clip_duration:
+        description: "1カットの最大秒数"
+        required: true
+        type: choice
+        options: ["3", "5", "7", "10", "15"]
+        default: "5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpt-cloud-video
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MPT_HOME: ${{ github.workspace }}/.mpt-home
+      PYTHONUTF8: "1"
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+    steps:
+      - name: Check required key and inputs
+        shell: bash
+        env:
+          TITLE: ${{ inputs.title }}
+          SCRIPT: ${{ inputs.script }}
+          SCENE_TERMS: ${{ inputs.scene_terms }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PEXELS_API_KEY:-}" ]]; then
+            echo "::error::Repository secret PEXELS_API_KEY is not configured."
+            exit 1
+          fi
+          python - <<'PY'
+          import os
+          import re
+          title = os.environ.get("TITLE", "").strip()
+          script = os.environ.get("SCRIPT", "").strip()
+          terms = [x.strip() for x in re.split(r"[,，、\r\n]", os.environ.get("SCENE_TERMS", "")) if x.strip()]
+          if not title or len(title) > 160:
+              raise SystemExit("title must contain 1-160 characters")
+          if not script or len(script) > 12000:
+              raise SystemExit("script must contain 1-12000 characters")
+          if not 1 <= len(terms) <= 12 or any(len(term) > 100 for term in terms):
+              raise SystemExit("scene_terms must contain 1-12 terms, each <=100 characters")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install MoneyPrinterTurbo and FFmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install "mpt==1.3.9"
+
+      - name: Configure private runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$MPT_HOME"
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          import app.paths
+          template = app.paths.config_template()
+          target = Path(os.environ["MPT_HOME"]) / "config.toml"
+          text = template.read_text(encoding="utf-8")
+          key = os.environ["PEXELS_API_KEY"]
+          replacement = "pexels_api_keys = " + json.dumps([key])
+          text, count = re.subn(
+              r"(?m)^pexels_api_keys\s*=\s*\[[^\r\n]*\]\s*$",
+              lambda _: replacement,
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Could not configure the Pexels key in the private runtime.")
+          target.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Generate MP4 with free Pexels stock footage
+        shell: bash
+        env:
+          TITLE: ${{ inputs.title }}
+          SCRIPT: ${{ inputs.script }}
+          SCENE_TERMS: ${{ inputs.scene_terms }}
+          ASPECT: ${{ inputs.aspect }}
+          CLIP_DURATION: ${{ inputs.clip_duration }}
+        run: |
+          set -euo pipefail
+          task_id="$(python -c 'import uuid; print(uuid.uuid4())')"
+          normalized_terms="$(python - <<'PY'
+          import os, re
+          terms = [x.strip() for x in re.split(r"[,，、\r\n]", os.environ["SCENE_TERMS"]) if x.strip()]
+          print(",".join(terms))
+          PY
+          )"
+          mpt cli \
+            --video-subject "$TITLE" \
+            --video-script "$SCRIPT" \
+            --video-language ja-JP \
+            --video-source pexels \
+            --video-terms "$normalized_terms" \
+            --match-materials-to-script \
+            --video-count 1 \
+            --video-aspect "$ASPECT" \
+            --video-fit-mode cover \
+            --video-concat-mode sequential \
+            --video-clip-duration "$CLIP_DURATION" \
+            --video-clip-speed 1 \
+            --video-transition-mode fade-in \
+            --n-threads 1 \
+            --voice-name ja-JP-NanamiNeural \
+            --voice-volume 1 \
+            --voice-rate 1 \
+            --bgm-type none \
+            --subtitle-enabled \
+            --subtitle-position bottom \
+            --stop-at video \
+            --task-id "$task_id"
+          video_path="$MPT_HOME/storage/tasks/$task_id/final-1.mp4"
+          if [[ ! -s "$video_path" ]]; then
+            echo "::error::MoneyPrinterTurbo finished without a non-empty final MP4."
+            exit 1
+          fi
+          mkdir -p "mpt-output"
+          cp "$video_path" "mpt-output/final.mp4"
+
+      - name: Upload finished MP4
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneyprinterturbo-video
+          path: mpt-output/final.mp4
+          if-no-files-found: error
+          retention-days: 3
