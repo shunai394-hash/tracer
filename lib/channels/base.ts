@@ -284,7 +284,8 @@ export async function setBaseVariationStock(itemId: string, variationId: string,
     const id = String(variation.variation_id ?? "").trim();
     const name = String(variation.variation ?? "");
     const identifier = String(variation.variation_identifier ?? "").trim();
-    const currentStock = Number(variation.stock ?? variation.variation_stock ?? 0);
+    const barcode = String(variation.barcode ?? "").trim();
+    const currentStock = Number(variation.stock ?? variation.variation_stock ?? Number.NaN);
     if (!id || !name || !Number.isFinite(currentStock) || currentStock < 0) {
       throw new Error("base_variation_snapshot_invalid:" + index);
     }
@@ -292,6 +293,7 @@ export async function setBaseVariationStock(itemId: string, variationId: string,
     body.set(`variation[${index}]`, name);
     body.set(`variation_stock[${index}]`, String(id === variationId ? targetStock : Math.floor(currentStock)));
     if (identifier) body.set(`variation_identifier[${index}]`, identifier);
+    if (barcode) body.set(`barcode[${index}]`, barcode);
   });
   return requestBase("/items/edit", body, 3);
 }
