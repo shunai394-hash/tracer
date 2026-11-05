@@ -86,7 +86,8 @@ function addLine(text="セリフを入力してください",speakerId=character
  for(const cls of ["emotion","pace","pause"])el.querySelector("."+cls).addEventListener("change",e=>row[cls]=e.target.value);
  lines.append(el);return row;
 }
-function buildSpokenText(row){const emotion={自然:"[natural conversational delivery]",喜び:"[happy, bright and warm]",悲しみ:"[sad, restrained, slightly trembling voice]",怒り:"[angry, tense and forceful]",驚き:"[surprised, startled reaction]",不安:"[anxious, hesitant delivery]",ささやき:"[whispering]",緊張:"[nervous, tense delivery]"}[row.emotion]||"[natural delivery]";const pause={短い間:"[brief pause]",通常:"",長い間:"[long dramatic pause]"}[row.pause];return [emotion,pause,row.text.trim()].filter(Boolean).join("\n");}\nfunction buildProsody(row){return {speed:{ゆっくり:0.82,標準:1,速め:1.18}[row.pace]||1};}
+function buildSpokenText(row){const emotion={自然:"[natural conversational delivery]",喜び:"[happy, bright and warm]",悲しみ:"[sad, restrained, slightly trembling voice]",怒り:"[angry, tense and forceful]",驚き:"[surprised, startled reaction]",不安:"[anxious, hesitant delivery]",ささやき:"[whispering]",緊張:"[nervous, tense delivery]"}[row.emotion]||"[natural delivery]";const pause={短い間:"[brief pause]",通常:"",長い間:"[long dramatic pause]"}[row.pause];return [emotion,pause,row.text.trim()].filter(Boolean).join("\n");}
+function buildProsody(row){return {speed:{ゆっくり:0.82,標準:1,速め:1.18}[row.pace]||1};}
 async function generateLine(row,el,fromBatch=false){
  if(pending&&!fromBatch)return;
  const character=characterRows.find(c=>c.id===row.speakerId);
