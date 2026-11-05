@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { isBaseConfigured, listBaseOrders } from "@/lib/channels/base";
+import { getBasePublicShopUrl, isBaseConfigured, listBaseOrders } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [first, second] = await Promise.all([
+    const [shopUrl, first, second] = await Promise.all([
+      getBasePublicShopUrl(),
       listBaseOrders({ limit: 100, offset: 0 }),
       listBaseOrders({ limit: 100, offset: 100 }),
     ]);
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
       ok: true,
       readOnly: true,
       configured: true,
+      shopUrl,
       dateFilter: null,
       pages: [
         { offset: 0, returned: first.length },
