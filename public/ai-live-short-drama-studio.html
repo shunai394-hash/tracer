@@ -71,7 +71,8 @@ function addCharacter(name="登場人物",voiceId=""){
  el.querySelector(".remove").addEventListener("click",()=>{characterRows=characterRows.filter(x=>x.id!==id);el.remove();refreshLineCharacters();});
  characters.append(el);refreshLineCharacters();
 }
-function refreshCharacterVoiceOptions(){document.querySelectorAll(".scene .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.innerHTML=optionList(value);select.value=value;});}\nfunction refreshLineCharacters(){document.querySelectorAll(".line").forEach(el=>{const select=el.querySelector(".speaker");const val=select.value;select.innerHTML=characterRows.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name||"名前未設定")+'</option>').join("");if(characterRows.some(c=>c.id===val))select.value=val;});}
+function refreshCharacterVoiceOptions(){document.querySelectorAll(".scene .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.innerHTML=optionList(value);select.value=value;});}
+function refreshLineCharacters(){document.querySelectorAll(".line").forEach(el=>{const select=el.querySelector(".speaker");const val=select.value;select.innerHTML=characterRows.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name||"名前未設定")+'</option>').join("");if(characterRows.some(c=>c.id===val))select.value=val;});}
 function addLine(text="セリフを入力してください",speakerId=characterRows[0]?.id||"",emotion="自然",pace="標準",pause="通常"){
  const id="l"+(++counter);const row={id,text,speakerId,emotion,pace,pause,audioUrl:null};lineRows.push(row);
  const el=document.createElement("div");el.className="line";el.dataset.id=id;
