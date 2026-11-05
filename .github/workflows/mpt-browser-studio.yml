@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   generate:
-    # Only the repository owner can start a render, and only with the dedicated issue form.
     if: github.actor == 'shunai394-hash' && github.event.issue.title == 'MPT動画制作依頼'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -36,7 +35,7 @@ jobs:
 
           body = os.environ.get("ISSUE_BODY", "")
           def field(name):
-              pattern = rf"(?ms)^### {re.escape(name)}\\s*\\n(.*?)(?=^### |\\Z)"
+              pattern = rf"(?ms)^### {re.escape(name)}\s*\n(.*?)(?=^### |\Z)"
               match = re.search(pattern, body)
               if not match:
                   raise SystemExit(f"入力欄が見つかりません: {name}")
@@ -53,7 +52,7 @@ jobs:
 
           if len(title) > 160 or len(script) > 12000:
               raise SystemExit("タイトルは160文字以内、台本は12,000文字以内です。")
-          keywords = [x.strip() for x in re.split(r"[,，、\\r\\n]+", terms) if x.strip()]
+          keywords = [x.strip() for x in re.split(r"[,，、\r\n]+", terms) if x.strip()]
           if not 1 <= len(keywords) <= 12 or any(len(x) > 100 for x in keywords):
               raise SystemExit("検索キーワードは1〜12個、各100文字以内にしてください。")
           if aspect not in {"9:16", "16:9", "1:1"}:
@@ -72,7 +71,7 @@ jobs:
           with output.open("a", encoding="utf-8") as f:
               for key, value in values.items():
                   delimiter = "MPT_" + uuid.uuid4().hex
-                  f.write(f"{key}<<{delimiter}\\n{value}\\n{delimiter}\\n")
+                  f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
           PY
 
       - name: Check required Pexels key
@@ -111,7 +110,7 @@ jobs:
           config = template.read_text(encoding="utf-8")
           replacement = "pexels_api_keys = " + json.dumps([os.environ["PEXELS_API_KEY"]])
           config, count = re.subn(
-              r"(?m)^pexels_api_keys\\s*=\\s*\\[[^\\r\\n]*\\]\\s*$",
+              r"(?m)^pexels_api_keys\s*=\s*\[[^\r\n]*\]\s*$",
               lambda _: replacement, config, count=1
           )
           if count != 1:
@@ -177,8 +176,8 @@ jobs:
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const success = ${{ job.status == 'success' }};
             const message = success
-              ? `動画制作が完了しました。\\n\\n[実行結果とArtifacts（MP4）を開く](${runUrl})\\n\\nArtifacts内の \`moneyprinterturbo-video\` をダウンロードしてください。保存期限は3日です。`
-              : `動画制作が完了しませんでした。\\n\\n[実行ログを確認する](${runUrl})`;
+              ? `動画制作が完了しました。\n\n[実行結果とArtifacts（MP4）を開く](${runUrl})\n\nArtifacts内の \`moneyprinterturbo-video\` をダウンロードしてください。保存期限は3日です。`
+              : `動画制作が完了しませんでした。\n\n[実行ログを確認する](${runUrl})`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
