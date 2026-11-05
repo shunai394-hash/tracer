@@ -260,7 +260,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
     baseChannel.indexOf("export async function setBaseVariationStock"),
     baseChannel.indexOf("/** Read one existing BASE item", baseChannel.indexOf("export async function setBaseVariationStock")),
   );
-  assert.ok(liveAudit.includes(String.raw`/^\\d{8,}$/`), "live audit must validate CJ IDs as numeric strings");
+  assert.ok(liveAudit.includes(String.raw`/^\d{8,}$/`), "live audit must validate CJ IDs as numeric strings");
   assert.ok(baseStockUpdate.includes('requestBase("/items/edit_stock", body, 3)'), "BASE variation stock must use the stock-only endpoint");
   assert.ok(baseStockUpdate.includes("const after = await getBaseItemDetail(normalizedItemId)"), "BASE stock update must read back the item after writing");
   assert.ok(baseStockUpdate.includes("actualIdentifier !== expectedVariation.identifier"), "BASE readback must verify every variation SKU");
