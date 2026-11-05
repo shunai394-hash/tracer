@@ -275,7 +275,7 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "audio/mpeg",
         "Content-Length": String(bytes.byteLength),
-        'Content-Disposition': 'inline; filename="tracer-eleven-v4-turbo.mp3"',
+        'Content-Disposition': `inline; filename="tracer-${modelId}.mp3"`,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-AI-Voice-Model": modelId,
