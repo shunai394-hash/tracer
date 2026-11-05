@@ -14,6 +14,9 @@ import { isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-pr
 import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 type Channel = "base" | "shopify";
+
+// Preserve the merchant-held protein listing: supplier-profit recovery must not delist it.
+const ALWAYS_ON_SALE_VARIANT_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98a"]);
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
@@ -408,7 +411,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         return !saleable;
       })
     : sortedCandidates;
-  const candidates = candidatesToProcess.slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+  const candidates = candidatesToProcess
+    .filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id))
+    .slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
   type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
