@@ -276,10 +276,23 @@ export async function setBaseVariationStock(itemId: string, variationId: string,
     price: String(Math.max(1, Math.round(Number(detail.price) || 1))),
     visible,
   });
-  body.set("variation_id[0]", variationId);
-  body.set("variation[0]", String(current.variation ?? ""));
-  body.set("variation_stock[0]", String(Math.max(0, Math.floor(stock))));
-  if (current.variation_identifier) body.set("variation_identifier[0]", String(current.variation_identifier));
+  // BASE item edits submit the variation collection as a whole. Preserve every
+  // sibling variation and change only the requested variation's stock; sending
+  // a single variation here can silently remove the other colors/sizes.
+  const targetStock = Math.max(0, Math.floor(stock));
+  variations.forEach((variation, index) => {
+    const id = String(variation.variation_id ?? "").trim();
+    const name = String(variation.variation ?? "");
+    const identifier = String(variation.variation_identifier ?? "").trim();
+    const currentStock = Number(variation.stock ?? variation.variation_stock ?? 0);
+    if (!id || !name || !Number.isFinite(currentStock) || currentStock < 0) {
+      throw new Error("base_variation_snapshot_invalid:" + index);
+    }
+    body.set(`variation_id[${index}]`, id);
+    body.set(`variation[${index}]`, name);
+    body.set(`variation_stock[${index}]`, String(id === variationId ? targetStock : Math.floor(currentStock)));
+    if (identifier) body.set(`variation_identifier[${index}]`, identifier);
+  });
   return requestBase("/items/edit", body, 3);
 }
 
