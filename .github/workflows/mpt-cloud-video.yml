@@ -74,9 +74,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-
-      - name: Install MoneyPrinterTurbo and FFmpeg
+- name: Install MoneyPrinterTurbo and FFmpeg
         run: |
           set -euo pipefail
           sudo apt-get update
