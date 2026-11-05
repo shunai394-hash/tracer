@@ -255,6 +255,19 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   const productPage = readFileSync("app/shop/[slug]/page.tsx", "utf8");
   const productImage = readFileSync("components/product-image.tsx", "utf8");
   const liveAudit = readFileSync("scripts/audit-variant-families-live.mjs", "utf8");
+  const baseChannel = readFileSync("lib/channels/base.ts", "utf8");
+  const baseStockUpdate = baseChannel.slice(
+    baseChannel.indexOf("export async function setBaseVariationStock"),
+    baseChannel.indexOf("/** Read one existing BASE item", baseChannel.indexOf("export async function setBaseVariationStock")),
+  );
+  assert.ok(liveAudit.includes(String.raw`/^\\d{8,}$/`), "live audit must validate CJ IDs as numeric strings");
+  assert.ok(baseStockUpdate.includes('requestBase("/items/edit_stock", body, 3)'), "BASE variation stock must use the stock-only endpoint");
+  assert.ok(baseStockUpdate.includes("const after = await getBaseItemDetail(normalizedItemId)"), "BASE stock update must read back the item after writing");
+  assert.ok(baseStockUpdate.includes("actualIdentifier !== expectedVariation.identifier"), "BASE readback must verify every variation SKU");
+  assert.ok(baseStockUpdate.includes("actualBarcode !== expectedVariation.barcode"), "BASE readback must verify every variation barcode");
+  assert.ok(baseStockUpdate.includes("base_variation_readback_mismatch"), "BASE readback mismatches must fail closed");
+  assert.doesNotMatch(baseStockUpdate, /requestBase\(["']\/items\/edit["']/ , "stock-only updates must not rewrite the full BASE item");
+
   assert.match(sync, /channel_listing_identity_backup/);
   assert.match(sync, /productSet/);
   assert.match(sync, /variation_identifier/);
