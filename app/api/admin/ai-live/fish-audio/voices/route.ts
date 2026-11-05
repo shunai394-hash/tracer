@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   }
 
   const customVoices = getConsentedCustomJapaneseVoices();
-  let publicVoices = [];
+  let publicVoices: Awaited<ReturnType<typeof listLicensedJapaneseVoices>> = [];
   let publicLibraryAvailable = true;
   try {
     publicVoices = await listLicensedJapaneseVoices(apiKey);
