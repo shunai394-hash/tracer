@@ -55,7 +55,14 @@ export function isBaseConfigured() {
   return baseOAuthConfigReady();
 }
 
-export async function getBasePublicShopUrl(): Promise<string | null> {
+export type BaseShopIdentity = {
+  shopId: string | null;
+  shopName: string | null;
+  shopUrl: string | null;
+};
+
+/** Read-only identity of the BASE shop authorized by the current OAuth token. */
+export async function getBaseShopIdentity(): Promise<BaseShopIdentity> {
   const token = await getBaseAccessToken();
   const response = await fetch(`${BASE_API_URL}/users/me`, {
     method: "GET",
@@ -71,19 +78,33 @@ export async function getBasePublicShopUrl(): Promise<string | null> {
     payload = null;
   }
   if (!response.ok) {
-    throw new Error(`BASE_SHOP_URL_LOOKUP_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
+    throw new Error(`BASE_SHOP_IDENTITY_LOOKUP_FAILED:HTTP_${response.status}:${safeBaseError(payload)}`);
   }
   const userRecord = payload?.user && typeof payload.user === "object"
     ? payload.user as Record<string, unknown>
     : payload;
-  const value = userRecord?.shop_url;
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
-  } catch {
-    return null;
+  const rawShopId = userRecord?.shop_id;
+  const rawShopName = userRecord?.shop_name;
+  const rawShopUrl = userRecord?.shop_url;
+  let shopUrl: string | null = null;
+  if (typeof rawShopUrl === "string" && rawShopUrl.trim()) {
+    try {
+      const url = new URL(rawShopUrl.trim());
+      shopUrl = url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+    } catch {
+      shopUrl = null;
+    }
   }
+  return {
+    shopId: typeof rawShopId === "string" && rawShopId.trim() ? rawShopId.trim() : null,
+    shopName: typeof rawShopName === "string" && rawShopName.trim() ? rawShopName.trim().slice(0, 120) : null,
+    shopUrl,
+  };
+}
+
+/** Backward-compatible shop URL accessor. */
+export async function getBasePublicShopUrl(): Promise<string | null> {
+  return (await getBaseShopIdentity()).shopUrl;
 }
 
 async function getBaseAccessToken(): Promise<string> {
