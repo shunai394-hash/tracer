@@ -26,7 +26,7 @@ Returns MP3 audio on success. Maximum input is 1,200 characters; the provider co
 
 ## Transport
 
-Both v4 variants use ElevenLabs' Text to Dialogue WebSocket in this implementation. The WebSocket registers one voice, accepts dialogue inputs, and emits base64 audio chunks. The route collects chunks until the final response before returning an MP3. The selected model ID is passed server-side as `model_id`.
+Standard `eleven_v4` uses the HTTP Text to Dialogue stream endpoint (`POST /v1/text-to-dialogue/stream`) and returns the streamed MP3 response. `eleven_v4_turbo` uses the Text to Dialogue WebSocket (`/v1/text-to-dialogue/stream-input`) for low-latency generation; it registers the authorized voice, sends the dialogue input, and collects audio chunks until the final marker. Both transports receive the selected model ID server-side. The official guidance recommends standard v4 for content creation/long-form audio and v4 Turbo for real-time agents.
 
 ## Cost and safety
 
