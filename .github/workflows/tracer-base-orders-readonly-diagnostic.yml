@@ -43,3 +43,5 @@ jobs:
               sys.exit(1)
           PY
           [[ "$code" =~ ^2 ]]
+
+# Trigger a fresh read-only probe after the production route is ready.
