@@ -61,7 +61,7 @@ jobs:
           import re
           title = os.environ.get("TITLE", "").strip()
           script = os.environ.get("SCRIPT", "").strip()
-          terms = [x.strip() for x in re.split(r"[,，、\\r\\n]", os.environ.get("SCENE_TERMS", "")) if x.strip()]
+          terms = [x.strip() for x in re.split(r"[,，、\r\n]", os.environ.get("SCENE_TERMS", "")) if x.strip()]
           if not title or len(title) > 160:
               raise SystemExit("title must contain 1-160 characters")
           if not script or len(script) > 12000:
@@ -101,7 +101,7 @@ jobs:
           key = os.environ["PEXELS_API_KEY"]
           replacement = "pexels_api_keys = " + json.dumps([key])
           text, count = re.subn(
-              r"(?m)^pexels_api_keys\\s*=\\s*\\[[^\\r\\n]*\\]\\s*$",
+              r"(?m)^pexels_api_keys\s*=\s*\[[^\r\n]*\]\s*$",
               lambda _: replacement,
               text,
               count=1,
@@ -124,32 +124,32 @@ jobs:
           task_id="$(python -c 'import uuid; print(uuid.uuid4())')"
           normalized_terms="$(python - <<'PY'
           import os, re
-          terms = [x.strip() for x in re.split(r"[,，、\\r\\n]", os.environ["SCENE_TERMS"]) if x.strip()]
+          terms = [x.strip() for x in re.split(r"[,，、\r\n]", os.environ["SCENE_TERMS"]) if x.strip()]
           print(",".join(terms))
           PY
           )"
-          mpt cli \\
-            --video-subject "$TITLE" \\
-            --video-script "$SCRIPT" \\
-            --video-language ja-JP \\
-            --video-source pexels \\
-            --video-terms "$normalized_terms" \\
-            --match-materials-to-script \\
-            --video-count 1 \\
-            --video-aspect "$ASPECT" \\
-            --video-fit-mode cover \\
-            --video-concat-mode sequential \\
-            --video-clip-duration "$CLIP_DURATION" \\
-            --video-clip-speed 1 \\
-            --video-transition-mode fade-in \\
-            --n-threads 1 \\
-            --voice-name ja-JP-NanamiNeural \\
-            --voice-volume 1 \\
-            --voice-rate 1 \\
-            --bgm-type none \\
-            --subtitle-enabled \\
-            --subtitle-position bottom \\
-            --stop-at video \\
+          mpt cli \
+            --video-subject "$TITLE" \
+            --video-script "$SCRIPT" \
+            --video-language ja-JP \
+            --video-source pexels \
+            --video-terms "$normalized_terms" \
+            --match-materials-to-script \
+            --video-count 1 \
+            --video-aspect "$ASPECT" \
+            --video-fit-mode cover \
+            --video-concat-mode sequential \
+            --video-clip-duration "$CLIP_DURATION" \
+            --video-clip-speed 1 \
+            --video-transition-mode fade-in \
+            --n-threads 1 \
+            --voice-name ja-JP-NanamiNeural \
+            --voice-volume 1 \
+            --voice-rate 1 \
+            --bgm-type none \
+            --subtitle-enabled \
+            --subtitle-position bottom \
+            --stop-at video \
             --task-id "$task_id"
           video_path="$MPT_HOME/storage/tasks/$task_id/final-1.mp4"
           if [[ ! -s "$video_path" ]]; then
