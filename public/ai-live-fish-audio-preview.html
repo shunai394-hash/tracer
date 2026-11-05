@@ -83,16 +83,15 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       const groups = new Map();
       for (const item of data.voices) {
         const evidence = [item.title, item.description, ...(Array.isArray(item.tags) ? item.tags : [])].join(" ").toLowerCase();
-        const personaLabel = /(child|kid|children|子供|こども|幼児|少年|少女)/u.test(evidence)
-          ? "子供・少年少女の声"
-          : /(grandmother|grandma|おばあちゃん|祖母|老婆|老婦人)/u.test(evidence)
-            ? "おばあちゃんの声"
-            : /(grandfather|grandpa|おじいさん|祖父|老人|老紳士)/u.test(evidence)
-              ? "おじいさんの声"
-              : "その他の日本語ボイス";
-        const groupLabel = item.source === "user_provided_clone"
+        const genderLabel = /(女性|女声|女子|女の子|female|woman|women|girl|feminine)/u.test(evidence)
+          ? "女性"
+          : /(男性|男声|男子|男の子|male|man|men|boy|masculine)/u.test(evidence)
+            ? "男性"
+            : "性別未確認";
+        const sourceLabel = item.source === "user_provided_clone"
           ? "本人許可確認済み・TRACERカスタム音声"
-          : "Fish Audio公開ライセンス音声／" + personaLabel;
+          : "Fish Audio公開ライセンス音声";
+        const groupLabel = sourceLabel + "／" + genderLabel;
         if (!groups.has(groupLabel)) {
           const group = document.createElement("optgroup");
           group.label = groupLabel;
@@ -112,7 +111,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       status.textContent = data.voices.length
         ? data.voices.length + "件の日本語ボイスを取得しました。公開音声と許可確認済みクローンを選択できます。"
         : "条件に合うボイスが見つかりませんでした。音声生成は行っていません。";
-      voiceInfo.textContent = "公開音声 " + data.publicLicensedCount + "件／許可確認済みクローン " + data.consentedCustomCount + "件。子供・おばあちゃん・おじいさんの声は、提供元の説明・タグで確認できたものを分類表示します。";
+      voiceInfo.textContent = "公開音声 " + data.publicLicensedCount + "件／許可確認済みクローン " + data.consentedCustomCount + "件。提供元のタイトル・説明・タグに基づき、女性・男性・性別未確認に分類します。";
       generate.disabled = data.voices.length === 0 || !voice.value;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : "通信に失敗しました。";
