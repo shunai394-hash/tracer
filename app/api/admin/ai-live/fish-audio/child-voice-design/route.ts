@@ -130,7 +130,9 @@ export async function POST(request: Request) {
     modelForm.set("visibility", "private");
     modelForm.set("train_mode", "fast");
     modelForm.set("enhance_audio_quality", "true");
-    modelForm.append("voices", new Blob([audioBytes], { type: "audio/wav" }), "tracer-fictional-child-voice.wav");
+    const audioArrayBuffer = new ArrayBuffer(audioBytes.byteLength);
+    new Uint8Array(audioArrayBuffer).set(audioBytes);
+    modelForm.append("voices", new Blob([audioArrayBuffer], { type: "audio/wav" }), "tracer-fictional-child-voice.wav");
     modelForm.set("texts", referenceText);
     modelForm.append("tags", "ja");
     modelForm.append("tags", "tracer-drama-child");
