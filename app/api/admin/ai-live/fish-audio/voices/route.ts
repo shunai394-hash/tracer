@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
+import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,18 +40,31 @@ export async function GET(request: Request) {
   const customVoices = getConsentedCustomJapaneseVoices();
   let publicVoices: Awaited<ReturnType<typeof listLicensedJapaneseVoices>> = [];
   let publicLibraryAvailable = true;
+  let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
+  let privateChildLibraryAvailable = true;
   try {
     publicVoices = await listLicensedJapaneseVoices(apiKey);
   } catch {
     publicLibraryAvailable = false;
   }
-  const voices = [...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })), ...customVoices];
+  try {
+    privateChildVoices = await listPrivateDramaChildVoices(apiKey);
+  } catch {
+    privateChildLibraryAvailable = false;
+  }
+  const voices = [
+    ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
+    ...customVoices,
+    ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
+  ];
   return json({
     ok: true,
     voices,
     count: voices.length,
     publicLicensedCount: publicVoices.length,
     consentedCustomCount: customVoices.length,
+    privateChildVoiceCount: privateChildVoices.length,
+    privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",
   });
