@@ -42,14 +42,18 @@ export async function GET(request: Request) {
   let publicLibraryAvailable = true;
   let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
   let privateChildLibraryAvailable = true;
-  try {
-    publicVoices = await listLicensedJapaneseVoices(apiKey);
-  } catch {
+  const [publicResult, privateChildResult] = await Promise.allSettled([
+    listLicensedJapaneseVoices(apiKey),
+    listPrivateDramaChildVoices(apiKey),
+  ]);
+  if (publicResult.status === "fulfilled") {
+    publicVoices = publicResult.value;
+  } else {
     publicLibraryAvailable = false;
   }
-  try {
-    privateChildVoices = await listPrivateDramaChildVoices(apiKey);
-  } catch {
+  if (privateChildResult.status === "fulfilled") {
+    privateChildVoices = privateChildResult.value;
+  } else {
     privateChildLibraryAvailable = false;
   }
   const voices = [
