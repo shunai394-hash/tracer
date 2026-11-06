@@ -54,6 +54,14 @@ test("project bundle saves and restores generated audio without server storage",
 });
 
 
+test("voice choices load automatically after the admin token is entered", () => {
+  assert.ok(page.includes('token.addEventListener("change",loadVoices)'));
+  assert.ok(page.includes('token.addEventListener("keydown"'));
+  assert.ok(page.includes('function loadVoices()'));
+  assert.ok(page.includes('refreshCharacterVoiceOptions()'));
+  assert.ok(page.includes('日本語ボイス "+voices.length+"件を読み込みました'));
+});
+
 test("fictional child-role voice is designed from text, saved privately, and never cloned from a child's recording", () => {
   assert.ok(page.includes('id="createChildVoice"'));
   assert.ok(page.includes("/api/admin/ai-live/fish-audio/child-voice-design"));
