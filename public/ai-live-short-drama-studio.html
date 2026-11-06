@@ -111,7 +111,7 @@ async function generateLine(row,el,fromBatch=false){
  }catch(error){el.querySelector(".result").textContent=error.message;status.textContent=error.message;}
  finally{if(!fromBatch){pending=false;setControls(false);}}
 }
-function setControls(disabled){$("generateAll").disabled=disabled||!voices.length||!lineRows.length;$("load").disabled=disabled;$("addCharacter").disabled=disabled;$("addLine").disabled=disabled;$("stop").disabled=!disabled;}
+function setControls(disabled){$("generateAll").disabled=disabled||!voices.length||!lineRows.length;$("load").disabled=disabled;$("addCharacter").disabled=disabled;$("addLine").disabled=disabled;$("stop").disabled=!disabled;updateSceneButtons();}
 let scenePlaybackContext=null, scenePlaybackSources=[], sceneStopRequested=false, scenePlaybackActive=false, sceneExporting=false;
 function updateSceneButtons(){const count=lineRows.filter(row=>row.audioUrl).length;$("playScene").disabled=count===0||!!pending||scenePlaybackActive||sceneExporting;$("exportSceneWav").disabled=count===0||!!pending||scenePlaybackActive||sceneExporting;$("stopScene").disabled=!scenePlaybackActive;}
 async function decodeGeneratedAudio(row,context){const response=await fetch(row.audioUrl);if(!response.ok)throw new Error("生成音声を読み込めませんでした（HTTP "+response.status+"）。");const bytes=await response.arrayBuffer();return await context.decodeAudioData(bytes.slice(0));}
