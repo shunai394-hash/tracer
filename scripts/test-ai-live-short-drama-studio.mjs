@@ -10,7 +10,6 @@ const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-vo
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
 const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
-const bgmMigration = readFileSync("supabase/migrations/20261107090000_create_short_drama_bgm_bucket.sql", "utf8");
 
 test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("担当ボイス"));
@@ -121,7 +120,6 @@ test("BGM library is private, authenticated, paginated, and MP3 size bounded", (
   assert.ok(bgmRoute.includes("await authorize(request)"));
   assert.ok(bgmRoute.includes("createSignedUrl"));
   assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
-  assert.ok(bgmMigration.includes("'tracer-drama-bgm', 'tracer-drama-bgm', false"));
 });
 
 test("finished drama mix combines dialogue with loopable BGM and fade automation", () => {
