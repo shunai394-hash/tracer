@@ -65,7 +65,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 const $=id=>document.getElementById(id);
 const token=$("token"), characters=$("characters"), lines=$("lines"), outputs=$("outputs"), status=$("status");
 let voices=[], characterRows=[], lineRows=[], pending=false, stopRequested=false, counter=0;
-function optionList(selected=""){return '<option value="">声を選択</option>'+voices.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+' ['+(v.source==="user_provided_clone"?"許可確認済みクローン":v.source==="private_voice_design"?"架空の子供役":"公開ライセンス")+']</option>').join("");}
+function optionList(selected=""){const groups=[["Fish Audio 公開日本語ボイス",voices.filter(v=>v.source==="public_licensed")],["追加クローン音声（許可確認済み）",voices.filter(v=>v.source==="user_provided_clone")],["追加の架空キャラクターボイス",voices.filter(v=>v.source==="private_voice_design")]];return '<option value="">声を選択</option>'+groups.filter(([,items])=>items.length).map(([label,items])=>'<optgroup label="'+label+'">'+items.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+'</option>').join("")+'</optgroup>').join("");}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function addCharacter(name="登場人物",voiceId=""){
  const id="c"+(++counter); characterRows.push({id,name,voiceId});

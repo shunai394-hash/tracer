@@ -7,6 +7,7 @@ const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
 const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-voice-design/route.ts", "utf8");
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
+const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
 
 test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("担当ボイス"));
@@ -53,6 +54,20 @@ test("project bundle saves and restores generated audio without server storage",
   assert.ok(page.includes("現在の脚本・生成音声を置き換えて作品データを読み込みます"));
 });
 
+
+test("voice picker includes the full paginated public catalogue and all added private voices in one selector", () => {
+  assert.ok(publicVoiceLibrary.includes("MAX_PUBLIC_MODELS = 1000"));
+  assert.ok(publicVoiceLibrary.includes("PAGE_SIZE = 100"));
+  assert.ok(publicVoiceLibrary.includes("fetchLicensedPage(apiKey, page)"));
+  assert.ok(publicVoiceLibrary.includes("firstPage.total"));
+  assert.ok(voicesRoute.includes("...publicVoices.map"));
+  assert.ok(voicesRoute.includes("...customVoices"));
+  assert.ok(voicesRoute.includes("...privateChildVoices.map"));
+  assert.ok(page.includes("Fish Audio 公開日本語ボイス"));
+  assert.ok(page.includes("追加クローン音声（許可確認済み）"));
+  assert.ok(page.includes("追加の架空キャラクターボイス"));
+  assert.ok(page.includes("function optionList(selected"));
+});
 
 test("public and private voice catalogues load concurrently without blocking the public list", () => {
   assert.ok(voicesRoute.includes("Promise.allSettled(["));
