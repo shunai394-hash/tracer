@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER AI自動ライブ商品紹介</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101827;color:#f8fafc}*{box-sizing:border-box}
+body{margin:0;padding:20px}main{max-width:1080px;margin:auto;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+section{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:20px}h1{font-size:1.4rem;margin:0 0 8px}h2{font-size:1.05rem;margin:0 0 12px}
+p{line-height:1.6}.muted{color:#cbd5e1;font-size:.9rem}.warning{color:#fbbf24}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+input,select,button{font:inherit;padding:11px;border-radius:9px;border:1px solid #475569;background:#0f172a;color:#fff}
+input,select{width:100%}button{cursor:pointer;background:#334155}button.primary{background:#1d4ed8}button:disabled{opacity:.4;cursor:not-allowed}
+#products{display:grid;gap:8px;max-height:360px;overflow:auto}.product{padding:12px;border:1px solid #475569;border-radius:10px;cursor:pointer}.product.active{border-color:#60a5fa;background:#172554}
+#script{min-height:110px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0f172a;padding:12px;border-radius:10px}
+#status,#runStatus{font-size:.88rem;white-space:pre-wrap;color:#cbd5e1}#avatar{height:110px;display:grid;place-items:center;border-radius:12px;background:radial-gradient(#475569,#0f172a);font-size:64px}
+#avatar.talking{animation:pulse .25s infinite alternate}@keyframes pulse{to{transform:scale(1.02)}}
+a{color:#93c5fd}@media(max-width:760px){main{grid-template-columns:1fr}body{padding:10px}}
+</style>
+</head>
+<body><main>
+<section>
+<h1>TRACER AI自動ライブ商品紹介</h1>
+<p class="warning">管理者専用のブラウザー内リハーサルです。公開ライブ配信・SNS投稿・注文・在庫・価格の変更は行いません。</p>
+<label for="token">TRACER管理トークン（この画面のメモリ内だけで使用）</label>
+<input id="token" type="password" autocomplete="off" placeholder="管理トークン">
+<div class="row"><button class="primary" id="connect">販売可能商品を読み込む</button><button id="clear">認証情報を消去</button></div>
+<p id="status">未接続</p>
+<h2>紹介対象商品（最大20件）</h2>
+<div id="products">接続後、TRACERで販売可能な日本語商品を表示します。</div>
+</section>
+<section>
+<h2>AI販売員・商品紹介</h2>
+<div id="avatar" role="img" aria-label="AI販売員">🧑🏻‍💼</div>
+<p id="selected" class="muted">商品を選択してください。</p>
+<div class="row"><button class="primary" id="prepare" disabled>この商品の紹介音声を作成</button></div>
+<p class="muted">音声は商品ごとに一度だけ作成し、このブラウザーのメモリに一時保存します。自動再生中に追加の音声API呼び出しはしません。1回の準備上限は3商品です。</p>
+<h2>自動紹介セッション</h2>
+<label for="duration">連続再生時間</label>
+<select id="duration"><option value="30">30分</option><option value="60">60分</option></select>
+<div class="row"><button class="primary" id="start" disabled>自動紹介を開始</button><button id="stop" disabled>停止</button></div>
+<p id="runStatus">準備した紹介音声：0 / 3商品。音声を準備すると自動紹介を開始できます。</p>
+<audio id="audio" controls></audio>
+<div class="row"><button id="playOnce" disabled>選択商品の音声を再生</button></div>
+<h2>紹介内容（登録済み情報のみ）</h2>
+<div id="script">商品を選択してください。</div>
+<p class="muted">在庫・価格の最新性は商品データ取得時点のものです。送料・配送日・性能・レビューなど、登録情報で確認できない内容は案内しません。</p>
+</section>
+</main>
+<script>
+(()=> {
+ const $=id=>document.getElementById(id);
+ const token=$('token'), productsEl=$('products'), audio=$('audio'), avatar=$('avatar');
+ let products=[], selected=null, busy=false, cache=new Map(), sessionTimer=null, nextTimer=null, queue=[], queueIndex=0, sessionEndsAt=0;
+ const MAX_PREPARED=3;
+ function auth(){return {Authorization:'Bearer '+token.value.trim()};}
+ async function api(path,options={}) {
+  const response=await fetch(path,{...options,headers:{...auth(),...(options.headers||{})},cache:'no-store'});
+  if(!response.ok) throw new Error(response.status===401?'認証エラー。管理トークンを確認してください。':'APIエラー '+response.status);
+  return response;
+ }
+ function stop(message){
+  if(sessionTimer)clearTimeout(sessionTimer);if(nextTimer)clearTimeout(nextTimer);
+  sessionTimer=null;nextTimer=null;sessionEndsAt=0;
+  audio.pause();avatar.classList.remove('talking');
+  $('start').disabled=cache.size===0;$('stop').disabled=true;
+  $('runStatus').textContent=message||'自動紹介を停止しました。';
+ }
+ function clearCache(){
+  for(const url of cache.values())URL.revokeObjectURL(url);
+  cache.clear();queue=[];audio.pause();audio.removeAttribute('src');audio.load();
+  $('playOnce').disabled=true;$('start').disabled=true;
+  $('runStatus').textContent='準備した紹介音声：0 / 3商品。';
+ }
+ function choose(product,element){
+  selected=product;
+  document.querySelectorAll('.product').forEach(node=>node.classList.remove('active'));
+  if(element)element.classList.add('active');
+  $('selected').textContent=product.title+' / '+product.sellingPrice.toLocaleString('ja-JP')+'円';
+  $('script').textContent=product.description
+   ? product.title+'。'+product.description.slice(0,700)+'。販売価格は'+product.sellingPrice.toLocaleString('ja-JP')+'円です。詳しい内容は商品ページをご確認ください。'
+   : product.title+'。販売価格は'+product.sellingPrice.toLocaleString('ja-JP')+'円です。詳しい内容は商品ページをご確認ください。';
+  $('prepare').disabled=busy||cache.has(product.id)||cache.size>=MAX_PREPARED;
+  $('playOnce').disabled=!cache.has(product.id);
+ }
+ async function loadProducts(){
+  if(!token.value.trim())throw new Error('管理トークンを入力してください。');
+  $('status').textContent='TRACERの商品情報を確認中…';
+  const response=await api('/api/admin/ai-live/products?limit=20');
+  const data=await response.json();
+  if(!data.ok||!Array.isArray(data.products))throw new Error('商品情報を読み込めませんでした。');
+  stop('商品一覧を更新しました。');clearCache();products=data.products;productsEl.replaceChildren();
+  if(!products.length)productsEl.textContent='現在、条件を満たす販売可能な日本語商品はありません。';
+  products.forEach((product)=>{
+   const el=document.createElement('div');el.className='product';el.tabIndex=0;
+   const title=document.createElement('strong');title.textContent=product.title;
+   const meta=document.createElement('div');meta.className='muted';meta.textContent=product.sellingPrice.toLocaleString('ja-JP')+'円 · 在庫あり';
+   el.append(title,meta);el.addEventListener('click',()=>choose(product,el));
+   el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose(product,el);}});
+   productsEl.append(el);
+  });
+  $('status').textContent='接続済み：'+products.length+'商品 / 読み取り専用 / '+new Date(data.generatedAt).toLocaleString('ja-JP');
+  if(products.length)choose(products[0],productsEl.firstElementChild);
+ }
+ async function prepareSelected(){
+  if(!selected||busy||cache.has(selected.id)||cache.size>=MAX_PREPARED)return;
+  busy=true;$('prepare').disabled=true;$('runStatus').textContent='紹介音声を1回生成しています…';
+  try{
+   const response=await api('/api/admin/ai-live/speak-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment:'どんな商品ですか？',productId:selected.id})});
+   const contentType=response.headers.get('content-type')||'';
+   if(!contentType.toLowerCase().startsWith('audio/'))throw new Error('音声データが返されませんでした。商品説明が未登録の場合は紹介できません。');
+   const blob=await response.blob();if(!blob.size)throw new Error('音声データが空です。');
+   const url=URL.createObjectURL(blob);cache.set(selected.id,url);
+   $('audio').src=url;$('playOnce').disabled=false;$('start').disabled=false;
+   $('runStatus').textContent='紹介音声を準備しました：'+cache.size+' / '+MAX_PREPARED+'商品。自動再生では追加API費用は発生しません。';
+   $('prepare').disabled=true;
+  }catch(error){$('runStatus').textContent='音声を準備できませんでした：'+error.message;$('prepare').disabled=false;}
+  finally{busy=false;}
+ }
+ function playQueueItem(){
+  if(!sessionEndsAt||Date.now()>=sessionEndsAt){stop('設定時間に達したため自動紹介を終了しました。');return;}
+  if(!queue.length){stop('紹介音声がありません。');return;}
+  const product=queue[queueIndex%queue.length];queueIndex=(queueIndex+1)%queue.length;
+  const url=cache.get(product.id);if(!url){nextTimer=setTimeout(playQueueItem,500);return;}
+  audio.pause();audio.src=url;audio.currentTime=0;
+  $('selected').textContent='自動紹介中：'+product.title;
+  $('script').textContent=product.title+' / '+product.sellingPrice.toLocaleString('ja-JP')+'円';
+  avatar.classList.add('talking');
+  audio.onended=()=>{avatar.classList.remove('talking');nextTimer=setTimeout(playQueueItem,2500);};
+  audio.onerror=()=>{avatar.classList.remove('talking');stop('音声再生エラー。安全のため自動紹介を停止しました。');};
+  audio.play().catch(()=>stop('ブラウザーが自動再生を許可しませんでした。再生ボタンから開始してください。'));
+ }
+ function startSession(){
+  if(!cache.size||sessionEndsAt)return;
+  queue=products.filter(product=>cache.has(product.id));
+  if(!queue.length)return;
+  queueIndex=0;sessionEndsAt=Date.now()+Number($('duration').value)*60*1000;
+  $('start').disabled=true;$('stop').disabled=false;
+  $('runStatus').textContent='自動紹介を開始しました。準備済み'+queue.length+'商品を順番に再生します。追加のTTS生成・商品更新・外部投稿は行いません。';
+  sessionTimer=setTimeout(()=>stop('設定時間に達したため自動紹介を終了しました。'),Number($('duration').value)*60*1000);
+  playQueueItem();
+ }
+ $('connect').addEventListener('click',async()=>{try{await loadProducts();}catch(error){$('status').textContent=error.message;}});
+ $('prepare').addEventListener('click',prepareSelected);
+ $('start').addEventListener('click',startSession);
+ $('stop').addEventListener('click',()=>stop('手動停止しました。'));
+ $('playOnce').addEventListener('click',()=>{if(!selected||!cache.has(selected.id))return;stop('単独試聴中。');audio.src=cache.get(selected.id);audio.play().catch(()=>{$('runStatus').textContent='再生できませんでした。';});});
+ $('clear').addEventListener('click',()=>{stop('認証情報を消去しました。');clearCache();token.value='';products=[];selected=null;productsEl.textContent='未接続';$('status').textContent='未接続';$('selected').textContent='商品を選択してください。';$('script').textContent='商品を選択してください。';});
+ window.addEventListener('pagehide',()=>{stop('ページを閉じたため停止しました。');clearCache();token.value='';});
+})();
+</script></body></html>
