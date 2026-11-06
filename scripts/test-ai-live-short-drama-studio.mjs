@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { Script } from "node:vm";
 
 const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
@@ -48,4 +49,47 @@ test("project bundle saves and restores generated audio without server storage",
   assert.ok(page.includes("12*1024*1024"));
   assert.ok(page.includes("speakerIdMap"));
   assert.ok(page.includes("現在の脚本・生成音声を置き換えて作品データを読み込みます"));
+});
+
+test("studio provides a separate multi-file BGM library with preview controls", () => {
+  assert.ok(page.includes('id="bgmPanel"'));
+  assert.ok(page.includes('id="bgmFiles"'));
+  assert.ok(page.includes('multiple'));
+  assert.ok(page.includes("async function uploadBgmFiles"));
+  assert.ok(page.includes('fetch("/api/admin/ai-live/short-drama/bgm"'));
+  assert.ok(page.includes('id="bgmVolume"'));
+  assert.ok(page.includes('id="bgmLoop"'));
+  assert.ok(page.includes('id="bgmPreview"'));
+  assert.ok(page.includes("MP3音源"));
+  assert.ok(page.includes("台詞音声には自動で合成"));
+});
+
+test("BGM API is admin-protected, private-storage based, and MP3-size bounded", () => {
+  const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
+  assert.ok(bgmRoute.includes('const BUCKET = "tracer-drama-bgm"'));
+  assert.ok(bgmRoute.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
+  assert.ok(bgmRoute.includes("await authorize(request)"));
+  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(bgmRoute.includes("metadata: { genre:"));
+  assert.ok(bgmRoute.includes("createSignedUrl"));
+});
+
+
+
+test("studio can export a finished dialogue and BGM mix without modifying source dialogue", () => {
+  assert.ok(page.includes('id="mixExport"'));
+  assert.ok(page.includes('id="mixBgmVolume"'));
+  assert.ok(page.includes("async function createDramaMix"));
+  assert.ok(page.includes("OfflineAudioContext"));
+  assert.ok(page.includes("function encodeWav"));
+  assert.ok(page.includes("未生成のセリフ"));
+  assert.ok(page.includes("duration>300"));
+  assert.ok(page.includes('download="tracer-short-drama-mix.wav"'));
+});
+
+test("short drama studio inline JavaScript parses without syntax errors", () => {
+  const scriptStart = page.indexOf("<script>");
+  const scriptEnd = page.indexOf("</script>", scriptStart);
+  assert.ok(scriptStart >= 0 && scriptEnd > scriptStart, "studio inline script exists");
+  new Script(page.slice(scriptStart + "<script>".length, scriptEnd));
 });

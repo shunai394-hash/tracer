@@ -33,6 +33,24 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <button id="load" class="secondary" type="button">利用可能な日本語ボイスを読み込む</button>
 <p id="loadStatus" class="muted">ボイス一覧の取得のみ。音声生成は行いません。</p>
 </section>
+<section class="panel" id="bgmPanel">
+<h2>BGMライブラリ</h2>
+<p class="muted">BGM音源（MP3）を複数選択して登録できます。音源は非公開Storageに保存し、台詞音声の生成とは独立して管理します。</p>
+<div class="grid">
+<div><label for="bgmFiles">MP3音源（複数選択可・1曲10MB以下）</label><input id="bgmFiles" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple></div>
+<div><label for="bgmGenre">登録ジャンル</label><select id="bgmGenre"><option value="日常・会話">日常・会話</option><option value="恋愛">恋愛</option><option value="感動・余韻">感動・余韻</option><option value="サスペンス">サスペンス</option><option value="コメディ">コメディ</option><option value="アクション・場面転換">アクション・場面転換</option><option value="未分類" selected>未分類</option></select></div>
+</div>
+<div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
+<p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してライブラリを読み込んでください。</p>
+<div class="grid">
+<div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
+<div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
+</div>
+<div class="grid"><div><label><input id="bgmLoop" type="checkbox" checked style="width:auto;margin-right:8px">ループ再生</label></div><div><audio id="bgmPreview" controls preload="none" style="width:100%;margin-top:8px"></audio></div></div>
+<p class="muted">ここでの試聴設定はプレビュー専用です。脚本や台詞音声には自動で合成・書き出しされません。</p>
+<div id="bgmTracks" class="muted"></div>
+</section>
+
 <section class="panel">
 <h2>登場人物の声を固定</h2>
 <p class="muted">人物ごとに声を選びます。各セリフは人物設定の声を引き継ぎます。公開ライセンス音声と本人許可確認済みクローン音声は一覧上で区別されます。</p>
@@ -57,6 +75,19 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </section>
 <section class="panel">
 <h2>生成音声・書き出し</h2><div id="outputs" class="muted">生成したセリフの音声がここに表示されます。音声はセリフごとに再生・MP3保存できます。</div>
+<div class="scene" id="mixPanel">
+<h3>ドラマ音声を書き出す（BGM合成）</h3>
+<p class="muted">生成済みの全セリフを順番につなぎ、選択したBGMを重ねて1本のWAVにします。元のセリフ音声は変更しません。</p>
+<div class="grid">
+<div><label for="mixBgmVolume">完成音源のBGM音量 <span id="mixBgmVolumeValue">18%</span></label><input id="mixBgmVolume" type="range" min="0" max="50" value="18"></div>
+<div><label for="mixGap">セリフ間の間</label><select id="mixGap"><option value="0.2">短め（0.2秒）</option><option value="0.45" selected>自然（0.45秒）</option><option value="0.8">ゆったり（0.8秒）</option><option value="1.2">余韻（1.2秒）</option></select></div>
+</div>
+<label><input id="mixBgmLoop" type="checkbox" checked style="width:auto;margin-right:8px">BGMをドラマの最後までループ</label>
+<button id="mixExport" type="button">台詞とBGMを合成してWAVを書き出す</button>
+<p id="mixStatus" class="status" role="status" aria-live="polite">台詞音声を生成し、BGMを選択すると合成できます。</p>
+<audio id="mixPreview" controls preload="none" style="width:100%;display:none"></audio>
+<a id="mixDownload" style="display:none;color:#93c5fd" download="tracer-short-drama-mix.wav">完成したドラマ音源を保存（WAV）</a>
+</div>
 </section>
 <script>
 (() => {
@@ -113,6 +144,118 @@ async function generateLine(row,el,fromBatch=false){
 }
 function setControls(disabled){$("generateAll").disabled=disabled||!voices.length||!lineRows.length;$("load").disabled=disabled;$("addCharacter").disabled=disabled;$("addLine").disabled=disabled;$("stop").disabled=!disabled;}
 function renderOutputs(){outputs.replaceChildren();for(const row of lineRows.filter(x=>x.audioUrl)){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=(characterRows.find(c=>c.id===row.speakerId)?.name||"話者")+"："+row.text.slice(0,70);const audio=document.createElement("audio");audio.controls=true;audio.src=row.audioUrl;const link=document.createElement("a");link.href=row.audioUrl;link.download="tracer-drama-"+row.id+".mp3";link.textContent="MP3保存";link.style="display:block;margin-top:8px;color:#93c5fd";item.append(title,audio,link);outputs.append(item);}}
+function encodeWav(buffer){
+ const channels=2,sampleRate=buffer.sampleRate,frames=buffer.length;
+ const bytesPerSample=2,dataBytes=frames*channels*bytesPerSample;
+ const out=new ArrayBuffer(44+dataBytes),view=new DataView(out);
+ const write=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i));};
+ write(0,"RIFF");view.setUint32(4,36+dataBytes,true);write(8,"WAVE");write(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,channels,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*channels*bytesPerSample,true);view.setUint16(32,channels*bytesPerSample,true);view.setUint16(34,16,true);write(36,"data");view.setUint32(40,dataBytes,true);
+ const left=buffer.getChannelData(0),right=buffer.numberOfChannels>1?buffer.getChannelData(1):left;let offset=44;
+ for(let i=0;i<frames;i++){for(const sample of [left[i],right[i]]){const clipped=Math.max(-1,Math.min(1,sample));view.setInt16(offset,clipped<0?clipped*32768:clipped*32767,true);offset+=2;}}
+ return new Blob([out],{type:"audio/wav"});
+}
+async function createDramaMix(){
+ const button=$("mixExport"),mixStatus=$("mixStatus"),mixPreview=$("mixPreview"),mixDownload=$("mixDownload");
+ const expected=lineRows.filter(row=>row.text.trim());
+ const missing=expected.filter(row=>!row.audioUrl);
+ const selected=bgmTracks.find(track=>track.name===bgmSelect.value);
+ if(!expected.length){mixStatus.textContent="先に脚本へセリフを追加してください。";return;}
+ if(missing.length){mixStatus.textContent="未生成のセリフが"+missing.length+"件あります。全セリフを生成してから合成してください。";return;}
+ if(!selected){mixStatus.textContent="BGMライブラリから曲を選択してください。";return;}
+ const Offline=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+ if(!Offline){mixStatus.textContent="このブラウザはオフライン音声合成に対応していません。ChromeまたはEdgeで実行してください。";return;}
+ button.disabled=true;mixStatus.textContent="台詞とBGMを読み込み中…";
+ try{
+  const context=new (window.AudioContext||window.webkitAudioContext)();
+  const voiceBuffers=[];
+  try{
+   for(const row of expected){const response=await fetch(row.audioUrl);if(!response.ok)throw new Error("台詞音声を読み込めません："+row.id);voiceBuffers.push(await context.decodeAudioData(await response.arrayBuffer()));}
+   const bgmResponse=await fetch(selected.url,{cache:"no-store"});if(!bgmResponse.ok)throw new Error("BGMを読み込めません。ライブラリを更新して再試行してください。");
+   const bgmBuffer=await context.decodeAudioData(await bgmResponse.arrayBuffer());
+   const gap=Number($("mixGap").value)||0.45;
+   const starts=[];let duration=0;
+   for(const buffer of voiceBuffers){starts.push(duration);duration+=buffer.duration+gap;}
+   duration=Math.max(0.1,duration-gap);
+   if(duration>300)throw new Error("完成音源が5分を超えています。セリフを分割して書き出してください。");
+   const sampleRate=44100,frameCount=Math.ceil(duration*sampleRate);
+   const offline=new Offline(2,frameCount,sampleRate);
+   const music=offline.createBufferSource();music.buffer=bgmBuffer;music.loop=$("mixBgmLoop").checked;
+   const musicGain=offline.createGain();musicGain.gain.value=Number($("mixBgmVolume").value)/100;
+   music.connect(musicGain);musicGain.connect(offline.destination);music.start(0);
+   voiceBuffers.forEach((buffer,index)=>{const source=offline.createBufferSource();source.buffer=buffer;source.connect(offline.destination);source.start(starts[index]);});
+   mixStatus.textContent="BGMと台詞を合成中…（"+Math.ceil(duration)+"秒）";
+   const rendered=await offline.startRendering();
+   const wav=encodeWav(rendered);if(mixDownload.dataset.url)URL.revokeObjectURL(mixDownload.dataset.url);
+   const url=URL.createObjectURL(wav);mixDownload.href=url;mixDownload.dataset.url=url;
+   const title=String($("title").value||"tracer-short-drama").normalize("NFKC").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g,"-").slice(0,60)||"tracer-short-drama";
+   mixDownload.download=title+"-with-bgm.wav";mixDownload.style.display="inline-block";
+   mixPreview.src=url;mixPreview.style.display="block";mixPreview.load();
+   mixStatus.textContent="合成完了："+expected.length+"セリフ／"+Math.ceil(duration)+"秒。WAVで保存できます。";
+  }finally{await context.close();}
+ }catch(error){mixStatus.textContent=error instanceof Error?error.message:"音声合成に失敗しました。";}
+ finally{button.disabled=false;}
+}
+$("mixExport").addEventListener("click",createDramaMix);
+$("mixBgmVolume").addEventListener("input",()=>{$("mixBgmVolumeValue").textContent=$("mixBgmVolume").value+"%";});
+
+
+
+const bgmSelect=$("bgmSelect"), bgmPreview=$("bgmPreview");
+let bgmTracks=[];
+function renderBgmTracks(){
+ const host=$("bgmTracks");host.replaceChildren();
+ if(!bgmTracks.length){host.textContent="登録済みBGMはありません。";return;}
+ for(const track of bgmTracks){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=track.title+" ／ "+(track.genre||"未分類");const play=document.createElement("button");play.type="button";play.className="secondary";play.textContent="この曲を試聴";play.addEventListener("click",async()=>{bgmSelect.value=track.name;selectBgm();try{await bgmPreview.play();$("bgmStatus").textContent="再生中："+track.title;}catch(error){$("bgmStatus").textContent="再生を開始できません："+(error?.message||"ブラウザの再生制限または音源URLを確認してください");}});item.append(title,play);host.append(item);}
+}
+function selectBgm(){
+ const track=bgmTracks.find(x=>x.name===bgmSelect.value);
+ if(!track){bgmPreview.pause();bgmPreview.removeAttribute("src");bgmPreview.load();return;}
+ bgmPreview.src=track.url;bgmPreview.volume=Number($("bgmVolume").value)/100;bgmPreview.loop=$("bgmLoop").checked;bgmPreview.load();
+}
+async function loadBgm(){
+ if(!token.value.trim()){ $("bgmStatus").textContent="管理トークンを入力してください。";return; }
+ $("refreshBgm").disabled=true;$("bgmStatus").textContent="BGM一覧を取得中…";
+ try{
+  const r=await fetch("/api/admin/ai-live/short-drama/bgm",{headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store"});
+  const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"BGM一覧を取得できません");
+  bgmTracks=d.tracks||[];const old=bgmSelect.value;bgmSelect.replaceChildren(new Option("BGMを選択",""));
+  for(const track of bgmTracks)bgmSelect.add(new Option(track.title,track.name));
+  if(bgmTracks.some(x=>x.name===old))bgmSelect.value=old;
+  renderBgmTracks();$("bgmStatus").textContent="登録済み："+bgmTracks.length+"曲";
+  selectBgm();
+ }catch(e){$("bgmStatus").textContent=e.message;}finally{$("refreshBgm").disabled=false;}
+}
+async function uploadBgmFiles(){
+ const files=Array.from($("bgmFiles").files||[]);
+ if(!files.length){$("bgmStatus").textContent="MP3ファイルを選択してください。";return;}
+ if(!token.value.trim()){ $("bgmStatus").textContent="管理トークンを入力してください。";return; }
+ const invalid=files.filter(f=>!f.name.toLowerCase().endsWith(".mp3")||f.size>10*1024*1024||f.size===0);
+ if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
+ $("uploadBgm").disabled=true;let done=0;const errors=[];
+ try{
+  for(let index=0;index<files.length;index++){
+   const file=files[index];
+   $("bgmStatus").textContent="登録中 "+(index+1)+"/"+files.length+"："+file.name;
+   try{
+    const form=new FormData();form.append("file",file,file.name);form.append("genre",$("bgmGenre").value);
+    const r=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!d?.ok)throw new Error(d?.message||d?.error||("HTTP "+r.status));
+    done++;
+   }catch(error){errors.push(file.name+"："+(error?.message||"登録失敗"));}
+  }
+  $("bgmStatus").textContent="登録結果："+done+"/"+files.length+"曲を保存"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
+  await loadBgm();
+  if(errors.length)$("bgmStatus").textContent+="\n一部の曲を登録できませんでした。失敗したファイルだけ再度選択してください。";
+  else $("bgmFiles").value="";
+ }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
+}
+$("uploadBgm").addEventListener("click",uploadBgmFiles);
+$("refreshBgm").addEventListener("click",loadBgm);
+bgmSelect.addEventListener("change",selectBgm);
+$("bgmVolume").addEventListener("input",()=>{$("bgmVolumeValue").textContent=$("bgmVolume").value+"%";bgmPreview.volume=Number($("bgmVolume").value)/100;});
+$("bgmLoop").addEventListener("change",()=>bgmPreview.loop=$("bgmLoop").checked);
+
 $("load").addEventListener("click",async()=>{if(!token.value.trim()){status.textContent="管理トークンを入力してください。";return;}$("load").disabled=true;$("loadStatus").textContent="一覧を取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"ボイス一覧を取得できません");voices=d.voices;refreshCharacterVoiceOptions();$("loadStatus").textContent="公開音声 "+d.publicLicensedCount+"件／許可確認済みクローン "+d.consentedCustomCount+"件。人物ごとに声を割り当ててください。";$("generateAll").disabled=!voices.length||!lineRows.length;}catch(e){$("loadStatus").textContent=e.message;}finally{$("load").disabled=false;}});
 $("addCharacter").addEventListener("click",()=>addCharacter("登場人物"+(characterRows.length+1)));
 $("addLine").addEventListener("click",()=>addLine());
