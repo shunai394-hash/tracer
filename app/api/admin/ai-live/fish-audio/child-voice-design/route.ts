@@ -131,7 +131,7 @@ export async function POST(request: Request) {
     modelForm.set("train_mode", "fast");
     modelForm.set("enhance_audio_quality", "true");
     modelForm.append("voices", new Blob([audioBytes], { type: "audio/wav" }), "tracer-fictional-child-voice.wav");
-    modelForm.append("voice_design_signatures", signature);
+    modelForm.set("texts", referenceText);
     modelForm.append("tags", "ja");
     modelForm.append("tags", "tracer-drama-child");
 
