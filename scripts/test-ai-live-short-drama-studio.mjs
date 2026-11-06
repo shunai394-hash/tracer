@@ -60,7 +60,8 @@ test("fictional child-role voice is designed from text, saved privately, and nev
   assert.ok(page.includes("録音を使わず"));
   assert.ok(childDesignRoute.includes("https://api.fish.audio/v1/voice-design"));
   assert.ok(childDesignRoute.includes('model: "voice-design-1"'));
-  assert.ok(childDesignRoute.includes("voice_design_signatures"));
+  assert.ok(childDesignRoute.includes('modelForm.set("texts", referenceText)'));
+  assert.ok(childDesignRoute.includes("audio_base64"));
   assert.ok(childDesignRoute.includes('modelForm.set("visibility", "private")'));
   assert.ok(childDesignRoute.includes('"tracer-drama-child"'));
   assert.doesNotMatch(childDesignRoute, /request\.formData\(\)|form\.get\(["']audio["']\)/);
