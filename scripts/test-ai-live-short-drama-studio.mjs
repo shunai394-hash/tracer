@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { Script } from "node:vm";
 
 const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
@@ -8,6 +9,8 @@ const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-vo
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
+const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
+const bgmMigration = readFileSync("supabase/migrations/20261107090000_create_short_drama_bgm_bucket.sql", "utf8");
 
 test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("担当ボイス"));
@@ -100,4 +103,45 @@ test("fictional child-role voice is designed from text, saved privately, and nev
   assert.ok(privateChildVoices.includes('tags.includes(CHILD_DRAMA_TAG)'));
   assert.ok(route.includes("isPrivateDramaChildVoice(privateChildVoices, referenceId)"));
   assert.ok(voicesRoute.includes('source: "private_voice_design"'));
+});
+
+
+test("BGM library is private, authenticated, paginated, and MP3 size bounded", () => {
+  assert.ok(page.includes('id="bgmPanel"'));
+  assert.ok(page.includes('id="bgmFiles"'));
+  assert.ok(page.includes('id="uploadBgm"'));
+  assert.ok(page.includes('multiple'));
+  assert.ok(page.includes('id="bgmPreview"'));
+  assert.ok(page.includes('id="bgmVolume"'));
+  assert.ok(page.includes('id="bgmLoop"'));
+  assert.ok(bgmRoute.includes('const BUCKET = "tracer-drama-bgm"'));
+  assert.ok(bgmRoute.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
+  assert.ok(bgmRoute.includes("PAGE_SIZE = 100"));
+  assert.ok(bgmRoute.includes("MAX_TRACKS = 1000"));
+  assert.ok(bgmRoute.includes("await authorize(request)"));
+  assert.ok(bgmRoute.includes("createSignedUrl"));
+  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(bgmMigration.includes("'tracer-drama-bgm', 'tracer-drama-bgm', false"));
+});
+
+test("finished drama mix combines dialogue with loopable BGM and fade automation", () => {
+  assert.ok(page.includes('id="mixPanel"'));
+  assert.ok(page.includes('id="mixExport"'));
+  assert.ok(page.includes('id="mixBgmVolume"'));
+  assert.ok(page.includes('id="mixFadeIn"'));
+  assert.ok(page.includes('id="mixFadeOut"'));
+  assert.ok(page.includes("async function createDramaMix"));
+  assert.ok(page.includes("OfflineAudioContext"));
+  assert.ok(page.includes("function encodeWav"));
+  assert.ok(page.includes("music.loop=$(\"mixBgmLoop\").checked"));
+  assert.ok(page.includes("linearRampToValueAtTime(0,duration)"));
+  assert.ok(page.includes("未生成的セリフ"));
+  assert.ok(page.includes("duration>300"));
+});
+
+test("short drama studio inline JavaScript parses without syntax errors", () => {
+  const scriptStart = page.indexOf("<script>");
+  const scriptEnd = page.indexOf("</script>", scriptStart);
+  assert.ok(scriptStart >= 0 && scriptEnd > scriptStart, "studio inline script exists");
+  new Script(page.slice(scriptStart + "<script>".length, scriptEnd));
 });
