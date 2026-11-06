@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const page = readFileSync(new URL("../public/ai-live-sales-console.html", import.meta.url), "utf8");
+assert.match(page, /<meta name="robots" content="noindex,nofollow">/);
+assert.match(page, /TRACER AI自動ライブ商品紹介/);
+assert.match(page, /\/api\/admin\/ai-live\/products\?limit=20/);
+assert.match(page, /\/api\/admin\/ai-live\/speak-reply/);
+assert.match(page, /Authorization:\s*'Bearer '/);
+assert.match(page, /comment:'どんな商品ですか？'/);
+assert.match(page, /MAX_PREPARED=3/);
+assert.match(page, /cache\.set\(selected\.id,url\)/);
+assert.match(page, /setTimeout\(playQueueItem,2500\)/);
+assert.match(page, /sessionTimer=setTimeout/);
+assert.match(page, /30/);
+assert.match(page, /60/);
+assert.match(page, /pagehide/);
+assert.match(page, /読み取り専用/);
+assert.match(page, /公開ライブ配信・SNS投稿/);
+assert.match(page, /追加のTTS生成・商品更新・外部投稿は行いません/);
+assert.doesNotMatch(page, /localStorage|sessionStorage|WebSocket|EventSource|tiktok|youtube|instagram/i);
+assert.doesNotMatch(page, /fetch\s*\([^)]*(?:orders|inventory|publish|post)/i);
+console.log("AI live auto product intro safety contract passed");
