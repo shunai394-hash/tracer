@@ -135,7 +135,7 @@ test("finished drama mix combines dialogue with loopable BGM and fade automation
   assert.ok(page.includes("function encodeWav"));
   assert.ok(page.includes("music.loop=$(\"mixBgmLoop\").checked"));
   assert.ok(page.includes("linearRampToValueAtTime(0,duration)"));
-  assert.ok(page.includes("未生成的セリフ"));
+  assert.ok(page.includes("const missing=expected.filter"));
   assert.ok(page.includes("duration>300"));
 });
 
