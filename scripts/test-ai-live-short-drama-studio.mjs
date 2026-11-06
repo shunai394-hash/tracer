@@ -54,6 +54,14 @@ test("project bundle saves and restores generated audio without server storage",
 });
 
 
+test("public and private voice catalogues load concurrently without blocking the public list", () => {
+  assert.ok(voicesRoute.includes("Promise.allSettled(["));
+  assert.ok(voicesRoute.includes("listLicensedJapaneseVoices(apiKey)"));
+  assert.ok(voicesRoute.includes("listPrivateDramaChildVoices(apiKey)"));
+  assert.ok(voicesRoute.includes('publicResult.status === "fulfilled"'));
+  assert.ok(voicesRoute.includes('privateChildResult.status === "fulfilled"'));
+});
+
 test("voice choices load automatically after the admin token is entered", () => {
   assert.ok(page.includes('token.addEventListener("change",loadVoices)'));
   assert.ok(page.includes('token.addEventListener("keydown"'));
