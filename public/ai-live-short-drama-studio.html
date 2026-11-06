@@ -205,7 +205,7 @@ let bgmTracks=[];
 function renderBgmTracks(){
  const host=$("bgmTracks");host.replaceChildren();
  if(!bgmTracks.length){host.textContent="登録済みBGMはありません。";return;}
- for(const track of bgmTracks){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=track.title+" ／ "+(track.genre||"未分類");const play=document.createElement("button");play.type="button";play.className="secondary";play.textContent="この曲を試聴";play.addEventListener("click",()=>{bgmSelect.value=track.name;selectBgm();});item.append(title,play);host.append(item);}
+ for(const track of bgmTracks){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=track.title+" ／ "+(track.genre||"未分類");const play=document.createElement("button");play.type="button";play.className="secondary";play.textContent="この曲を試聴";play.addEventListener("click",async()=>{bgmSelect.value=track.name;selectBgm();try{await bgmPreview.play();$("bgmStatus").textContent="再生中："+track.title;}catch(error){$("bgmStatus").textContent="再生を開始できません："+(error?.message||"ブラウザの再生制限または音源URLを確認してください");}});item.append(title,play);host.append(item);}
 }
 function selectBgm(){
  const track=bgmTracks.find(x=>x.name===bgmSelect.value);
@@ -233,15 +233,21 @@ async function uploadBgmFiles(){
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
-  for(const file of files){
-   $("bgmStatus").textContent="登録中 "+(done+1)+"/"+files.length+"："+file.name;
-   const form=new FormData();form.append("file",file);form.append("genre",$("bgmGenre").value);
-   const r=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
-   const d=await r.json().catch(()=>null);
-   if(!r.ok||!d?.ok)errors.push(file.name+"："+(d?.message||d?.error||"登録失敗"));else done++;
+  for(let index=0;index<files.length;index++){
+   const file=files[index];
+   $("bgmStatus").textContent="登録中 "+(index+1)+"/"+files.length+"："+file.name;
+   try{
+    const form=new FormData();form.append("file",file,file.name);form.append("genre",$("bgmGenre").value);
+    const r=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!d?.ok)throw new Error(d?.message||d?.error||("HTTP "+r.status));
+    done++;
+   }catch(error){errors.push(file.name+"："+(error?.message||"登録失敗"));}
   }
-  $("bgmStatus").textContent="登録完了 "+done+"/"+files.length+"曲"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
-  $("bgmFiles").value="";await loadBgm();
+  $("bgmStatus").textContent="登録結果："+done+"/"+files.length+"曲を保存"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
+  await loadBgm();
+  if(errors.length)$("bgmStatus").textContent+="\n一部の曲を登録できませんでした。失敗したファイルだけ再度選択してください。";
+  else $("bgmFiles").value="";
  }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
