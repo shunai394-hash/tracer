@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const ELEVEN_TTD_WS_URL = "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input";
-const MODEL_ID = "eleven_v4_turbo";
+const ALLOWED_MODEL_IDS = new Set(["eleven_v4", "eleven_v4_turbo"]);
+const DEFAULT_MODEL_ID = "eleven_v4_turbo";
 const OUTPUT_FORMAT = "mp3_44100_128";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
@@ -40,9 +41,52 @@ async function messageText(data: unknown): Promise<string> {
   throw new Error("unsupported_provider_message");
 }
 
-async function synthesizeDialogue(apiKey: string, voiceId: string, text: string): Promise<Uint8Array> {
+async function synthesizeDialogueHttp(apiKey: string, modelId: string, voiceId: string, text: string): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  try {
+    const response = await fetch("https://api.elevenlabs.io/v1/text-to-dialogue/stream", {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        model_id: modelId,
+        output_format: OUTPUT_FORMAT,
+        inputs: [{ text, voice_id: voiceId }],
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const raw = await response.text().catch(() => "");
+      const safeMessage = raw
+        .replaceAll(apiKey, "[redacted]")
+        .replaceAll(voiceId, "[voice]")
+        .replaceAll(text, "[text]")
+        .replace(/\s+/gu, " ")
+        .slice(0, 180);
+      const error = new Error("provider_rejected_request");
+      Object.assign(error, { providerCode: String(response.status), providerMessage: safeMessage });
+      throw error;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength === 0) throw new Error("empty_audio_response");
+    if (bytes.byteLength > MAX_AUDIO_BYTES) throw new Error("audio_size_limit_exceeded");
+    return bytes;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("provider_timeout");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function synthesizeDialogue(apiKey: string, modelId: string, voiceId: string, text: string): Promise<Uint8Array> {
   const url = new URL(ELEVEN_TTD_WS_URL);
-  url.searchParams.set("model_id", MODEL_ID);
+  url.searchParams.set("model_id", modelId);
   url.searchParams.set("output_format", OUTPUT_FORMAT);
 
   return await new Promise<Uint8Array>((resolve, reject) => {
@@ -158,7 +202,7 @@ async function synthesizeDialogue(apiKey: string, voiceId: string, text: string)
 }
 
 /**
- * Admin-only Eleven v4 Turbo speech for one explicitly requested clip.
+ * Admin-only Eleven v4 / v4 Turbo speech for one explicitly requested clip.
  * The browser preview calls this only when an operator presses Generate.
  * GitHub OIDC and CRON_SECRET stay valid; TRACER_ADMIN_TOKEN is an additional admin path.
  * Keep the API key server-side; never log prompts, voice IDs, tokens, or audio.
@@ -189,6 +233,11 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
+  const modelId = typeof input.modelId === "string" ? input.modelId.trim() : DEFAULT_MODEL_ID;
+  if (!ALLOWED_MODEL_IDS.has(modelId)) {
+    return json({ ok: false, error: "unsupported_model_id", allowedModels: [...ALLOWED_MODEL_IDS] }, 400);
+  }
+
   const text = typeof input.text === "string" ? input.text.trim() : "";
   if (!text || text.length > MAX_TEXT_CHARS) {
     return json({
@@ -208,7 +257,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const bytes = await synthesizeDialogue(apiKey, voiceId, text);
+    const bytes = modelId === "eleven_v4"
+      ? await synthesizeDialogueHttp(apiKey, modelId, voiceId, text)
+      : await synthesizeDialogue(apiKey, modelId, voiceId, text);
     if (bytes.byteLength === 0) {
       return json({
         ok: false,
@@ -224,10 +275,10 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "audio/mpeg",
         "Content-Length": String(bytes.byteLength),
-        'Content-Disposition': 'inline; filename="tracer-eleven-v4-turbo.mp3"',
+        'Content-Disposition': `inline; filename="tracer-${modelId}.mp3"`,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "X-AI-Voice-Model": MODEL_ID,
+        "X-AI-Voice-Model": modelId,
       },
     });
   } catch (error) {
