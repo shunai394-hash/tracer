@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
     }
     if (!licensedVoices.some((voice) => voice.id === referenceId) && !isPrivateDramaChildVoice(privateChildVoices, referenceId)) {
-      return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a currently licensed public Japanese voice or a consent-confirmed registered custom voice." }, 400);
+      return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a licensed public Japanese voice, a consent-confirmed custom voice, or a private TRACER-designed fictional child voice." }, 400);
     }
   }
 
