@@ -165,17 +165,17 @@ export function createFfmpegPublisher({
       const exited = new Promise((resolve) => {
         if (proc.exitCode !== null || proc.signalCode !== null) return resolve(true);
         const timer = setTimeout(() => resolve(false), graceMs);
-        timer.unref?.();
         proc.once("exit", () => { clearTimeout(timer); resolve(true); });
       });
       if (!(await exited)) {
-        proc.kill("SIGTERM");
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, 2000);
-          timer.unref?.();
-          proc.once("exit", () => { clearTimeout(timer); resolve(); });
-        });
-        if (child === proc) proc.kill("SIGKILL");
+        if (child === proc && proc.exitCode === null && proc.signalCode === null) {
+          const terminated = new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(false), 2000);
+            proc.once("exit", () => { clearTimeout(timer); resolve(true); });
+          });
+          proc.kill("SIGTERM");
+          if (!(await terminated) && child === proc) proc.kill("SIGKILL");
+        }
       }
       if (child === proc) child = null;
       setState("stopped");
