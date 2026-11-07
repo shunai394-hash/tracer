@@ -11,6 +11,8 @@ a production secret manager; do not treat this as a live-ready deployment.
 
 ```sh
 AI_LIVE_WORKER_TOKEN='replace-with-a-random-secret-at-least-32-characters' \
+SUPABASE_URL='https://your-project.supabase.co' \
+SUPABASE_SERVICE_ROLE_KEY='server-only-service-role-secret' \
 AI_LIVE_WORKER_MODE=fake node worker/ai-live-worker.mjs
 ```
 
@@ -29,8 +31,14 @@ are accepted. Product facts older than 15 minutes are rejected. Maximum run
 time is 30 minutes. Product segments rotate in round-robin order; the default
 duration is 45 seconds and accepted values are 15–600 seconds. This rotation
 is simulated control-plane state only and does not switch a real video feed.
-The in-memory registry is not durable across restarts and must not be used for
-production jobs.
+When Supabase is configured, stream creation uses insert-only semantics,
+then atomically claims a 45-second worker lease. The worker renews that lease
+every 15 seconds and stops locally if it loses ownership. On process startup,
+only validated `fake`-mode records are considered for recovery; the worker
+reclaims an expired lease before restoring the segment index and remaining
+runtime. Live-mode records are never resumed. The migration files must be
+applied before starting the isolated worker. The HTTP control plane still does
+not broadcast.
 
 Run the focused checks from the repository root:
 
@@ -52,15 +60,17 @@ docker build -f worker/Dockerfile -t tracer-ai-live-worker .
 ```
 
 The image runs as the unprivileged `node` user. Set
-`AI_LIVE_WORKER_TOKEN` through the deployment secret manager. Do not place
-credentials in the image, job payload, logs, or health response.
+`AI_LIVE_WORKER_TOKEN`, `SUPABASE_URL`, and
+`SUPABASE_SERVICE_ROLE_KEY` through the deployment secret manager. The service-role
+key is server-only. Do not place credentials in the image, job payload, logs,
+or health response.
 
 ## Next implementation gate
 
-The FFmpeg publisher module is implemented and contract-tested, and FFmpeg is
-installed in the container image. It is not yet connected to the HTTP control
-API, persistent job registry, reconnect supervisor, or live comment/audio
-scheduler. The HTTP service still refuses any mode other than `fake`, so it
+The Supabase state adapter, insert-only start path, atomic lease claim,
+lease-fenced heartbeat, and fake-mode restart recovery are implemented and
+contract-tested. The FFmpeg publisher module remains separate from the HTTP
+lifecycle, reconnect supervisor, and live comment/audio scheduler. The HTTP service still refuses any mode other than `fake`, so it
 cannot accidentally start a real broadcast. Before enabling publishing, wire
 in a production secret manager and verify each YouTube/TikTok account's current
 stream eligibility and platform policy requirements. Mount only approved
