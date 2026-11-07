@@ -61,6 +61,25 @@ assert.ok(stateEvents.includes("publishing"));
 assert.ok(stateEvents.includes("stopping"));
 assert.ok(!JSON.stringify(publisher.snapshot()).includes("private-key"));
 
+let disconnectEvents = [];
+const disconnectedChild = new FakeChild();
+const disconnectingPublisher = createFfmpegPublisher({
+  mediaRoot: "/app/media",
+  secretResolver: async () => ({ outputUrl: "rtmps://a.rtmp.youtube.com/live2/opaque" }),
+  spawnImpl: () => disconnectedChild,
+  onDisconnected: (event) => disconnectEvents.push(event),
+});
+await disconnectingPublisher.start({
+  destination: "youtube_live",
+  destinationSecretRef: "live/youtube/primary",
+  videoFile: "loop.mp4",
+  bgmFile: "soft.mp3",
+});
+disconnectedChild.exitCode = 1;
+disconnectedChild.emit("exit", 1, null);
+assert.deepEqual(disconnectEvents, [{ reason: "ffmpeg_unexpected_exit", retryable: true }]);
+assert.equal(disconnectingPublisher.snapshot().state, "failed");
+
 const rejected = createFfmpegPublisher({
   mediaRoot: "/app/media",
   secretResolver: async () => ({ outputUrl: "rtmps://evil.example/live/key" }),
