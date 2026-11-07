@@ -21,7 +21,7 @@ function asNumber(value: unknown): number | null {
 }
 
 function hasJapaneseText(value: unknown): boolean {
-  return typeof value === "string" && /[ぁ-んァ-ヶ一-龯々ー]/u.test(value);
+  return typeof value === "string" && /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3005\u30FC]/u.test(value);
 }
 
 function asBoolean(value: unknown): boolean {
@@ -49,7 +49,7 @@ export type ShopVariantOption = {
   slug: string;
   title: string;
   label: string;
-  optionType: "カラー" | "サイズ" | "種類";
+  optionType: "カラー" | "サイズ" | "バリエーション";
   imageUrl: string | null;
   sellingPrice: number | null;
   currency: string | null;
@@ -85,7 +85,7 @@ export type ShopListing = {
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
   variantLabel?: string | null;
-  variantOptionType?: "カラー" | "サイズ" | "種類";
+  variantOptionType?: "\u30ab\u30e9\u30fc" | "\u30b5\u30a4\u30ba" | "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3";
   variantImageUrl?: string | null;
   variants?: ShopVariantOption[];
 };
@@ -317,8 +317,8 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     id: candidate.id,
     slug: candidate.slug,
     title: candidate.title,
-    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] || "標準",
-    optionType: candidate.variantOptionType ?? "種類",
+    label: candidate.variantLabel || (() => { const value = candidate.title; const start = Math.max(value.lastIndexOf("("), value.lastIndexOf(String.fromCharCode(65288))); const end = value.length > 0 && (value.endsWith(")") || value.endsWith(String.fromCharCode(65289))) ? value.length - 1 : value.length; return start >= 0 && end > start ? value.slice(start + 1, end).trim() || value : value; })(),
+    optionType: candidate.variantOptionType ?? "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3",
     imageUrl: candidate.variantImageUrl ?? null,
     sellingPrice: candidate.sellingPrice,
     currency: candidate.currency,
@@ -508,8 +508,8 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
     const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
       ? attributes.variationLabel.trim()
-      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
-    const variantOptionType = attributes.color ? "カラー" : attributes.size ? "サイズ" : "種類";
+      : (() => { const value = String(variant.title_ja ?? ""); const start = Math.max(value.lastIndexOf("("), value.lastIndexOf(String.fromCharCode(65288))); const end = value.length > 0 && (value.endsWith(")") || value.endsWith(String.fromCharCode(65289))) ? value.length - 1 : value.length; return start >= 0 && end > start ? value.slice(start + 1, end).trim() || null : null; })();
+    const variantOptionType = attributes.color ? "\u30ab\u30e9\u30fc" : attributes.size ? "\u30b5\u30a4\u30ba" : "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
@@ -543,7 +543,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
       orderable: isCJLiveOrderPathReady() && offerFresh,
       trackingAvailable: true,
-      selectionReasons: ["仕入先在庫確認済み", "日本向け配送確認済み", "利益計算済み"],
+      selectionReasons: ["\u4ed5\u5165\u5148\u5728\u5eab\u78ba\u8a8d\u6e08\u307f", "\u65e5\u672c\u5411\u3051\u914d\u9001\u78ba\u8a8d\u6e08\u307f", "\u5229\u76ca\u8a08\u7b97\u6e08\u307f"],
       productId: String(product.id),
       bestsellerId: null,
       supplierListingId: String(offer.id),
@@ -694,6 +694,9 @@ export async function placeShopOrder(args: {
     reserved.push({ listingId: String(line.listing.id), qty: line.qty });
   }
 
+  const isDomesticFreeShippingOrder = String(args.shippingCountryCode ?? "").trim().toUpperCase() === "JP" &&
+    lines.length === 1 && String(lines[0].listing.id) === "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
+
   let orderId: string | null = null;
   try {
     const { data: order, error: orderError } = await supabase
@@ -715,11 +718,11 @@ export async function placeShopOrder(args: {
         shipping_zip: args.shippingZip ?? null,
         shipping_line1: args.shippingLine1 ?? null,
         subtotal,
-        shipping_cost: null,
+        shipping_cost: isDomesticFreeShippingOrder ? 0 : null,
         total: subtotal,
         currency,
         notes: args.notes ?? null,
-        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier" },
+        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier", ...(isDomesticFreeShippingOrder ? { shippingPolicy: "domestic_free_shipping" } : {}) },
       })
       .select("id")
       .single();
