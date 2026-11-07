@@ -1,4 +1,5 @@
 import BotLiveStatus from "@/components/admin/bot-live-status";
+import YouTubeLiveConnect from "@/components/admin/youtube-live-connect";
 
 const cards = [
   {
@@ -58,6 +59,7 @@ export default function AdminOperationsPage() {
       </section>
 
       <BotLiveStatus />
+      <YouTubeLiveConnect />
 
       <section className="mt-10 border border-white/10 bg-[#0a0d10] p-5 sm:p-7" aria-labelledby="bots-heading">
         <div className="flex flex-wrap items-start justify-between gap-4">
