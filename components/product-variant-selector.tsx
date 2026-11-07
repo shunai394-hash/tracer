@@ -40,18 +40,31 @@ export function ProductVariantSelector({
   const shopifyUrl = selected.shopifyHandle && variantNumber && shopifyDomain
     ? `https://${shopifyDomain}/products/${encodeURIComponent(selected.shopifyHandle)}?variant=${variantNumber}`
     : null;
+  const isColorFamily = choices.length > 1 && choices[0].optionType === "カラー";
+  const colorImagesVerified = !isColorFamily || (
+    choices.every((choice) => Boolean(choice.imageUrl)) &&
+    new Set(choices.map((choice) => choice.imageUrl)).size === choices.length
+  );
 
   return (
     <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
       <div className="md:sticky md:top-24 md:self-start">
         <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-          <ProductImage src={selected.imageUrl || listing.imageUrl} alt={`${listing.title} ${selected.label}`} eager className="aspect-[4/5] w-full object-cover transition-opacity duration-200" />
+          {selected.imageUrl ? (
+            <ProductImage src={selected.imageUrl} alt={`${listing.title} ${selected.label}`} eager className="aspect-[4/5] w-full object-cover transition-opacity duration-200" />
+          ) : (
+            <div className="flex aspect-[4/5] w-full items-center justify-center px-6 text-center text-sm text-neutral-500">このカラーの画像は確認できません</div>
+          )}
         </div>
         {choices.length > 1 ? (
           <div className="mt-3 grid grid-cols-4 gap-2">
             {choices.map((choice) => (
               <button key={choice.id} type="button" onClick={() => setSelectedId(choice.id)} aria-label={`${choice.label}を選択`} aria-pressed={selected.id === choice.id} className={`overflow-hidden rounded-xl border-2 bg-white text-left transition ${selected.id === choice.id ? "border-[#3B241A]" : "border-transparent"}`}>
-                <ProductImage src={choice.imageUrl || listing.imageUrl} alt={choice.label} className="aspect-square w-full object-cover" />
+                {choice.imageUrl ? (
+                  <ProductImage src={choice.imageUrl} alt={choice.label} className="aspect-square w-full object-cover" />
+                ) : (
+                  <span className="flex aspect-square items-center justify-center px-1 text-center text-[10px] text-neutral-500">画像未確認</span>
+                )}
                 <span className="block truncate px-2 py-1.5 text-center text-xs text-[#3B241A]">{choice.label}</span>
               </button>
             ))}
@@ -84,12 +97,16 @@ export function ProductVariantSelector({
           {selected.inventory <= 0 ? "在庫切れ" : selected.inventory <= 5 ? `残りわずか（あと${selected.inventory}点）` : "在庫あり"}
         </p>
         <div className="mt-6">
-          {shopifyUrl ? (
+          {!colorImagesVerified ? (
+            <div role="status" className="rounded-xl border border-[#D9C8BE] bg-white px-4 py-4 text-center text-sm leading-6 text-[#5C4035]">
+              色ごとの画像を正しく確認できないため、この商品は現在購入できません。
+            </div>
+          ) : shopifyUrl ? (
             <a href={shopifyUrl} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">
               選択したカラーを購入する
             </a>
           ) : (
-            <AddToCartButton listingId={selected.id} slug={selected.slug} title={selected.title} unitPrice={selected.sellingPrice} currency={selected.currency} imageUrl={selected.imageUrl || listing.imageUrl} />
+            <AddToCartButton listingId={selected.id} slug={selected.slug} title={selected.title} unitPrice={selected.sellingPrice} currency={selected.currency} imageUrl={selected.imageUrl} />
           )}
           <p className="mt-3 text-center text-xs leading-5 text-neutral-500">選択したカラー・在庫を注文に引き継ぎます。</p>
         </div>
