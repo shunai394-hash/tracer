@@ -40,6 +40,7 @@ node worker/platforms/test-normalize-comment.mjs
 node worker/platforms/test-tracer-speech-bridge.mjs
 node worker/media/test-ffmpeg-publisher.mjs
 node worker/media/test-live-media-session.mjs
+node worker/media/test-reconnect-supervisor.mjs
 ```
 
 ## Container
