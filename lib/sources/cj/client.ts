@@ -1300,7 +1300,7 @@ export async function fetchCJProductVariants(
   // The lightweight variant endpoints frequently return blank variantImage.
   // Enrich only those products from the documented full product-detail endpoint;
   // exact VID matching prevents a sibling color image from leaking across variants.
-  if (rows.some((row) => !(typeof row.variantImage === "string" && /^https?:\\/\\//i.test(row.variantImage.trim())))) {
+  if (rows.some((row) => !(typeof row.variantImage === "string" && (row.variantImage.trim().startsWith("https://") || row.variantImage.trim().startsWith("http://"))))) {
     const detailedRows = await queryCJProductDetailVariantRows(pid);
     const detailByVid = new Map(detailedRows.map((row) => [row.vid, row]));
     rows = rows.map((row) => {
