@@ -1,5 +1,6 @@
 import http from "node:http";
 import { timingSafeEqual, createHash, randomUUID } from "node:crypto";
+import { createSupabaseAiLiveStore } from "./supabase-ai-live-store.mjs";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_RUNTIME_SECONDS = 30 * 60;
@@ -245,7 +246,13 @@ export function createAiLiveWorkerServer({
 
 const isMain = process.argv[1] && new URL(import.meta.url).pathname === process.argv[1];
 if (isMain) {
-  const server = createAiLiveWorkerServer();
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the isolated worker");
+  }
+  const store = createSupabaseAiLiveStore({ url: supabaseUrl, serviceRoleKey });
+  const server = createAiLiveWorkerServer({ store });
   const port = Number(process.env.PORT || 8080);
   server.listen(port, "0.0.0.0", () => process.stdout.write("AI Live worker control API ready (fake adapter; publishing disabled)\n"));
   const shutdown = () => server.close(() => process.exit(0));
