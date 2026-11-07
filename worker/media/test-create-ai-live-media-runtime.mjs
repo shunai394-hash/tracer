@@ -29,7 +29,7 @@ const runtime = createAiLiveMediaRuntime({
     return child;
   },
   maxRetries: 2,
-  baseDelayMs: 1,
+  baseDelayMs: 100,
   sleep: async () => {},
 });
 const started = await runtime.start({
