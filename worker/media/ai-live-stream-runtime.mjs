@@ -59,10 +59,10 @@ export function createAiLiveStreamRuntime({
     notifyDisconnected(reason) {
       return supervisor.notifyDisconnected(reason);
     },
-    async stop(options) {
+    async stop() {
       startOptions = null;
       const result = await supervisor.stop();
-      return { ...result, media: mediaSession.snapshot(), stopOptions: options ?? null };
+      return { ...result, media: mediaSession.snapshot() };
     },
   };
 }
