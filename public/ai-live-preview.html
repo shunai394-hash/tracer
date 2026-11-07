@@ -55,7 +55,10 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <p class="status" id="status" role="status">待機中。音声はお使いのブラウザの日本語音声を使用します。</p>
 <div class="bgm-panel">
 <h2>BGMライブラリ（ローカル登録）</h2>
-<label for="bgmFiles">MP3 / WAV / OGGを複数登録</label>
+<label for="bgmAdminToken">TRACER管理トークン（保存・一覧取得時のみ使用）</label>
+<input id="bgmAdminToken" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
+<div class="bgm-row"><button id="bgmLoadSaved" type="button">保存済みBGMを読み込む</button><button id="bgmUploadSaved" type="button">選択したMP3をサーバー保存</button></div>
+<label for="bgmFiles">MP3 / WAV / OGGを複数登録（ローカル再生）</label>
 <input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
 <label for="bgmMood">選曲ジャンル</label>
 <select id="bgmMood"><option value="auto">自動選曲（ファイル名から分類）</option><option value="daily">日常・商品紹介</option><option value="romance">恋愛</option><option value="emotional">感動・余韻</option><option value="suspense">サスペンス</option><option value="comedy">コメディ</option><option value="action">アクション・転換</option><option value="all">全曲から選曲</option></select>
@@ -63,7 +66,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmVolume">BGM音量 <span id="bgmVolumeLabel">35%</span></label>
 <input id="bgmVolume" type="range" min="0" max="100" value="35">
 <p class="status" id="bgmStatus" role="status">未登録。音源ファイルを選択してください。</p>
-<small>音源はこのブラウザ内で再生し、サーバーへアップロードしません。利用許諾を確認した音源を登録してください。セリフ再生中はBGMを18%まで自動で下げます。</small>
+<small>ローカル再生はブラウザ内のみ。サーバー保存は管理トークンを入力して明示的に実行したMP3だけです（1曲10MBまで）。保存先は非公開Supabase Storageで、一覧取得時は期限付きURLを使用します。利用許諾を確認した音源を登録してください。セリフ再生中はBGMを18%まで自動で下げます。</small>
 <audio id="bgmAudio" preload="none" loop></audio>
 </div>
 </section>
@@ -95,8 +98,12 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
   const bgmVolume = document.getElementById('bgmVolume');
   const bgmVolumeLabel = document.getElementById('bgmVolumeLabel');
   const bgmStatus = document.getElementById('bgmStatus');
+  const bgmAdminToken = document.getElementById('bgmAdminToken');
+  const bgmLoadSaved = document.getElementById('bgmLoadSaved');
+  const bgmUploadSaved = document.getElementById('bgmUploadSaved');
   let bgmTracks = [];
   let bgmObjectUrls = [];
+  let bgmSavedTracks = [];
   let bgmBaseVolume = 0.35;
   let bgmDuckActive = false;
   function trackMood(name) {
@@ -116,14 +123,15 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     if (!bgmTracks.length) return null;
     const mood = bgmMood.value;
     const category = mood === 'auto' ? 'daily' : mood;
-    const candidates = mood === 'all' ? bgmTracks : bgmTracks.filter(track => track.mood === category);
-    const pool = candidates.length ? candidates : bgmTracks;
+    const candidates = mood === 'all' ? availableTracks : availableTracks.filter(track => track.mood === category || track.genre === category);
+    const pool = candidates.length ? candidates : availableTracks;
     const alternatives = pool.filter(track => track.name !== bgmAudio.dataset.trackName);
     const choices = alternatives.length ? alternatives : pool;
     return choices[Math.floor(Math.random() * choices.length)];
   }
   async function playBgm(nextTrack = false) {
-    if (!bgmTracks.length) { bgmStatus.textContent = '先にBGM音源を登録してください。'; return; }
+    const availableTracks = [...bgmSavedTracks, ...bgmTracks];
+    if (!availableTracks.length) { bgmStatus.textContent = '先にローカル登録またはサーバー保存済みBGMを読み込んでください。'; return; }
     if (nextTrack || !bgmAudio.src) {
       const track = chooseBgm();
       if (!track) return;
@@ -139,6 +147,68 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     }
   }
   function duckBgm(active) { bgmDuckActive = active; setBgmVolume(); }
+
+  function requireBgmToken() {
+    const token = bgmAdminToken.value.trim();
+    if (!token) { bgmStatus.textContent = '管理トークンを入力してください。'; bgmAdminToken.focus(); return null; }
+    return token;
+  }
+  async function loadSavedBgm() {
+    const token = requireBgmToken();
+    if (!token) return;
+    bgmLoadSaved.disabled = true;
+    bgmStatus.textContent = 'Supabaseの保存済みBGMを取得中です…';
+    try {
+      const response = await fetch('/api/admin/ai-live/short-drama/bgm', {
+        method: 'GET', headers: { Authorization: 'Bearer ' + token }, cache: 'no-store'
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok || !Array.isArray(data.tracks)) {
+        throw new Error(response.status === 401 || response.status === 403 ? '認証に失敗しました。管理トークンを確認してください。' : (data?.message || '保存済みBGMを取得できませんでした。'));
+      }
+      bgmSavedTracks = data.tracks.map(track => ({
+        name: track.title || track.name,
+        url: track.url,
+        mood: track.genre || trackMood(track.name),
+        genre: track.genre || '未分類'
+      }));
+      bgmStatus.textContent = bgmSavedTracks.length + '曲をSupabaseから読み込みました（非公開・期限付きURL）。';
+    } catch (error) {
+      bgmStatus.textContent = error instanceof Error ? error.message : '保存済みBGMの取得に失敗しました。';
+    } finally { bgmLoadSaved.disabled = false; }
+  }
+  async function uploadSelectedBgm() {
+    const token = requireBgmToken();
+    if (!token) return;
+    const files = Array.from(bgmFiles.files || []).filter(file => file.name.toLowerCase().endsWith('.mp3'));
+    if (!files.length) { bgmStatus.textContent = 'サーバー保存できるMP3を選択してください。WAV/OGGはローカル再生専用です。'; return; }
+    if (files.some(file => file.size > 10 * 1024 * 1024)) { bgmStatus.textContent = '10MBを超えるMP3があります。ファイルを小さくして再度選択してください。'; return; }
+    bgmUploadSaved.disabled = true;
+    let saved = 0;
+    try {
+      for (const file of files) {
+        bgmStatus.textContent = '保存中 ' + (saved + 1) + '/' + files.length + '：' + file.name;
+        const form = new FormData();
+        form.append('file', file, file.name);
+        form.append('genre', bgmMood.value === 'auto' || bgmMood.value === 'all' ? trackMood(file.name) : bgmMood.value);
+        const response = await fetch('/api/admin/ai-live/short-drama/bgm', {
+          method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form, cache: 'no-store'
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.ok) {
+          throw new Error(response.status === 401 || response.status === 403 ? '認証に失敗しました。管理トークンを確認してください。' : (data?.message || file.name + ' の保存に失敗しました。'));
+        }
+        saved += 1;
+      }
+      await loadSavedBgm();
+      bgmStatus.textContent = saved + '曲を非公開Supabase Storageへ保存しました。';
+    } catch (error) {
+      bgmStatus.textContent = saved + '曲保存済み。' + (error instanceof Error ? error.message : '保存に失敗しました。') + ' 保存済みBGMを再読み込みして確認してください。';
+    } finally { bgmUploadSaved.disabled = false; }
+  }
+  bgmLoadSaved.addEventListener('click', loadSavedBgm);
+  bgmUploadSaved.addEventListener('click', uploadSelectedBgm);
+
   bgmFiles.addEventListener('change', () => {
     bgmObjectUrls.forEach(url => URL.revokeObjectURL(url));
     bgmObjectUrls = [];
