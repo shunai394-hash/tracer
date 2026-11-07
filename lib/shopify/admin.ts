@@ -879,6 +879,11 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }
   }
 
+  const normalizedImageUrls = variants.map((variant) => new URL(variant.imageUrl).toString());
+  if (!unique(normalizedImageUrls)) {
+    throw new Error("shopify_color_family_variant_image_ambiguous");
+  }
+
   const familyKey = crypto.createHash("sha256")
     .update([supplierCode, supplierProductId].join(":"))
     .digest("hex").slice(0, 24);
