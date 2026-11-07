@@ -120,7 +120,8 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     bgmVolumeLabel.textContent = Math.round(bgmBaseVolume * 100) + '%';
   }
   function chooseBgm() {
-    if (!bgmTracks.length) return null;
+    const availableTracks = [...bgmSavedTracks, ...bgmTracks];
+    if (!availableTracks.length) return null;
     const mood = bgmMood.value;
     const category = mood === 'auto' ? 'daily' : mood;
     const candidates = mood === 'all' ? availableTracks : availableTracks.filter(track => track.mood === category || track.genre === category);
