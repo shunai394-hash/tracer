@@ -60,6 +60,13 @@ await store.heartbeat("stream_0001", {
 assert.equal(calls[4].init.method, "PATCH");
 assert.equal(JSON.parse(calls[4].init.body).active_product_id, "prod2");
 
+const inserted = await store.insertNew(record);
+assert.equal(inserted.stream_id, "stream_0001");
+assert.match(calls[6].url, /on_conflict=stream_id/);
+assert.match(calls[6].init.headers.prefer, /resolution=ignore-duplicates/);
+assert.match(calls[4].url, /lease_owner=eq.worker_instance_01/);
+assert.match(calls[4].url, /lease_expires_at=gt\./);
+
 await store.markStopped("stream_0001");
 assert.equal(JSON.parse(calls[5].init.body).status, "stopped");
 
