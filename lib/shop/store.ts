@@ -46,6 +46,7 @@ export type ShopVariantOption = {
   supplierVariantId: string | null;
   shopifyVariantId: string | null;
   shopifyHandle: string | null;
+  canonicalCommerce?: boolean;
 };
 
 export type ShopListing = {
