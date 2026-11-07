@@ -800,3 +800,253 @@ export async function unpublishShopifyProduct(productId: string): Promise<Shopif
   if (verified.product?.publishedOnPublication) throw new Error("shopify_unpublication_verification_failed");
   return { publicationId, published: false };
 }
+
+
+export type ShopifyColorFamilyVariantInput = {
+  supplierVariantId: string;
+  sku: string;
+  colorLabel: string;
+  imageUrl: string;
+  price: number;
+  inventory: number;
+};
+
+export type ShopifyColorFamilyCreateInput = {
+  title: string;
+  descriptionHtml: string;
+  handle: string;
+  supplierCode: string;
+  supplierProductId: string;
+  canonicalProductId: string;
+  variants: ShopifyColorFamilyVariantInput[];
+};
+
+/**
+ * Creates one DRAFT Shopify parent product with color variants.
+ *
+ * This function is deliberately not called by catalog sync. Callers must opt in
+ * with SHOPIFY_COLOR_FAMILY_EXECUTION_ENABLED=1 and pass a complete, validated
+ * family. It never publishes the product or archives standalone source products.
+ * A stable family tag plus persisted metafields make retries discover the same
+ * parent product after an interrupted run.
+ */
+export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateInput): Promise<{
+  productId: string;
+  variants: Array<{ id: string; sku: string; price: string; colorLabel: string; imageUrl: string }>;
+  status: "DRAFT";
+}> {
+  if (process.env.SHOPIFY_COLOR_FAMILY_EXECUTION_ENABLED !== "1") {
+    throw new Error("shopify_color_family_execution_disabled");
+  }
+
+  const title = input.title.trim();
+  const supplierCode = input.supplierCode.trim().toLowerCase();
+  const supplierProductId = input.supplierProductId.trim();
+  const canonicalProductId = input.canonicalProductId.trim();
+  const locationId = process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
+  if (!title || !supplierCode || !supplierProductId || !canonicalProductId) {
+    throw new Error("shopify_color_family_identity_incomplete");
+  }
+  if (!locationId) throw new Error("shopify_inventory_location_id_required");
+
+  const variants = input.variants.map((variant) => ({
+    supplierVariantId: variant.supplierVariantId.trim(),
+    sku: variant.sku.trim(),
+    colorLabel: variant.colorLabel.trim(),
+    imageUrl: variant.imageUrl.trim(),
+    price: variant.price,
+    inventory: variant.inventory,
+  }));
+  if (variants.length < 2) throw new Error("shopify_color_family_requires_multiple_variants");
+  const unique = (values: string[]) => new Set(values).size === values.length;
+  if (!unique(variants.map((variant) => variant.supplierVariantId)) ||
+      !unique(variants.map((variant) => variant.sku)) ||
+      !unique(variants.map((variant) => variant.colorLabel.toLocaleLowerCase("ja-JP")))) {
+    throw new Error("shopify_color_family_duplicate_variant_identity");
+  }
+  for (const variant of variants) {
+    let validImage = false;
+    try {
+      const url = new URL(variant.imageUrl);
+      validImage = url.protocol === "https:" && Boolean(url.hostname);
+    } catch {
+      validImage = false;
+    }
+    if (!variant.supplierVariantId || !variant.sku || !variant.colorLabel ||
+        !validImage || !Number.isFinite(variant.price) || variant.price <= 0 ||
+        !Number.isSafeInteger(variant.inventory) || variant.inventory < 0) {
+      throw new Error("shopify_color_family_variant_invalid:" + (variant.supplierVariantId || "unknown"));
+    }
+  }
+
+  const familyKey = crypto.createHash("sha256")
+    .update([supplierCode, supplierProductId].join(":"))
+    .digest("hex").slice(0, 24);
+  const familyTag = "TRACER_COLOR_FAMILY_" + familyKey;
+  const metafields = [
+    { namespace: "tracer", key: "supplier_code", type: "single_line_text_field", value: supplierCode },
+    { namespace: "tracer", key: "supplier_product_id", type: "single_line_text_field", value: supplierProductId },
+    { namespace: "tracer", key: "canonical_product_id", type: "single_line_text_field", value: canonicalProductId },
+    { namespace: "tracer", key: "color_family_key", type: "single_line_text_field", value: familyKey },
+  ];
+
+  // Search first so a retry after a timeout or partial completion cannot create
+  // a second parent. The stable tag is exact and independent of product title.
+  const existing = await shopifyGraphQL<{
+    products: { nodes: Array<{ id: string; status: string; tags: string[]; metafields: { nodes: Array<{ namespace: string; key: string; value: string }> } }> };
+  }>(
+    `query FindTracerColorFamily($query: String!) {
+      products(first: 10, query: $query) {
+        nodes { id status tags metafields(first: 10, namespace: "tracer") { nodes { namespace key value } } }
+      }
+    }`,
+    { query: "tag:" + familyTag },
+  );
+  if (existing.products.nodes.length > 1) throw new Error("shopify_color_family_parent_ambiguous");
+  let productId = existing.products.nodes[0]?.id ?? null;
+  if (productId) {
+    const fields = new Map(existing.products.nodes[0].metafields.nodes.map((field) => [field.key, field.value]));
+    if (fields.get("supplier_code") !== supplierCode ||
+        fields.get("supplier_product_id") !== supplierProductId ||
+        fields.get("canonical_product_id") !== canonicalProductId) {
+      throw new Error("shopify_color_family_existing_parent_identity_mismatch");
+    }
+  } else {
+    const created = await shopifyGraphQL<{
+      productCreate: { product: { id: string } | null; userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation CreateTracerColorFamily($input: ProductCreateInput!) {
+        productCreate(product: $input) {
+          product { id }
+          userErrors { field message }
+        }
+      }`,
+      {
+        input: {
+          title,
+          handle: input.handle.trim(),
+          descriptionHtml: input.descriptionHtml,
+          status: "DRAFT",
+          vendor: "TRACER",
+          productType: "TRACER Selection",
+          tags: [...TRACER_TAGS, familyTag],
+          productOptions: [{ name: "カラー", values: variants.map((variant) => ({ name: variant.colorLabel })) }],
+          metafields,
+        },
+      },
+    );
+    if (created.productCreate.userErrors.length) {
+      throw new Error(created.productCreate.userErrors.map((error) => error.message).join("; "));
+    }
+    productId = created.productCreate.product?.id ?? null;
+    if (!productId) throw new Error("shopify_color_family_product_create_missing_id");
+  }
+
+  // Read all current variants before writing. Existing SKU collisions are never
+  // overwritten; a partial prior run may safely create only missing variants.
+  const before = await shopifyGraphQL<{
+    product: { id: string; status: string; variants: { nodes: Array<{ id: string; sku: string | null; price: string; selectedOptions: Array<{ name: string; value: string }> }> } } | null;
+  }>(
+    `query ReadTracerColorFamily($id: ID!) {
+      product(id: $id) {
+        id status
+        variants(first: 100) { nodes { id sku price selectedOptions { name value } } }
+      }
+    }`,
+    { id: productId },
+  );
+  if (!before.product) throw new Error("shopify_color_family_parent_readback_missing");
+  if (before.product.status !== "DRAFT") throw new Error("shopify_color_family_parent_not_draft");
+  const currentBySku = new Map<string, typeof before.product.variants.nodes[number]>();
+  for (const variant of before.product.variants.nodes) {
+    if (variant.sku) {
+      if (currentBySku.has(variant.sku)) throw new Error("shopify_color_family_existing_sku_ambiguous:" + variant.sku);
+      currentBySku.set(variant.sku, variant);
+    }
+  }
+  const missing = variants.filter((variant) => !currentBySku.has(variant.sku));
+  for (const variant of variants) {
+    const current = currentBySku.get(variant.sku);
+    if (current && (current.price !== variant.price.toFixed(2) ||
+        !current.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.colorLabel))) {
+      throw new Error("shopify_color_family_existing_variant_mismatch:" + variant.sku);
+    }
+  }
+
+  if (missing.length) {
+    const created = await shopifyGraphQL<{
+      productVariantsBulkCreate: { productVariants: Array<{ id: string; sku: string | null; price: string; selectedOptions: Array<{ name: string; value: string }> }>; userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation CreateTracerColorVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkCreate(productId: $productId, variants: $variants, strategy: REMOVE_STANDALONE_VARIANT) {
+          productVariants { id sku price selectedOptions { name value } }
+          userErrors { field message }
+        }
+      }`,
+      {
+        productId,
+        variants: missing.map((variant) => ({
+          price: variant.price.toFixed(2),
+          inventoryPolicy: "DENY",
+          inventoryItem: { sku: variant.sku, tracked: true },
+          optionValues: [{ optionName: "カラー", name: variant.colorLabel }],
+          mediaSrc: [variant.imageUrl],
+          inventoryQuantities: [{ locationId, name: "available", quantity: variant.inventory }],
+        })),
+      },
+    );
+    if (created.productVariantsBulkCreate.userErrors.length) {
+      throw new Error(created.productVariantsBulkCreate.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  // Final read-after-write: exact variant count, SKU, color, price, media, and
+  // inventory must match. Do not publish or alter source products here.
+  const verified = await shopifyGraphQL<{
+    product: {
+      id: string;
+      status: string;
+      variants: { nodes: Array<{
+        id: string; sku: string | null; price: string;
+        selectedOptions: Array<{ name: string; value: string }>;
+        media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
+        inventoryItem: { inventoryLevels: { nodes: Array<{ location: { id: string }; quantities: Array<{ name: string; quantity: number }> }> } };
+      }> };
+    } | null;
+  }>(
+    `query VerifyTracerColorFamily($id: ID!) {
+      product(id: $id) {
+        id status
+        variants(first: 100) {
+          nodes {
+            id sku price selectedOptions
+            media(first: 10) { nodes { mediaContentType preview { image { url } } } }
+            inventoryItem { inventoryLevels(first: 20) {
+              nodes { location { id } quantities(names: ["available"]) { name quantity } }
+            } }
+          }
+        }
+      }
+    }`,
+    { id: productId },
+  );
+  const product = verified.product;
+  if (!product || product.status !== "DRAFT") throw new Error("shopify_color_family_verification_parent_failed");
+  if (product.variants.nodes.length !== variants.length) throw new Error("shopify_color_family_verification_variant_count_failed");
+  const result = variants.map((expected) => {
+    const actual = product.variants.nodes.find((variant) => variant.sku === expected.sku);
+    if (!actual || actual.price !== expected.price.toFixed(2) ||
+        !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === expected.colorLabel)) {
+      throw new Error("shopify_color_family_verification_variant_failed:" + expected.sku);
+    }
+    const hasImage = actual.media.nodes.some((media) =>
+      media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
+    );
+    if (!hasImage) throw new Error("shopify_color_family_verification_image_failed:" + expected.sku);
+    const level = actual.inventoryItem.inventoryLevels.nodes.find((node) => node.location.id === locationId);
+    const available = level?.quantities.find((quantity) => quantity.name === "available")?.quantity;
+    if (available !== expected.inventory) throw new Error("shopify_color_family_verification_inventory_failed:" + expected.sku);
+    return { id: actual.id, sku: expected.sku, price: actual.price, colorLabel: expected.colorLabel, imageUrl: expected.imageUrl };
+  });
+  return { productId, variants: result, status: "DRAFT" };
+}
