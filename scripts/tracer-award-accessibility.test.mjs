@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+const variantSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
+const productDetail = productPage + "\n" + variantSelector;
 const shopPage = await readFile(new URL("../app/shop/page.tsx", import.meta.url), "utf8");
 const sitemap = await readFile(new URL("../app/sitemap.ts", import.meta.url), "utf8");
 
@@ -20,15 +22,15 @@ test("reduced-motion preference disables smooth scrolling and minimizes transiti
 });
 
 test("product detail avoids unsupported shipping and fulfillment promises", () => {
-  assert.ok(productPage.includes('<span className="text-xs text-neutral-500">表示価格</span>'));
-  assert.doesNotMatch(productPage, /税込・送料込み|送料込みの価格表示|送料が含まれています|追跡番号付き/);
-  assert.ok(productPage.includes("送料・配送条件は購入手続き画面でご確認ください。"));
+  assert.ok(productDetail.includes('<span className="text-xs text-neutral-500">表示価格</span>'));
+  assert.doesNotMatch(productDetail, /税込・送料込み|送料込みの価格表示|送料が含まれています|追跡番号付き/);
+  assert.ok(productDetail.includes("送料・配送条件は購入手続き画面でご確認ください。"));
 });
 
 test("product metadata uses whitespace normalization and absolute encoded URLs", () => {
   assert.ok(productPage.includes(String.raw`replace(/\s+/g, " ")`));
   assert.ok(productPage.includes('new URL(`/shop/${encodeURIComponent(listing.slug)}`, siteUrl).toString()'));
-  assert.ok(productPage.includes("aspect-[4/5] w-full object-cover"));
+  assert.ok(productDetail.includes("aspect-[4/5] w-full object-cover"));
 });
 
 
