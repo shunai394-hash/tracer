@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { fetchCJProductVariants, fetchCJVariantByVid, getCJFreightOptions, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj";
+import { fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, getCJFreightOptions, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -114,6 +114,15 @@ export async function POST(request: Request) {
             endCountryCode: "JP",
             quantity: 1,
           }) : [];
+          let variantStockQuantity: number | null = null;
+          let variantStockError: string | null = null;
+          try {
+            // This endpoint reports aggregate warehouse stock. It does not prove
+            // a Japan-based origin; country eligibility still requires verifiedInventoryByCountry.
+            variantStockQuantity = await fetchCJVariantStock(variant.vid);
+          } catch (stockError) {
+            variantStockError = stockError instanceof Error ? stockError.message.slice(0, 160) : "variant_stock_lookup_failed";
+          }
           exactVariants.push({
             requestedVid: variant.vid,
             exactVidMatched: exact?.vid === variant.vid,
@@ -122,6 +131,8 @@ export async function POST(request: Request) {
             exactColorOrOption: exact?.nameEn ?? null,
             exactVariantImageUrl: safeImageUrl(exact?.variantImage),
             verifiedInventoryByCountry: exact?.inventoryByCountry ?? [],
+            variantStockQuantity,
+            variantStockError,
             japanFreightOptions: freight,
             verificationError: null,
           });
@@ -133,6 +144,8 @@ export async function POST(request: Request) {
             exactColorOrOption: null,
             exactVariantImageUrl: null,
             verifiedInventoryByCountry: [],
+            variantStockQuantity: null,
+            variantStockError: "exact_variant_lookup_failed",
             japanFreightOptions: [],
             verificationError: error instanceof Error ? error.message.slice(0, 160) : "exact_variant_check_failed",
           });
@@ -188,6 +201,7 @@ export async function POST(request: Request) {
     exactVariantChecks,
     exactVariantCheckLimit: MAX_EXACT_VARIANT_CHECKS,
     freightNote: "Only japanFreightOptions from getCJFreightOptions are Japan-specific quotes; listingShippingCost is raw listing data.",
+    variantStockNote: "variantStockQuantity is aggregate stock returned by queryByVid stock lookup; it does not identify a country or verified shipping origin. Japan eligibility still requires verifiedInventoryByCountry.",
     candidates: detailed,
   }, { status: searches.some((search) => search.error === null) ? 200 : 207 });
 }
