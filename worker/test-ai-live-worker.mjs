@@ -79,6 +79,32 @@ try {
   assert.equal(afterStop.state, "stopped");
   assert.equal(afterStop.segmentIndex, stoppedIndex);
 
+  const persistenceCalls = [];
+  const fakeStore = {
+    async insertNew(record) { persistenceCalls.push(["insert", record.streamId]); return { stream_id: record.streamId }; },
+    async claimLease(streamId, options) { persistenceCalls.push(["claim", streamId, options.owner]); return { stream_id: streamId }; },
+    async heartbeat(streamId, options) { persistenceCalls.push(["heartbeat", streamId, options.segmentIndex]); return { stream_id: streamId }; },
+    async markStopped(streamId, options) { persistenceCalls.push(["stop", streamId, options.reason]); return { stream_id: streamId }; },
+  };
+  const persistedServer = createAiLiveWorkerServer({ token, mode: "fake", store: fakeStore, workerId: "worker_test_01" });
+  await new Promise((resolve) => persistedServer.listen(0, "127.0.0.1", resolve));
+  const persistedBase = "http://127.0.0.1:" + persistedServer.address().port;
+  const persistedJob = { ...job, streamId: "test_stream_0005" };
+  try {
+    const startedResponse = await fetch(persistedBase + "/v1/streams", { method: "POST", headers, body: JSON.stringify(persistedJob) });
+    assert.equal(startedResponse.status, 202);
+    assert.deepEqual(persistenceCalls.slice(0, 2), [
+      ["insert", "test_stream_0005"],
+      ["claim", "test_stream_0005", "worker_test_01"],
+    ]);
+    const stopResponse = await fetch(persistedBase + "/v1/streams/test_stream_0005/stop", { method: "POST", headers });
+    assert.equal(stopResponse.status, 200);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(persistenceCalls.some((call) => call[0] === "stop" && call[1] === "test_stream_0005"));
+  } finally {
+    await new Promise((resolve) => persistedServer.close(resolve));
+  }
+
   assert.throws(() => createAiLiveWorkerServer({ token, mode: "ffmpeg" }), /fake adapter is implemented/);
   console.log("AI Live worker control API and simulated product rotation: all assertions passed");
 } finally {
