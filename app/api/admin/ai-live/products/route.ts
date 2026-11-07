@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,17 @@ import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-s
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
+
+function authorizedWorkerToken(request: Request): boolean {
+  const expected = process.env.AI_LIVE_WORKER_TOKEN ?? "";
+  const header = request.headers.get("authorization") ?? "";
+  const supplied = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!expected || !supplied) return false;
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  return expectedBytes.length === suppliedBytes.length &&
+    timingSafeEqual(expectedBytes, suppliedBytes);
+}
 
 const MAX_SUPPLIER_FACT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
@@ -28,8 +40,10 @@ function isFreshVerifiedAt(value: unknown, now: number): value is string {
  * Supplier costs and internal gate diagnostics are never exposed.
  */
 export async function GET(request: Request) {
-  const authError = await requireAutomationAuth(request);
-  if (authError) return authError;
+  if (!authorizedWorkerToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") ?? "10");
   const limit = Number.isFinite(requestedLimit)
