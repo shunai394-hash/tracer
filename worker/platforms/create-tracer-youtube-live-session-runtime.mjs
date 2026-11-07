@@ -4,6 +4,7 @@ import { createAiLiveMediaRuntime } from "../media/create-ai-live-media-runtime.
 import { createTracerYouTubeLiveSession } from "./create-tracer-youtube-live-session.mjs";
 import { createSupabaseYouTubeStreamSecretStore } from "./supabase-youtube-stream-secret-store.mjs";
 import { createProductMediaManifestResolver } from "../media/product-video-manifest-resolver.mjs";
+import { createProductMediaDirectoryResolver } from "../media/product-media-directory-resolver.mjs";
 
 /**
  * Production composition root for YouTube Live. Deployment supplies a real
@@ -25,6 +26,8 @@ export function createTracerYouTubeLiveSessionRuntime({
   resolveVideoForProduct,
   mediaManifestPath,
   mediaRoot,
+  mediaResolverMode = "manifest",
+  mediaFileExists,
   ffmpegPath,
   spawnImpl,
   maxRetries,
@@ -44,10 +47,18 @@ export function createTracerYouTubeLiveSessionRuntime({
       encryptionKey: streamSecretEncryptionKey,
       fetchImpl,
     });
-  const productMediaResolver = createProductMediaManifestResolver({
-    ...(mediaManifestPath ? { manifestPath: mediaManifestPath } : {}),
-    ...(mediaRoot ? { mediaRoot } : {}),
-  });
+  if (!["manifest", "directory"].includes(mediaResolverMode)) {
+    throw new Error("ai_live_media_resolver_mode_invalid");
+  }
+  const productMediaResolver = mediaResolverMode === "directory"
+    ? createProductMediaDirectoryResolver({
+      ...(mediaRoot ? { mediaRoot } : {}),
+      ...(mediaFileExists ? { fileExists: mediaFileExists } : {}),
+    })
+    : createProductMediaManifestResolver({
+      ...(mediaManifestPath ? { manifestPath: mediaManifestPath } : {}),
+      ...(mediaRoot ? { mediaRoot } : {}),
+    });
   const broadcastControl = createTracerYouTubeLiveControl({
     baseUrl,
     workerToken,
