@@ -6,7 +6,7 @@ import { createCommentSpeechPipeline } from "../platforms/tracer-speech-bridge.m
  * pipe. The caller must start the publisher only after platform eligibility and
  * secret resolution have been confirmed.
  */
-export function createAiLiveMediaSession({ publisher, speechBridge, deduplicator = createCommentDeduplicator() } = {}) {
+export function createAiLiveMediaSession({ publisher, speechBridge, resolveVideoForProduct = null, deduplicator = createCommentDeduplicator() } = {}) {
   if (!publisher || typeof publisher.start !== "function" ||
       typeof publisher.writeSpeechAudio !== "function" ||
       typeof publisher.stop !== "function") {
@@ -16,8 +16,14 @@ export function createAiLiveMediaSession({ publisher, speechBridge, deduplicator
     throw new Error("TRACER speech bridge is required");
   }
 
+  if (resolveVideoForProduct !== null && typeof resolveVideoForProduct !== "function") {
+    throw new Error("resolveVideoForProduct_must_be_a_function");
+  }
+
   let currentProductId = null;
   let state = "idle";
+  let activeStartOptions = null;
+  let switchQueue = Promise.resolve();
   const speechPipeline = createCommentSpeechPipeline({
     bridge: speechBridge,
     deduplicator,
@@ -39,7 +45,12 @@ export function createAiLiveMediaSession({ publisher, speechBridge, deduplicator
       if (state === "publishing") return this.snapshot();
       state = "starting";
       try {
-        await publisher.start(options);
+        const videoFile = currentProductId && resolveVideoForProduct
+          ? await resolveVideoForProduct(currentProductId)
+          : options.videoFile;
+        if (typeof videoFile !== "string" || !videoFile.trim()) throw new Error("product_video_asset_missing");
+        activeStartOptions = { ...options, videoFile };
+        await publisher.start(activeStartOptions);
         state = "publishing";
         return this.snapshot();
       } catch {
@@ -47,11 +58,24 @@ export function createAiLiveMediaSession({ publisher, speechBridge, deduplicator
         throw new Error("media_session_start_failed");
       }
     },
-    setCurrentProduct(productId) {
+    async setCurrentProduct(productId) {
       if (typeof productId !== "string" || !productId.trim() || productId.length > 128) {
         throw new Error("invalid_product_id");
       }
+      if (currentProductId === productId) return this.snapshot();
       currentProductId = productId;
+      if (state === "publishing" && resolveVideoForProduct) {
+        if (typeof publisher.switchVideo !== "function") throw new Error("publisher_video_switch_unsupported");
+        const switchTask = async () => {
+          const videoFile = await resolveVideoForProduct(productId);
+          if (currentProductId !== productId || state !== "publishing") return;
+          if (typeof videoFile !== "string" || !videoFile.trim()) throw new Error("product_video_asset_missing");
+          await publisher.switchVideo(videoFile);
+          activeStartOptions = { ...activeStartOptions, videoFile };
+        };
+        switchQueue = switchQueue.then(switchTask, switchTask);
+        await switchQueue;
+      }
       return this.snapshot();
     },
     async handleComment(event) {
@@ -66,6 +90,7 @@ export function createAiLiveMediaSession({ publisher, speechBridge, deduplicator
       }
       state = "stopping";
       try {
+        await switchQueue;
         await publisher.stop(options);
         state = "stopped";
         return this.snapshot();
