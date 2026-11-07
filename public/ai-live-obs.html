@@ -54,7 +54,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <label for="script">読み上げテキスト</label>
  <textarea id="script">こんにちは。TRACER AI LIVEへようこそ。本日はおすすめ商品をご紹介します。</textarea>
  <div class="actions"><button class="primary" id="speak">読み上げ開始</button><button id="stop">音声停止</button></div>
- <label for="voice">日本語音声</label><select id="voice"><option value="">自動選択</option></select>
+ <label for="voice">Fish Audio 日本語ボイス</label><select id="voice"><option value="">ボイス一覧を読み込んでください</option></select><button id="loadVoices" type="button">許諾済み音声を読み込む</button>
  <label for="token">管理トークン（保存済みBGM読込時のみ）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
  <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
  <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
@@ -69,7 +69,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
 (() => {
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
- let tracks=[], urls=[], baseVolume=.35, ducked=false;
+ let tracks=[], urls=[], baseVolume=.35, ducked=false, fishVoices=[], speechObjectUrl=null, speechAudio=null;
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -107,17 +107,43 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   $('track').value=String(i);audio.src=tracks[i].url;setVolume();
   try{await audio.play();setStatus('BGM再生中：'+tracks[i].name)}catch{setStatus('再生できません。もう一度BGM再生を押してください')}
  }
- function speak(){
-  const text=$('script').value.trim();if(!text){setStatus('読み上げテキストを入力してください');return}
-  if(!synth){setStatus('このブラウザは音声合成に対応していません');return}
-  synth.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ja-JP';const v=chooseVoice();if(v)u.voice=v;
-  u.onstart=()=>{$('avatar').classList.add('talking');ducked=true;setVolume();$('caption').textContent=text;setStatus('セリフ再生中')};
-  u.onend=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('待機中')};
-  u.onerror=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声再生でエラーが発生しました')};
-  $('caption').textContent=text;synth.speak(u);
+ async function loadFishVoices(){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+  $('loadVoices').disabled=true;setStatus('許諾済み日本語ボイスを確認中…');
+  try{
+   const r=await fetch('/api/admin/ai-live/fish-audio/voices',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok||!Array.isArray(d.voices))throw new Error(d?.message||'音声一覧を取得できませんでした');
+   fishVoices=d.voices;
+   const select=$('voice');select.innerHTML='<option value="">使用する声を選択</option>';
+   for(const v of fishVoices){const o=document.createElement('option');o.value=v.id;o.textContent=(v.title||v.id)+' ['+(v.source==='public_licensed'?'公開許諾':'登録済み音声')+']';select.appendChild(o)}
+   setStatus(fishVoices.length+'件の音声候補を読み込みました');
+  }catch(e){setStatus(e.message||'音声一覧の取得に失敗しました')}finally{$('loadVoices').disabled=false}
  }
- $('speak').addEventListener('click',speak);
- $('stop').addEventListener('click',()=>{if(synth)synth.cancel();$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
+ async function speak(){
+  const text=$('script').value.trim(), token=$('token').value.trim(), referenceId=$('voice').value;
+  if(!text){setStatus('読み上げテキストを入力してください');return}
+  if(!token){setStatus('管理トークンを入力してください');return}
+  if(!referenceId){setStatus('Fish Audioの音声を選択してください');return}
+  if(text.length>1200){setStatus('読み上げは1,200文字以内にしてください');return}
+  $('speak').disabled=true;
+  if(speechAudio){speechAudio.pause();speechAudio=null}
+  if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
+  if(synth)synth.cancel();
+  ducked=true;setVolume();$('caption').textContent=text;setStatus('Fish Audioで音声を生成中…');
+  try{
+   const r=await fetch('/api/admin/ai-live/fish-audio',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({text,referenceId})});
+   const type=r.headers.get('content-type')||'';
+   if(!r.ok||!type.toLowerCase().includes('audio/')){const d=await r.json().catch(()=>null);throw new Error(d?.message||d?.error||'Fish Audio音声生成に失敗しました')}
+   const blob=await r.blob();speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
+   speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus('Fish Audio読み上げ中')};
+   speechAudio.onended=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus('待機中')};
+   speechAudio.onerror=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus('音声再生に失敗しました')};
+   await speechAudio.play();
+  }catch(e){$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus(e.message||'音声生成に失敗しました')}
+ }
+ $('speak').addEventListener('click',speak);\n $('loadVoices').addEventListener('click',loadFishVoices);
+ $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
  $('load').addEventListener('click',loadSaved);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
