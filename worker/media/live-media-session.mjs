@@ -21,6 +21,7 @@ export function createAiLiveMediaSession({ publisher, speechBridge, resolveVideo
   }
 
   let currentProductId = null;
+  let requestedProductId = null;
   let state = "idle";
   let activeStartOptions = null;
   let switchQueue = Promise.resolve();
@@ -63,18 +64,23 @@ export function createAiLiveMediaSession({ publisher, speechBridge, resolveVideo
         throw new Error("invalid_product_id");
       }
       if (currentProductId === productId) return this.snapshot();
-      currentProductId = productId;
       if (state === "publishing" && resolveVideoForProduct) {
         if (typeof publisher.switchVideo !== "function") throw new Error("publisher_video_switch_unsupported");
+        requestedProductId = productId;
         const switchTask = async () => {
+          if (requestedProductId !== productId) return;
           const videoFile = await resolveVideoForProduct(productId);
-          if (currentProductId !== productId || state !== "publishing") return;
+          if (requestedProductId !== productId || state !== "publishing") return;
           if (typeof videoFile !== "string" || !videoFile.trim()) throw new Error("product_video_asset_missing");
           await publisher.switchVideo(videoFile);
+          currentProductId = productId;
           activeStartOptions = { ...activeStartOptions, videoFile };
         };
         switchQueue = switchQueue.then(switchTask, switchTask);
         await switchQueue;
+      } else {
+        currentProductId = productId;
+        requestedProductId = productId;
       }
       return this.snapshot();
     },
