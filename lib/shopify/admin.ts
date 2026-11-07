@@ -811,6 +811,7 @@ export type ShopifyColorFamilyVariantInput = {
   sku: string;
   colorLabel: string;
   imageUrl: string;
+  colorImageVerified: boolean;
   price: number;
   inventory: number;
 };
@@ -861,6 +862,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     sku: variant.sku.trim(),
     colorLabel: variant.colorLabel.trim(),
     imageUrl: variant.imageUrl.trim(),
+    colorImageVerified: variant.colorImageVerified === true,
     price: variant.price,
     inventory: variant.inventory,
   }));
@@ -883,7 +885,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }
     if (!variant.supplierVariantId || !variant.canonicalVariantId ||
         !variant.sourceShopifyProductId || !variant.sourceShopifyVariantId ||
-        !variant.sku || !variant.colorLabel || !validImage ||
+        !variant.sku || !variant.colorLabel || !validImage || !variant.colorImageVerified ||
         !Number.isFinite(variant.price) || variant.price <= 0 ||
         !Number.isSafeInteger(variant.inventory) || variant.inventory < 0) {
       throw new Error("shopify_color_family_variant_invalid:" + (variant.supplierVariantId || "unknown"));
