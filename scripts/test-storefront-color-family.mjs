@@ -20,6 +20,7 @@ function member(family, index, overrides = {}) {
     supplierVariantId: `${family.supplierProductId}-${index}`,
     sku: `SKU-${family.supplierProductId}-${index}`,
     imageUrl: `https://images.example.test/${family.supplierProductId}/${COLORS[index]}.jpg`,
+    colorImageVerified: true,
     sellingPrice: 4980 + index * 100,
     currency: "JPY",
     inventory: 10,
@@ -79,6 +80,14 @@ const protein = groupExactColorFamilies([
   member(FAMILIES[0], 0, { id: proteinId, manualInventory: true, supplierProductId: FAMILIES[0].supplierProductId, title: "BEAUTY FORMULA チョコレート風味プロテイン 300g" }),
   member(FAMILIES[0], 1),
 ]).catalog;
+const unverifiedImages = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { colorImageVerified: false }),
+  member(FAMILIES[0], 1, { colorImageVerified: false }),
+]).catalog;
+assert.equal(unverifiedImages.length, 2);
+assert.ok(unverifiedImages.every((item) => item.colorSaleBlocked === true));
+assert.ok(unverifiedImages.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+
 const missingSku = groupExactColorFamilies([
   member(FAMILIES[0], 0, { sku: null }),
   member(FAMILIES[0], 1, { sku: null }),
