@@ -964,9 +964,67 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       currentBySku.set(variant.sku, variant);
     }
   }
-  const missing = variants.filter((variant) => !currentBySku.has(variant.sku));
+  // productCreate pre-creates the first option combination with a blank SKU.
+  // Adopt that exact default variant for the first color instead of trying to
+  // create a duplicate option combination.
+  const unassigned = before.product.variants.nodes.filter((variant) => !variant.sku);
+  if (unassigned.length > 1) throw new Error("shopify_color_family_unassigned_variant_ambiguous");
+  if (unassigned.length === 1) {
+    const defaultVariant = unassigned[0];
+    const defaultColor = defaultVariant.selectedOptions.find((option) => option.name === "カラー")?.value;
+    const expectedDefault = variants.find((variant) => variant.colorLabel === defaultColor);
+    if (!expectedDefault) throw new Error("shopify_color_family_default_variant_color_mismatch");
+    const adopted = await shopifyGraphQL<{
+      productVariantsBulkUpdate: {
+        productVariants: Array<{ id: string; sku: string | null }>;
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation AdoptTracerDefaultColorVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+          productVariants { id sku }
+          userErrors { field message }
+        }
+      }`,
+      {
+        productId,
+        variants: [{
+          id: defaultVariant.id,
+          price: expectedDefault.price.toFixed(2),
+          inventoryPolicy: "DENY",
+          inventoryItem: { sku: expectedDefault.sku, tracked: true },
+          mediaSrc: [expectedDefault.imageUrl],
+          inventoryQuantities: [{ locationId, name: "available", quantity: expectedDefault.inventory }],
+        }],
+      },
+    );
+    if (adopted.productVariantsBulkUpdate.userErrors.length) {
+      throw new Error(adopted.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  // Re-read after adopting the pre-created default variant. Remaining colors
+  // can now be created without duplicate option values.
+  const refreshed = await shopifyGraphQL<{
+    product: { id: string; status: string; variants: { nodes: Array<{ id: string; sku: string | null; price: string; selectedOptions: Array<{ name: string; value: string }> }> } } | null;
+  }>(
+    `query RefreshTracerColorFamily($id: ID!) {
+      product(id: $id) { id status variants(first: 100) { nodes { id sku price selectedOptions { name value } } } }
+    }`,
+    { id: productId },
+  );
+  if (!refreshed.product || refreshed.product.status !== "DRAFT") {
+    throw new Error("shopify_color_family_parent_refresh_failed");
+  }
+  const refreshedBySku = new Map<string, typeof refreshed.product.variants.nodes[number]>();
+  for (const variant of refreshed.product.variants.nodes) {
+    if (!variant.sku) throw new Error("shopify_color_family_unassigned_variant_remains");
+    if (refreshedBySku.has(variant.sku)) throw new Error("shopify_color_family_existing_sku_ambiguous:" + variant.sku);
+    refreshedBySku.set(variant.sku, variant);
+  }
+  const missing = variants.filter((variant) => !refreshedBySku.has(variant.sku));
   for (const variant of variants) {
-    const current = currentBySku.get(variant.sku);
+    const current = refreshedBySku.get(variant.sku);
     if (current && (current.price !== variant.price.toFixed(2) ||
         !current.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.colorLabel))) {
       throw new Error("shopify_color_family_existing_variant_mismatch:" + variant.sku);
@@ -978,7 +1036,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       productVariantsBulkCreate: { productVariants: Array<{ id: string; sku: string | null; price: string; selectedOptions: Array<{ name: string; value: string }> }>; userErrors: Array<{ field?: string[]; message: string }> };
     }>(
       `mutation CreateTracerColorVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-        productVariantsBulkCreate(productId: $productId, variants: $variants, strategy: REMOVE_STANDALONE_VARIANT) {
+        productVariantsBulkCreate(productId: $productId, variants: $variants, strategy: DEFAULT) {
           productVariants { id sku price selectedOptions { name value } }
           userErrors { field message }
         }
