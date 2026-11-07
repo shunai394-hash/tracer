@@ -1082,7 +1082,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       variants: { nodes: Array<{
         id: string; sku: string | null; price: string;
         selectedOptions: Array<{ name: string; value: string }>;
-        media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
+        media: { nodes: Array<{ id: string; mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
         metafields: { nodes: Array<{ namespace: string; key: string; value: string }> };
         inventoryItem: { inventoryLevels: { nodes: Array<{ location: { id: string }; quantities: Array<{ name: string; quantity: number }> }> } };
       }> };
@@ -1094,7 +1094,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         variants(first: 100) {
           nodes {
             id sku price selectedOptions
-            media(first: 10) { nodes { mediaContentType preview { image { url } } } }
+            media(first: 10) { nodes { id mediaContentType preview { image { url } } } }
             metafields(first: 5, namespace: "tracer") { nodes { namespace key value } }
             inventoryItem { inventoryLevels(first: 20) {
               nodes { location { id } quantities(names: ["available"]) { name quantity } }
