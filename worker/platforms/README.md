@@ -203,7 +203,7 @@ shape is:
 Paths are relative to `AI_LIVE_MEDIA_ROOT`, traversal and unsupported
 extensions are rejected, and an unmapped product is a hard failure. No
 unrelated fallback video is played. Add only licensed/approved assets to the
-worker media volume. The resolver reloads the manifest when its modification
-time changes. Product BGM may be recorded in the manifest for the next
+worker media volume. The resolver reads the manifest for each product selection so an operator's
+latest approved mapping is used. Product BGM may be recorded in the manifest for the next
 per-product audio-mix extension; current FFmpeg runtime uses the BGM file
 provided in the session's media options.
