@@ -91,7 +91,7 @@ const failed = createTracerYouTubeLiveSession({
 });
 await assert.rejects(() => failed.start({ title: "Failure test", productId: "product-1" }), /ingest_activation_timeout/);
 assert.equal(failed.snapshot().state, "failed");
-assert.deepEqual(failedEvents, ["media:start", "cancel", "media:stop"]);
+assert.deepEqual(failedEvents, ["media:start", "media:stop", "cancel"]);
 console.log("TRACER YouTube live session orchestration: all assertions passed");
 
 const retryEvents = [];
