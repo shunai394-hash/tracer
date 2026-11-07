@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { fetchCJProductVariants, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj";
+import { fetchCJProductVariants, fetchCJVariantByVid, getCJFreightOptions, getCJProductDetail, searchCJProducts } from "@/lib/sources/cj";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,6 +19,7 @@ const SEARCH_TERMS = [
 ] as const;
 const MAX_CANDIDATES = 10;
 const MAX_VARIANTS_PER_PRODUCT = 40;
+const MAX_EXACT_VARIANT_CHECKS = 30;
 
 function safeImageUrl(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -95,12 +96,48 @@ export async function POST(request: Request) {
     .slice(0, MAX_CANDIDATES);
 
   const detailed = [];
+  let exactVariantChecks = 0;
   for (const candidate of ranked) {
     try {
       const [detail, variants] = await Promise.all([
         getCJProductDetail(candidate.id),
         fetchCJProductVariants(candidate.id),
       ]);
+      const exactVariants = [];
+      for (const variant of variants.slice(0, MAX_VARIANTS_PER_PRODUCT)) {
+        if (exactVariantChecks >= MAX_EXACT_VARIANT_CHECKS) break;
+        exactVariantChecks += 1;
+        try {
+          const exact = await fetchCJVariantByVid(variant.vid);
+          const freight = exact ? await getCJFreightOptions(exact.vid, {
+            startCountryCode: "CN",
+            endCountryCode: "JP",
+            quantity: 1,
+          }) : [];
+          exactVariants.push({
+            requestedVid: variant.vid,
+            exactVidMatched: exact?.vid === variant.vid,
+            exactProductId: exact?.productId ?? null,
+            exactSku: exact?.sku ?? null,
+            exactColorOrOption: exact?.nameEn ?? null,
+            exactVariantImageUrl: safeImageUrl(exact?.variantImage),
+            verifiedInventoryByCountry: exact?.inventoryByCountry ?? [],
+            japanFreightOptions: freight,
+            verificationError: null,
+          });
+        } catch (error) {
+          exactVariants.push({
+            requestedVid: variant.vid,
+            exactVidMatched: false,
+            exactSku: null,
+            exactColorOrOption: null,
+            exactVariantImageUrl: null,
+            verifiedInventoryByCountry: [],
+            japanFreightOptions: [],
+            verificationError: error instanceof Error ? error.message.slice(0, 160) : "exact_variant_check_failed",
+          });
+        }
+      }
       detailed.push({
         ...candidate,
         detailTitle: detail?.title ?? null,
@@ -122,6 +159,8 @@ export async function POST(request: Request) {
           verifiedInventoryByCountry: variant.inventoryByCountry ?? [],
         })),
         variantCount: variants.length,
+        exactVariants,
+        exactVariantsTruncated: variants.length > exactVariants.length,
         error: null,
       });
     } catch (error) {
@@ -146,7 +185,9 @@ export async function POST(request: Request) {
     searches,
     candidateCount: detailed.length,
     imageVariantCount,
-    freightNote: "listingShippingCost is a raw CJ listing field, not a verified Japan shipping quote",
+    exactVariantChecks,
+    exactVariantCheckLimit: MAX_EXACT_VARIANT_CHECKS,
+    freightNote: "Only japanFreightOptions from getCJFreightOptions are Japan-specific quotes; listingShippingCost is raw listing data.",
     candidates: detailed,
   }, { status: searches.some((search) => search.error === null) ? 200 : 207 });
 }
