@@ -64,7 +64,8 @@
     "test:grok-commerce-role-contracts": "node --experimental-strip-types --no-warnings scripts/test-grok-commerce-role-contracts.mjs",
     "test:ai-live-fish-audio-preview": "node scripts/test-ai-live-fish-audio-preview.mjs",
     "test:ai-live-short-drama-studio": "node scripts/test-ai-live-short-drama-studio.mjs",
-    "test:ai-live-obs-browser-source": "node scripts/test-ai-live-obs-browser-source.mjs"
+    "test:ai-live-obs-browser-source": "node scripts/test-ai-live-obs-browser-source.mjs",
+    "test:shopify-color-family-plan": "node --experimental-strip-types --no-warnings scripts/test-shopify-color-family-plan.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
