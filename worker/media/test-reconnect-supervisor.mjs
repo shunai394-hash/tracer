@@ -24,7 +24,7 @@ assert.equal(supervisor.snapshot().retries, 2);
 await supervisor.notifyDisconnected("rtmp_disconnected");
 assert.equal(supervisor.snapshot().state, "connected");
 assert.equal(starts, 4);
-assert.deepEqual(delays, [100, 200, 100]);
+assert.deepEqual(delays, [100, 200, 400]);
 await supervisor.stop();
 assert.equal(supervisor.snapshot().state, "stopped");
 assert.equal(stops, 1);
