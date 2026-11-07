@@ -11,6 +11,7 @@ export function createAiLiveMediaRuntime({
   secretResolver,
   speechBridge = createTracerspeechBridge(),
   resolveVideoForProduct = null,
+  resolveMediaForProduct = null,
   mediaRoot,
   ffmpegPath,
   spawnImpl,
@@ -31,7 +32,7 @@ export function createAiLiveMediaRuntime({
       void Promise.resolve(runtime.notifyDisconnected(reason)).catch(() => {});
     },
   });
-  const mediaSession = createAiLiveMediaSession({ publisher, speechBridge, resolveVideoForProduct });
+  const mediaSession = createAiLiveMediaSession({ publisher, speechBridge, resolveVideoForProduct, resolveMediaForProduct });
   runtime = createAiLiveStreamRuntime({
     mediaSession,
     maxRetries,
