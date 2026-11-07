@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
 import { listPublishedShopListings } from "@/lib/shop/store";
-import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf, pickOnePerSupplierProduct } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +71,7 @@ export default async function ShopCategoryPage({ params }: { params: Promise<{ s
   } catch {
     listings = [];
   }
-  const items = pickDistinct(listings.filter((listing) => categoryOf(listing.title) === category.slug), 1800);
+  const items = pickOnePerSupplierProduct(listings.filter((listing) => categoryOf(listing.title) === category.slug), 1800);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",

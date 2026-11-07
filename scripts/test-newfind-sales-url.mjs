@@ -1,33 +1,39 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [source, reconcile, store, page, shopIndex, patrol] = await Promise.all([
+const [source, reconcile, store, page, shopIndex, patrol, productCard, selector] = await Promise.all([
   readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-reconcile.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/shop/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../components/product-card.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8"),
 ]);
 
 const retryGate = source.slice(source.indexOf("export async function retryPendingNewfindPromotions"), source.indexOf("export async function promoteShopListingToNewfind"));
-assert.match(retryGate, /\.select\("id, title, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status"\)/,
+assert.match(retryGate, /\.select\("id, title, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, manual_inventory, inventory"\)/,
   "retry gate checks must fetch the Japanese title and channel state they validate");
+assert.match(source, /manual_inventory === true/);
+assert.match(source, /pipeline_reason === "merchant_held_stock"/);
+assert.match(retryGate, /canPromoteListingToNewfind\(row\)/,
+  "NEWFIND may bypass supplier orderability only for explicitly verified merchant-held inventory");
 assert.match(retryGate, /shopifyStatusById\.get\(b\) === "synced"/,
   "NEWFIND retries must prioritize products already live on Shopify");
 assert.match(retryGate, /\.in\("status", \["pending", "failed", "sent", "sending"\]\)/,
   "NEWFIND retry scan must include expired sending leases so crashed attempts can be reclaimed");
-assert.match(retryGate, /shopifyStatus === "synced" && hasPassedSalesTestGate\(row\)/,
-  "NEWFIND must not retry listings whose TRACER sales page is not live");
+assert.match(retryGate, /shopifyStatus === "synced" && canPromoteListingToNewfind\(row\)/,
+  "NEWFIND retries require a live Shopify sales page and either the supplier Sales Test Gate or verified merchant-held inventory");
 assert.match(reconcile, /shopify_sync_status === "synced"/,
   "rescue must prioritize Shopify-synced products before unsynced rows");
 assert.match(reconcile, /if \(status !== "missing"\) continue;/,
   "rescue must not re-send failed delivery rows already handled by the retry pass");
 assert.match(reconcile, /hasPassedSalesTestGate\(row\) && row\.shopify_sync_status === "synced"/,
   "rescue must exclude BASE-only listings until Shopify sync makes the sales URL live");
-assert.match(reconcile, /const columns = "id, title, base_item_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
+assert.match(reconcile, /const columns = "id, title, base_item_id, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, updated_at"/,
   "rescue gate checks must fetch the Japanese title they validate");
-assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, published, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
+assert.match(reconcile, /\.select\("id, title, slug, bestseller_id, selling_price, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons"\)/,
   "withdraw gate checks must fetch the Japanese title they validate");
 
 assert.ok(patrol.includes("retryPendingNewfindPromotions(5)"), "the five-minute patrol must drain failed NEWFIND deliveries even when the intelligence pipeline is deferred");
@@ -63,7 +69,7 @@ assert.match(source, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/, "TR
 assert.match(source, /response\.status >= 500 \|\| response\.status === 408 \|\| response\.status === 429/, "only transient HTTP failures are retried; 4xx liveness failures remain terminal");
 assert.match(source, /tracer_sales_url_timeout/);
 assert.match(source, /tracer_sales_url_not_live/);
-assert.match(store, /loadCanonicalCommerceListings\(\{ variantIds: \[slug\] \}\)/,
+assert.match(store, /loadCanonicalCommerceListings\(\{ variantIds: \[normalizedSlug\] \}\)/,
   "UUID liveness checks must load only the requested canonical commerce variant");
 assert.match(store, /if \(options\.variantIds\?\.length\) channelQuery = channelQuery\.in\("variant_id", options\.variantIds\)/,
   "canonical catalog loading must support a bounded variant-specific query");
@@ -82,10 +88,14 @@ assert.match(productDetail, /listing\.supplierListingId/,
   "public landing pages must still have a supplier listing reference");
 assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
   "supplier freshness checks belong to publication and order-time procurement, not the public landing page");
-assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
+assert.match(productDetail, /\.or\("manual_inventory\.eq\.true,and\(shopify_product_id\.not\.is\.null,shopify_sync_status\.eq\.synced,orderable\.eq\.true,tracking_available\.eq\.true\)"\)/,
   "only Shopify-synced products may have public sales pages");
-assert.match(shopIndex, /href={`\/shop\/\$\{listing\.id\}`}/, "storefront product cards must link by stable listing UUID so Japanese slugs cannot break detail routing");
-assert.match(page, /href={shopifyProductUrl}/);
-assert.match(page, /Shopifyで購入する/,
-  "the TRACER landing page must direct customers to the live Shopify checkout");
+assert.match(productCard, /href={`\/shop\/\$\{listing\.id\}`}/, "product cards must link by stable listing UUID so Japanese slugs cannot break detail routing");
+assert.match(selector, /const shopifyUrl = selected\.shopifyHandle && variantNumber && shopifyDomain/);
+assert.match(selector, /href={shopifyUrl}/);
+assert.match(page, /<ProductVariantSelector/,
+  "the product page must render the variant selector");
+assert.match(selector, /<a href={shopifyUrl}/,
+  "the variant selector must direct customers to the live Shopify product variant");
+assert.match(selector, /target="_blank" rel="noopener noreferrer"/);
 console.log("NEWFIND retry gates and TRACER public sales links are guarded by regression tests.");

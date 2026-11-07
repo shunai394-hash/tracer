@@ -9,6 +9,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { retireShopListingsOwnedByCommerce } from "@/lib/commerce/retire-legacy-storefront";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -70,7 +71,7 @@ async function addBaseItemImageWithFallback(input: {
     return;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const formatRejected = /このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message);
+    const formatRejected = /縺薙・繝輔ぃ繧､繝ｫ蠖｢蠑上・縺泌茜逕ｨ縺ｧ縺阪∪縺帙ｓ|file format.{0,30}(not supported|unsupported)/i.test(message);
     if (!formatRejected || !input.shopifyProductId || !/^gid:\/\/shopify\/Product\/\d+$/.test(input.shopifyProductId)) {
       throw error;
     }
@@ -162,7 +163,17 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const { error: repairError } = await supabase.from("shop_listings").update({ orderable: true, tracking_available: true, pipeline_stage: "SUPPLIER_REVERIFIED", pipeline_status: "pending", pipeline_reason: "native_cj_supplier_variant_verified", pipeline_error: null, pipeline_updated_at: now, updated_at: now }).in("id", nativeCjRepairIds);
     if (repairError) throw new Error(`native_cj_listing_repair_failed:${repairError.message}`);
   }
-  const publishableListings = standardListings.map((listing) => listing.supplier_listing_id && supplierStatuses.get(String(listing.id)) === "native_cj_verified" ? { ...listing, orderable: true, tracking_available: true } : listing);
+  const publishableListings = standardListings.map((listing) =>
+    listing.supplier_listing_id &&
+    supplierStatuses.get(String(listing.id)) === "native_cj_verified"
+      ? { ...listing, orderable: true, tracking_available: true }
+      : listing
+  );
+  const retiredIds = await retireShopListingsOwnedByCommerce(
+    publishableListings,
+    "base",
+    supabase
+  );
   const identityUnlinkedIds = new Set<string>(publishableListings
     .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
@@ -243,6 +254,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of publishableListings) {
+    if (retiredIds.has(String(listing.id))) continue;
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
     if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
     if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
@@ -279,11 +291,11 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       results.push({ listingId: String(listing.id), ok: false, error: message });
       // A rejected/expired BASE token will fail every item in this batch; stop
       // immediately to avoid hammering the API while credentials are repaired.
-      if (/アクセストークンが無効|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
+      if (/繧｢繧ｯ繧ｻ繧ｹ繝医・繧ｯ繝ｳ縺檎┌蜉ｹ|invalid_request|BASE OAuth refresh HTTP 4\d\d/i.test(message)) break;
     }
   }
 
-  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
+  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)) && !retiredIds.has(String(listing.id)));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -308,6 +320,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
+    if (retiredIds.has(listingId)) continue;
     if (identityUnlinkedIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
@@ -318,8 +331,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         try {
           await editBaseItem({
             itemId: String(listing.base_item_id),
-            title: String(listing.title ?? "").trim() || "商品情報確認中",
-            detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
+        title: String(listing.title ?? "").trim() || "商品情報確認中",
+        detail: String(listing.description ?? listing.title ?? "").trim() || "商品情報を確認しています。",
             price: Number(listing.selling_price ?? 0),
             stock: 0,
             visible: false,

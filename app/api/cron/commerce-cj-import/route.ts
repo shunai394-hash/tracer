@@ -1024,6 +1024,7 @@ export async function GET(request: Request) {
                 lastCheckedAt: new Date().toISOString(),
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
+                  ...(exactVariant.imageUrl ? { variantImageUrl: exactVariant.imageUrl } : {}),
                   stockKnown: stock !== null, shippingKnown: shipping !== null && !shippingWasEstimated,
                   shippingEstimated: shippingWasEstimated,
                   ...(shippingWasEstimated ? { shippingEstimateUsd: 7.76, shippingEstimateSource: "cj_historical_p90_570_offers" } : {}),

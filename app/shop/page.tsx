@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
-import { STOREFRONT_CATEGORIES, categoryOf } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, categoryOf, pickOnePerSupplierProduct } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 
@@ -79,13 +79,16 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
 
   const activeCategory = STOREFRONT_CATEGORIES.find((category) => category.slug === cat) ?? null;
   const counts = new Map<string, number>();
-  for (const listing of listings) counts.set(categoryOf(listing.title), (counts.get(categoryOf(listing.title)) ?? 0) + 1);
+  for (const listing of pickOnePerSupplierProduct(listings, 1800)) {
+    counts.set(categoryOf(listing.title), (counts.get(categoryOf(listing.title)) ?? 0) + 1);
+  }
   const needle = q.normalize("NFKC").toLocaleLowerCase();
   let shown = listings
     .filter((listing) => !activeCategory || categoryOf(listing.title) === activeCategory.slug)
     .filter((listing) => !needle || `${listing.title} ${listing.description ?? ""}`.normalize("NFKC").toLocaleLowerCase().includes(needle));
   if (sort === "price_asc") shown = [...shown].sort((a, b) => (a.sellingPrice ?? 0) - (b.sellingPrice ?? 0));
   if (sort === "price_desc") shown = [...shown].sort((a, b) => (b.sellingPrice ?? 0) - (a.sellingPrice ?? 0));
+  shown = pickOnePerSupplierProduct(shown, 1800);
 
   // Exact duplicate supplier variants are removed in listPublishedShopListings.
   // Distinct variants must not be hidden merely because their titles normalize to one family.

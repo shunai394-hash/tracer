@@ -8,9 +8,10 @@ export function ProductImage({ src, alt, className, eager = false }: { src: stri
   const ref = useRef<HTMLImageElement>(null);
   // An SSR image can fail before hydration attaches onError, so re-check once mounted.
   useEffect(() => {
+    setFailed(false);
     const img = ref.current;
     if (img && img.complete && img.naturalWidth === 0) setFailed(true);
-  }, []);
+  }, [src]);
   if (!src || failed) {
     return <div className={`${className} flex items-center justify-center text-sm text-neutral-400`}>画像準備中</div>;
   }

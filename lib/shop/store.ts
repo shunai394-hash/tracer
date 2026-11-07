@@ -21,12 +21,44 @@ function asNumber(value: unknown): number | null {
 }
 
 function hasJapaneseText(value: unknown): boolean {
-  return typeof value === "string" && /[ぁ-んァ-ヶ一-龯々ー]/u.test(value);
+  return typeof value === "string" && /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3005\u30FC]/u.test(value);
 }
 
 function asBoolean(value: unknown): boolean {
   return value === true;
 }
+
+function firstImageUrl(...values: unknown[]): string | null {
+  for (const value of values) {
+    const candidates = Array.isArray(value) ? value : [value];
+    for (const candidate of candidates) {
+      if (typeof candidate !== "string" || !candidate.trim()) continue;
+      try {
+        const url = new URL(candidate.trim());
+        if (url.protocol === "https:" || url.protocol === "http:") return url.toString();
+      } catch {
+        // Ignore malformed supplier image values; never render arbitrary strings.
+      }
+    }
+  }
+  return null;
+}
+
+export type ShopVariantOption = {
+  id: string;
+  slug: string;
+  title: string;
+  label: string;
+  optionType: "カラー" | "サイズ" | "バリエーション";
+  imageUrl: string | null;
+  sellingPrice: number | null;
+  currency: string | null;
+  inventory: number;
+  supplierVariantId: string | null;
+  shopifyVariantId: string | null;
+  shopifyHandle: string | null;
+};
+
 
 export type ShopListing = {
   id: string;
@@ -52,6 +84,10 @@ export type ShopListing = {
   shopifySyncStatus: string | null;
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
+  variantLabel?: string | null;
+  variantOptionType?: "\u30ab\u30e9\u30fc" | "\u30b5\u30a4\u30ba" | "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3";
+  variantImageUrl?: string | null;
+  variants?: ShopVariantOption[];
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -81,6 +117,8 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
     canonicalCommerce: false,
     manualInventory: row.manual_inventory === true,
+    variantLabel: typeof row.variant_label === "string" ? row.variant_label : null,
+    variantImageUrl: firstImageUrl(row.variant_image_url),
   };
 }
 
@@ -262,6 +300,42 @@ async function loadPublishedShopListings(): Promise<ShopListing[]> {
     .map(({ listing }) => listing);
 }
 
+async function attachPublishedVariantOptions(listing: ShopListing): Promise<ShopListing> {
+  const published = await listPublishedShopListings();
+  const family = published.filter((candidate) =>
+    candidate.productId === listing.productId &&
+    candidate.supplierProductId === listing.supplierProductId &&
+    Boolean(candidate.supplierVariantId) &&
+    Boolean(listing.supplierVariantId),
+  );
+  const unique = new Map<string, ShopListing>();
+  for (const candidate of family) {
+    const key = candidate.supplierVariantId || candidate.id;
+    if (!unique.has(key)) unique.set(key, candidate);
+  }
+  const variants = [...unique.values()].map((candidate) => ({
+    id: candidate.id,
+    slug: candidate.slug,
+    title: candidate.title,
+    label: candidate.variantLabel || (() => { const value = candidate.title; const start = Math.max(value.lastIndexOf("("), value.lastIndexOf(String.fromCharCode(65288))); const end = value.length > 0 && (value.endsWith(")") || value.endsWith(String.fromCharCode(65289))) ? value.length - 1 : value.length; return start >= 0 && end > start ? value.slice(start + 1, end).trim() || value : value; })(),
+    optionType: candidate.variantOptionType ?? "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3",
+    imageUrl: candidate.variantImageUrl ?? null,
+    sellingPrice: candidate.sellingPrice,
+    currency: candidate.currency,
+    inventory: candidate.inventory,
+    supplierVariantId: candidate.supplierVariantId,
+    shopifyVariantId: candidate.shopifyVariantId,
+    shopifyHandle: candidate.shopifyHandle,
+  }));
+  // Only expose a color picker when every choice has its own verified image.
+  // A shared parent image is not evidence that it depicts the selected color.
+  const imageUrls = variants.map((variant) => variant.imageUrl).filter((url): url is string => Boolean(url));
+  const imageComplete = variants.length > 1 &&
+    imageUrls.length === variants.length &&
+    new Set(imageUrls).size === variants.length;
+  return { ...listing, variants: imageComplete ? variants : [] };
+}
+
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
   // Normalize percent-encoded slugs as well as the decoded value Next.js normally
   // supplies. This keeps product URLs resolvable if a proxy/channel double-encodes
@@ -295,11 +369,12 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     // This fallback is only used when the direct indexed lookup misses.
     const published = await listPublishedShopListings();
     const matched = published.find((listing) => listing.slug === normalizedSlug || listing.slug === slug);
-    if (matched) return matched;
+    if (matched) return attachPublishedVariantOptions(matched);
 
     if (!isListingId) return null;
     const canonical = await loadCanonicalCommerceListings({ variantIds: [normalizedSlug] });
-    return canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    const found = canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    return found ? attachPublishedVariantOptions(found) : null;
   }
 
   const listing = mapListing(data as Record<string, unknown>);
@@ -313,7 +388,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   // already-published Shopify product. Supplier identity and live-stock checks
   // remain mandatory in publication and order-time procurement paths, but must
   // not turn an existing public sales URL into a 404.
-  return listing;
+  return attachPublishedVariantOptions(listing);
 }
 
 export 
@@ -358,7 +433,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
         .in("id", batch)
         .eq("commerce_products.active", true),
       supabase.from("supplier_offers")
-        .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at")
+        .select("id,variant_id,supplier_code,supplier_product_id,supplier_variant_id,inventory,ship_to,tracking_supported,source_status,last_checked_at,raw_data")
         .in("variant_id", batch)
         .eq("source_status", "verified")
         .eq("tracking_supported", true)
@@ -421,10 +496,20 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const rawDescription = manualDescription ?? (typeof product.description_ja === "string" ? product.description_ja : null);
     const description = rawDescription ? freeShippingText(rawDescription) : null;
     const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
-      ? variant.attributes as Record<string, unknown> : {};
-    const variantImageUrl = typeof attributes.variantImageUrl === "string" && /^https?:\/\//i.test(attributes.variantImageUrl)
-      ? attributes.variantImageUrl : null;
+      ? variant.attributes as Record<string, unknown>
+      : {};
+    const offerRaw = selectedPair.offer.raw_data && typeof selectedPair.offer.raw_data === "object" && !Array.isArray(selectedPair.offer.raw_data)
+      ? selectedPair.offer.raw_data as Record<string, unknown>
+      : {};
+    const variantImageUrl = firstImageUrl(
+      attributes.variantImageUrl, attributes.variant_image_url, attributes.colorImageUrl, attributes.color_image_url, attributes.imageUrl, attributes.image_url,
+      offerRaw.variantImageUrl, offerRaw.variant_image_url, offerRaw.variantImage, offerRaw.imageUrl,
+    );
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
+    const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
+      ? attributes.variationLabel.trim()
+      : (() => { const value = String(variant.title_ja ?? ""); const start = Math.max(value.lastIndexOf("("), value.lastIndexOf(String.fromCharCode(65288))); const end = value.length > 0 && (value.endsWith(")") || value.endsWith(String.fromCharCode(65289))) ? value.length - 1 : value.length; return start >= 0 && end > start ? value.slice(start + 1, end).trim() || null : null; })();
+    const variantOptionType = attributes.color ? "\u30ab\u30e9\u30fc" : attributes.size ? "\u30b5\u30a4\u30ba" : "\u30d0\u30ea\u30a8\u30fc\u30b7\u30e7\u30f3";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
@@ -450,12 +535,15 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       title,
       description,
       imageUrl,
+      variantImageUrl,
+      variantLabel,
+      variantOptionType,
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
       orderable: isCJLiveOrderPathReady() && offerFresh,
       trackingAvailable: true,
-      selectionReasons: ["仕入先在庫確認済み", "日本向け配送確認済み", "利益計算済み"],
+      selectionReasons: ["\u4ed5\u5165\u5148\u5728\u5eab\u78ba\u8a8d\u6e08\u307f", "\u65e5\u672c\u5411\u3051\u914d\u9001\u78ba\u8a8d\u6e08\u307f", "\u5229\u76ca\u8a08\u7b97\u6e08\u307f"],
       productId: String(product.id),
       bestsellerId: null,
       supplierListingId: String(offer.id),

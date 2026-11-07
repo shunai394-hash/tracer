@@ -29,6 +29,25 @@ export function variantFamily(title: string): string {
   return title.normalize("NFKC").replace(/\s*\([^()]*\)\s*$/, "").trim().toLocaleLowerCase();
 }
 
+// Group only variants that share both the canonical TRACER product and exact supplier product ID.
+// Similar names alone never merge unrelated supplier products.
+export function pickOnePerSupplierProduct(listings: ShopListing[], limit: number): ShopListing[] {
+  const seen = new Set<string>();
+  const picked: ShopListing[] = [];
+  for (const listing of listings) {
+    if (!listing.imageUrl) continue;
+    const supplierProductId = listing.supplierProductId?.trim() ?? "";
+    const key = listing.productId && supplierProductId
+      ? `supplier-product:${listing.productId}:${supplierProductId}`
+      : `listing:${listing.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push(listing);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
 // Pick up to `limit` listings with images, showing one colour per product family
 // so rows are not filled with the same bag in different colours.
 export function pickDistinct(listings: ShopListing[], limit: number): ShopListing[] {

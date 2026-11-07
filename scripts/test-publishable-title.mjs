@@ -239,8 +239,8 @@ assert.match(base, /isPublishableCatalogDescription\(sourceDetail\)/, "BASE must
 assert.match(base, /isPublishableCatalogDescription\(translatedDetail\)/, "BASE must reject generic translated descriptions");
 assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failure must be surfaced");
 assert.doesNotMatch(base, /title: "販売停止中の商品"/, "BASE reconciliation must never replace the buyer-facing product title with a workflow status");
-assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "商品情報確認中"/, "BASE reconciliation must preserve the existing title when a listing is hidden");
-assert.match(base, /const activeListings = publishableListings\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry freshly verified supplier-linked hidden rows instead of permanently excluding them");
+assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\|/, "BASE reconciliation must preserve the existing title when a listing is hidden");
+assert.match(base, /const activeListings = publishableListings\.filter\(\(listing\) => !identityUnlinkedIds\.has\(String\(listing\.id\)\) && !retiredIds\.has\(String\(listing\.id\)\)\)/, "BASE must retry freshly verified supplier-linked hidden rows while excluding retired rows");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
 assert.match(store, /listing title failed catalog quality gate/, "order placement must revalidate title quality");

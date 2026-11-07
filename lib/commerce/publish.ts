@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, getBasePublicShopUrl, isBaseConfigured, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { addBaseItemImage, createBaseItem, editBaseItem, fetchBaseItemsSnapshot, getBaseItemDetail, getBasePublicShopUrl, isBaseConfigured, setBaseVariationStock, BASE_ITEMS_MAX_PAGES } from "@/lib/channels/base";
+import { syncQueuedVariantFamilies } from "@/lib/commerce/sync-variant-family";
 import { createShopifyProduct, ensureShopifyProductPublished, isShopifyConfigured, setShopifyVariantInventory, shopifyGraphQL, toShopifyGid, updateShopifyProduct } from "@/lib/shopify/admin";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { isJapaneseProductTitle, localizeProductTitle } from "@/lib/intelligence/japanese-product";
@@ -58,7 +59,7 @@ async function addBaseImageWithFormatFallback(input: {
     return;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/このファイル形式はご利用できません|file format.{0,30}(not supported|unsupported)/i.test(message)) throw error;
+    if (!/\u3053\u306e\u30d5\u30a1\u30a4\u30eb\u5f62\u5f0f\u306f\u3054\u5229\u7528\u3067\u304d\u307e\u305b\u3093|file format.{0,30}(not supported|unsupported)/i.test(message)) throw error;
     // BASE can reject a supplier-hosted image despite a URL ending in .jpg.
     // If this variant already has a Shopify product, reuse Shopify's accepted CDN
     // image. Never create a second listing or silently suppress other upload errors.
@@ -240,8 +241,37 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
       const variant = variantsById.get(String(listing.variant_id));
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
-      const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER商品")) || "TRACER商品";
+      const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER\u5546\u54c1")) || "TRACER\u5546\u54c1";
       const detail = String(product?.description_ja || title);
+      const { count: sharedCount, error: sharedError } = await db.from("channel_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("channel", channel)
+        .eq("external_product_id", String(listing.external_product_id))
+        .neq("id", listing.id)
+        .eq("status", "published");
+      if (sharedError) throw new Error("shared_product_lookup_failed:" + sharedError.message);
+      if ((sharedCount ?? 0) > 0) {
+        if (channel === "base") {
+          const variationId = String(listing.external_variant_id ?? "");
+          if (!variationId || variationId === String(listing.external_product_id)) throw new Error("base_shared_variation_id_missing");
+          await setBaseVariationStock(String(listing.external_product_id), variationId, 0);
+        } else if (listing.external_variant_id) {
+          await setShopifyVariantInventory({
+            variantId: String(listing.external_variant_id),
+            quantity: 0,
+            reference: "shared-family-withhold:" + String(listing.variant_id),
+          });
+        }
+        const { error: saveSharedError } = await db.from("channel_listings").update({
+          status: "error",
+          last_error: "supplier_offer_no_longer_fulfillable:" + reason,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", listing.id);
+        if (saveSharedError) throw new Error("stale_listing_state_save_failed:" + saveSharedError.message);
+        result.unpublished++;
+        continue;
+      }
       if (channel === "base") {
         const itemId = String(listing.external_product_id);
         await editBaseItem({
@@ -424,8 +454,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         return !saleable;
       })
     : sortedCandidates;
+// This merchant-held protein product is an explicit permanent catalog exception:
   const candidates = candidatesToProcess.filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
-  type BaseSnapshotItem = Record<string, unknown>;
+type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
   // A full 5,000-item BASE scan is only needed to recover an interrupted
@@ -449,7 +480,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     if (id) baseItemsById.set(id, item);
   }
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; missingEvidence?: string[]; action?: "published" | "unpublished" }> = [];
+  // Color and size variants that share a supplier product are one channel product.
+  // A run syncs two families; the rest stay variant_family_deferred and are not created again as separate products.
+  const familySync = await syncQueuedVariantFamilies({ channel, variantIds: candidates.map((candidate) => candidate.id) });
+  const familyHandled = new Set(familySync.handledVariantIds);
+  results.push(...familySync.results);
   for (const candidate of candidates) {
+    if (familyHandled.has(candidate.id)) continue;
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => {
@@ -482,7 +519,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const imageUrl = safeUrl(product.image_url);
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
-    // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
+    // Japanese text alone is not enough: category placeholders such as "\u30d8\u30a2\u30b1\u30a2\u30a2\u30a4\u30c6\u30e0"
     // pass the language check but are rejected by the catalog title quality gate.
     // Prefer a source-grounded localized title when stored titles are generic.
     // Storefront titles must be fully localized, not merely contain a few Japanese characters.
@@ -559,7 +596,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           await editBaseItem({
             itemId: String(currentState.external_product_id),
             title,
-            detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
+            detail: String(product.description_ja || title) + "\n\n\u4ed5\u5165\u5148\u306e\u5728\u5eab\u30fb\u65e5\u672c\u5411\u3051\u9001\u6599\u3092\u78ba\u8a8d\u4e2d\u306e\u305f\u3081\u3001\u73fe\u5728\u8cfc\u5165\u3067\u304d\u307e\u305b\u3093\u3002",
             price: fallbackPrice,
             stock: 0,
             visible: false,
@@ -683,12 +720,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     const manualDescription = typeof product.metadata?.manualDescriptionJa === "string" ? product.metadata.manualDescriptionJa.trim() : "";
-    const description = (manualDescription || product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
+    const description = (manualDescription || product.description_ja || title + "\u3002\u5546\u54c1\u4ed5\u69d8\u306f\u8ca9\u58f2\u5143\u306e\u6700\u65b0\u60c5\u5831\u3092\u3054\u78ba\u8a8d\u304f\u3060\u3055\u3044\u3002").trim();
     // Selling price includes supplier item cost, Japan-bound freight, platform fees and target margin.
     // Remove any legacy copy implying that customers pay supplier freight separately.
     const storefrontDescription = supplierShippingKnown
       ? shippingInclusiveDescription(description)
-      : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
+      : `${description}\n\n\u65e5\u672c\u5411\u3051\u9001\u6599\u3092\u78ba\u8a8d\u4e2d\u306e\u305f\u3081\u3001\u8ca9\u58f2\u3092\u4e00\u6642\u505c\u6b62\u3057\u3066\u3044\u307e\u3059\u3002`;
     // SEO snippet is derived from the real product copy; never invent specifications.
     const seoTitle = `${title.slice(0, 62 - " | TRACER".length).trim()} | TRACER`.slice(0, 70);
     const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);

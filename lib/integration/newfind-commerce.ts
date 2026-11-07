@@ -14,10 +14,13 @@ import {
   newfindCommerceEventKey,
   readNewfindCommerceDetail,
   newfindCommerceOutcome,
+  newfindCommerceProductEventId,
+  newfindCommerceProductEventKey,
   type NewfindCommerceDecision,
   type NewfindCommerceDetail,
   type NewfindCommerceRow,
 } from "@/lib/integration/newfind-commerce-ledger";
+import { newfindFamilyPayload } from "@/lib/commerce/variant-family.mjs";
 
 function buildUrl(base: string): string {
   const trimmed = base.trim().replace(/\/$/, "");
@@ -62,7 +65,10 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
 
   const db = createSupabaseAdminClient();
   const rows = new Map<string, NewfindCommerceRow>();
-  const keys = listings.map((listing) => newfindCommerceEventKey(listing.id));
+  const keys = [
+    ...listings.map((listing) => newfindCommerceEventKey(listing.id)),
+    ...[...new Set(listings.map((listing) => listing.productId).filter((id): id is string => Boolean(id)))].map((productId) => newfindCommerceProductEventKey(productId)),
+  ];
   for (let i = 0; i < keys.length; i += 100) {
     const { data, error } = await db.from("commerce_events").select("event_key,status,detail").in("event_key", keys.slice(i, i + 100));
     if (error) throw new Error("newfind_commerce_ledger_read_failed:" + error.message);
@@ -91,15 +97,46 @@ export async function promoteCommerceListingsToNewfind(options: { limit?: number
     deliveryPriority(a) - deliveryPriority(b)
     || String(a.decision.detail.lastAttemptAt ?? "").localeCompare(String(b.decision.detail.lastAttemptAt ?? "")));
 
-  const selected = sendable.slice(0, limit);
-  const outcomes = await Promise.all(selected.map(async ({ listing, decision }) => {
-    if (Date.now() > deadlineAt) return { variantId: listing.id, status: "skipped" as const, detail: "time_budget" };
-    try {
-      return { variantId: listing.id, ...(await deliverOne(db, cfg, listing, decision)) };
-    } catch (error) {
-      return { variantId: listing.id, status: "failed" as const, detail: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300) };
+  const byProduct = new Map<string, ShopListing[]>();
+  for (const listing of listings) {
+    const productId = listing.productId || listing.id;
+    byProduct.set(productId, [...(byProduct.get(productId) ?? []), listing]);
+  }
+  const groupedProductIds = new Set([...byProduct.entries()].filter(([, rows]) => rows.length >= 2).map(([productId]) => productId));
+  const individual = sendable.filter(({ listing }) => !groupedProductIds.has(listing.productId || listing.id));
+  const grouped = [...groupedProductIds].map((productId) => {
+    const family = byProduct.get(productId) ?? [];
+    const representative = family[0];
+    const decision = decideNewfindCommerceDelivery(productId, rows.get(newfindCommerceProductEventKey(productId)) ?? null, now);
+    return { listing: representative, decision, family };
+  }).filter((item): item is typeof item & { decision: Extract<NewfindCommerceDecision, { action: "send" }> } => item.decision.action === "send");
+  for (const productId of groupedProductIds) {
+    const decision = decideNewfindCommerceDelivery(productId, rows.get(newfindCommerceProductEventKey(productId)) ?? null, now);
+    if (decision.action === "skip") {
+      if (decision.reason === "already_processed") result.alreadyProcessed += 1;
+      else result.skipped[decision.reason] = (result.skipped[decision.reason] ?? 0) + 1;
     }
-  }));
+  }
+  const selectedIndividuals = individual.slice(0, limit);
+  const selectedGroups = grouped.slice(0, Math.max(0, limit - selectedIndividuals.length));
+  const outcomes = await Promise.all([
+    ...selectedIndividuals.map(async ({ listing, decision }) => {
+      if (Date.now() > deadlineAt) return { variantId: listing.id, status: "skipped" as const, detail: "time_budget" };
+      try {
+        return { variantId: listing.id, ...(await deliverOne(db, cfg, listing, decision)) };
+      } catch (error) {
+        return { variantId: listing.id, status: "failed" as const, detail: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300) };
+      }
+    }),
+    ...selectedGroups.map(async ({ listing, decision, family }) => {
+      if (Date.now() > deadlineAt) return { variantId: listing.productId || listing.id, status: "skipped" as const, detail: "time_budget" };
+      try {
+        return { variantId: listing.productId || listing.id, ...(await deliverOne(db, cfg, listing, decision, family)) };
+      } catch (error) {
+        return { variantId: listing.productId || listing.id, status: "failed" as const, detail: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300) };
+      }
+    }),
+  ]);
   for (const outcome of outcomes) {
     if (outcome.status === "skipped") continue;
     result.attempted += 1;
@@ -117,12 +154,18 @@ async function deliverOne(
   cfg: Cfg,
   listing: ShopListing,
   decision: Extract<NewfindCommerceDecision, { action: "send" }>,
+  family?: ShopListing[],
 ): Promise<{ status: "processed" | "sent" | "failed" | "skipped"; detail: string }> {
-  const key = newfindCommerceEventKey(listing.id);
+  const grouped = Boolean(family && family.length > 1 && listing.productId);
+  const key = grouped ? newfindCommerceProductEventKey(listing.productId as string) : newfindCommerceEventKey(listing.id);
+  const entityId = grouped ? listing.productId as string : listing.id;
+  if (grouped) decision.detail.eventId = decision.detail.eventId.startsWith("tracer-commerce-product:")
+    ? decision.detail.eventId
+    : newfindCommerceProductEventId(entityId);
   if (decision.fromStatus === "missing") {
     const { error } = await db.from("commerce_events").upsert({
-      event_key: key, event_type: NEWFIND_COMMERCE_EVENT_TYPE, entity_type: "commerce_variant", entity_id: listing.id,
-      status: "pending", detail: initialNewfindCommerceDetail(listing.id),
+      event_key: key, event_type: NEWFIND_COMMERCE_EVENT_TYPE, entity_type: grouped ? "commerce_product" : "commerce_variant", entity_id: entityId,
+      status: "pending", detail: { ...initialNewfindCommerceDetail(entityId), eventId: decision.detail.eventId },
     }, { onConflict: "event_key", ignoreDuplicates: true });
     if (error) throw new Error("newfind_commerce_ledger_insert_failed:" + error.message);
   }
@@ -156,6 +199,17 @@ async function deliverOne(
   }
 
   const eventId = claimed.eventId;
+  const familyRows = (family && family.length > 1 ? family : [listing]).map((row) => ({
+    id: row.id,
+    productId: row.productId,
+    title: row.title,
+    sellingPrice: row.sellingPrice,
+    inventory: row.inventory,
+    supplierVariantId: row.supplierVariantId,
+    sku: null,
+    url: tracer.url,
+  }));
+  const familyPayload = newfindFamilyPayload(familyRows);
   const payload = {
     source: "tracer",
     event_id: eventId,
@@ -164,7 +218,9 @@ async function deliverOne(
     occurred_at: now.toISOString(),
     payload: {
       source: "tracer",
-      product_name: listing.title,
+      product_name: grouped ? familyPayload.product_name : listing.title,
+      variations: familyPayload.variations,
+      image_alt: familyPayload.variations[0]?.image_alt ?? listing.title,
       product_url: tracer.url,
       canonical_url: tracer.url,
       official_url: tracer.url,
@@ -182,7 +238,7 @@ async function deliverOne(
       sales_test_gate: "passed",
       selection_score: 0,
       confidence: 1,
-      source_ref: listing.id,
+      source_ref: grouped ? listing.productId : listing.id,
       source_url: tracer.url,
       note: listing.description ?? "",
     },

@@ -511,6 +511,8 @@ export async function fetchCJVariantByVid(vid: string): Promise<CJProductVariant
               .find((value) => value !== undefined && value !== null && String(value).trim()),
           ).replace(/\D/g, "") || null
         : null,
+    imageUrl: [row.variantImageUrl, row.variantImage, row.imageUrl, row.image, row.bigImage]
+      .find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()))?.trim() ?? null,
     inventory: inventoryByCountry.length ? verifiedInventory : null,
     inventoryByCountry,
   };
@@ -1155,6 +1157,10 @@ type CJVariantRow = {
   variantBarcode?: string | number;
   variantBarCode?: string | number;
   productBarCode?: string | number;
+  variantImageUrl?: string;
+  imageUrl?: string;
+  image?: string;
+  bigImage?: string;
   inventories?: CJVariantInventoryRow[];
 };
 
@@ -1199,6 +1205,8 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
         ? null
         : String(row.variantSellPrice),
     barcode: barcode ? String(barcode).replace(/\D/g, "") || null : null,
+    imageUrl: [row.variantImageUrl, row.variantImage, row.imageUrl, row.image, row.bigImage]
+      .find((value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()))?.trim() ?? null,
     inventory: null,
   };
 }

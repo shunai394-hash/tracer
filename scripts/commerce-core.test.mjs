@@ -454,6 +454,7 @@ test("both channels use the shared capped storefront quantity and Japanese title
 test("TRACER storefront displays published canonical Shopify listings without enabling local auto-ordering", async () => {
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  const variantSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
   assert.match(store, /async function loadCanonicalCommerceListings/);
   assert.match(store, /from\("channel_listings"\)/);
   assert.match(store, /from\("commerce_variants"\)/);
@@ -471,8 +472,10 @@ test("TRACER storefront displays published canonical Shopify listings without en
   // Stale supplier checks must not drop published products before offerFresh is evaluated.
   assert.doesNotMatch(store, /\.gte\("last_checked_at", freshAfter\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
-  assert.match(productPage, /shopifyProductUrl/);
-  assert.match(productPage, /Shopifyで購入する/);
+  assert.match(productPage, /ProductVariantSelector/);
+  assert.match(variantSelector, /const shopifyUrl = selected\.shopifyHandle && variantNumber && shopifyDomain/);
+  assert.match(variantSelector, /variant=\$\{variantNumber\}/);
+  assert.match(variantSelector, /\u9078\u629e\u3057\u305f\u5546\u54c1\u3092\u8cfc\u5165\u3059\u308b/);
 });
 
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
@@ -1336,7 +1339,7 @@ test("Shopify existing-product handle collisions retry with a stable product-spe
 test("BASE image format rejection retries with the existing Shopify CDN image only", async () => {
   const publish = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
   assert.match(publish, /addBaseImageWithFormatFallback/);
-  assert.match(publish, /このファイル形式はご利用できません\|file format/);
+  assert.match(publish, /\\u3053\\u306e\\u30d5\\u30a1\\u30a4\\u30eb\\u5f62\\u5f0f\\u306f\\u3054\\u5229\\u7528\\u3067\\u304d\\u307e\\u305b\\u3093\|file format/);
   assert.match(publish, /BaseCompatibleProductImage/);
   assert.match(publish, /await addBaseItemImage\(\{ itemId: input\.itemId, imageNo: 1, imageUrl: fallbackUrl \}\)/);
   assert.doesNotMatch(publish, /catch \(error\) \{[\s\S]{0,500}createBaseItem\(\{ title, identifier: sku/);
