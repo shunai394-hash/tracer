@@ -55,6 +55,15 @@ References:
 These are adapter contracts and lifecycle implementations; neither one is
 connected to production account credentials or enabled in the default worker.
 
+## Dual-platform orchestration
+
+`dual-platform-comment-bridge.mjs` starts both adapters concurrently and
+forwards their normalized events to the same media runtime. It binds the shared
+handler before starting either stream, rolls both back if one startup fails,
+and stops both together. Supply an authenticated YouTube transport and an
+approved TikTok connector when constructing the adapters. This coordinator
+does not create credentials or enable live mode in the default worker.
+
 ## Shared event contract
 
 Both platform adapters produce only:
