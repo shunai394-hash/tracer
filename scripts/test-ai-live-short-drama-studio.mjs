@@ -137,6 +137,20 @@ test("finished drama mix combines dialogue with loopable BGM and fade automation
   assert.ok(page.includes("duration>300"));
 });
 
+test("BGM auto-selection matches the drama genre, avoids immediate repeats, and fails closed when no category exists", () => {
+  assert.ok(page.includes('id="autoSelectBgm"'));
+  assert.ok(page.includes('id="bgmMatchStatus"'));
+  assert.ok(page.includes('"日常・ヒューマン":"日常・会話"'));
+  assert.ok(page.includes('"ミステリー":"サスペンス"'));
+  assert.ok(page.includes('"サスペンス":"サスペンス"'));
+  assert.ok(page.includes('"コメディ":"コメディ"'));
+  assert.ok(page.includes('const candidates=bgmTracks.filter'));
+  assert.ok(page.includes('rotation=candidates.length>1?candidates.filter'));
+  assert.ok(page.includes('if(!candidates.length)'));
+  assert.ok(page.includes('別カテゴリからの自動代用は行いません'));
+  assert.ok(page.includes('作品ジャンルが変更されました'));
+});
+
 test("short drama studio inline JavaScript parses without syntax errors", () => {
   const scriptStart = page.indexOf("<script>");
   const scriptEnd = page.indexOf("</script>", scriptStart);
