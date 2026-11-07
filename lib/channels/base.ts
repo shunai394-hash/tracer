@@ -32,6 +32,7 @@ const BASE_REFRESH_TOKEN = process.env.BASE_REFRESH_TOKEN?.trim() || "";
 const BASE_REDIRECT_URI = process.env.BASE_REDIRECT_URI?.trim() || "";
 
 let cachedBaseAccessToken: { token: string; expiresAt: number } | null = null;
+let pendingBaseAccessToken: Promise<string> | null = null;
 
 function baseOAuthConfigReady(): boolean {
   return Boolean(BASE_CLIENT_ID && BASE_CLIENT_SECRET && BASE_REFRESH_TOKEN && BASE_REDIRECT_URI);
@@ -107,10 +108,7 @@ export async function getBasePublicShopUrl(): Promise<string | null> {
   return (await getBaseShopIdentity()).shopUrl;
 }
 
-async function getBaseAccessToken(): Promise<string> {
-  if (cachedBaseAccessToken && Date.now() < cachedBaseAccessToken.expiresAt - 30_000) {
-    return cachedBaseAccessToken.token;
-  }
+async function refreshBaseAccessToken(): Promise<string> {
   if (!baseOAuthConfigReady()) {
     throw new Error("BASE_OAUTH_CONFIG_INCOMPLETE: configure BASE_CLIENT_ID, BASE_CLIENT_SECRET, BASE_REFRESH_TOKEN, and BASE_REDIRECT_URI");
   }
@@ -164,6 +162,23 @@ async function getBaseAccessToken(): Promise<string> {
   return token;
 }
 
+async function getBaseAccessToken(): Promise<string> {
+  if (cachedBaseAccessToken && Date.now() < cachedBaseAccessToken.expiresAt - 30_000) {
+    return cachedBaseAccessToken.token;
+  }
+  // A cold serverless instance can receive parallel BASE requests. Share one
+  // refresh operation so concurrent callers never exchange the same refresh
+  // token simultaneously and all use the same resulting access token.
+  if (!pendingBaseAccessToken) {
+    pendingBaseAccessToken = refreshBaseAccessToken();
+  }
+  const pending = pendingBaseAccessToken;
+  try {
+    return await pending;
+  } finally {
+    if (pendingBaseAccessToken === pending) pendingBaseAccessToken = null;
+  }
+}
 function baseRequestRetryable(error: unknown, status: number | null): boolean {
   if (status === 429 || (status !== null && status >= 500)) return true;
   const message = error instanceof Error ? error.message : String(error);
