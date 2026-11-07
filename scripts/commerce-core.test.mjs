@@ -744,7 +744,8 @@ test("failed supplier procurement retries only when no supplier order id exists"
 test("CJ variant image evidence is persisted for exact storefront color grouping", async () => {
   const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
-  assert.ok(core.includes("colorImageVerified: Boolean(input.variantImageUrl)"));
+  assert.ok(core.includes("variantImageIdentityVerified: Boolean(input.variantImageUrl)"));
+  assert.ok(core.includes("colorImageVerified: input.attributes?.colorImageVerified === true"));
   assert.ok(core.includes("variantImageUrl: input.variantImageUrl"));
   assert.ok(store.includes("colorImageVerified: attributes.colorImageVerified === true"));
   assert.ok(store.includes("attributes.variantImageUrl"));
