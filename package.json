@@ -64,7 +64,7 @@
     "test:grok-commerce-role-contracts": "node --experimental-strip-types --no-warnings scripts/test-grok-commerce-role-contracts.mjs",
     "test:ai-live-fish-audio-preview": "node scripts/test-ai-live-fish-audio-preview.mjs",
     "test:ai-live-short-drama-studio": "node scripts/test-ai-live-short-drama-studio.mjs",
-    "test:ai-live-worker": "node worker/test-ai-live-worker.mjs && node worker/test-supabase-ai-live-store.mjs && node worker/platforms/test-normalize-comment.mjs && node worker/platforms/test-tracer-speech-bridge.mjs && node worker/media/test-ffmpeg-publisher.mjs && node worker/media/test-live-media-session.mjs && node worker/media/test-reconnect-supervisor.mjs && node worker/media/test-ai-live-stream-runtime.mjs"
+    "test:ai-live-worker": "node worker/test-ai-live-worker.mjs && node worker/test-supabase-ai-live-store.mjs && node worker/platforms/test-normalize-comment.mjs && node worker/platforms/test-tracer-speech-bridge.mjs && node worker/media/test-ffmpeg-publisher.mjs && node worker/media/test-live-media-session.mjs && node worker/media/test-reconnect-supervisor.mjs && node worker/media/test-ai-live-stream-runtime.mjs && node worker/media/test-create-ai-live-media-runtime.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
