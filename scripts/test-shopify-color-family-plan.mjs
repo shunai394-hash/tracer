@@ -45,6 +45,13 @@ const insecureImage = planShopifyColorFamily({
 assert.equal(insecureImage.ok, false);
 assert.ok(insecureImage.blockers.includes("variant_image_missing:sv-croc"));
 
+const duplicateImage = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 2 ? { ...s, imageUrl: sources[0].imageUrl } : s),
+});
+assert.equal(duplicateImage.ok, false);
+assert.ok(duplicateImage.blockers.some((blocker) => blocker.startsWith("variant_image_ambiguous:")));
+
 const wrongSupplierNamespace = planShopifyColorFamily({
   ...input,
   sources: sources.map((s, i) => i === 3 ? { ...s, supplierCode: "other" } : s),
@@ -101,4 +108,4 @@ const duplicateExpected = planShopifyColorFamily({
 assert.equal(duplicateExpected.ok, false);
 assert.ok(duplicateExpected.blockers.includes("expected_supplier_variant_id_duplicate"));
 
-console.log("Shopify color family migration plan: 10 scenarios passed");
+console.log("Shopify color family migration plan: 11 scenarios passed");
