@@ -23,7 +23,7 @@ function safeMediaFile(value, mediaRoot, kind) {
  * IDs and relative media paths, never URLs or credentials. A missing mapping
  * is a hard error: the session must not silently play an unrelated product.
  */
-export function createProductVideoManifestResolver({
+export function createProductMediaManifestResolver({
   manifestPath = process.env.AI_LIVE_MEDIA_MANIFEST || "/app/media/manifest.json",
   mediaRoot = process.env.AI_LIVE_MEDIA_ROOT || "/app/media",
   readFileImpl = readFile,
@@ -71,6 +71,11 @@ export function createProductVideoManifestResolver({
     const manifest = await loadManifest();
     const entry = manifest.get(productId);
     if (!entry) throw new Error("ai_live_media_mapping_missing");
-    return entry.videoFile;
+    return { ...entry };
   };
+}
+
+export function createProductVideoManifestResolver(options = {}) {
+  const resolveMedia = createProductMediaManifestResolver(options);
+  return async (productId) => (await resolveMedia(productId)).videoFile;
 }
