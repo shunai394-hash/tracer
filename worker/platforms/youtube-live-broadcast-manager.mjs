@@ -179,6 +179,20 @@ export function createYouTubeLiveBroadcastManager({
 
     getStatus,
 
+    async cancelBroadcast({ broadcastId, streamId, streamSecretRef, signal } = {}) {
+      const current = await getStatus({ broadcastId, streamId, signal });
+      if (["live", "liveStarting", "testing", "testStarting", "complete"].includes(current.broadcast.lifeCycleStatus)) {
+        throw new Error("youtube_live_broadcast_cannot_be_cancelled_from_current_state");
+      }
+      await deleteResource("/liveBroadcasts", broadcastId, signal);
+      await deleteResource("/liveStreams", streamId, signal);
+      if (streamSecretRef) {
+        try { await deleteStreamSecret(streamSecretRef); }
+        catch { throw new Error("youtube_live_secret_cleanup_failed"); }
+      }
+      return { broadcastId, streamId, cancelled: true };
+    },
+
     async startBroadcast({ broadcastId, streamId, confirmEncoderActive = false, signal } = {}) {
       if (confirmEncoderActive !== true) throw new Error("youtube_live_encoder_confirmation_required");
       const current = await getStatus({ broadcastId, streamId, signal });
