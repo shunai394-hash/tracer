@@ -9,10 +9,13 @@ comment-processing job.
 Use the official YouTube Live Streaming API:
 - Create/bind/transition broadcasts and streams through the Live Streaming API.
 - Obtain the active chat ID from the broadcast's live-chat metadata.
-- Prefer `liveChatMessages.streamList` for low-latency server-streaming rather
-  than repeatedly polling `liveChatMessages.list`.
-- Resume a disconnected chat stream using the last `nextPageToken`.
-- Use channel-authorized OAuth credentials from the worker secret store.
+- Prefer `liveChatMessages.streamList` for low-latency server-streaming when
+  the host supplies a compatible transport. The implemented fallback uses
+  the official `liveChatMessages.list` endpoint and honors the API-provided
+  `pollingIntervalMillis`.
+- Resume after reconnect using the last `nextPageToken`.
+- Supply a channel-authorized OAuth access token through an injected provider;
+  refresh and secure token storage remain the host's responsibility.
 
 Official references:
 - https://developers.google.com/youtube/data/live/reference/rest
@@ -42,11 +45,14 @@ References:
 
 ## Implemented adapter modules
 
-- `youtube-live-chat-adapter.mjs` consumes an injected async-iterable transport
-  backed by the official `liveChatMessages.streamList` API, normalizes text
-  messages, retains the latest `nextPageToken`, and reconnects with bounded
-  exponential backoff. OAuth token acquisition and the Google API transport
-  still must be supplied by the host.
+- `youtube-live-chat-adapter.mjs` consumes an async-iterable transport,
+  normalizes text messages, retains the latest `nextPageToken`, and reconnects
+  with bounded exponential backoff.
+- `youtube-live-chat-list-transport.mjs` calls the official YouTube Data API v3
+  `liveChatMessages.list` endpoint, obtains a fresh access token from an
+  injected provider on each request, and respects `pollingIntervalMillis`.
+  OAuth consent, refresh-token storage, and broadcast/chat discovery remain
+  deployment-host responsibilities.
 - `tiktok-live-connector-adapter.mjs` consumes an injected approved connector
   async iterable, validates its source marker, normalizes comments, and applies
   bounded reconnect backoff. It does not implement or imply a generally
