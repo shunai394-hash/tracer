@@ -29,11 +29,11 @@ assert.deepEqual(credentials, {
   refreshToken: "refresh-token-123456",
 });
 
-await assert.rejects(
+assert.throws(
   () => createTracerYouTubeCredentialsProvider({ baseUrl: "http://example.com", workerToken: "w".repeat(32) }),
   /requires_https/,
 );
-await assert.rejects(
+assert.throws(
   () => createTracerYouTubeCredentialsProvider({ baseUrl: "https://example.com", workerToken: "short" }),
   /not_configured/,
 );
