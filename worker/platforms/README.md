@@ -40,6 +40,21 @@ References:
 - https://developers.tiktok.com/docs/en/research-api-specs-query-video-comments
 - https://docs.byteplus.com/en/docs/byteplus-livesaas/Synchronizing_a_live_stream_from_AI_Live_to_third-party_platforms
 
+## Implemented adapter modules
+
+- `youtube-live-chat-adapter.mjs` consumes an injected async-iterable transport
+  backed by the official `liveChatMessages.streamList` API, normalizes text
+  messages, retains the latest `nextPageToken`, and reconnects with bounded
+  exponential backoff. OAuth token acquisition and the Google API transport
+  still must be supplied by the host.
+- `tiktok-live-connector-adapter.mjs` consumes an injected approved connector
+  async iterable, validates its source marker, normalizes comments, and applies
+  bounded reconnect backoff. It does not implement or imply a generally
+  available official TikTok LIVE chat API.
+
+These are adapter contracts and lifecycle implementations; neither one is
+connected to production account credentials or enabled in the default worker.
+
 ## Shared event contract
 
 Both platform adapters produce only:
