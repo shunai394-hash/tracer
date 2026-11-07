@@ -184,8 +184,8 @@ export function createYouTubeLiveBroadcastManager({
       if (["live", "liveStarting", "testing", "testStarting", "complete"].includes(current.broadcast.lifeCycleStatus)) {
         throw new Error("youtube_live_broadcast_cannot_be_cancelled_from_current_state");
       }
-      await deleteResource("/liveBroadcasts", broadcastId, signal);
-      await deleteResource("/liveStreams", streamId, signal);
+      await request("/liveBroadcasts", { method: "DELETE", query: { id: safeId(broadcastId, "broadcast_id") }, signal });
+      await request("/liveStreams", { method: "DELETE", query: { id: safeId(streamId, "stream_id") }, signal });
       if (streamSecretRef) {
         try { await deleteStreamSecret(streamSecretRef); }
         catch { throw new Error("youtube_live_secret_cleanup_failed"); }
