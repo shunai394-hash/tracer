@@ -59,7 +59,7 @@ export function planShopifyColorFamily(input: {
     if (!Number.isSafeInteger(source.inventory) || source.inventory < 0) blockers.push("inventory_invalid:" + id);
   }
 
-  for ((const id of expected) {
+  for (const id of expected) {
     const matches = bySupplierId.get(id) ?? [];
     if (matches.length === 0) blockers.push("expected_supplier_variant_missing:" + id);
     if (matches.length > 1) blockers.push("supplier_variant_ambiguous:" + id);
