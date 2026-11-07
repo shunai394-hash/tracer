@@ -449,7 +449,93 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     if (id) baseItemsById.set(id, item);
   }
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; missingEvidence?: string[]; action?: "published" | "unpublished" }> = [];
+
+  // BASE's API publisher stores a single item image and does not yet prove
+  // per-variation image switching. Block exact supplier-product families here,
+  // in the canonical commerce pipeline (not the legacy shop_listings worker).
+  // Query the full family so a limited publish batch cannot miss sibling colors.
+  const baseColorFamilyVariantIds = new Set<string>();
+  if (channel === "base") {
+    const supplierProductIds = [...new Set(candidates.flatMap((candidate) =>
+      asRelationRows(candidate.supplier_offers)
+        .map((offer) => String(offer.supplier_product_id ?? "").trim())
+        .filter(Boolean),
+    ))];
+    if (supplierProductIds.length) {
+      const { data: familyOffers, error: familyOffersError } = await db.from("supplier_offers")
+        .select("variant_id,supplier_code,supplier_product_id")
+        .in("supplier_product_id", supplierProductIds);
+      if (familyOffersError) throw new Error("base_color_family_lookup_failed:" + familyOffersError.message);
+      const familyVariants = new Map<string, Set<string>>();
+      for (const row of familyOffers ?? []) {
+        const supplierCode = String(row.supplier_code ?? "").trim().toLowerCase();
+        const supplierProductId = String(row.supplier_product_id ?? "").trim();
+        const variantId = String(row.variant_id ?? "").trim();
+        if (!supplierCode || !supplierProductId || !variantId) continue;
+        const key = JSON.stringify([supplierCode, supplierProductId]);
+        if (!familyVariants.has(key)) familyVariants.set(key, new Set());
+        familyVariants.get(key)!.add(variantId);
+      }
+      for (const candidate of candidates) {
+        for (const offer of asRelationRows(candidate.supplier_offers)) {
+          const supplierCode = String(offer.supplier_code ?? "").trim().toLowerCase();
+          const supplierProductId = String(offer.supplier_product_id ?? "").trim();
+          const key = JSON.stringify([supplierCode, supplierProductId]);
+          const ids = familyVariants.get(key);
+          if (ids && ids.size > 1 && !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)) {
+            for (const id of ids) if (!ALWAYS_ON_SALE_VARIANT_IDS.has(id)) baseColorFamilyVariantIds.add(id);
+          }
+        }
+      }
+    }
+    if (baseColorFamilyVariantIds.size) {
+      const familyIds = [...baseColorFamilyVariantIds];
+      for (let offset = 0; offset < familyIds.length; offset += 100) {
+        const { data: familyListings, error: familyListingsError } = await db.from("channel_listings")
+          .select("variant_id,external_product_id,status")
+          .eq("channel", "base")
+          .in("variant_id", familyIds.slice(offset, offset + 100));
+        if (familyListingsError) throw new Error("base_color_family_listing_lookup_failed:" + familyListingsError.message);
+        for (const listing of familyListings ?? []) {
+          const variantId = String(listing.variant_id);
+          const externalId = String(listing.external_product_id ?? "").trim();
+          if (externalId && listing.status === "published") {
+            try {
+              const live = await getBaseItemDetail(externalId);
+              const price = Math.max(50, Math.round(Number(live.price) || 50));
+              await editBaseItem({
+                itemId: externalId,
+                title: String(live.title ?? "商品情報確認中"),
+                detail: String(live.detail ?? live.title ?? "商品情報を確認しています。"),
+                price,
+                stock: 0,
+                visible: false,
+              });
+            } catch (hideError) {
+              const message = hideError instanceof Error ? hideError.message : String(hideError);
+              results.push({ variantId, ok: false, externalId, error: "base_color_family_hide_failed:" + message.slice(0, 160) });
+              continue;
+            }
+          }
+          const now = new Date().toISOString();
+          const { error: stateError } = await db.from("channel_listings").update({
+            status: "error",
+            last_error: "base_color_variant_image_switching_unverified",
+            last_synced_at: now,
+            updated_at: now,
+          }).eq("channel", "base").eq("variant_id", variantId);
+          if (stateError) {
+            results.push({ variantId, ok: false, externalId: externalId || undefined, error: "base_color_family_state_save_failed:" + stateError.message });
+          } else {
+            results.push({ variantId, ok: true, externalId: externalId || undefined, action: externalId ? "unpublished" : undefined, error: "base_color_variant_image_switching_unverified" });
+          }
+        }
+      }
+    }
+  }
+
   for (const candidate of candidates) {
+    if (channel === "base" && baseColorFamilyVariantIds.has(candidate.id)) continue;
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => {
