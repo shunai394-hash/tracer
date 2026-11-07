@@ -7,6 +7,7 @@ const publisher = {
   async start(options) { calls.push(["start", options.destination]); publisherState = "publishing"; },
   async writeSpeechAudio(audio) { calls.push(["audio", [...audio]]); },
   async stop() { calls.push(["stop"]); publisherState = "stopped"; },
+  async switchVideo(videoFile) { calls.push(["switch-video", videoFile]); publisherState = "publishing"; },
   snapshot() { return { state: publisherState }; },
 };
 const bridge = {
@@ -15,16 +16,20 @@ const bridge = {
     return { status: "spoken_audio", mimeType: "audio/mpeg", audio: new Uint8Array([8, 9]) };
   },
 };
-const session = createAiLiveMediaSession({ publisher, speechBridge: bridge });
+const session = createAiLiveMediaSession({
+  publisher,
+  speechBridge: bridge,
+  resolveVideoForProduct: async (id) => id === "product-42" ? "products/product-42.mp4" : "products/other.mp4",
+});
 assert.equal(session.snapshot().state, "idle");
 assert.deepEqual(
   await session.handleComment({ id: "yt:1", text: "質問です" }),
   { status: "rejected", reason: "media_session_not_publishing" },
 );
-await session.start({ destination: "youtube_live" });
+await session.start({ destination: "youtube_live", videoFile: "fallback.mp4" });
 assert.equal(session.snapshot().state, "publishing");
 assert.throws(() => session.setCurrentProduct(""), /invalid_product_id/);
-session.setCurrentProduct("product-42");
+await session.setCurrentProduct("product-42");
 const event = {
   id: "youtube_live:comment-1",
   platform: "youtube_live",
@@ -38,6 +43,7 @@ assert.deepEqual(
 );
 assert.deepEqual(calls, [
   ["start", "youtube_live"],
+  ["switch-video", "products/product-42.mp4"],
   ["synthesize", "価格を教えて", "product-42"],
   ["audio", [8, 9]],
 ]);
