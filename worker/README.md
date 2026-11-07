@@ -31,8 +31,12 @@ The request contains a logical destination and opaque secret reference, never a
 stream key or RTMP URL. Only YouTube Live and TikTok LIVE logical destinations
 are accepted. Product facts older than 15 minutes are rejected. Maximum run
 time is 30 minutes. Product segments rotate in round-robin order; the default
-duration is 45 seconds and accepted values are 15–600 seconds. This rotation
-is simulated control-plane state only and does not switch a real video feed.
+duration is 45 seconds and accepted values are 15–600 seconds. The default fake
+mode only rotates simulated state. An explicitly injected media runtime can
+resolve each product ID to a trusted video asset under `AI_LIVE_MEDIA_ROOT`;
+when the product changes, FFmpeg is stopped and restarted with the new video.
+This produces a brief on-air interruption during each switch, so it is a
+functional first implementation rather than seamless frame-accurate switching.
 When Supabase is configured, stream creation uses insert-only semantics,
 then atomically claims a 45-second worker lease. The worker renews that lease
 every 15 seconds and stops locally if it loses ownership. On process startup,
@@ -72,7 +76,10 @@ or health response.
 
 The Supabase state adapter, insert-only start path, atomic lease claim,
 lease-fenced heartbeat, and fake-mode restart recovery are implemented and
-contract-tested. The FFmpeg publisher, speech bridge, media session, and bounded reconnect supervisor can now be assembled into one media runtime. The HTTP worker can manage an explicitly injected runtime through start, product-context updates, stop, runtime-limit, lease-loss, and shutdown paths. This injection is not enabled by the default entrypoint: the HTTP service still refuses any mode other than `fake` and does not create a real publisher unless a host deliberately supplies the factory and its trusted options resolver. Product rotation currently updates product context only; it does not yet switch the on-air video. The worker still has no production platform comment adapters. Before enabling publishing, wire
+contract-tested. The FFmpeg publisher, speech bridge, media session, and bounded reconnect supervisor can now be assembled into one media runtime. The HTTP worker can manage an explicitly injected runtime through start, product-context updates, stop, runtime-limit, lease-loss, and shutdown paths. This injection is not enabled by the default entrypoint: the HTTP service still refuses any mode other than `fake` and does not create a real publisher unless a host deliberately supplies the factory and its trusted options resolver. For injected media runtimes, product rotation now switches the FFmpeg video
+asset using a trusted `resolveVideoForProduct(productId)` resolver. Each switch
+restarts the FFmpeg publisher and can briefly interrupt the broadcast. Seamless
+switching and production platform comment adapters remain future work. Before enabling publishing, wire
 in a production secret manager and verify each YouTube/TikTok account's current
 stream eligibility and platform policy requirements. Mount only approved
 media files under `AI_LIVE_MEDIA_ROOT`; do not place stream keys in job JSON.
