@@ -155,8 +155,8 @@ export function createAiLiveWorkerServer({
             typeof record.mediaRuntime.setCurrentProduct !== "function") {
           throw new Error("invalid_media_runtime");
         }
-        await record.mediaRuntime.start(await mediaRuntimeOptions(record.job));
         await record.mediaRuntime.setCurrentProduct(record.job.segments[record.segmentIndex]?.productId || null);
+        await record.mediaRuntime.start(await mediaRuntimeOptions(record.job));
       } catch (error) {
         await stopRecord(record, "media_runtime_start_failed");
         throw error;
