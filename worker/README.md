@@ -35,6 +35,7 @@ Run the focused checks from the repository root:
 ```sh
 node worker/test-ai-live-worker.mjs
 node worker/platforms/test-normalize-comment.mjs
+node worker/platforms/test-tracer-speech-bridge.mjs
 ```
 
 ## Container
