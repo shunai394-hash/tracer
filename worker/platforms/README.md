@@ -88,3 +88,28 @@ Display names, profile images, profile URLs, payment data, and other author
 metadata are discarded before the AI reply pipeline. Duplicate event IDs are
 suppressed by a bounded in-memory deduplicator. Production 24-hour operation
 will require a durable dedupe store and reconnect checkpoints.
+
+## YouTube OAuth connection flow
+
+The OAuth helpers now cover the protocol pieces, but they do not silently
+connect an account:
+
+1. An authenticated TRACER admin calls
+   `createGoogleYouTubeAuthorizationRequest` with the registered OAuth client
+   ID and exact callback URL.
+2. Store the returned random `state` server-side with a short expiry and bind
+   it to that admin session before redirecting to Google.
+3. On callback, atomically consume the stored state and verify it with
+   `verifyGoogleOAuthState`. Reject missing, expired, reused, or mismatched
+   state values.
+4. Exchange the one-time code with
+   `exchangeGoogleYouTubeAuthorizationCode`. Persist the returned refresh
+   token in the deployment secret store; do not return tokens to the browser.
+5. Configure `createGoogleOAuthAccessTokenProvider` to load the channel's
+   client ID, optional client secret, and refresh token from that secret store.
+
+The requested scope is `https://www.googleapis.com/auth/youtube`, needed for
+the planned authenticated Live Streaming API workflow. Google consent, OAuth
+client registration, callback hosting, state persistence, secure token storage,
+broadcast creation/binding, and live publishing still require deployment
+configuration and an actual channel-owner authorization.
