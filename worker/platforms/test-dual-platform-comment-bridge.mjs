@@ -8,9 +8,9 @@ function adapter(name) {
   let forward = null;
   return {
     snapshot: () => ({ state }),
-    async start(idOrForward, maybeForward) {
+    setOnComment(handler) { forward = handler; },
+    async start() {
       state = "connected";
-      forward = typeof idOrForward === "function" ? idOrForward : maybeForward;
       return { state };
     },
     async emit(event) { await forward(event); },
@@ -38,6 +38,7 @@ const failing = createAiLiveDualPlatformCommentBridge({
   youtubeAdapter: adapter("youtube"),
   tiktokAdapter: {
     snapshot: () => ({ state: "idle" }),
+    setOnComment() {},
     async start() { throw new Error("connector_unavailable"); },
     async stop() { return { state: "stopped" }; },
   },
