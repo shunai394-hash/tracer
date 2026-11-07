@@ -130,3 +130,6 @@ This is a production-oriented API module, not a live-enabled worker deployment. 
 ## TRACER-managed YouTube chat client
 
 `create-tracer-youtube-live-chat-client.mjs` now composes the TRACER worker-only encrypted-credential endpoint, Google OAuth refresh provider, official `liveChatMessages.list` transport, and normalized YouTube chat adapter. The caller supplies the liveChatId returned by the broadcast API after the broadcast has transitioned to live. The adapter resumes with the last page token and honors the API polling interval. This factory connects only YouTube chat; TikTok still requires the approved connector supplied by the host.
+
+
+`create-tracer-youtube-live-control.mjs` is the production-host composition entrypoint for the YouTube broadcast manager. It loads encrypted TRACER OAuth credentials, refreshes Google access tokens in memory, and supplies them to the official broadcast/stream API controller. The host still injects its durable RTMP secret manager. If resource creation fails after the ingest key was persisted, the manager invokes the optional secret deletion callback and attempts to delete the partially created YouTube resources.
