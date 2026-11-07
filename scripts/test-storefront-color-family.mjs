@@ -88,6 +88,14 @@ assert.equal(unverifiedImages.length, 2);
 assert.ok(unverifiedImages.every((item) => item.colorSaleBlocked === false));
 assert.ok(unverifiedImages.every((item) => item.colorSaleBlockers.length === 0));
 
+const missingLabels = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { title: "レディース ハンドバッグ" }),
+  member(FAMILIES[0], 1, { title: "レディース ハンドバッグ" }),
+]).catalog;
+assert.equal(missingLabels.length, 2);
+assert.ok(missingLabels.every((item) => item.colorSaleBlocked === false));
+assert.ok(missingLabels.every((item) => item.variants.length === 0));
+
 const missingSku = groupExactColorFamilies([
   member(FAMILIES[0], 0, { sku: null }),
   member(FAMILIES[0], 1, { sku: null }),
