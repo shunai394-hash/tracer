@@ -310,6 +310,7 @@ if (isMain) {
   const store = createSupabaseAiLiveStore({ url: supabaseUrl, serviceRoleKey });
   const server = createAiLiveWorkerServer({ store });
   const port = Number(process.env.PORT || 8080);
+  await server.restoreActiveStreams();
   server.listen(port, "0.0.0.0", () => process.stdout.write("AI Live worker control API ready (fake adapter; publishing disabled)\n"));
   const shutdown = () => server.close(() => process.exit(0));
   process.once("SIGTERM", shutdown);
