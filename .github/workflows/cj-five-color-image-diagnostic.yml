@@ -1,0 +1,57 @@
+name: CJ five-color variant image diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cj-five-color-image-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Call read-only production diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o diagnostic.json -w "%{http_code}" --max-time 600 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/cj-five-color-image-diagnostic" || true)"
+          echo "=== read-only CJ image diagnostic HTTP $code ==="
+          python3 - <<'PY'
+          import json
+          d = json.load(open("diagnostic.json"))
+          out = {
+            "ok": d.get("ok"),
+            "readOnly": d.get("readOnly"),
+            "expectedProductId": d.get("expectedProductId"),
+            "checked": d.get("checked"),
+            "imageCount": d.get("imageCount"),
+            "exactIdentityCount": d.get("exactIdentityCount"),
+            "results": [
+              {
+                "color": r.get("color"),
+                "vid": r.get("vid"),
+                "expectedSku": r.get("expectedSku"),
+                "returnedSku": r.get("returnedSku"),
+                "returnedName": r.get("returnedName"),
+                "exactIdentity": r.get("exactIdentity"),
+                "hasImage": r.get("hasImage"),
+                "imageUrl": r.get("imageUrl"),
+                "error": r.get("error"),
+              }
+              for r in d.get("results", [])
+            ],
+          }
+          print(json.dumps(out, ensure_ascii=False, indent=2))
+          PY
+          if [ "$code" != "200" ] && [ "$code" != "207" ]; then
+            exit 1
+          fi
+          python3 -c 'import json,sys; d=json.load(open("diagnostic.json")); sys.exit(0 if d.get("ok") is True and d.get("readOnly") is True else 1)'
