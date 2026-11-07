@@ -46,7 +46,8 @@ export async function GET(request: Request) {
   const clientId = process.env.YOUTUBE_CLIENT_ID?.trim() ?? "";
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET?.trim() ?? "";
   const redirectUri = process.env.YOUTUBE_OAUTH_REDIRECT_URI?.trim() ?? "";
-  if (!clientId || !clientSecret || !redirectUri || !process.env.AI_LIVE_OAUTH_ENCRYPTION_KEY) {
+  if (!clientId || !clientSecret || !redirectUri || !process.env.AI_LIVE_OAUTH_ENCRYPTION_KEY ||
+      `${url.origin}${url.pathname}` !== redirectUri) {
     return redirectResult(url, "failed");
   }
 
