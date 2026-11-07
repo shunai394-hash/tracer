@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { deterministicCJProductQueries } from "../lib/intelligence/deterministic-cj-product-queries.ts";
-import { normalizeCJProductDetailVariants } from "../lib/sources/cj/product-detail-variants.ts";
+import { normalizeCJProductDetailSummary, normalizeCJProductDetailVariants } from "../lib/sources/cj/product-detail-variants.ts";
 
 assert.deepEqual(deterministicCJProductQueries("  H-shaped travel neck pillow  "), ["H-shaped travel neck pillow"]);
 assert.deepEqual(deterministicCJProductQueries("   "), []);
@@ -35,9 +35,34 @@ assert.equal(detailVariants[1].variantImage, "https://cdn.example/blue.jpg");
 assert.equal(detailVariants[2].variantImage, null);
 assert.deepEqual(normalizeCJProductDetailVariants({ result: false, data: {} }, "pid-a"), []);
 
+const fullProduct = normalizeCJProductDetailSummary({
+  result: true,
+  data: {
+    id: "pid-a",
+    nameen: "Women's Shoulder Bag",
+    sku: "CJ-BAG-SPU",
+    sellprice: "7.80",
+    bigimg: "https://cdn.example/parent.jpg",
+    totalInventory: 1234,
+    listed: 9,
+    producttype: "4",
+    saleStatus: "3",
+  },
+}, "pid-a");
+assert.equal(fullProduct?.id, "pid-a");
+assert.equal(fullProduct?.title, "Women's Shoulder Bag");
+assert.equal(fullProduct?.imageUrl, "https://cdn.example/parent.jpg");
+assert.equal(fullProduct?.inventory, 1234);
+assert.equal(normalizeCJProductDetailSummary({
+  result: true,
+  data: { id: "pid-b", nameen: "Wrong product" },
+}, "pid-a"), null);
+assert.equal(normalizeCJProductDetailSummary({ result: false, data: {} }, "pid-a"), null);
+
 const cjClientSource = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
 assert.ok(cjClientSource.includes("/product/productDetail/query"));
 assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
 assert.ok(cjClientSource.includes("normalizeCJProductDetailVariants(payload, pid)"));
+assert.ok(cjClientSource.includes("return normalized ?? await queryCJProductDetailSummary(pid)"));
 
 console.log("CJ query fallback and full product-detail variant image tests passed");
