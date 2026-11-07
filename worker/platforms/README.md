@@ -125,3 +125,8 @@ configuration and an actual channel-owner authorization.
 - Contract tests cover resource creation/binding, lifecycle transitions, encoder confirmation, status checks, and that stream keys are not returned.
 
 This is a production-oriented API module, not a live-enabled worker deployment. A real secret-manager adapter, channel OAuth consent, the Supabase migration, and explicit operator-controlled orchestration are still required. Never use a raw YouTube stream key as a job payload or log field.
+
+
+## TRACER-managed YouTube chat client
+
+`create-tracer-youtube-live-chat-client.mjs` now composes the TRACER worker-only encrypted-credential endpoint, Google OAuth refresh provider, official `liveChatMessages.list` transport, and normalized YouTube chat adapter. The caller supplies the liveChatId returned by the broadcast API after the broadcast has transitioned to live. The adapter resumes with the last page token and honors the API polling interval. This factory connects only YouTube chat; TikTok still requires the approved connector supplied by the host.
