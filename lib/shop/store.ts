@@ -24,6 +24,11 @@ function hasJapaneseText(value: unknown): boolean {
   return typeof value === "string" && /[ぁ-んァ-ヶ一-龯々ー]/u.test(value);
 }
 
+function hasColorVariantLabel(...values: unknown[]): boolean {
+  const source = values.filter((value): value is string => typeof value === "string").join(" ").normalize("NFKC").toLowerCase();
+  return /ブラック|黒|ホワイト|白|グレー|灰|シルバー|銀|ゴールド|金|ベージュ|カーキ|ブラウン|茶|ピンク|パープル|紫|オレンジ|イエロー|黄|グリーン|緑|ブルー|青|レッド|赤|ネイビー|モカ|アプリコット|クリーム|black|white|gray|grey|silver|gold|beige|khaki|brown|pink|purple|orange|yellow|green|blue|red|navy|mocha|apricot|cream/u.test(source);
+}
+
 function asBoolean(value: unknown): boolean {
   return value === true;
 }
@@ -308,6 +313,7 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     supplierVariantId: candidate.supplierVariantId,
     shopifyVariantId: candidate.shopifyVariantId,
     shopifyHandle: candidate.shopifyHandle,
+    canonicalCommerce: candidate.canonicalCommerce,
   }));
   return { ...listing, variants: variants.length > 1 ? variants : [] };
 }
@@ -479,7 +485,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
       ? attributes.variationLabel.trim()
       : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
-    const variantOptionType = attributes.color ? "カラー" : attributes.size ? "サイズ" : "種類";
+    const variantOptionType = hasColorVariantLabel(attributes.color, attributes.color_ja, attributes.colorName, variantLabel, variant.title_ja) ? "カラー" : attributes.size ? "サイズ" : "種類";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
