@@ -105,7 +105,7 @@ export function createFfmpegPublisher({
       if (state === "publishing") return snapshot();
       if (state === "starting" || state === "stopping") throw new Error("publisher_transition_in_progress");
       if (!["youtube_live", "tiktok_live"].includes(destination)) throw new Error("unsupported_destination");
-      if (typeof destinationSecretRef !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(destinationSecretRef)) {
+      if (typeof destinationSecretRef !== "string" || !/^[A-Za-z0-9_:-]+(?:\/[A-Za-z0-9_:-]+){0,7}$/.test(destinationSecretRef)) {
         throw new Error("invalid_secret_reference");
       }
 
