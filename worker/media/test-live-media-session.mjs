@@ -8,6 +8,7 @@ const publisher = {
   async writeSpeechAudio(audio) { calls.push(["audio", [...audio]]); },
   async stop() { calls.push(["stop"]); publisherState = "stopped"; },
   async switchVideo(videoFile) { calls.push(["switch-video", videoFile]); publisherState = "publishing"; },
+  async switchMedia(media) { calls.push(["switch-media", media.videoFile, media.bgmFile]); publisherState = "publishing"; },
   snapshot() { return { state: publisherState }; },
 };
 const bridge = {
@@ -19,7 +20,7 @@ const bridge = {
 const session = createAiLiveMediaSession({
   publisher,
   speechBridge: bridge,
-  resolveVideoForProduct: async (id) => id === "product-42" ? "products/product-42.mp4" : "products/other.mp4",
+  resolveMediaForProduct: async (id) => id === "product-42" ? { videoFile: "products/product-42.mp4", bgmFile: "bgm/product-42.mp3" } : { videoFile: "products/other.mp4", bgmFile: "bgm/other.mp3" },
 });
 assert.equal(session.snapshot().state, "idle");
 assert.deepEqual(
@@ -43,7 +44,7 @@ assert.deepEqual(
 );
 assert.deepEqual(calls, [
   ["start", "youtube_live"],
-  ["switch-video", "products/product-42.mp4"],
+  ["switch-media", "products/product-42.mp4", "bgm/product-42.mp3"],
   ["synthesize", "価格を教えて", "product-42"],
   ["audio", [8, 9]],
 ]);
