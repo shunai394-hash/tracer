@@ -47,8 +47,10 @@ speech generation, and browser-side drama/BGM mixdown remain separate systems.
 1. Implement a worker-side fake adapter and lifecycle contract tests.
 2. Add an authenticated control-plane job API with idempotency and bounded
    runtime. Keep it read-only with respect to listings, inventory, and orders.
-3. Build a container image with pinned FFmpeg and health endpoint; run it in a
-   separate worker service, not in a Vercel Function.
+3. Build a container image with FFmpeg and health endpoint; run it in a
+   separate worker service, not in a Vercel Function. The local-only FFmpeg
+   renderer now creates MP4 segments from a still slate, TTS audio, and optional
+   looped BGM. It rejects network inputs and writes only local MP4 files.
 4. Select and verify one destination. The first adapter can use generic RTMP
    output, but platform-specific comment/API features remain off until reviewed.
 5. Run a 30-minute local/sandbox rehearsal with synthetic comments and test media.
@@ -61,7 +63,8 @@ speech generation, and browser-side drama/BGM mixdown remain separate systems.
 - FFmpeg process management or container deployment
 - RTMP publishing or platform authentication
 - Destination-specific comment ingestion
-- Product rotation scheduler and live TTS/BGM orchestration
+- Real-time product rotation and live TTS/BGM orchestration (rotation is
+  currently simulated by the fake control API)
 - Reconnect supervisor, durable queue, heartbeat persistence, and operator UI
 - Any unattended or 24-hour broadcast
 
