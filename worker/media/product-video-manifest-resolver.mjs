@@ -38,11 +38,7 @@ export function createProductVideoManifestResolver({
     throw new Error("ai_live_media_manifest_outside_media_root");
   }
 
-  let cached = null;
-  let cachedMtime = null;
   async function loadManifest() {
-    const stat = await import("node:fs/promises").then((fs) => fs.stat(absoluteManifestPath));
-    if (cached && cachedMtime === stat.mtimeMs) return cached;
     const raw = await readFileImpl(absoluteManifestPath, "utf8");
     if (Buffer.byteLength(raw, "utf8") > 1024 * 1024) {
       throw new Error("ai_live_media_manifest_too_large");
@@ -65,9 +61,7 @@ export function createProductVideoManifestResolver({
         ...(value.bgmFile ? { bgmFile: safeMediaFile(value.bgmFile, root, "bgm") } : {}),
       });
     }
-    cached = next;
-    cachedMtime = stat.mtimeMs;
-    return cached;
+    return next;
   }
 
   return async function resolveVideoForProduct(productId) {
