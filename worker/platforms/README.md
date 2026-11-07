@@ -53,6 +53,11 @@ References:
   injected provider on each request, and respects `pollingIntervalMillis`.
   OAuth consent, refresh-token storage, and broadcast/chat discovery remain
   deployment-host responsibilities.
+- `google-oauth-access-token-provider.mjs` refreshes a stored offline refresh
+  token against Google's official token endpoint, coalesces concurrent refresh
+  requests, and caches access tokens only in worker memory. The host must
+  implement OAuth consent/callback, securely store the refresh token, and
+  provide credentials through `credentialsProvider`.
 - `tiktok-live-connector-adapter.mjs` consumes an injected approved connector
   async iterable, validates its source marker, normalizes comments, and applies
   bounded reconnect backoff. It does not implement or imply a generally
