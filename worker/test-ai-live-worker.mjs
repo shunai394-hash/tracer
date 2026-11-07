@@ -39,7 +39,7 @@ try {
   response = await fetch(base + "/v1/streams/" + job.streamId, { headers });
   const rotated = await response.json();
   assert.ok(["segment-1", "segment-2"].includes(rotated.currentSegmentId));
-  assert.ok(rotated.segmentIndex === 0 || rotated.segmentIndex === 1);
+  assert.ok(Date.parse(rotated.segmentChangedAt) > Date.parse(started.segmentChangedAt));
 
   response = await fetch(base + "/v1/streams", { method: "POST", headers, body: JSON.stringify(job) });
   assert.equal(response.status, 200);
