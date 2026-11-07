@@ -8,6 +8,8 @@ export type ColorFamilyMember = {
   supplierVariantId: string | null;
   sku?: string | null;
   imageUrl: string | null;
+  /** Set only after the supplier image is visually matched to this exact variant. */
+  colorImageVerified?: boolean;
   sellingPrice: number | null;
   currency: string | null;
   inventory: number;
@@ -121,6 +123,7 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
     if (!imageUrl) blockers.push("variant_image_missing:" + member.id);
     else if (images.has(imageUrl)) blockers.push("variant_image_ambiguous:" + member.id);
     else images.set(imageUrl, member.id);
+    if (member.colorImageVerified !== true) blockers.push("variant_image_unverified:" + member.id);
 
     if (!sku) {
       if (requireSku) blockers.push("sku_missing:" + member.id);
