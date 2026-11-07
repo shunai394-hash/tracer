@@ -2,6 +2,7 @@ import "server-only";
 
 import crypto from "node:crypto";
 import { getShopifyConfig } from "@/lib/config/env";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveShopifyVariantIdentity } from "@/lib/shopify/variant-identity";
 
 export type ShopifyProduct = {
@@ -804,6 +805,9 @@ export async function unpublishShopifyProduct(productId: string): Promise<Shopif
 
 export type ShopifyColorFamilyVariantInput = {
   supplierVariantId: string;
+  canonicalVariantId: string;
+  sourceShopifyProductId: string;
+  sourceShopifyVariantId: string;
   sku: string;
   colorLabel: string;
   imageUrl: string;
@@ -851,6 +855,9 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
 
   const variants = input.variants.map((variant) => ({
     supplierVariantId: variant.supplierVariantId.trim(),
+    canonicalVariantId: variant.canonicalVariantId.trim(),
+    sourceShopifyProductId: variant.sourceShopifyProductId.trim(),
+    sourceShopifyVariantId: variant.sourceShopifyVariantId.trim(),
     sku: variant.sku.trim(),
     colorLabel: variant.colorLabel.trim(),
     imageUrl: variant.imageUrl.trim(),
@@ -860,6 +867,8 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   if (variants.length < 2) throw new Error("shopify_color_family_requires_multiple_variants");
   const unique = (values: string[]) => new Set(values).size === values.length;
   if (!unique(variants.map((variant) => variant.supplierVariantId)) ||
+      !unique(variants.map((variant) => variant.canonicalVariantId)) ||
+      !unique(variants.map((variant) => variant.sourceShopifyVariantId)) ||
       !unique(variants.map((variant) => variant.sku)) ||
       !unique(variants.map((variant) => variant.colorLabel.toLocaleLowerCase("ja-JP")))) {
     throw new Error("shopify_color_family_duplicate_variant_identity");
@@ -872,8 +881,10 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     } catch {
       validImage = false;
     }
-    if (!variant.supplierVariantId || !variant.sku || !variant.colorLabel ||
-        !validImage || !Number.isFinite(variant.price) || variant.price <= 0 ||
+    if (!variant.supplierVariantId || !variant.canonicalVariantId ||
+        !variant.sourceShopifyProductId || !variant.sourceShopifyVariantId ||
+        !variant.sku || !variant.colorLabel || !validImage ||
+        !Number.isFinite(variant.price) || variant.price <= 0 ||
         !Number.isSafeInteger(variant.inventory) || variant.inventory < 0) {
       throw new Error("shopify_color_family_variant_invalid:" + (variant.supplierVariantId || "unknown"));
     }
@@ -1133,5 +1144,57 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   if (new Set(verifiedImageIds).size !== variants.length || verifiedImageIds.length !== variants.length) {
     throw new Error("shopify_color_family_verification_color_image_mapping_failed");
   }
-  return { productId, variants: result, status: "DRAFT" };
+
+  // Preserve every former standalone Shopify variant ID as an explicit alias
+  // to its canonical commerce variant. Never infer identity from title or SKU.
+  const db = createSupabaseAdminClient();
+  const aliasRows = variants.map((variant) => ({
+    channel: "shopify",
+    variant_id: variant.canonicalVariantId,
+    external_product_id: variant.sourceShopifyProductId,
+    external_variant_id: variant.sourceShopifyVariantId,
+  }));
+  const oldExternalVariantIds = aliasRows.map((row) => row.external_variant_id);
+  const { data: existingAliases, error: aliasLookupError } = await db
+    .from("channel_listing_external_aliases")
+    .select("variant_id,external_product_id,external_variant_id")
+    .eq("channel", "shopify")
+    .in("external_variant_id", oldExternalVariantIds);
+  if (aliasLookupError) throw new Error("shopify_color_family_alias_lookup_failed:" + aliasLookupError.message);
+  const existingByExternalId = new Map((existingAliases ?? []).map((row) => [String(row.external_variant_id), row]));
+  const aliasesToInsert = aliasRows.filter((row) => {
+    const existing = existingByExternalId.get(row.external_variant_id);
+    if (existing && (String(existing.variant_id) !== row.variant_id ||
+        String(existing.external_product_id) !== row.external_product_id)) {
+      throw new Error("shopify_color_family_alias_identity_conflict:" + row.external_variant_id);
+    }
+    return !existing;
+  });
+  if (aliasesToInsert.length) {
+    const { error } = await db.from("channel_listing_external_aliases").insert(aliasesToInsert);
+    if (error) throw new Error("shopify_color_family_alias_insert_failed:" + error.message);
+  }
+  const { data: verifiedAliases, error: aliasVerifyError } = await db
+    .from("channel_listing_external_aliases")
+    .select("variant_id,external_product_id,external_variant_id")
+    .eq("channel", "shopify")
+    .in("external_variant_id", oldExternalVariantIds);
+  if (aliasVerifyError) throw new Error("shopify_color_family_alias_verification_lookup_failed:" + aliasVerifyError.message);
+  const verifiedAliasByExternalId = new Map((verifiedAliases ?? []).map((row) => [String(row.external_variant_id), row]));
+  for (const expected of aliasRows) {
+    const actual = verifiedAliasByExternalId.get(expected.external_variant_id);
+    if (!actual || String(actual.variant_id) !== expected.variant_id ||
+        String(actual.external_product_id) !== expected.external_product_id) {
+      throw new Error("shopify_color_family_alias_verification_failed:" + expected.external_variant_id);
+    }
+  }
+  return {
+    productId,
+    variants: result.map((variant) => ({
+      ...variant,
+      canonicalVariantId: variants.find((expected) => expected.sku === variant.sku)!.canonicalVariantId,
+      sourceShopifyVariantId: variants.find((expected) => expected.sku === variant.sku)!.sourceShopifyVariantId,
+    })),
+    status: "DRAFT",
+  };
 }
