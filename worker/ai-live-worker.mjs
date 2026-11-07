@@ -127,6 +127,95 @@ export function createAiLiveWorkerServer({
     }
   }
 
+  function activateRecord(record) {
+    const elapsed = Math.max(0, now() - Date.parse(record.startedAt));
+    const remainingMs = record.job.maxRuntimeSeconds * 1000 - elapsed;
+    if (remainingMs <= 0) {
+      stopRecord(record, "worker_runtime_limit");
+      return false;
+    }
+    record.timer = setTimeout(() => stopRecord(record, "worker_runtime_limit"), remainingMs);
+    record.timer.unref?.();
+    const durationMs = segmentIntervalMs ??
+      (record.job.segmentDurationSeconds ?? DEFAULT_SEGMENT_DURATION_SECONDS) * 1000;
+    if (record.job.segments.length > 1) {
+      record.segmentTimer = setInterval(() => {
+        if (record.state !== "live") return;
+        record.segmentIndex = (record.segmentIndex + 1) % record.job.segments.length;
+        record.segmentChangedAt = new Date(now()).toISOString();
+        record.lastHeartbeatAt = record.segmentChangedAt;
+      }, durationMs);
+      record.segmentTimer.unref?.();
+    }
+    if (store) {
+      record.heartbeatTimer = setInterval(async () => {
+        if (record.state !== "live") return;
+        try {
+          const renewed = await store.heartbeat(record.job.streamId, {
+            owner: workerId,
+            segmentIndex: record.segmentIndex,
+            productId: record.job.segments[record.segmentIndex]?.productId || null,
+            reconnectCount: 0,
+            leaseSeconds: 45,
+            now: new Date(now()),
+          });
+          if (!renewed) stopRecord(record, "worker_lease_lost");
+          else record.lastHeartbeatAt = new Date(now()).toISOString();
+        } catch {
+          stopRecord(record, "worker_lease_lost");
+        }
+      }, 15_000);
+      record.heartbeatTimer.unref?.();
+    }
+    return true;
+  }
+
+  async function restoreActiveStreams() {
+    if (!store) return { restored: 0, skipped: 0 };
+    const rows = await store.listActive();
+    let restored = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      if (row.adapter_mode !== "fake" || !row.job_payload || row.status === "stopped") {
+        skipped += 1;
+        continue;
+      }
+      const job = row.job_payload;
+      const validationError = validateJob(job, now());
+      const fingerprint = createHash("sha256").update(JSON.stringify(job)).digest("hex");
+      if (validationError || fingerprint !== row.job_fingerprint ||
+          !Number.isInteger(row.active_segment_index) ||
+          row.active_segment_index < 0 || row.active_segment_index >= job.segments.length) {
+        await store.markStopped(row.stream_id, { reason: "restore_validation_failed" });
+        skipped += 1;
+        continue;
+      }
+      const lease = await store.claimLease(row.stream_id, { owner: workerId, leaseSeconds: 45 });
+      if (!lease) {
+        skipped += 1;
+        continue;
+      }
+      const startedAt = row.started_at || new Date(now()).toISOString();
+      const record = {
+        job,
+        fingerprint,
+        state: "live",
+        startedAt,
+        lastHeartbeatAt: row.heartbeat_at || startedAt,
+        segmentChangedAt: row.heartbeat_at || startedAt,
+        segmentIndex: row.active_segment_index,
+        stopReason: null,
+        timer: null,
+        segmentTimer: null,
+        heartbeatTimer: null,
+      };
+      streams.set(job.streamId, record);
+      if (activateRecord(record)) restored += 1;
+      else skipped += 1;
+    }
+    return { restored, skipped };
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { ok: true });
@@ -176,42 +265,8 @@ export function createAiLiveWorkerServer({
           const lease = await store.claimLease(job.streamId, { owner: workerId, leaseSeconds: 45 });
           if (!lease) return json(res, 409, { error: "worker_lease_unavailable" });
         }
-        record.timer = setTimeout(() => {
-          stopRecord(record, "worker_shutdown");
-        }, job.maxRuntimeSeconds * 1000);
-        record.timer.unref?.();
-        const durationMs = segmentIntervalMs ??
-          (job.segmentDurationSeconds ?? DEFAULT_SEGMENT_DURATION_SECONDS) * 1000;
-        if (job.segments.length > 1) {
-          record.segmentTimer = setInterval(() => {
-            if (record.state !== "live") return;
-            record.segmentIndex = (record.segmentIndex + 1) % job.segments.length;
-            record.segmentChangedAt = new Date(now()).toISOString();
-            record.lastHeartbeatAt = record.segmentChangedAt;
-          }, durationMs);
-          record.segmentTimer.unref?.();
-        }
-        if (store) {
-          record.heartbeatTimer = setInterval(async () => {
-            if (record.state !== "live") return;
-            try {
-              const renewed = await store.heartbeat(job.streamId, {
-                owner: workerId,
-                segmentIndex: record.segmentIndex,
-                productId: job.segments[record.segmentIndex]?.productId || null,
-                reconnectCount: 0,
-                leaseSeconds: 45,
-                now: new Date(now()),
-              });
-              if (!renewed) stopRecord(record, "worker_lease_lost");
-              else record.lastHeartbeatAt = new Date(now()).toISOString();
-            } catch {
-              stopRecord(record, "worker_lease_lost");
-            }
-          }, 15_000);
-          record.heartbeatTimer.unref?.();
-        }
         streams.set(job.streamId, record);
+        if (!activateRecord(record)) return json(res, 409, { error: "worker_runtime_limit_reached" });
         return json(res, 202, snapshot(record));
       }
 
@@ -234,6 +289,7 @@ export function createAiLiveWorkerServer({
     }
   });
 
+  server.restoreActiveStreams = restoreActiveStreams;
   server.on("close", () => {
     for (const record of streams.values()) {
       clearTimeout(record.timer);
