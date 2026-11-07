@@ -5,4 +5,13 @@ assert.throws(
   () => createTracerYouTubeLiveSessionRuntime({}),
   /ai_live_stream_secret_store_configuration_required/,
 );
-console.log("TRACER YouTube production session composition guard: all assertions passed");
+const secretManager = {
+  async persistStreamSecret() { return "123e4567-e89b-12d3-a456-426614174000"; },
+  async resolveStreamSecret() { return { outputUrl: "rtmps://a.rtmp.youtube.com/live2/key" }; },
+  async deleteStreamSecret() {},
+};
+assert.throws(
+  () => createTracerYouTubeLiveSessionRuntime(secretManager),
+  /youtube_live_product_video_resolver_required/,
+);
+console.log("TRACER YouTube production session composition guards: all assertions passed");
