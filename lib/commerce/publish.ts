@@ -456,28 +456,37 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   // Query the full family so a limited publish batch cannot miss sibling colors.
   const baseColorFamilyVariantIds = new Set<string>();
   if (channel === "base") {
-    const supplierProductIds = [...new Set(candidates.flatMap((candidate) =>
-      asRelationRows(candidate.supplier_offers)
-        .map((offer) => String(offer.supplier_product_id ?? "").trim())
-        .filter(Boolean),
-    ))];
-    if (supplierProductIds.length) {
-      const { data: familyOffers, error: familyOffersError } = await db.from("supplier_offers")
-        .select("variant_id,supplier_product_id")
-        .in("supplier_product_id", supplierProductIds);
-      if (familyOffersError) throw new Error("base_color_family_lookup_failed:" + familyOffersError.message);
+    const supplierIdentities = [...new Map(candidates.flatMap((candidate) =>
+      asRelationRows(candidate.supplier_offers).flatMap((offer) => {
+        const supplierCode = String(offer.supplier_code ?? "").trim().toLowerCase();
+        const supplierProductId = String(offer.supplier_product_id ?? "").trim();
+        if (!supplierCode || !supplierProductId) return [];
+        const key = JSON.stringify([supplierCode, supplierProductId]);
+        return [[key, { supplierCode, supplierProductId }] as const];
+      }),
+    )).values()];
+    if (supplierIdentities.length) {
       const familyVariants = new Map<string, Set<string>>();
-      for (const row of familyOffers ?? []) {
-        const supplierProductId = String(row.supplier_product_id ?? "").trim();
-        const variantId = String(row.variant_id ?? "").trim();
-        if (!supplierProductId || !variantId) continue;
-        if (!familyVariants.has(supplierProductId)) familyVariants.set(supplierProductId, new Set());
-        familyVariants.get(supplierProductId)!.add(variantId);
+      for (const identity of supplierIdentities) {
+        const { data: familyOffers, error: familyOffersError } = await db.from("supplier_offers")
+          .select("variant_id,supplier_code,supplier_product_id")
+          .eq("supplier_code", identity.supplierCode)
+          .eq("supplier_product_id", identity.supplierProductId);
+        if (familyOffersError) throw new Error("base_color_family_lookup_failed:" + familyOffersError.message);
+        const key = JSON.stringify([identity.supplierCode, identity.supplierProductId]);
+        for (const row of familyOffers ?? []) {
+          const variantId = String(row.variant_id ?? "").trim();
+          if (!variantId) continue;
+          if (!familyVariants.has(key)) familyVariants.set(key, new Set());
+          familyVariants.get(key)!.add(variantId);
+        }
       }
       for (const candidate of candidates) {
         for (const offer of asRelationRows(candidate.supplier_offers)) {
+          const supplierCode = String(offer.supplier_code ?? "").trim().toLowerCase();
           const supplierProductId = String(offer.supplier_product_id ?? "").trim();
-          const ids = familyVariants.get(supplierProductId);
+          const key = JSON.stringify([supplierCode, supplierProductId]);
+          const ids = familyVariants.get(key);
           if (ids && ids.size > 1 && !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)) {
             for (const id of ids) if (!ALWAYS_ON_SALE_VARIANT_IDS.has(id)) baseColorFamilyVariantIds.add(id);
           }
