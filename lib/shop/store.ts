@@ -314,7 +314,7 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
   const imageComplete = variants.length > 1 &&
     imageUrls.length === variants.length &&
     new Set(imageUrls).size === variants.length;
-  return { ...listing, variants: imageComplete ? variants : [] };
+  return { ...listing, variants: variants.length > 1 ? variants : [] };
 }
 
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
