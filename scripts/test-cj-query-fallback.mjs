@@ -36,8 +36,8 @@ assert.equal(detailVariants[2].variantImage, null);
 assert.deepEqual(normalizeCJProductDetailVariants({ result: false, data: {} }, "pid-a"), []);
 
 const cjClientSource = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
-assert.match(cjClientSource, /productDetail\\/query/);
-assert.match(cjClientSource, /detailByVid\\.get\\(vid\\)/);
-assert.match(cjClientSource, /normalizeCJProductDetailVariants\\(payload, pid\\)/);
+assert.ok(cjClientSource.includes("/product/productDetail/query"));
+assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
+assert.ok(cjClientSource.includes("normalizeCJProductDetailVariants(payload, pid)"));
 
 console.log("CJ query fallback and full product-detail variant image tests passed");
