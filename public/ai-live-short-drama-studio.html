@@ -43,9 +43,10 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
 <p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してライブラリを読み込んでください。</p>
 <div class="grid">
-<div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
+<div><label for="bgmSelect">再生するBGM（手動選択可）</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
 <div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
 </div>
+<div class="grid"><button id="autoSelectBgm" type="button">作品ジャンルに合わせてBGMを自動選曲</button><p id="bgmMatchStatus" class="muted" role="status" aria-live="polite">作品ジャンルを基準に、登録済みの同カテゴリから選びます。該当曲がなければBGMなしになります。</p></div>
 <div class="grid"><div><label><input id="bgmLoop" type="checkbox" checked style="width:auto;margin-right:8px">ループ再生</label></div><div><audio id="bgmPreview" controls preload="none" style="width:100%;margin-top:8px"></audio></div></div>
 <p class="muted">ここでの試聴設定はプレビュー専用です。脚本や台詞音声には自動で合成・書き出しされません。</p>
 <div id="bgmTracks" class="muted"></div>
@@ -218,6 +219,35 @@ $("mixExport").addEventListener("click",createDramaMix);
 $("mixBgmVolume").addEventListener("input",()=>{$("mixBgmVolumeValue").textContent=$("mixBgmVolume").value+"%";});
 const bgmSelect=$("bgmSelect"), bgmPreview=$("bgmPreview");
 let bgmTracks=[];
+const lastAutoBgmByGenre=new Map();
+const bgmGenreByDramaGenre={
+ "日常・ヒューマン":"日常・会話",
+ "恋愛":"恋愛",
+ "ミステリー":"サスペンス",
+ "サスペンス":"サスペンス",
+ "コメディ":"コメディ"
+};
+function autoSelectBgm(){
+ const dramaGenre=$("genre").value;
+ const targetGenre=bgmGenreByDramaGenre[dramaGenre];
+ if(!targetGenre){
+  bgmSelect.value="";selectBgm();
+  $("bgmMatchStatus").textContent="「"+dramaGenre+"」に対応するBGMカテゴリは未設定です。BGMなし、または手動選択を使ってください。";
+  return;
+ }
+ const candidates=bgmTracks.filter(track=>(track.genre||"未分類").trim()===targetGenre);
+ if(!candidates.length){
+  bgmSelect.value="";selectBgm();
+  $("bgmMatchStatus").textContent="カテゴリ「"+targetGenre+"」の登録曲がありません。BGMなしにしました。別カテゴリからの自動代用は行いません。";
+  return;
+ }
+ const previous=lastAutoBgmByGenre.get(targetGenre);
+ const rotation=candidates.length>1?candidates.filter(track=>track.name!==previous):candidates;
+ const chosen=rotation[Math.floor(Math.random()*rotation.length)];
+ lastAutoBgmByGenre.set(targetGenre,chosen.name);
+ bgmSelect.value=chosen.name;selectBgm();
+ $("bgmMatchStatus").textContent="自動選曲："+chosen.title+"（"+targetGenre+"）"+(candidates.length>1?"。直前の自動選曲とは別の曲です。":"。このカテゴリの登録曲は1曲です。");
+}
 function renderBgmTracks(){
  const host=$("bgmTracks");host.replaceChildren();
  if(!bgmTracks.length){host.textContent="登録済みBGMはありません。";return;}
@@ -262,6 +292,8 @@ async function uploadBgmFiles(){
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
 $("refreshBgm").addEventListener("click",loadBgm);
+$("autoSelectBgm").addEventListener("click",autoSelectBgm);
+$("genre").addEventListener("change",()=>{$("bgmMatchStatus").textContent="作品ジャンルが変更されました。自動選曲ボタンでBGMを選び直せます。";});
 bgmSelect.addEventListener("change",selectBgm);
 $("bgmVolume").addEventListener("input",()=>{$("bgmVolumeValue").textContent=$("bgmVolume").value+"%";bgmPreview.volume=Number($("bgmVolume").value)/100;});
 $("bgmLoop").addEventListener("change",()=>bgmPreview.loop=$("bgmLoop").checked);
