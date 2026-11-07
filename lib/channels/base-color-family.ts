@@ -1,3 +1,10 @@
+/**
+ * BASE Items API variations expose label, stock, identifier, and barcode.
+ * Images belong to the item (img1–img20) and cannot be read back per variation.
+ * Color families stay unpublished on BASE until that binding exists.
+ */
+export const BASE_VARIATION_IMAGE_BINDING = "unsupported" as const;
+
 export type BaseColorFamilyCandidate = {
   id: string;
   supplierCode: string | null;

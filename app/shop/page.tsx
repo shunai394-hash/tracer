@@ -87,8 +87,8 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   if (sort === "price_asc") shown = [...shown].sort((a, b) => (a.sellingPrice ?? 0) - (b.sellingPrice ?? 0));
   if (sort === "price_desc") shown = [...shown].sort((a, b) => (b.sellingPrice ?? 0) - (a.sellingPrice ?? 0));
 
-  // Exact duplicate supplier variants are removed in listPublishedShopListings.
-  // Distinct variants must not be hidden merely because their titles normalize to one family.
+  // Exact supplier-product families are already one card in listPublishedShopListings.
+  // Similar titles never hide a different supplier product.
   const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const page = Math.min(requestedPage, pageCount);
   const pageItems = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);

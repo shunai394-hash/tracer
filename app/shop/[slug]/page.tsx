@@ -2,13 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { AddToCartButton } from "@/components/add-to-cart-button";
+import { ProductVariantSelector } from "@/components/product-variant-selector";
 import { getShopifyConfig } from "@/lib/config/env";
 import { getShopListingBySlug, listPublishedShopListings, recordShopFunnelEvent, type ShopListing } from "@/lib/shop/store";
 import { ProductCard } from "@/components/product-card";
-import { ProductImage } from "@/components/product-image";
-import { STOREFRONT_CATEGORIES, categoryOf, pickDistinct, variantFamily } from "@/lib/shop/storefront-display";
-import { formatMoney } from "@/lib/intelligence/format-display";
+import { STOREFRONT_CATEGORIES, categoryOf, takeWithImage } from "@/lib/shop/storefront-display";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -97,9 +95,6 @@ export default async function ShopProductPage({
 
   const rawShopifyDomain = getShopifyConfig().storeDomain.trim();
   const shopifyDomain = (rawShopifyDomain || "ieufrg-tb.myshopify.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const shopifyProductUrl = listing.shopifySyncStatus === "synced" && listing.shopifyHandle && shopifyDomain
-    ? `https://${shopifyDomain}/products/${encodeURIComponent(listing.shopifyHandle)}`
-    : null;
 
   const isDomesticFreeShippingItem = listing.id === "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
   const storefrontBaseUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://tracer-pied-alpha.vercel.app").replace(/\/$/, "");
@@ -124,10 +119,14 @@ export default async function ShopProductPage({
 
   let related: ShopListing[] = [];
   try {
-    const family = variantFamily(listing.title);
     const category = categoryOf(listing.title);
-    related = pickDistinct(
-      (await listPublishedShopListings()).filter((item) => item.id !== listing.id && categoryOf(item.title) === category && variantFamily(item.title) !== family),
+    const supplierKey = listing.productId && listing.supplierProductId ? `${listing.productId}:${listing.supplierProductId}` : "";
+    related = takeWithImage(
+      (await listPublishedShopListings()).filter((item) => {
+        if (item.id === listing.id || categoryOf(item.title) !== category) return false;
+        const key = item.productId && item.supplierProductId ? `${item.productId}:${item.supplierProductId}` : "";
+        return !supplierKey || key !== supplierKey;
+      }),
       4,
     );
   } catch {
@@ -168,56 +167,14 @@ export default async function ShopProductPage({
           ) : null}
         </nav>
 
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
-          <div className="md:sticky md:top-24 md:self-start">
-            <div className="overflow-hidden rounded-2xl bg-[#F4ECE6]">
-              <ProductImage src={listing.imageUrl} alt={listing.title} eager className="aspect-[4/5] w-full object-cover" />
-            </div>
-          </div>
-
-          <div>
-            {category ? <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{category.label}</p> : null}
-            <h1 className="mt-2 font-serif text-2xl leading-snug sm:text-[28px]">{listing.title}</h1>
-
-            <div className="mt-5 flex items-baseline gap-2">
-              <p className="text-[28px] font-semibold tracking-tight">{formatMoney(listing.sellingPrice, listing.currency)}</p>
-              <span className="text-xs text-neutral-500">表示価格</span>
-            </div>
-            <p className={listing.inventory > 0 && listing.inventory <= 5 ? "mt-2 text-sm text-[#B84A62]" : "mt-2 text-sm text-[#5C4035]"}>
-              {listing.inventory <= 0 ? "在庫切れ" : listing.inventory <= 5 ? `残りわずか（あと${listing.inventory}点）` : "在庫あり"}
-            </p>
-            {isDomesticFreeShippingItem ? <p className="mt-3 inline-flex items-center rounded-full border border-[#D7B9A8] bg-white px-4 py-2 text-sm font-semibold text-[#75402F]">国内送料無料</p> : null}
-
-            <div className="mt-6">
-              {shopifyProductUrl ? (
-                <a
-                  href={shopifyProductUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2"
-                >
-                  Shopifyで購入する
-                </a>
-              ) : (
-                <AddToCartButton
-                  listingId={listing.id}
-                  slug={listing.slug}
-                  title={listing.title}
-                  unitPrice={listing.sellingPrice}
-                  currency={listing.currency}
-                  imageUrl={listing.imageUrl}
-                />
-              )}
-              <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                注文内容・配送条件は、購入手続き画面でご確認ください。
-              </p>
-            </div>
-
-            <ul className="mt-6 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#5C4035] sm:text-xs">
-              <li className="rounded-xl bg-white/70 px-2 py-3">価格・配送条件を<br />購入前に確認</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">配送情報を<br />購入前に確認</li>
-              <li className="rounded-xl bg-white/70 px-2 py-3">商品情報を<br />掲載前に確認</li>
-            </ul>
+        <ProductVariantSelector
+          listing={listing}
+          variants={listing.variants ?? []}
+          categoryLabel={category?.label ?? null}
+          shopifyDomain={shopifyDomain}
+          saleBlocked={listing.colorSaleBlocked === true}
+        />
+        {isDomesticFreeShippingItem ? <p className="mt-3 inline-flex items-center rounded-full border border-[#D7B9A8] bg-white px-4 py-2 text-sm font-semibold text-[#75402F]">国内送料無料</p> : null}
 
             {listing.description ? (
               <section aria-labelledby="description-heading" className="mt-8 border-t border-[#EADBD3] pt-6">
@@ -233,7 +190,7 @@ export default async function ShopProductPage({
                   <span aria-hidden="true" className="text-[#9A6B5B] transition group-open:rotate-45">＋</span>
                 </summary>
                 <p className="mt-3 leading-7 text-[#5C4035]">
-                  サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。商品画像はモニター環境により実物と色味が異なって見える場合があります。
+                  色を選ぶと、その色の商品画像・価格・在庫に切り替わります。サイズ・素材・カラーなど、商品ごとの仕様を購入前にご確認ください。商品画像はモニター環境により実物と色味が異なって見える場合があります。
                 </p>
               </details>
               <details className="group py-4">
@@ -246,8 +203,6 @@ export default async function ShopProductPage({
                 </p>
               </details>
             </div>
-          </div>
-        </div>
 
         {related.length > 0 ? (
           <section aria-labelledby="related-heading" className="mt-16 sm:mt-24">

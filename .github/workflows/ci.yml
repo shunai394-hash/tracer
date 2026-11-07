@@ -144,6 +144,8 @@ jobs:
         run: npm run test:shopify-color-family-plan
       - name: Test Shopify color-family executor safety contract
         run: npm run test:shopify-color-family-executor
+      - name: Test storefront color family
+        run: npm run test:storefront-color-family
       - name: Test Shopify color-variant identity safety
         run: node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs
       - run: npm run lint

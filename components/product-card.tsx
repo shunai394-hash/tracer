@@ -38,7 +38,7 @@ export function ProductCard({ listing, priority = false }: { listing: ShopListin
           <span className="text-[11px] font-medium text-[#594238]">表示価格</span>
         </div>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold tracking-[0.04em] text-[#75402F]">TRACER SELECT</span>
+          <span className="text-[11px] font-semibold tracking-[0.04em] text-[#75402F]">{listing.variants && listing.variants.length > 1 ? `${listing.variants.length}色` : "TRACER SELECT"}</span>
           <span className={lowStock ? "text-[11px] font-medium text-[#A33E50]" : "text-[11px] font-medium text-[#594238]"}>
             {lowStock ? "残りわずか" : listing.inventory > 0 ? "在庫あり" : "在庫切れ"}
           </span>

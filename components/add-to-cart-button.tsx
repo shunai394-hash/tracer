@@ -7,6 +7,9 @@ export function AddToCartButton(props: {
   listingId: string;
   slug: string;
   title: string;
+  colorLabel?: string | null;
+  sku?: string | null;
+  supplierVariantId?: string | null;
   unitPrice: number | null;
   currency: string | null;
   imageUrl: string | null;
@@ -21,6 +24,9 @@ export function AddToCartButton(props: {
       listingId: props.listingId,
       slug: props.slug,
       title: props.title,
+      colorLabel: props.colorLabel ?? null,
+      sku: props.sku ?? null,
+      supplierVariantId: props.supplierVariantId ?? null,
       unitPrice: props.unitPrice,
       currency: props.currency,
       imageUrl: props.imageUrl,

@@ -3,7 +3,7 @@ import { listPublishedShopListings } from "@/lib/shop/store";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
 import { ProductImage } from "@/components/product-image";
-import { STOREFRONT_CATEGORIES, STOREFRONT_IMAGES, categoryOf, pickDistinct } from "@/lib/shop/storefront-display";
+import { STOREFRONT_CATEGORIES, STOREFRONT_IMAGES, categoryOf, takeWithImage } from "@/lib/shop/storefront-display";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -29,7 +29,7 @@ export default async function HomePage() {
     .map((category) => ({ ...category, items: byCategory.get(category.slug) ?? [] }))
     .filter((category) => category.items.length > 0);
   // Pickup alternates categories so the first row is not only bags.
-  const perCategory = categories.map((category) => pickDistinct(category.items, 8));
+  const perCategory = categories.map((category) => takeWithImage(category.items, 8));
   // Pinned merchandising slot: keep this exact priority product on the homepage
   // even if a catalog filter or sort rule changes. The fallback is display-only;
   // stock/order eligibility must still come from the live listing record.
@@ -161,7 +161,7 @@ export default async function HomePage() {
             <section key={category.slug} className="mx-auto max-w-6xl px-6 pt-16 sm:pt-20">
               <SectionHeading eyebrow={category.slug.toUpperCase()} title={category.label} link={{ href: `/shop?cat=${category.slug}`, label: `${category.label}をすべて見る` }} />
               <div className="mt-8 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-5">
-                {pickDistinct(category.items, 4).map((listing) => <ProductCard key={listing.id} listing={listing} />)}
+                {takeWithImage(category.items, 4).map((listing) => <ProductCard key={listing.id} listing={listing} />)}
               </div>
             </section>
           ))}
