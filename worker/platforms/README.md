@@ -113,3 +113,15 @@ the planned authenticated Live Streaming API workflow. Google consent, OAuth
 client registration, callback hosting, state persistence, secure token storage,
 broadcast creation/binding, and live publishing still require deployment
 configuration and an actual channel-owner authorization.
+
+
+## YouTube broadcast and ingest lifecycle
+
+- `youtube-live-broadcast-manager.mjs` uses the official Live Streaming API to create a dedicated RTMP ingest stream, create a scheduled broadcast, and bind the two resources.
+- The ingest URL and stream key are passed directly to the injected secret-manager callback. The manager returns only an opaque secret reference; status responses never expose ingest credentials.
+- The broadcast is created as **unlisted** by default, with auto-start/auto-stop disabled and monitor stream disabled. This allows a controlled explicit transition to live without a mandatory testing phase.
+- The host must start FFmpeg using the opaque secret reference, verify the YouTube ingest stream reports `active`, and explicitly call `startBroadcast({ confirmEncoderActive: true })`. The manager checks the binding, readiness, and active ingest status before transitioning the broadcast to `live`.
+- `completeBroadcast` ends the YouTube broadcast but deliberately does not stop the local encoder; the host must coordinate both sides and verify shutdown.
+- Contract tests cover resource creation/binding, lifecycle transitions, encoder confirmation, status checks, and that stream keys are not returned.
+
+This is a production-oriented API module, not a live-enabled worker deployment. A real secret-manager adapter, channel OAuth consent, the Supabase migration, and explicit operator-controlled orchestration are still required. Never use a raw YouTube stream key as a job payload or log field.
