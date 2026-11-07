@@ -10,7 +10,7 @@ const args = buildFfmpegArgs({
 });
 assert.ok(args.includes("pipe:0"));
 assert.ok(args.includes("libx264"));
-assert.ok(args.includes("amix=inputs=2:duration=longest:dropout_transition=2:normalize=0"));
+assert.ok(args.some((arg) => arg.includes("amix=inputs=2:duration=longest:dropout_transition=2:normalize=0")));
 assert.equal(args.at(-1), "rtmps://a.rtmp.youtube.com/live2/secret");
 
 let spawnCalls = [];
