@@ -138,6 +138,10 @@ jobs:
       - run: npm run test:base-stale-item-deletion-contract
       - run: npm run test:archive-listing-republication
       - run: npm run test:archived-listing-republication-guards
+      - name: Test BASE color-family publication guard
+        run: npm run test:base-color-family-guard
+      - name: Test Shopify color-family migration planner
+        run: npm run test:shopify-color-family-plan
       - name: Test Shopify color-variant identity safety
         run: node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs
       - run: npm run lint
