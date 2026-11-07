@@ -160,9 +160,9 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
 
 /**
  * Collapse listings that share one canonical product and one exact supplier
- * product id. Title similarity never creates a family. A family with a missing
- * color image, SKU, price, or stock is returned as unsellable instead of as
- * separate product pages.
+ * product id. Title similarity never creates a family. A family with image-only
+ * evidence gaps stays as separate existing listings until distinct color images
+ * are verified; other identity, SKU, price, or stock failures fail closed.
  */
 export function groupExactColorFamilies<T extends ColorFamilyMember>(
   members: T[],
@@ -198,7 +198,23 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       }
       continue;
     }
-    catalog.push(group.length > 1 ? buildFamily(group, requireSku) : single(group[0]));
+    if (group.length === 1) {
+      catalog.push(single(group[0]));
+      continue;
+    }
+    const family = buildFamily(group, requireSku);
+    const imageOnlyBlock = family.colorSaleBlocked
+      && family.colorSaleBlockers.length > 0
+      && family.colorSaleBlockers.every((blocker) => blocker.startsWith("variant_image_"));
+    // Keep already-published color listings individually purchasable while CJ
+    // image evidence is incomplete. Never claim they are one selectable family.
+    // Once every distinct color image is verified, the same exact-ID group
+    // becomes one color selector automatically.
+    if (imageOnlyBlock) {
+      for (const member of group) catalog.push(single(member));
+    } else {
+      catalog.push(family);
+    }
   }
 
   return { catalog };
