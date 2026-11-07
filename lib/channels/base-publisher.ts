@@ -231,20 +231,24 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
-  const publicationBlockedIds = new Set([...identityUnlinkedIds, ...familyBlockedListingIds]);
-  if (publicationBlockedIds.size > 0) {
-    const now = new Date().toISOString();
-    const { error: blockError } = await supabase.from("shop_listings").update({
-      published: false,
-      orderable: false,
-      published_at: null,
-      pipeline_stage: "BLOCKED",
-      pipeline_status: "blocked",
+  const nowBlocked = new Date().toISOString();
+  if (identityUnlinkedIds.size > 0) {
+    const { error } = await supabase.from("shop_listings").update({
+      published: false, orderable: false, published_at: null,
+      pipeline_stage: "BLOCKED", pipeline_status: "blocked",
       pipeline_reason: "supplier_identity_unlinked",
-      pipeline_updated_at: now,
-      updated_at: now,
-    }).in("id", [...publicationBlockedIds]);
-    if (blockError) throw new Error(`supplier_identity_block_failed:${blockError.message}`);
+      pipeline_updated_at: nowBlocked, updated_at: nowBlocked,
+    }).in("id", [...identityUnlinkedIds]);
+    if (error) throw new Error(`supplier_identity_block_failed:${error.message}`);
+  }
+  if (familyBlockedListingIds.size > 0) {
+    const { error } = await supabase.from("shop_listings").update({
+      published: false, orderable: false, published_at: null,
+      pipeline_stage: "BLOCKED", pipeline_status: "blocked",
+      pipeline_reason: "color_family_variant_unverified",
+      pipeline_updated_at: nowBlocked, updated_at: nowBlocked,
+    }).in("id", [...familyBlockedListingIds]);
+    if (error) throw new Error(`color_family_block_failed:${error.message}`);
   }
 
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
