@@ -33,7 +33,6 @@ export function createTracerYouTubeLiveSession({
   let mediaRuntime = null;
   let chatClient = null;
   let live = false;
-  let operation = Promise.resolve();
 
   const snapshot = () => ({
     state,
