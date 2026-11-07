@@ -47,9 +47,19 @@ const sharedImage = groupExactColorFamilies([
   member(FAMILIES[0], 0),
   member(FAMILIES[0], 1, { imageUrl: member(FAMILIES[0], 0).imageUrl }),
 ]).catalog;
-assert.equal(sharedImage.length, 1);
-assert.equal(sharedImage[0].colorSaleBlocked, true);
-assert.ok(sharedImage[0].colorSaleBlockers.some((blocker) => blocker.startsWith("variant_image_ambiguous")));
+assert.equal(sharedImage.length, 2);
+assert.ok(sharedImage.every((item) => item.colorSaleBlocked === false));
+assert.ok(sharedImage.every((item) => item.variants.length === 0));
+assert.ok(sharedImage.every((item) => item.title.includes("（")));
+assert.ok(sharedImage.every((item) => item.id)); 
+
+const missingImages = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { imageUrl: null }),
+  member(FAMILIES[0], 1, { imageUrl: null }),
+]).catalog;
+assert.equal(missingImages.length, 2);
+assert.ok(missingImages.every((item) => item.colorSaleBlocked === false));
+assert.ok(missingImages.every((item) => item.variants.length === 0));
 
 const differentProducts = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "同じ名前（ブラック）" }),
@@ -99,4 +109,4 @@ assert.match(store, /row\.colorSaleBlocked !== true/);
 assert.match(store, /supplier_variant_id: line\.listing\.supplier_variant_id/);
 assert.match(store, /colorSelections/);
 
-console.log("storefront color family: 15 colors, purchase gate, cart identity passed");
+console.log("storefront color family: 15 synthetic variants, exact identity, image-gap sales fallback, and cart identity passed");
