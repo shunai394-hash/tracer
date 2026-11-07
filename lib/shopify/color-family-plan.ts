@@ -1,6 +1,7 @@
 export type ShopifyColorSource = {
   productId: string;
   variantId: string;
+  supplierCode: string;
   supplierProductId: string;
   supplierVariantId: string;
   sku: string;
@@ -13,6 +14,7 @@ export type ShopifyColorSource = {
 export type ShopifyColorFamilyPlan = {
   ok: boolean;
   productId: string;
+  supplierCode: string;
   supplierProductId: string;
   optionName: "カラー";
   variants: Array<{
@@ -37,16 +39,19 @@ export type ShopifyColorFamilyPlan = {
  */
 export function planShopifyColorFamily(input: {
   canonicalProductId: string;
+  expectedSupplierCode: string;
   expectedSupplierProductId: string;
   sources: ShopifyColorSource[];
   expectedSupplierVariantIds: string[];
 }): ShopifyColorFamilyPlan {
   const blockers: string[] = [];
   const canonicalProductId = input.canonicalProductId.trim();
+  const expectedSupplierCode = input.expectedSupplierCode.trim().toLowerCase();
   const expectedSupplierProductId = input.expectedSupplierProductId.trim();
   const rawExpected = input.expectedSupplierVariantIds.map((id) => id.trim()).filter(Boolean);
   const expected = [...new Set(rawExpected)];
   if (!canonicalProductId) blockers.push("canonical_product_id_missing");
+  if (!expectedSupplierCode) blockers.push("expected_supplier_code_missing");
   if (!expectedSupplierProductId) blockers.push("expected_supplier_product_id_missing");
   if (expected.length < 2) blockers.push("expected_variants_incomplete");
   if (rawExpected.length !== expected.length) blockers.push("expected_supplier_variant_id_duplicate");
@@ -61,6 +66,7 @@ export function planShopifyColorFamily(input: {
     const sku = source.sku.trim();
     const variantId = source.variantId.trim();
     const colorLabel = source.colorLabel.trim();
+    const supplierCode = source.supplierCode.trim().toLowerCase();
     const supplierProductId = source.supplierProductId.trim();
 
     if (!id) {
@@ -76,6 +82,8 @@ export function planShopifyColorFamily(input: {
     }
 
     if (!source.productId.trim() || !variantId) blockers.push("shopify_source_identity_missing:" + id);
+    if (!supplierCode) blockers.push("supplier_code_missing:" + id);
+    else if (expectedSupplierCode && supplierCode !== expectedSupplierCode) blockers.push("supplier_code_mismatch:" + id);
     if (!supplierProductId) blockers.push("supplier_product_id_missing:" + id);
     else if (expectedSupplierProductId && supplierProductId !== expectedSupplierProductId) {
       blockers.push("supplier_product_id_mismatch:" + id);
@@ -120,6 +128,7 @@ export function planShopifyColorFamily(input: {
     return [{
       sourceProductId: source.productId,
       sourceVariantId: source.variantId,
+      supplierCode: source.supplierCode.trim().toLowerCase(),
       supplierProductId: source.supplierProductId.trim(),
       supplierVariantId: id,
       sku: source.sku.trim(),
@@ -133,6 +142,7 @@ export function planShopifyColorFamily(input: {
   return {
     ok: blockers.length === 0 && variants.length === expected.length,
     productId: canonicalProductId,
+    supplierCode: expectedSupplierCode,
     supplierProductId: expectedSupplierProductId,
     optionName: "カラー",
     variants,
