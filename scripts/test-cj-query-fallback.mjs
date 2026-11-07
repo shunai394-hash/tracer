@@ -59,6 +59,18 @@ assert.equal(normalizeCJProductDetailSummary({
 }, "pid-a"), null);
 assert.equal(normalizeCJProductDetailSummary({ result: false, data: {} }, "pid-a"), null);
 
+const cjImporterSource = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+for (const mapping of [
+  '[/pink leopard/, "ピンクレオパード"]',
+  '[/white flowers?/, "ホワイトフラワー"]',
+  '[/cow pattern/, "カウ柄"]',
+  '[/\\\\bcoffee\\\\b/, "コーヒー色"]',
+  '[/large\\\\s+white/, "大・ホワイト"]',
+  '[/medium\\\\s+white/, "中・ホワイト"]',
+]) {
+  assert.ok(cjImporterSource.includes(mapping), "CJ variant label mapping missing: " + mapping);
+}
+
 const cjClientSource = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
 assert.ok(cjClientSource.includes("/product/productDetail/query"));
 assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
