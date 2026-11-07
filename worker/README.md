@@ -94,3 +94,19 @@ switching and production platform comment adapters remain future work. Before en
 in a production secret manager and verify each YouTube/TikTok account's current
 stream eligibility and platform policy requirements. Mount only approved
 media files under `AI_LIVE_MEDIA_ROOT`; do not place stream keys in job JSON.
+
+
+## YouTube OAuth credential bridge
+
+The admin OAuth callback at `/api/admin/ai-live/youtube/callback` stores the refresh token as AES-256-GCM ciphertext in `ai_live_oauth_credentials`. The encryption key remains in deployment secrets. The worker retrieves the decrypted credential only over HTTPS from the internal `/api/admin/ai-live/youtube/credentials` endpoint using `AI_LIVE_WORKER_TOKEN`.
+
+Required deployment secrets (not configured by this code change):
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_OAUTH_REDIRECT_URI` (must be the production callback URL)
+- `AI_LIVE_OAUTH_ENCRYPTION_KEY` (32 bytes, base64 or 64-character hex)
+- `AI_LIVE_WORKER_TOKEN` (at least 24 characters; same value in the app and worker)
+
+The migration `20261107040000_ai_live_oauth_credentials.sql` must be applied before connecting. The admin-only `POST /api/admin/ai-live/youtube/connect` endpoint requires `Authorization: Bearer <TRACER_ADMIN_TOKEN>` and returns an authorization URL; the caller must navigate the same browser to that URL so the HttpOnly OAuth state cookie is retained. The callback never returns token material to the browser. The worker credential endpoint is separate and requires the worker token.
+
+This completes secure token handoff only. It does not create a YouTube broadcast, bind a stream, start publishing, or authorize TikTok. Actual OAuth consent and production secret/migration setup remain operator steps.
