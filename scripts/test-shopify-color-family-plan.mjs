@@ -12,6 +12,7 @@ const sources = ids.map((supplierVariantId, i) => ({
   sku: "TRC-COLOR-" + i,
   colorLabel: ["ゼブラ柄", "クロコ柄", "ブラック", "ブルー", "グレー・ブラック"][i],
   imageUrl: "https://cdn.example.test/" + i + ".jpg",
+  colorImageVerified: true,
   price: 11546,
   inventory: 10,
 }));
@@ -30,6 +31,13 @@ assert.deepEqual(valid.variants.map((v) => v.supplierVariantId), ids);
 assert.deepEqual(valid.variants.map((v) => v.colorLabel), ["ゼブラ柄", "クロコ柄", "ブラック", "ブルー", "グレー・ブラック"]);
 assert.ok(valid.variants.every((v) => v.supplierCode === "cj" && v.supplierProductId === supplierProductId));
 assert.deepEqual(valid.destructiveActions, []);
+
+const unverifiedImage = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 2 ? { ...s, colorImageVerified: false } : s),
+});
+assert.equal(unverifiedImage.ok, false);
+assert.ok(unverifiedImage.blockers.includes("variant_image_unverified:sv-black"));
 
 const missingImage = planShopifyColorFamily({
   ...input,
