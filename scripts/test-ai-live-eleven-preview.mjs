@@ -62,7 +62,11 @@ assert.ok(submitAt !== -1 && fetchAt > submitAt);
 assert.equal(page.indexOf("fetch(", fetchAt + 1), -1);
 
 assert.match(canonicalPreview, /架空のデモデータ/);
-assert.doesNotMatch(canonicalPreview, /fetch\s*\(|WebSocket|EventSource|eleven-v4-turbo|ELEVENLABS_API_KEY/);
+assert.match(canonicalPreview, /fetch\('\/api\/admin\/ai-live\/short-drama\/bgm'/);
+assert.match(canonicalPreview, /Authorization:\s*'Bearer '\s*\+\s*token/);
+assert.doesNotMatch(canonicalPreview, /WebSocket|EventSource|https?:\/\//);
+assert.doesNotMatch(canonicalPreview, /fetch\s*\(\s*['"]https?:/);
+assert.doesNotMatch(canonicalPreview, /eleven-v4-turbo|ELEVENLABS_API_KEY/);
 
 const compiled = ts.transpileModule(routeSource, {
   compilerOptions: {
