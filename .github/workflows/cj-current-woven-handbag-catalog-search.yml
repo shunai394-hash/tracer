@@ -34,6 +34,8 @@ jobs:
             "searches": d.get("searches"),
             "candidateCount": d.get("candidateCount"),
             "imageVariantCount": d.get("imageVariantCount"),
+            "exactVariantChecks": d.get("exactVariantChecks"),
+            "exactVariantCheckLimit": d.get("exactVariantCheckLimit"),
             "freightNote": d.get("freightNote"),
             "candidates": d.get("candidates"),
           }, ensure_ascii=False, indent=2))
