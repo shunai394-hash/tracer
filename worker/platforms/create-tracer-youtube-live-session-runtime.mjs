@@ -2,6 +2,7 @@ import { createTracerYouTubeLiveControl } from "./create-tracer-youtube-live-con
 import { createTracerYouTubeLiveChatClient } from "./create-tracer-youtube-live-chat-client.mjs";
 import { createAiLiveMediaRuntime } from "../media/create-ai-live-media-runtime.mjs";
 import { createTracerYouTubeLiveSession } from "./create-tracer-youtube-live-session.mjs";
+import { createSupabaseYouTubeStreamSecretStore } from "./supabase-youtube-stream-secret-store.mjs";
 
 /**
  * Production composition root for YouTube Live. Deployment supplies a real
@@ -15,6 +16,9 @@ export function createTracerYouTubeLiveSessionRuntime({
   persistStreamSecret,
   resolveStreamSecret,
   deleteStreamSecret,
+  supabaseUrl,
+  supabaseServiceRoleKey,
+  streamSecretEncryptionKey = process.env.AI_LIVE_OAUTH_ENCRYPTION_KEY,
   fetchImpl = fetch,
   speechBridge,
   resolveVideoForProduct,
@@ -29,27 +33,31 @@ export function createTracerYouTubeLiveSessionRuntime({
   pollIntervalMs,
   activeTimeoutMs,
 } = {}) {
-  if (typeof persistStreamSecret !== "function" ||
-      typeof resolveStreamSecret !== "function" ||
-      typeof deleteStreamSecret !== "function") {
-    throw new Error("youtube_live_secret_manager_contract_required");
-  }
+  const secretStore = typeof persistStreamSecret === "function" &&
+    typeof resolveStreamSecret === "function" && typeof deleteStreamSecret === "function"
+    ? { persistStreamSecret, resolveStreamSecret, deleteStreamSecret }
+    : createSupabaseYouTubeStreamSecretStore({
+      url: supabaseUrl || process.env.SUPABASE_URL,
+      serviceRoleKey: supabaseServiceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY,
+      encryptionKey: streamSecretEncryptionKey,
+      fetchImpl,
+    });
   const broadcastControl = createTracerYouTubeLiveControl({
     baseUrl,
     workerToken,
-    persistStreamSecret,
-    deleteStreamSecret,
+    persistStreamSecret: secretStore.persistStreamSecret,
+    deleteStreamSecret: secretStore.deleteStreamSecret,
     fetchImpl,
   });
   return createTracerYouTubeLiveSession({
     broadcastControl,
-    deleteStreamSecret,
+    deleteStreamSecret: secretStore.deleteStreamSecret,
     ...(sleep ? { sleep } : {}),
     ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
     ...(activeTimeoutMs !== undefined ? { activeTimeoutMs } : {}),
     ...(onError ? { onError } : {}),
     createMediaRuntime: async () => createAiLiveMediaRuntime({
-      secretResolver: resolveStreamSecret,
+      secretResolver: secretStore.resolveStreamSecret,
       ...(speechBridge ? { speechBridge } : {}),
       ...(resolveVideoForProduct ? { resolveVideoForProduct } : {}),
       ...(mediaRoot ? { mediaRoot } : {}),
