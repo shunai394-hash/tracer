@@ -206,10 +206,16 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       continue;
     }
     const family = buildFamily(group, requireSku);
-    // A family without verified, distinct color images must not be sold at
-    // all. Keeping the old standalone pages purchasable would let customers
-    // buy a color whose image mapping is not proven.
-    if (family.colorSaleBlocked) {
+    const imageOnlyBlock = family.colorSaleBlocked
+      && family.colorSaleBlockers.length > 0
+      && family.colorSaleBlockers.every((blocker) => blocker.startsWith("variant_image_"));
+    // If only color-image evidence is missing, do not pretend the colors can be
+    // selected on one page. Preserve each existing listing and its current
+    // purchase path until CJ provides distinct, verified images. Identity,
+    // SKU, price, and inventory failures still fail closed.
+    if (imageOnlyBlock) {
+      for (const member of group) catalog.push(single(member));
+    } else if (family.colorSaleBlocked) {
       for (const member of group) {
         catalog.push(single(member, ["color_family_unverified:" + family.colorSaleBlockers.join(",")]));
       }
