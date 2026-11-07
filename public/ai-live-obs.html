@@ -165,7 +165,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    await speechAudio.play();
   }catch(e){$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus(e.message||'音声生成に失敗しました')}
  }
- $('speak').addEventListener('click',speak);\n $('loadVoices').addEventListener('click',loadFishVoices);
+ $('speak').addEventListener('click',speak);
+ $('loadVoices').addEventListener('click',loadFishVoices);
  $('loadProducts').addEventListener('click',loadProducts);
  $('applyProduct').addEventListener('click',applyProduct);
  $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
