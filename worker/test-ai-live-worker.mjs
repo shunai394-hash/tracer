@@ -80,6 +80,44 @@ try {
   assert.equal(afterStop.state, "stopped");
   assert.equal(afterStop.segmentIndex, stoppedIndex);
 
+  const feedCalls = [];
+  const feedServer = createAiLiveWorkerServer({
+    token,
+    mode: "fake",
+    productFeedProvider: async ({ limit }) => {
+      feedCalls.push(limit);
+      return [{
+        id: "feed-segment-1",
+        productId: "canonical-listing-01",
+        scriptText: "検証済みの商品を紹介します。",
+        factsVersion: "verified-v1",
+        factsVerifiedAt: fresh(),
+      }];
+    },
+  });
+  await new Promise((resolve) => feedServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const feedJob = { ...job, streamId: "test_stream_feed01", segments: [{
+      id: "untrusted-client-segment",
+      productId: "untrusted-product",
+      scriptText: "client supplied content",
+      factsVersion: "client-v1",
+      factsVerifiedAt: fresh(),
+    }] };
+    const feedResponse = await fetch("http://127.0.0.1:" + feedServer.address().port + "/v1/streams", {
+      method: "POST", headers, body: JSON.stringify(feedJob),
+    });
+    assert.equal(feedResponse.status, 202);
+    const feedStarted = await feedResponse.json();
+    assert.equal(feedStarted.currentSegmentId, "feed-segment-1");
+    assert.deepEqual(feedCalls, [20]);
+    await fetch("http://127.0.0.1:" + feedServer.address().port + "/v1/streams/test_stream_feed01/stop", {
+      method: "POST", headers,
+    });
+  } finally {
+    await new Promise((resolve) => feedServer.close(resolve));
+  }
+
   const persistenceCalls = [];
   const fakeStore = {
     async listActive() { return []; },
@@ -179,6 +217,7 @@ try {
   }
 
   assert.throws(() => createAiLiveWorkerServer({ token, mode: "ffmpeg" }), /fake adapter is implemented/);
+  assert.throws(() => createAiLiveWorkerServer({ token, productFeedProvider: true }), /product_feed_provider_must_be_a_function/);
   console.log("AI Live worker control API and simulated product rotation: all assertions passed");
 } finally {
   await new Promise((resolve) => server.close(resolve));
