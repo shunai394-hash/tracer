@@ -60,6 +60,14 @@ assert.equal(normalizeCJProductDetailSummary({
 assert.equal(normalizeCJProductDetailSummary({ result: false, data: {} }, "pid-a"), null);
 
 const cjImporterSource = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
+for (const pattern of [
+  String.raw`[/\\bcoffee\\b/, "コーヒー色"]`,
+  String.raw`[/large\\s+white/, "大・ホワイト"]`,
+  String.raw`[/medium\\s+white/, "中・ホワイト"]`,
+]) {
+  assert.ok(cjImporterSource.includes(pattern), "CJ variant label regex must use real regex escapes: " + pattern);
+}
+
 for (const label of ["ピンクレオパード", "ホワイトフラワー", "カウ柄", "コーヒー色", "大・ホワイト", "中・ホワイト"]) {
   assert.ok(cjImporterSource.includes(label), "CJ variant label mapping missing: " + label);
 }
