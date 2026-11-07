@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
-import { getBaseShopIdentity, isBaseConfigured, listBaseOrders } from "@/lib/channels/base";
+import { getBaseShopIdentity, isBaseConfigured, listBaseOrders, probeBaseReadOnly } from "@/lib/channels/base";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,10 +23,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [shopIdentity, first, second] = await Promise.all([
+    const [shopIdentity, first, second, apiProbe] = await Promise.all([
       getBaseShopIdentity(),
       listBaseOrders({ limit: 100, offset: 0 }),
       listBaseOrders({ limit: 100, offset: 100 }),
+      probeBaseReadOnly({ itemPageLimit: 100, itemMaxPages: 1 }),
     ]);
     const orders = [...first, ...second];
     const dispatchStatuses: Record<string, number> = {};
@@ -47,6 +48,15 @@ export async function GET(request: Request) {
       ],
       totalReturned: orders.length,
       dispatchStatuses,
+      apiCrossCheck: {
+        ordersEndpointCount: apiProbe.orders.countReturned,
+        ordersEndpointStatus: apiProbe.orders.apiStatus,
+        itemsEndpointStatus: apiProbe.items.apiStatus,
+        itemsFirstPageCount: apiProbe.items.countReturned,
+        itemsVisibleCount: apiProbe.items.visibleCount,
+        itemsHiddenCount: apiProbe.items.hiddenCount,
+        itemsProbeError: apiProbe.items.errorStage,
+      },
       checkedAt: new Date().toISOString(),
       privacy: "No order IDs, customer details, order payloads, or credentials returned.",
     }, { status: 200, headers: { "Cache-Control": "no-store" } });
