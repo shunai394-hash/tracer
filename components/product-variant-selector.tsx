@@ -34,7 +34,9 @@ export function ProductVariantSelector({
     }];
     return rows;
   }, [listing, variants]);
-  const [selectedId, setSelectedId] = useState(listing.id);
+  const [selectedId, setSelectedId] = useState(() =>
+    choices.find((choice) => choice.supplierVariantId && choice.supplierVariantId === listing.supplierVariantId)?.id ?? listing.id,
+  );
   const selected = choices.find((choice) => choice.id === selectedId) ?? choices[0];
   const variantNumber = selected.shopifyVariantId?.match(/ProductVariant\/(\d+)$/)?.[1];
   const shopifyUrl = selected.shopifyHandle && variantNumber && shopifyDomain
