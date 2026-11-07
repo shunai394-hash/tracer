@@ -137,6 +137,28 @@ test("finished drama mix combines dialogue with loopable BGM and fade automation
   assert.ok(page.includes("duration>300"));
 });
 
+test("BGM auto-selection matches the drama genre, avoids immediate repeats, and fails closed when no category exists", () => {
+  assert.ok(page.includes('id="autoSelectBgm"'));
+  assert.ok(page.includes('id="bgmMatchStatus"'));
+  assert.ok(page.includes('"日常・ヒューマン":"日常・会話"'));
+  assert.ok(page.includes('"ミステリー":"サスペンス"'));
+  assert.ok(page.includes('"サスペンス":"サスペンス"'));
+  assert.ok(page.includes('"コメディ":"コメディ"'));
+  assert.ok(page.includes('const candidates=bgmTracks.filter'));
+  assert.ok(page.includes('rotation=candidates.length>1?candidates.filter'));
+  assert.ok(page.includes('if(!candidates.length)'));
+  assert.ok(page.includes('別カテゴリからの自動代用は行いません'));
+  assert.ok(page.includes('作品ジャンルが変更されました'));
+});
+
+test("dialogue-only WAV export remains available when no matching BGM exists", () => {
+  assert.ok(page.includes("let bgmBuffer=null"));
+  assert.ok(page.includes("if(selected){"));
+  assert.ok(page.includes("if(bgmBuffer){"));
+  assert.ok(page.includes('(selected?"BGM付き":"台詞のみ")'));
+  assert.doesNotMatch(page, /if\(!selected\)\{mixStatus\.textContent="BGMライブラリから曲を選択してください。"/);
+});
+
 test("short drama studio inline JavaScript parses without syntax errors", () => {
   const scriptStart = page.indexOf("<script>");
   const scriptEnd = page.indexOf("</script>", scriptStart);

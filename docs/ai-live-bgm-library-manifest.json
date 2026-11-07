@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "sourceArchive": "TRACER_BGM_Library.zip",
+  "generatedAt": "2026-11-07",
+  "policy": {
+    "licenseStatus": "unverified",
+    "eligibleForProductionPlayback": false,
+    "note": "ファイル名・カテゴリ・サイズ・SHA-256のみを記録。利用許諾確認が完了するまで本番Storageへアップロードせず、配信にも使用しない。"
+  },
+  "tracks": [
+    {
+      "path": "01_Daily_Conversation/Maribama Bounce.mp3",
+      "category": "日常・会話",
+      "sizeBytes": 2740269,
+      "sha256": "9bf08e43b3d6c50b865d9fa722f967ee27977d0300e80dc53bba9e420ebc9557",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "01_Daily_Conversation/Ordinary Days, Little Smiles.mp3",
+      "category": "日常・会話",
+      "sizeBytes": 2217623,
+      "sha256": "b8b64cb5c070b5f90d3c503476b477b384764b0626db4a7577463bd17913e08f",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "02_Romance/Morning Light on Your Shoulder.mp3",
+      "category": "恋愛",
+      "sizeBytes": 3873898,
+      "sha256": "dbecc14ff90c1528eacf16aa51ffa22296790474b91a204c5ef776b720e3ddb3",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "02_Romance/Sunlight Through the Window.mp3",
+      "category": "恋愛",
+      "sizeBytes": 4068051,
+      "sha256": "b1e608954e1981942a83770cfa759bf1032ff004417d5cfd77ec2c8d7003a310",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "02_Romance/涙のあとの笑顔.mp3",
+      "category": "恋愛",
+      "sizeBytes": 4802192,
+      "sha256": "e36684ac99ccb4211fb53eb33769e24db7a89181fcd443beaf6c3e3c9812e514",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "03_Emotional_Afterglow/The Long Way Home, Together.mp3",
+      "category": "感動・余韻",
+      "sizeBytes": 4465071,
+      "sha256": "49a3de26e260442b52bf897075c46f9cb17eb1554d240ef32a9810c88ae746ef",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "03_Emotional_Afterglow/Walking Home at Sunset.mp3",
+      "category": "感動・余韻",
+      "sizeBytes": 4769503,
+      "sha256": "3104bc58c54cf387f91e1bb1fc0b5854e5600d4c94b81cb2b6721aaf5b1745f9",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "04_Suspense/Unspoken Letter.mp3",
+      "category": "サスペンス",
+      "sizeBytes": 4327056,
+      "sha256": "c405ec3a92e18667282179ad8e26d75a76e6591e8e32772217dc31add8e38b98",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "04_Suspense/Words I Kept Inside.mp3",
+      "category": "サスペンス",
+      "sizeBytes": 4500884,
+      "sha256": "730d97761c07921dbcd8de5a528def517702d8225280a727699aae7df6330486",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "05_Comedy/Fluttering Heart.mp3",
+      "category": "コメディ",
+      "sizeBytes": 2539489,
+      "sha256": "a41837dbd45bdce15d0d5ffb45135f71278110b312a35d79eb5bedff4435ef0e",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "05_Comedy/Skipping Heartbeat.mp3",
+      "category": "コメディ",
+      "sizeBytes": 2359764,
+      "sha256": "941d04675ad055f40cdf25890ea02a395cd86221d0ee549c4985c34b3ef124a7",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "06_Action_Transitions/Rain Between Us.mp3",
+      "category": "アクション・場面転換",
+      "sizeBytes": 3492967,
+      "sha256": "e5c1987cbfcf28e457873577586a88557063100a658fb416e2fb089ded7fae4c",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "06_Action_Transitions/Rainy Night Longing.mp3",
+      "category": "アクション・場面転換",
+      "sizeBytes": 4386283,
+      "sha256": "bb9461d3f08b7e30ed80348ebabcd86b223f7b90ed7182ec6e4c1d30ee4ba0e6",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "99_Unsorted/The Moment We Spoke (1).mp3",
+      "category": "未分類",
+      "sizeBytes": 5057694,
+      "sha256": "cf68f0e3ad3d6d5877ecf520d3d113c3a432d1d8eff8d88671f17c56f9091291",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "99_Unsorted/The Moment We Spoke.mp3",
+      "category": "未分類",
+      "sizeBytes": 4612989,
+      "sha256": "92c363345a8262048a03ff8e3956e479abc108bb7099b5d473fcd177f79e318d",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "99_Unsorted/The Moment We Spoke1.mp3",
+      "category": "未分類",
+      "sizeBytes": 4318689,
+      "sha256": "34c9d004e22f5c0e879c4f715ee126da96c518b4a22c67b5b99d964dedea509e",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    },
+    {
+      "path": "99_Unsorted/The Words at Last.mp3",
+      "category": "未分類",
+      "sizeBytes": 4759718,
+      "sha256": "d5197598d957a57884656d377a13f904ec152d55c51e6f7adc348cc8af4ac293",
+      "licenseStatus": "unverified",
+      "productionEligible": false
+    }
+  ]
+}
