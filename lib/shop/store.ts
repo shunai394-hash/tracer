@@ -28,6 +28,21 @@ function asBoolean(value: unknown): boolean {
   return value === true;
 }
 
+export type ShopVariantOption = {
+  id: string;
+  slug: string;
+  title: string;
+  label: string;
+  optionType: "カラー" | "サイズ" | "種類";
+  imageUrl: string | null;
+  sellingPrice: number | null;
+  currency: string | null;
+  inventory: number;
+  supplierVariantId: string | null;
+  shopifyVariantId: string | null;
+  shopifyHandle: string | null;
+};
+
 export type ShopListing = {
   id: string;
   slug: string;
@@ -52,6 +67,10 @@ export type ShopListing = {
   shopifySyncStatus: string | null;
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
+  variantLabel?: string | null;
+  variantOptionType?: "カラー" | "サイズ" | "種類";
+  variantImageUrl?: string | null;
+  variants?: ShopVariantOption[];
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -262,6 +281,42 @@ async function loadPublishedShopListings(): Promise<ShopListing[]> {
     .map(({ listing }) => listing);
 }
 
+
+async function attachPublishedVariantOptions(listing: ShopListing): Promise<ShopListing> {
+  const published = await listPublishedShopListings();
+  const family = published.filter((candidate) =>
+    candidate.productId === listing.productId &&
+    candidate.supplierProductId === listing.supplierProductId &&
+    Boolean(candidate.supplierVariantId) &&
+    Boolean(listing.supplierVariantId),
+  );
+  const unique = new Map<string, ShopListing>();
+  for (const candidate of family) {
+    const key = candidate.supplierVariantId || candidate.id;
+    if (!unique.has(key)) unique.set(key, candidate);
+  }
+  const variants: ShopVariantOption[] = [...unique.values()].map((candidate) => ({
+    id: candidate.id,
+    slug: candidate.slug,
+    title: candidate.title,
+    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] || "標準",
+    optionType: candidate.variantOptionType ?? "種類",
+    imageUrl: candidate.variantImageUrl ?? null,
+    sellingPrice: candidate.sellingPrice,
+    currency: candidate.currency,
+    inventory: candidate.inventory,
+    supplierVariantId: candidate.supplierVariantId,
+    shopifyVariantId: candidate.shopifyVariantId,
+    shopifyHandle: candidate.shopifyHandle,
+  }));
+  // A family is selectable only when each variant has a distinct, verified image.
+  const imageUrls = variants.map((variant) => variant.imageUrl).filter((url): url is string => Boolean(url));
+  const imageComplete = variants.length > 1 &&
+    imageUrls.length === variants.length &&
+    new Set(imageUrls).size === variants.length;
+  return { ...listing, variants: imageComplete ? variants : [] };
+}
+
 export async function getShopListingBySlug(slug: string): Promise<ShopListing | null> {
   // Normalize percent-encoded slugs as well as the decoded value Next.js normally
   // supplies. This keeps product URLs resolvable if a proxy/channel double-encodes
@@ -295,11 +350,12 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     // This fallback is only used when the direct indexed lookup misses.
     const published = await listPublishedShopListings();
     const matched = published.find((listing) => listing.slug === normalizedSlug || listing.slug === slug);
-    if (matched) return matched;
+    if (matched) return attachPublishedVariantOptions(matched);
 
     if (!isListingId) return null;
     const canonical = await loadCanonicalCommerceListings({ variantIds: [normalizedSlug] });
-    return canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    const found = canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    return found ? attachPublishedVariantOptions(found) : null;
   }
 
   const listing = mapListing(data as Record<string, unknown>);
@@ -313,7 +369,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   // already-published Shopify product. Supplier identity and live-stock checks
   // remain mandatory in publication and order-time procurement paths, but must
   // not turn an existing public sales URL into a 404.
-  return listing;
+  return attachPublishedVariantOptions(listing);
 }
 
 export 
@@ -425,6 +481,10 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const variantImageUrl = typeof attributes.variantImageUrl === "string" && /^https?:\/\//i.test(attributes.variantImageUrl)
       ? attributes.variantImageUrl : null;
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
+    const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
+      ? attributes.variationLabel.trim()
+      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] ?? null;
+    const variantOptionType = attributes.color ? "カラー" : attributes.size ? "サイズ" : "種類";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
@@ -450,6 +510,9 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       title,
       description,
       imageUrl,
+      variantImageUrl,
+      variantLabel,
+      variantOptionType,
       sellingPrice: asNumber(price.selling_price),
       currency: "JPY",
       inventory: toStorefrontStockQuantity(Number(offer.inventory), getStorefrontStockCap()),
