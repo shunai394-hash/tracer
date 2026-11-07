@@ -26,6 +26,6 @@ assert.match(price, /\.is\("archived_at", null\)/,
   "legacy BASE price reconciliation must not republish archived items");
 assert.match(price, /visible: true/,
   "test fixture confirms price reconcile has a storefront visibility write guarded by archive filtering");
-assert.equal((storefront.match(/\.is\("archived_at", null\)/g) ?? []).length, 3,
-  "public catalog, product lookup, and checkout must exclude archived listings");
+assert.equal((storefront.match(/\.is\("archived_at", null\)/g) ?? []).length, 4,
+  "public catalog, product lookup, checkout, and color-family sibling checks must exclude archived listings");
 console.log("Archived listing republication guards: 7 assertions passed");
