@@ -57,6 +57,7 @@ export type ShopListing = {
   variants?: ColorFamilyChoice[];
   colorSaleBlocked?: boolean;
   colorSaleBlockers?: string[];
+  colorImageVerified?: boolean;
   selectedVariantId?: string | null;
 };
 
@@ -87,6 +88,7 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
     canonicalCommerce: false,
     manualInventory: row.manual_inventory === true,
+    colorImageVerified: row.color_image_verified === true,
     sku: typeof row.sku === "string" && row.sku.trim() ? row.sku.trim() : null,
   };
 }
@@ -493,6 +495,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       shopifyHandle: handle,
       shopifySyncStatus: "synced",
       canonicalCommerce: true,
+      colorImageVerified: attributes.colorImageVerified === true,
       sku: (typeof variant.sku === "string" && variant.sku.trim())
         ? variant.sku.trim()
         : (typeof channel.external_sku === "string" && channel.external_sku.trim() ? channel.external_sku.trim() : null),
