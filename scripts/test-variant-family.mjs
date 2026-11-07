@@ -289,7 +289,7 @@ test("family sync keeps listings, backs up identity, and does not delete channel
   assert.match(liveAudit, /imageUrl: String\(attributes\.variantImageUrl.*raw\.variantImageUrl/);
   assert.match(liveAudit, /label: variation\.label, imageUrl: variation\.imageUrl/);
   assert.match(shopStore, /new Set\(imageUrls\).size === variants.length/);
-  assert.match(variantPicker, /const colorImagesVerified = !isColorFamily/);
+  assert.match(variantPicker, /const colorImagesVerified = choiceLabelsUnique && \(!isColorFamily/);
   assert.match(variantPicker, /選択肢の名称が重複しているため、この商品は現在購入できません。/);
   assert.match(variantPicker, /new Set\(normalizedLabels\)\.size === normalizedLabels\.length/);
   assert.match(variantPicker, /choices\.some\(\(choice\) => choice\.optionType === "カラー"\)/);
