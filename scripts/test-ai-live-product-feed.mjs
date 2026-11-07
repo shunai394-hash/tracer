@@ -7,6 +7,9 @@ const route = await readFile(
 );
 
 assert.match(route, /requireAutomationAuth\\(request\\)/);
+assert.match(route, /authorizedWorkerToken\\(request\\)/);
+assert.match(route, /AI_LIVE_WORKER_TOKEN/);
+assert.match(route, /timingSafeEqual/);
 assert.match(route, /export async function GET/);
 assert.match(route, /readOnly: true/);
 assert.doesNotMatch(route, /\\.insert\\(|\\.upsert\\(|\\.update\\(|\\.delete\\(/);
