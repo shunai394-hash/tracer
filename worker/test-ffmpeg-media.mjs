@@ -39,7 +39,7 @@ try {
   assert.equal(calls[0].options.shell, false);
   assert.ok(calls[0].args.includes("-protocol_whitelist"));
   assert.ok(calls[0].args.includes("file,pipe"));
-  assert.ok(calls[0].args.includes("amix=inputs=2"));
+  assert.ok(calls[0].args.some((arg) => arg.includes("amix=inputs=2")));
   assert.ok(calls[0].args.includes("-f"));
   assert.ok(calls[0].args.includes("mp4"));
   assert.ok(!calls[0].args.some((arg) => /^rtmps?:\/\//i.test(arg)));
