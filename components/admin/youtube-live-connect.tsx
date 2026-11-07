@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type StartResponse = { ok: boolean; authorizationUrl?: string; error?: string; expiresInSeconds?: number };
 
 export default function YouTubeLiveConnect() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
+  const [message, setMessage] = useState(() => {
+    if (typeof window === "undefined") return "";
     const result = new URLSearchParams(window.location.search).get("youtube");
-    if (result === "connected") setMessage("YouTubeアカウントの認証情報を暗号化して保存した。");
-    if (result === "failed") setMessage("YouTube接続に失敗した。OAuth設定・DBマイグレーション・Google側の許可を確認してくれ。");
-  }, []);
+    if (result === "connected") return "YouTubeアカウントの認証情報を暗号化して保存した。";
+    if (result === "failed") return "YouTube接続に失敗した。OAuth設定・DBマイグレーション・Google側の許可を確認してくれ。";
+    return "";
+  });
 
   async function connect(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
