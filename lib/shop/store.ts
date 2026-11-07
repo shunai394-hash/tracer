@@ -299,7 +299,7 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     id: candidate.id,
     slug: candidate.slug,
     title: candidate.title,
-    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] || "標準",
+    label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] || "標準",
     optionType: candidate.variantOptionType ?? "種類",
     imageUrl: candidate.variantImageUrl ?? null,
     sellingPrice: candidate.sellingPrice,
@@ -309,11 +309,6 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     shopifyVariantId: candidate.shopifyVariantId,
     shopifyHandle: candidate.shopifyHandle,
   }));
-  // A family is selectable only when each variant has a distinct, verified image.
-  const imageUrls = variants.map((variant) => variant.imageUrl).filter((url): url is string => Boolean(url));
-  const imageComplete = variants.length > 1 &&
-    imageUrls.length === variants.length &&
-    new Set(imageUrls).size === variants.length;
   return { ...listing, variants: variants.length > 1 ? variants : [] };
 }
 
@@ -483,7 +478,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
     const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
       ? attributes.variationLabel.trim()
-      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] ?? null;
+      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
     const variantOptionType = attributes.color ? "カラー" : attributes.size ? "サイズ" : "種類";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
