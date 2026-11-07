@@ -65,6 +65,7 @@ export function createFfmpegPublisher({
   ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg",
   spawnImpl = nodeSpawn,
   onState = () => {},
+  onDisconnected = () => {},
 } = {}) {
   if (typeof secretResolver !== "function") throw new Error("secretResolver is required");
   if (typeof spawnImpl !== "function") throw new Error("spawn implementation is required");
@@ -83,6 +84,10 @@ export function createFfmpegPublisher({
     state = next;
     failureCode = code;
     onState(snapshot());
+  }
+
+  function reportDisconnect(reason) {
+    try { onDisconnected({ reason, retryable: true }); } catch {}
   }
 
   async function writeChunk(bytes) {
@@ -123,6 +128,12 @@ export function createFfmpegPublisher({
         const proc = spawnImpl(ffmpegPath, args, { shell: false, stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
         child = proc;
         closing = false;
+        let disconnectReported = false;
+        const notifyDisconnect = (reason) => {
+          if (disconnectReported || closing) return;
+          disconnectReported = true;
+          reportDisconnect(reason);
+        };
         proc.stderr?.on("data", () => {
           // FFmpeg diagnostics may echo destination URLs; never forward raw stderr.
         });
@@ -130,6 +141,7 @@ export function createFfmpegPublisher({
           if (child === proc) {
             child = null;
             setState("failed", "ffmpeg_spawn_failed");
+            notifyDisconnect("ffmpeg_spawn_failed");
           }
         });
         proc.once("exit", (code, signal) => {
@@ -137,6 +149,7 @@ export function createFfmpegPublisher({
             child = null;
             setState(code === 0 || closing ? "stopped" : "failed",
               code === 0 || closing ? null : "ffmpeg_exit_" + (signal ? "signal" : "nonzero"));
+            if (code !== 0 && !closing) notifyDisconnect("ffmpeg_unexpected_exit");
           }
         });
         setState("publishing");
