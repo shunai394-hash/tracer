@@ -168,6 +168,7 @@ export default async function ShopProductPage({
           categoryLabel={category?.label ?? null}
           shopifyDomain={shopifyDomain}
         />
+        {isDomesticFreeShippingItem ? <p className="mt-3 inline-flex items-center rounded-full border border-[#D7B9A8] bg-white px-4 py-2 text-sm font-semibold text-[#75402F]">国内送料無料</p> : null}
 
         {listing.description ? (
           <section aria-labelledby="description-heading" className="mt-10 border-t border-[#EADBD3] pt-6">
@@ -202,7 +203,7 @@ export default async function ShopProductPage({
           <section aria-labelledby="related-heading" className="mt-16 sm:mt-24">
             <div className="flex items-end justify-between gap-4">
               <h2 id="related-heading" className="font-serif text-xl sm:text-2xl">あわせて見たい{category ? category.label : "アイテム"}</h2>
-              {category ? <Link href={`/shop/category/${category.slug}`} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">もっと見る →</Link> : null}
+              {category ? <Link href={`/shop/category/${category.slug}`} className="shrink-0 text-sm text-[#5C4035] underline-offset-4 hover:underline">もっと見る</Link> : null}
             </div>
             <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-5">
               {related.map((item) => <ProductCard key={item.id} listing={item} />)}

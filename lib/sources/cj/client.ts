@@ -1150,12 +1150,12 @@ type CJVariantRow = {
   sku?: string;
   variantNameEn?: string;
   variantKey?: string;
+  variantImage?: string | null;
   variantSellPrice?: string | number;
   barcode?: string | number;
   variantBarcode?: string | number;
   variantBarCode?: string | number;
   productBarCode?: string | number;
-  variantImage?: string;
   variantImageUrl?: string;
   imageUrl?: string;
   image?: string;

@@ -15,7 +15,8 @@ import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib
 
 type Channel = "base" | "shopify";
 
-// Preserve the merchant-held protein listing: supplier-profit recovery must not delist it.
+// This merchant-held protein product is an explicit permanent catalog exception:
+// supplier-profit checks must never delist it or zero its storefront inventory.
 const ALWAYS_ON_SALE_VARIANT_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98a"]);
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
@@ -88,6 +89,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
   const { data: listings, error } = await db.from("channel_listings")
     .select("id,variant_id,external_product_id,external_variant_id,status,last_error,last_synced_at")
     .eq("channel", channel)
+    .neq("variant_id", "1ae04dd1-a228-43b7-b003-3a2fb75da98a")
     .or("status.eq.published,last_error.like.supplier_offer_not_fulfillable%,last_error.like.supplier_offer_no_longer_fulfillable%,last_error.like.supplier_offer_disable_failed%")
     .not("external_product_id", "is", null)
     .order("last_synced_at", { ascending: true, nullsFirst: true }).limit(5);
@@ -119,7 +121,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       .in("variant_id", variantIds)
       .order("last_checked_at", { ascending: false }),
       db.from("commerce_variants")
-      .select("id,sku,title_ja,commerce_products!inner(title_ja,description_ja)")
+      .select("id,sku,title_ja,commerce_products!inner(title_ja,description_ja,source_key,metadata)")
       .in("id", variantIds),
   ]);
   if (pricesRead.error) throw new Error("stale_price_batch_read_failed:" + pricesRead.error.message);
@@ -128,7 +130,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
   type StalePrice = { variant_id: string; supplier_offer_id: string | null; currency: string; selling_price: number; expected_profit: number; margin_rate: number; calculated_at: string | null };
   type StaleOffer = { id: string; variant_id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; source_status: string; tracking_supported: boolean; ship_to: string; last_checked_at: string | null };
-  type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: { title_ja?: string | null; description_ja?: string | null } | Array<{ title_ja?: string | null; description_ja?: string | null }> | null };
+  type StaleProduct = { title_ja?: string | null; description_ja?: string | null; source_key?: string | null; metadata?: Record<string, unknown> | null };
+  type StaleVariant = { id: string; sku: string | null; title_ja: string | null; commerce_products: StaleProduct | StaleProduct[] | null };
   const pricesByVariant = new Map<string, StalePrice[]>();
   for (const price of (pricesRead.data ?? []) as StalePrice[]) {
     const rows = pricesByVariant.get(price.variant_id) ?? [];
@@ -142,12 +145,52 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
     offersByVariant.set(offer.variant_id, rows);
   }
   const variantsById = new Map(((variantsRead.data ?? []) as StaleVariant[]).map((variant) => [variant.id, variant]));
+  const legacyManualListingIds = [...new Set([...variantsById.values()]
+    .map((variant) => asRelationRows(variant.commerce_products)[0] ?? null)
+    .filter((product) => product?.metadata?.merchant_held_stock === true && String(product.source_key ?? "").startsWith("legacy-shop-listing:"))
+    .map((product) => String(product?.source_key).slice("legacy-shop-listing:".length))
+    .filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  const manualInventoryById = new Map<string, { manual_inventory: boolean; pipeline_reason: string | null; inventory: number | null }>();
+  if (legacyManualListingIds.length > 0) {
+    const { data: manualRows, error: manualRowsError } = await db.from("shop_listings")
+      .select("id,manual_inventory,pipeline_reason,inventory")
+      .in("id", legacyManualListingIds);
+    if (manualRowsError) throw new Error("stale_manual_inventory_read_failed:" + manualRowsError.message);
+    for (const row of manualRows ?? []) {
+      manualInventoryById.set(String(row.id), {
+        manual_inventory: row.manual_inventory === true,
+        pipeline_reason: row.pipeline_reason == null ? null : String(row.pipeline_reason),
+        inventory: Number.isFinite(Number(row.inventory)) ? Number(row.inventory) : null,
+      });
+    }
+  }
 
   for (const listing of checkableListings) {
     try {
       const prices = pricesByVariant.get(String(listing.variant_id)) ?? [];
       const offers = offersByVariant.get(String(listing.variant_id)) ?? [];
       const variantForEvidence = variantsById.get(String(listing.variant_id));
+      const productForEvidence = asRelationRows(variantForEvidence?.commerce_products)[0] ?? null;
+      const sourceKey = String(productForEvidence?.source_key ?? "");
+      const legacyListingId = sourceKey.startsWith("legacy-shop-listing:")
+        ? sourceKey.slice("legacy-shop-listing:".length)
+        : null;
+      const manualInventory = legacyListingId ? manualInventoryById.get(legacyListingId) : null;
+      if (
+        productForEvidence?.metadata?.merchant_held_stock === true &&
+        manualInventory?.manual_inventory === true &&
+        manualInventory.pipeline_reason === "merchant_held_stock" &&
+        Number(manualInventory.inventory) > 0
+      ) {
+        const checkedAt = new Date().toISOString();
+        const { error: protectedStateError } = await db.from("channel_listings").update({
+          last_error: "merchant_held_stock_manual_fulfillment_protected",
+          last_synced_at: checkedAt,
+          updated_at: checkedAt,
+        }).eq("id", listing.id);
+        if (protectedStateError) throw new Error("manual_inventory_protection_state_failed:" + protectedStateError.message);
+        continue;
+      }
       const evaluated = offers.map((offer) => {
         const price = prices.find((candidate) => candidate.supplier_offer_id === offer.id) ?? null;
         const raw = offer.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data) ? offer.raw_data : {};
@@ -198,7 +241,7 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
 
       const variant = variantsById.get(String(listing.variant_id));
       const product = asRelationRows(variant?.commerce_products)[0] ?? null;
-      const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER商品")) || "TRACER商品";
+      const title = normalizeListingTitle(String(variant?.title_ja || product?.title_ja || "TRACER\u5546\u54c1")) || "TRACER\u5546\u54c1";
       const detail = String(product?.description_ja || title);
       const { count: sharedCount, error: sharedError } = await db.from("channel_listings")
         .select("id", { count: "exact", head: true })
@@ -394,7 +437,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         const offer = offers.find((item) => String(item.id) === String(price?.supplier_offer_id ?? ""));
         const data = offer?.raw_data && typeof offer.raw_data === "object" && !Array.isArray(offer.raw_data)
           ? offer.raw_data as Record<string, unknown> : {};
-         const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
+        const shippingKnown = Boolean(offer && data.shippingEstimated !== true && (
           data.shippingKnown === true ||
           (data.shippingKnown === undefined && offer.source_status === "verified" &&
             Number.isFinite(Number(offer.shipping_cost)) && Number(offer.shipping_cost) > 0)
@@ -411,10 +454,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         return !saleable;
       })
     : sortedCandidates;
-  const candidates = candidatesToProcess
-    .filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id))
-    .slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
-  type BaseSnapshotItem = Record<string, unknown>;
+// This merchant-held protein product is an explicit permanent catalog exception:
+  const candidates = candidatesToProcess.filter((candidate) => !ALWAYS_ON_SALE_VARIANT_IDS.has(candidate.id)).slice(0, Math.min(100, Math.max(1, Math.floor(limit))));
+type BaseSnapshotItem = Record<string, unknown>;
   let baseSnapshotItems: BaseSnapshotItem[] | null = null;
   let baseSnapshotFailure: string | null = null;
   // A full 5,000-item BASE scan is only needed to recover an interrupted
@@ -477,7 +519,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const imageUrl = safeUrl(product.image_url);
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
-    // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
+    // Japanese text alone is not enough: category placeholders such as "\u30d8\u30a2\u30b1\u30a2\u30a2\u30a4\u30c6\u30e0"
     // pass the language check but are rejected by the catalog title quality gate.
     // Prefer a source-grounded localized title when stored titles are generic.
     // Storefront titles must be fully localized, not merely contain a few Japanese characters.
@@ -554,7 +596,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           await editBaseItem({
             itemId: String(currentState.external_product_id),
             title,
-            detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
+            detail: String(product.description_ja || title) + "\n\n\u4ed5\u5165\u5148\u306e\u5728\u5eab\u30fb\u65e5\u672c\u5411\u3051\u9001\u6599\u3092\u78ba\u8a8d\u4e2d\u306e\u305f\u3081\u3001\u73fe\u5728\u8cfc\u5165\u3067\u304d\u307e\u305b\u3093\u3002",
             price: fallbackPrice,
             stock: 0,
             visible: false,
@@ -678,12 +720,12 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     const manualDescription = typeof product.metadata?.manualDescriptionJa === "string" ? product.metadata.manualDescriptionJa.trim() : "";
-    const description = (manualDescription || product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
+    const description = (manualDescription || product.description_ja || title + "\u3002\u5546\u54c1\u4ed5\u69d8\u306f\u8ca9\u58f2\u5143\u306e\u6700\u65b0\u60c5\u5831\u3092\u3054\u78ba\u8a8d\u304f\u3060\u3055\u3044\u3002").trim();
     // Selling price includes supplier item cost, Japan-bound freight, platform fees and target margin.
     // Remove any legacy copy implying that customers pay supplier freight separately.
     const storefrontDescription = supplierShippingKnown
       ? shippingInclusiveDescription(description)
-      : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
+      : `${description}\n\n\u65e5\u672c\u5411\u3051\u9001\u6599\u3092\u78ba\u8a8d\u4e2d\u306e\u305f\u3081\u3001\u8ca9\u58f2\u3092\u4e00\u6642\u505c\u6b62\u3057\u3066\u3044\u307e\u3059\u3002`;
     // SEO snippet is derived from the real product copy; never invent specifications.
     const seoTitle = `${title.slice(0, 62 - " | TRACER".length).trim()} | TRACER`.slice(0, 70);
     const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);

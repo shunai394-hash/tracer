@@ -78,7 +78,12 @@ export async function upsertSupplierOffer(input: {
   if (productError || !product) throw new Error("product_upsert_failed:" + (productError?.message ?? "no_row"));
   const { data: variant, error: variantError } = await supabase.from("commerce_variants").upsert({
     product_id: product.id, source_variant_key: required(input.sourceVariantKey, "source_variant_key"),
-    title_ja: input.variantTitleJa ?? "標準", sku: input.sku ?? null, attributes: { ...(input.attributes ?? {}), ...(input.variantImageUrl ? { variantImageUrl: input.variantImageUrl } : {}) },
+    title_ja: input.variantTitleJa ?? "標準",
+    sku: input.sku ?? null,
+    attributes: {
+      ...(input.attributes ?? {}),
+      ...(input.variantImageUrl ? { variantImageUrl: input.variantImageUrl } : {}),
+    },
     updated_at: new Date().toISOString()
   }, { onConflict: "product_id,source_variant_key" }).select("id").single();
   if (variantError || !variant) throw new Error("variant_upsert_failed:" + (variantError?.message ?? "no_row"));
