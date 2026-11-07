@@ -99,9 +99,10 @@ export async function GET(request: Request) {
           supplier.orderable !== true ||
           supplier.tracking_available !== true ||
           String(supplier.ship_to ?? "").trim().toUpperCase() !== "JP" ||
-          Number(supplier.inventory) <= 0 ||
-          Number(supplier.cost) <= 0 ||
-          Number(supplier.shipping_cost) < 0 ||
+          !Number.isFinite(Number(supplier.inventory)) || Number(supplier.inventory) <= 0 ||
+          !Number.isFinite(Number(supplier.cost)) || Number(supplier.cost) <= 0 ||
+          supplier.shipping_cost === null || supplier.shipping_cost === undefined ||
+          !Number.isFinite(Number(supplier.shipping_cost)) || Number(supplier.shipping_cost) < 0 ||
           !isFreshVerifiedAt(supplier.last_verified_at, now)) return [];
       if (!hasJapaneseText(row.title) || !row.title.trim() ||
           typeof row.selling_price !== "number" || !Number.isFinite(row.selling_price) || row.selling_price <= 0 ||
