@@ -86,6 +86,7 @@ export function createAiLiveWorkerServer({
   if (!token || token.length < 32) throw new Error("AI_LIVE_WORKER_TOKEN must contain at least 32 characters");
   if (mode !== "fake") throw new Error("Only the fake adapter is implemented; live publishing is disabled");
   const streams = new Map();
+  let recoveryTimer = null;
   if (store && (typeof store.insertNew !== "function" || typeof store.claimLease !== "function" ||
       typeof store.heartbeat !== "function" || typeof store.markStopped !== "function")) {
     throw new Error("invalid_ai_live_store");
@@ -176,6 +177,10 @@ export function createAiLiveWorkerServer({
     let restored = 0;
     let skipped = 0;
     for (const row of rows) {
+      if (streams.has(row.stream_id)) {
+        skipped += 1;
+        continue;
+      }
       if (row.adapter_mode !== "fake" || !row.job_payload || row.status === "stopped") {
         skipped += 1;
         continue;
@@ -290,7 +295,19 @@ export function createAiLiveWorkerServer({
   });
 
   server.restoreActiveStreams = restoreActiveStreams;
+  server.startRecoveryLoop = (intervalMs = 15_000) => {
+    if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 60_000) {
+      throw new Error("invalid_recovery_interval");
+    }
+    if (recoveryTimer) return;
+    recoveryTimer = setInterval(() => {
+      void restoreActiveStreams().catch(() => {});
+    }, intervalMs);
+    recoveryTimer.unref?.();
+  };
   server.on("close", () => {
+    clearInterval(recoveryTimer);
+    recoveryTimer = null;
     for (const record of streams.values()) {
       clearTimeout(record.timer);
       clearInterval(record.segmentTimer);
@@ -311,6 +328,7 @@ if (isMain) {
   const server = createAiLiveWorkerServer({ store });
   const port = Number(process.env.PORT || 8080);
   await server.restoreActiveStreams();
+  server.startRecoveryLoop();
   server.listen(port, "0.0.0.0", () => process.stdout.write("AI Live worker control API ready (fake adapter; publishing disabled)\n"));
   const shutdown = () => server.close(() => process.exit(0));
   process.once("SIGTERM", shutdown);
