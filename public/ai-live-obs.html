@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TRACER OBS Live Overlay</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;overflow:hidden}
+body{display:grid;grid-template-rows:1fr auto; padding:28px; gap:18px}
+.stage{display:flex;align-items:flex-end;gap:24px;min-height:0}
+.avatar{width:clamp(150px,19vw,250px);aspect-ratio:4/5;position:relative;flex:none;filter:drop-shadow(0 8px 18px #0008)}
+.body{position:absolute;bottom:0;left:3%;width:94%;height:42%;border-radius:48% 48% 18% 18%;background:linear-gradient(135deg,#60a5fa,#1d4ed8);border:3px solid #dbeafe}
+.head{position:absolute;top:3%;left:12%;width:76%;height:75%;border-radius:48% 48% 44% 44%;background:linear-gradient(135deg,#ffe0c2,#d9a27e);border:3px solid #fff8;z-index:1}
+.hair{position:absolute;left:-3%;top:-4%;width:106%;height:39%;border-radius:60% 60% 30% 25%;background:#29245e}
+.eye{position:absolute;top:49%;width:7%;height:9%;border-radius:50%;background:#182033}
+.eye.l{left:26%}.eye.r{right:26%}
+.mouth{position:absolute;left:50%;top:72%;transform:translateX(-50%);width:18%;height:4%;border-radius:0 0 20px 20px;background:#842d3d}
+.talking .mouth{animation:talk .16s infinite alternate}
+@keyframes talk{to{height:17%;width:20%}}
+.caption{max-width:min(72vw,1050px);margin-bottom:2%;padding:20px 26px;border-radius:18px;background:#080d18d9;border:1px solid #ffffff38;box-shadow:0 10px 35px #0008;font-size:clamp(22px,3vw,42px);font-weight:700;line-height:1.4;text-shadow:0 2px 3px #000}
+.lower{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{padding:9px 14px;border-radius:9px;background:#111827d9;border:1px solid #ffffff38;font-size:14px;letter-spacing:.08em}
+#state{font-size:13px;color:#d1d5db;text-shadow:0 1px 3px #000}
+.panel{position:fixed;right:18px;top:18px;width:min(390px,calc(100vw - 36px));max-height:calc(100vh - 36px);overflow:auto;padding:16px;border-radius:14px;background:#101827f2;border:1px solid #ffffff35;box-shadow:0 12px 35px #0009;z-index:5}
+.panel h1{font-size:17px;margin:0 0 10px}
+.panel p,.panel small{font-size:12px;line-height:1.5;color:#cbd5e1}
+label{display:block;font-size:12px;margin:12px 0 5px;color:#e5e7eb}
+input,select,textarea,button{font:inherit;color:#fff;background:#263449;border:1px solid #52627a;border-radius:8px;padding:9px;width:100%}
+textarea{resize:vertical;min-height:82px}
+button{cursor:pointer;font-weight:650}
+button.primary{background:#1d4ed8;border-color:#60a5fa}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.status{min-height:20px;color:#bfdbfe!important}
+#toggle{position:fixed;right:18px;top:18px;z-index:6;width:auto;padding:8px 12px;background:#101827e8}
+.hidden{display:none!important}
+@media(max-width:650px){body{padding:12px}.stage{gap:10px}.avatar{width:30vw}.caption{font-size:20px;padding:12px}.panel{top:54px;max-height:calc(100vh - 66px)}}
+</style>
+</head>
+<body>
+<div class="stage">
+ <div class="avatar" id="avatar" aria-label="TRACER AI presenter">
+  <div class="body"></div><div class="head"><div class="hair"></div><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div>
+ </div>
+ <div class="caption" id="caption" aria-live="polite">TRACER AI LIVE</div>
+</div>
+<div class="lower"><span class="brand">TRACER AI LIVE</span><span id="state">待機中</span></div>
+<button id="toggle" type="button">操作パネル</button>
+<aside class="panel" id="panel">
+ <h1>TRACER OBS 配信コントロール</h1>
+ <p>OBS Browser Source用のローカル音声・字幕テスト画面。実商品情報・TikTokコメント・配信先には未接続です。</p>
+ <label for="script">読み上げテキスト</label>
+ <textarea id="script">こんにちは。TRACER AI LIVEへようこそ。本日はおすすめ商品をご紹介します。</textarea>
+ <div class="actions"><button class="primary" id="speak">読み上げ開始</button><button id="stop">音声停止</button></div>
+ <label for="voice">日本語音声</label><select id="voice"><option value="">自動選択</option></select>
+ <label for="token">管理トークン（保存済みBGM読込時のみ）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
+ <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
+ <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
+ <label for="track">再生するBGM</label><select id="track"><option value="">音源を選択</option></select>
+ <div class="actions"><button class="primary" id="bgmPlay">BGM再生</button><button id="next">次の曲</button></div>
+ <label for="volume">BGM音量 <span id="volumeLabel">35%</span></label><input id="volume" type="range" min="0" max="100" value="35">
+ <p class="status" id="status" role="status">準備完了。音声・BGMはボタン操作で開始します。</p>
+ <small>OBSではこのページをBrowser Sourceとして追加し、幅1920・高さ1080を推奨。音声を配信に含める場合はOBSの音声設定でBrowser Source音声を有効化してください。音源は利用許諾済みのものを使用してください。</small>
+</aside>
+<audio id="audio" preload="none" loop></audio>
+<script>
+(() => {
+ const $=id=>document.getElementById(id);
+ const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
+ let tracks=[], urls=[], baseVolume=.35, ducked=false;
+ function setStatus(t){$('status').textContent=t;$('state').textContent=t}
+ function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
+ function loadVoices(){
+  const old=voiceSelect.value, voices=japaneseVoices();
+  voiceSelect.innerHTML='<option value="">自動選択</option>';
+  voices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=v.name+' ('+v.lang+')';voiceSelect.appendChild(o)});
+  if(old)voiceSelect.value=old;
+ }
+ function chooseVoice(){const vs=japaneseVoices();if(voiceSelect.value!==''&&vs[Number(voiceSelect.value)])return vs[Number(voiceSelect.value)];return vs.find(v=>/natural|online|nanami|google/i.test(v.name))||vs[0]||null}
+ function setVolume(){audio.volume=ducked?baseVolume*.18:baseVolume;$('volumeLabel').textContent=Math.round(baseVolume*100)+'%'}
+ function renderTracks(){
+  const select=$('track'), current=select.value;
+  select.innerHTML='<option value="">音源を選択</option>';
+  tracks.forEach((t,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=t.name;select.appendChild(o)});
+  if(current&&tracks[Number(current)])select.value=current;
+ }
+ function addFiles(files){
+  urls.forEach(URL.revokeObjectURL);urls=[];
+  tracks=Array.from(files).filter(f=>f.type.startsWith('audio/')||/\.(mp3|wav|ogg|m4a)$/i.test(f.name)).map(f=>{const url=URL.createObjectURL(f);urls.push(url);return{name:f.name,url}});
+  renderTracks();setStatus(tracks.length+'曲をローカル登録しました');
+ }
+ async function loadSaved(){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+  $('load').disabled=true;setStatus('保存済みBGMを取得中…');
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok||!Array.isArray(d.tracks))throw new Error(r.status===401||r.status===403?'認証に失敗しました。':'保存済みBGMを取得できませんでした。');
+   tracks=d.tracks.map(t=>({name:t.title||t.name,url:t.url}));renderTracks();setStatus(tracks.length+'曲を読み込みました');
+  }catch(e){setStatus(e.message||'読み込みに失敗しました')}finally{$('load').disabled=false}
+ }
+ async function playTrack(index){
+  if(!tracks.length){setStatus('先にBGMを読み込んでください');return}
+  const i=((index%tracks.length)+tracks.length)%tracks.length;
+  $('track').value=String(i);audio.src=tracks[i].url;setVolume();
+  try{await audio.play();setStatus('BGM再生中：'+tracks[i].name)}catch{setStatus('再生できません。もう一度BGM再生を押してください')}
+ }
+ function speak(){
+  const text=$('script').value.trim();if(!text){setStatus('読み上げテキストを入力してください');return}
+  if(!synth){setStatus('このブラウザは音声合成に対応していません');return}
+  synth.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ja-JP';const v=chooseVoice();if(v)u.voice=v;
+  u.onstart=()=>{$('avatar').classList.add('talking');ducked=true;setVolume();$('caption').textContent=text;setStatus('セリフ再生中')};
+  u.onend=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('待機中')};
+  u.onerror=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声再生でエラーが発生しました')};
+  $('caption').textContent=text;synth.speak(u);
+ }
+ $('speak').addEventListener('click',speak);
+ $('stop').addEventListener('click',()=>{if(synth)synth.cancel();$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
+ $('load').addEventListener('click',loadSaved);
+ $('files').addEventListener('change',e=>addFiles(e.target.files));
+ $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
+ $('next').addEventListener('click',()=>playTrack(Number($('track').value||0)+1));
+ $('bgmStop').addEventListener('click',()=>{audio.pause();audio.currentTime=0;setStatus('BGM停止')});
+ $('volume').addEventListener('input',e=>{baseVolume=Number(e.target.value)/100;setVolume()});
+ $('toggle').addEventListener('click',()=>{$('panel').classList.toggle('hidden');$('toggle').textContent=$('panel').classList.contains('hidden')?'操作パネルを表示':'操作パネルを隠す'});
+ if(synth){loadVoices();synth.onvoiceschanged=loadVoices}
+ setVolume();
+})();
+</script>
+</body>
+</html>

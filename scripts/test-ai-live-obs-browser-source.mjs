@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const html = await readFile(new URL("../public/ai-live-obs.html", import.meta.url), "utf8");
+assert.match(html, /<html lang="ja">/);
+assert.match(html, /background:transparent/);
+assert.match(html, /TRACER OBS 配信コントロール/);
+assert.match(html, /OBS Browser Source用/);
+assert.match(html, /speechSynthesis/);
+assert.match(html, /SpeechSynthesisUtterance/);
+assert.match(html, /ducked\?baseVolume\*\.18:baseVolume/);
+assert.match(html, /\/api\/admin\/ai-live\/short-drama\/bgm/);
+assert.match(html, /Authorization:\s*'Bearer '\s*\+\s*token/);
+assert.match(html, /audio\/\*|\.mp3/);
+assert.match(html, /読み上げ開始/);
+assert.match(html, /BGM再生/);
+assert.match(html, /音声停止/);
+assert.match(html, /BGM停止/);
+assert.match(html, /実商品情報・TikTokコメント・配信先には未接続/);
+assert.doesNotMatch(html, /rtmp:\/\//i);
+assert.doesNotMatch(html, /streamKey\s*:/i);
+console.log("AI Live OBS browser source contract checks passed");
