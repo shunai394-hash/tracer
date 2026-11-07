@@ -6,13 +6,13 @@ const route = await readFile(
   "utf8",
 );
 
-assert.match(route, /requireAutomationAuth\\(request\\)/);
-assert.match(route, /authorizedWorkerToken\\(request\\)/);
+assert.match(route, /requireAutomationAuth\(request\)/);
+assert.match(route, /authorizedWorkerToken\(request\)/);
 assert.match(route, /AI_LIVE_WORKER_TOKEN/);
 assert.match(route, /timingSafeEqual/);
 assert.match(route, /export async function GET/);
 assert.match(route, /readOnly: true/);
-assert.doesNotMatch(route, /\\.insert\\(|\\.upsert\\(|\\.update\\(|\\.delete\\(/);
+assert.doesNotMatch(route, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
 
 for (const gate of [
   "getPublishableSupplierListingStatuses",
@@ -35,7 +35,7 @@ for (const gate of [
   "Number.isFinite(Number(supplier.inventory))",
   "isFreshVerifiedAt(supplier.last_verified_at, now)",
   "MAX_SUPPLIER_FACT_AGE_MS",
-  'contribution_profit',
+  "contribution_profit",
   "factsVersion:",
   "factsVerifiedAt:",
   "scriptText:",
@@ -54,14 +54,16 @@ for (const gate of [
   '.eq("base_publication_status", "published")',
 ]) assert.ok(route.includes(gate), `missing listing gate: ${gate}`);
 
-assert.match(route, /Math\\.min\\(20/);
-assert.ok(route.includes("Cache-Control: \"no-store\""));
+assert.match(route, /Math\.min\(20/);
+assert.ok(route.includes('Cache-Control: "no-store"'));
 assert.ok(route.includes("sellingPrice:"));
 assert.ok(route.includes("productUrl"));
 assert.ok(route.includes("inStock: true"));
 
-// Private cost, supplier identifiers, and profit are query-only fields.
-const serialized = route.slice(route.indexOf("return [{"), route.indexOf("}];\\n    }).slice(0, 6000));
+const serializationStart = route.indexOf("return [{");
+const serializationEnd = route.indexOf("}];", serializationStart);
+assert.ok(serializationStart >= 0 && serializationEnd > serializationStart);
+const serialized = route.slice(serializationStart, serializationEnd);
 for (const forbidden of [
   "source_cost", "shipping_cost", "contribution_profit",
   "supplier_product_id", "supplier_variant_id",
