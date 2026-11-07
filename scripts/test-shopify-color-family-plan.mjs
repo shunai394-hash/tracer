@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { planShopifyColorFamily } from "../lib/shopify/color-family-plan.ts";
 
 const ids = ["sv-zebra", "sv-croc", "sv-black", "sv-blue", "sv-gray"];
+const supplierProductId = "CJ-PRODUCT-EXACT-001";
 const sources = ids.map((supplierVariantId, i) => ({
   productId: "gid://shopify/Product/" + (100 + i),
   variantId: "gid://shopify/ProductVariant/" + (200 + i),
+  supplierProductId,
   supplierVariantId,
   sku: "TRC-COLOR-" + i,
   colorLabel: ["ゼブラ柄", "クロコ柄", "ブラック", "ブルー", "グレー・ブラック"][i],
@@ -15,6 +17,7 @@ const sources = ids.map((supplierVariantId, i) => ({
 
 const input = {
   canonicalProductId: "gid://shopify/Product/100",
+  expectedSupplierProductId: supplierProductId,
   sources,
   expectedSupplierVariantIds: ids,
 };
@@ -23,6 +26,7 @@ assert.equal(valid.ok, true);
 assert.equal(valid.variants.length, 5);
 assert.deepEqual(valid.variants.map((v) => v.supplierVariantId), ids);
 assert.deepEqual(valid.variants.map((v) => v.colorLabel), ["ゼブラ柄", "クロコ柄", "ブラック", "ブルー", "グレー・ブラック"]);
+assert.ok(valid.variants.every((v) => v.supplierProductId === supplierProductId));
 assert.deepEqual(valid.destructiveActions, []);
 
 const missingImage = planShopifyColorFamily({
@@ -31,6 +35,20 @@ const missingImage = planShopifyColorFamily({
 });
 assert.equal(missingImage.ok, false);
 assert.ok(missingImage.blockers.includes("variant_image_missing:sv-black"));
+
+const insecureImage = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 1 ? { ...s, imageUrl: "http://cdn.example.test/1.jpg" } : s),
+});
+assert.equal(insecureImage.ok, false);
+assert.ok(insecureImage.blockers.includes("variant_image_missing:sv-croc"));
+
+const wrongSupplierProduct = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 3 ? { ...s, supplierProductId: "CJ-OTHER-PRODUCT" } : s),
+});
+assert.equal(wrongSupplierProduct.ok, false);
+assert.ok(wrongSupplierProduct.blockers.includes("supplier_product_id_mismatch:sv-blue"));
 
 const duplicateSupplierId = planShopifyColorFamily({
   ...input,
@@ -74,4 +92,4 @@ const duplicateExpected = planShopifyColorFamily({
 assert.equal(duplicateExpected.ok, false);
 assert.ok(duplicateExpected.blockers.includes("expected_supplier_variant_id_duplicate"));
 
-console.log("Shopify color family migration plan: 8 scenarios passed");
+console.log("Shopify color family migration plan: 10 scenarios passed");
