@@ -136,7 +136,7 @@ assert.match(base, /nativeCjRepairIds[\s\S]*?supplierStatuses\.get\(String\(list
 assert.match(base, /profit_not_positive/, "BASE publication requires positive contribution profit");
 assert.match(base, /query\.order\("created_at", \{ ascending: false \}\)/,
   "BASE batches must prioritize new gate-passed listings instead of starving them behind old hidden rows");
-assert.match(base, /base_last_error: isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
+assert.match(base, /base_last_error: isFamilyBlocked \? "color_family_variant_unverified_hidden" : isIdentityUnlinked \? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden"/);
 assert.match(store, /supplierStatuses\.has\(listing\.id\)/);
 assert.match(store, /supplier_identity_unlinked/);
 assert.match(route, /requireAutomationAuth/);
