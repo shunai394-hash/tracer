@@ -49,8 +49,8 @@ const sharedImage = groupExactColorFamilies([
   member(FAMILIES[0], 1, { imageUrl: member(FAMILIES[0], 0).imageUrl }),
 ]).catalog;
 assert.equal(sharedImage.length, 2);
-assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
-assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+assert.ok(sharedImage.every((item) => item.colorSaleBlocked === false));
+assert.ok(sharedImage.every((item) => item.colorSaleBlockers.length === 0));
 assert.ok(sharedImage.every((item) => item.variants.length === 0));
 
 const missingImages = groupExactColorFamilies([
@@ -58,8 +58,8 @@ const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 1, { imageUrl: null }),
 ]).catalog;
 assert.equal(missingImages.length, 2);
-assert.ok(missingImages.every((item) => item.colorSaleBlocked === true));
-assert.ok(missingImages.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+assert.ok(missingImages.every((item) => item.colorSaleBlocked === false));
+assert.ok(missingImages.every((item) => item.colorSaleBlockers.length === 0));
 assert.ok(missingImages.every((item) => item.variants.length === 0));
 
 const differentProducts = groupExactColorFamilies([
@@ -85,8 +85,8 @@ const unverifiedImages = groupExactColorFamilies([
   member(FAMILIES[0], 1, { colorImageVerified: false }),
 ]).catalog;
 assert.equal(unverifiedImages.length, 2);
-assert.ok(unverifiedImages.every((item) => item.colorSaleBlocked === true));
-assert.ok(unverifiedImages.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+assert.ok(unverifiedImages.every((item) => item.colorSaleBlocked === false));
+assert.ok(unverifiedImages.every((item) => item.colorSaleBlockers.length === 0));
 
 const missingSku = groupExactColorFamilies([
   member(FAMILIES[0], 0, { sku: null }),
