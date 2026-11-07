@@ -1148,9 +1148,11 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     if (available !== expected.inventory) throw new Error("shopify_color_family_verification_inventory_failed:" + expected.sku);
     return { id: actual.id, sku: expected.sku, price: actual.price, colorLabel: expected.colorLabel, imageUrl: expected.imageUrl };
   });
-  const verifiedImageIds = product.variants.nodes.map((variant) =>
-    variant.media.nodes.filter((media) => media.mediaContentType === "IMAGE").map((media) => media.id),
-  ).flat();
+  const verifiedImageIds = product.variants.nodes.flatMap((variant) =>
+    variant.media.nodes
+      .filter((media) => media.mediaContentType === "IMAGE")
+      .map((media) => ("id" in media ? String(media.id) : "")),
+  );
   if (new Set(verifiedImageIds).size !== variants.length || verifiedImageIds.length !== variants.length) {
     throw new Error("shopify_color_family_verification_color_image_mapping_failed");
   }
