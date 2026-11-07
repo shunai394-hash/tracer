@@ -71,11 +71,17 @@ export function createTracerYouTubeLiveSession({
         .catch((error) => onError({ source: "broadcast_rollback", error }));
       live = false;
     } else if (broadcast && typeof broadcastControl.cancelBroadcast === "function") {
-      await broadcastControl.cancelBroadcast({
-        broadcastId: broadcast.broadcastId,
-        streamId: broadcast.streamId,
-        streamSecretRef: broadcast.streamSecretRef,
-      }).catch((error) => onError({ source: "broadcast_cancel", error }));
+      try {
+        await broadcastControl.cancelBroadcast({
+          broadcastId: broadcast.broadcastId,
+          streamId: broadcast.streamId,
+          streamSecretRef: broadcast.streamSecretRef,
+        });
+      } catch (error) {
+        onError({ source: "broadcast_cancel", error });
+        await deleteStreamSecret(broadcast.streamSecretRef)
+          .catch((secretError) => onError({ source: "secret_rollback", error: secretError }));
+      }
     } else if (broadcast?.streamSecretRef) {
       await deleteStreamSecret(broadcast.streamSecretRef)
         .catch((error) => onError({ source: "secret_rollback", error }));
@@ -122,9 +128,9 @@ export function createTracerYouTubeLiveSession({
         }
         await mediaRuntime.setCurrentProduct(productId);
         await mediaRuntime.start({
+          ...(mediaOptions && typeof mediaOptions === "object" ? mediaOptions : {}),
           destination: "youtube_live",
           destinationSecretRef: broadcast.streamSecretRef,
-          ...mediaOptions,
         });
         await waitForIngest(signal);
         const started = await broadcastControl.startBroadcast({
