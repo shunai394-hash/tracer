@@ -899,12 +899,20 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     .update([supplierCode, supplierProductId].join(":"))
     .digest("hex").slice(0, 24);
   const familyTag = "TRACER_COLOR_FAMILY_" + familyKey;
-  const variantMetafields = (supplierVariantId: string) => [{
-    namespace: "tracer",
-    key: "supplier_variant_id",
-    type: "single_line_text_field",
-    value: supplierVariantId,
-  }];
+  const variantMetafields = (supplierVariantId: string, imageUrl: string) => [
+    {
+      namespace: "tracer",
+      key: "supplier_variant_id",
+      type: "single_line_text_field",
+      value: supplierVariantId,
+    },
+    {
+      namespace: "tracer",
+      key: "color_image_source_url",
+      type: "url",
+      value: imageUrl,
+    },
+  ];
   const metafields = [
     { namespace: "tracer", key: "supplier_code", type: "single_line_text_field", value: supplierCode },
     { namespace: "tracer", key: "supplier_product_id", type: "single_line_text_field", value: supplierProductId },
@@ -1018,7 +1026,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           inventoryPolicy: "DENY",
           inventoryItem: { sku: expectedDefault.sku, tracked: true },
           mediaSrc: [expectedDefault.imageUrl],
-          metafields: variantMetafields(expectedDefault.supplierVariantId),
+          metafields: variantMetafields(expectedDefault.supplierVariantId, expectedDefault.imageUrl),
           inventoryQuantities: [{ locationId, name: "available", quantity: expectedDefault.inventory }],
         }],
       },
@@ -1074,7 +1082,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           inventoryItem: { sku: variant.sku, tracked: true },
           optionValues: [{ optionName: "カラー", name: variant.colorLabel }],
           mediaSrc: [variant.imageUrl],
-          metafields: variantMetafields(variant.supplierVariantId),
+          metafields: variantMetafields(variant.supplierVariantId, variant.imageUrl),
           inventoryQuantities: [{ locationId, name: "available", quantity: variant.inventory }],
         })),
       },
@@ -1133,6 +1141,8 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }
     const supplierVariantId = actual.metafields.nodes.find((field) => field.namespace === "tracer" && field.key === "supplier_variant_id")?.value;
     if (supplierVariantId !== expected.supplierVariantId) throw new Error("shopify_color_family_verification_supplier_variant_id_failed:" + expected.sku);
+    const imageSourceUrl = actual.metafields.nodes.find((field) => field.namespace === "tracer" && field.key === "color_image_source_url")?.value;
+    if (imageSourceUrl !== expected.imageUrl) throw new Error("shopify_color_family_verification_image_source_url_failed:" + expected.sku);
     const level = actual.inventoryItem.inventoryLevels.nodes.find((node) => node.location.id === locationId);
     const available = level?.quantities.find((quantity) => quantity.name === "available")?.quantity;
     if (available !== expected.inventory) throw new Error("shopify_color_family_verification_inventory_failed:" + expected.sku);
