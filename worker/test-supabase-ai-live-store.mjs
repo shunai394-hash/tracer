@@ -45,17 +45,23 @@ assert.match(calls[1].url, /stream_id=eq.stream_0001/);
 await store.listActive();
 assert.match(calls[2].url, /status=in.\(starting,live,reconnecting\)/);
 
+const claimed = await store.claimLease("stream_0001", { owner: "worker_instance_02", leaseSeconds: 45 });
+assert.equal(claimed.stream_id, "stream_0001");
+assert.match(calls[3].url, /\/rpc\/claim_ai_live_worker_stream$/);
+assert.equal(JSON.parse(calls[3].init.body).p_owner, "worker_instance_02");
+assert.equal(calls[3].init.method, "POST");
+
 await store.heartbeat("stream_0001", {
   owner: "worker_instance_01",
   segmentIndex: 1,
   productId: "prod2",
   reconnectCount: 2,
 });
-assert.equal(calls[3].init.method, "PATCH");
-assert.equal(JSON.parse(calls[3].init.body).active_product_id, "prod2");
+assert.equal(calls[4].init.method, "PATCH");
+assert.equal(JSON.parse(calls[4].init.body).active_product_id, "prod2");
 
 await store.markStopped("stream_0001");
-assert.equal(JSON.parse(calls[4].init.body).status, "stopped");
+assert.equal(JSON.parse(calls[5].init.body).status, "stopped");
 
 assert.throws(() => createSupabaseAiLiveStore({ url: "http://example.supabase.co", serviceRoleKey: "service-role-key-for-tests-only-123456" }), /https/);
 await assert.rejects(() => store.heartbeat("stream_0001", { owner: "bad", segmentIndex: 0, reconnectCount: 0 }), /invalid_lease_owner/);
