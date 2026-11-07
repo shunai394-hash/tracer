@@ -9,7 +9,7 @@ const youtube = normalizeYouTubeLiveChatMessage({
   id: "yt-message-1",
   snippet: {
     type: "textMessageEvent",
-    displayMessage: "  この商品の価格はいくらですか？  ",
+    displayMessage: "  この商品の価格はいくらですか?  ",
     publishedAt: "2026-11-07T01:00:00Z",
   },
   authorDetails: {
@@ -20,7 +20,7 @@ const youtube = normalizeYouTubeLiveChatMessage({
 assert.deepEqual(youtube, {
   id: "youtube_live:yt-message-1",
   platform: "youtube_live",
-  text: "この商品の価格はいくらですか？",
+  text: "この商品の価格はいくらですか?",
   createdAt: "2026-11-07T01:00:00.000Z",
   kind: "text_comment",
 });
@@ -39,14 +39,14 @@ assert.equal(normalizeYouTubeLiveChatMessage({
 const tiktok = normalizeTikTokAuthorizedComment({
   source: "approved_tiktok_live_connector",
   commentId: "tt-comment-1",
-  text: "色は何色ですか？",
+  text: "色は何色ですか?",
   createdAt: "2026-11-07T01:01:00Z",
   user: { nickname: "must-not-be-forwarded" },
 });
 assert.deepEqual(tiktok, {
   id: "tiktok_live:tt-comment-1",
   platform: "tiktok_live",
-  text: "色は何色ですか？",
+  text: "色は何色ですか?",
   createdAt: "2026-11-07T01:01:00.000Z",
   kind: "text_comment",
 });
