@@ -164,3 +164,17 @@ BGM. Missing video is a hard error; it never reuses a different product's
 video. This removes the per-product manifest-edit step, but the media files
 still need to be supplied and mounted by the operator. The default resolver
 mode remains `manifest` for backwards compatibility.
+
+
+## Canonical TRACER product feed handoff
+
+When `TRACER_BASE_URL` is set in the isolated worker environment, stream
+creation fetches `/api/admin/ai-live/products?limit=20` using the worker-only
+`AI_LIVE_WORKER_TOKEN`. The product endpoint accepts this token with a
+constant-time comparison; it still supports the existing cron/OIDC automation
+auth. The worker replaces client-supplied segments with the verified,
+read-only TRACER feed before validating and persisting the job. If the feed is
+unavailable or contains no eligible products, stream creation fails closed.
+Without `TRACER_BASE_URL`, the existing explicit segment contract remains
+available for isolated tests. This does not enable live publishing: the HTTP
+worker remains fake-mode only.
