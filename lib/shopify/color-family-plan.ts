@@ -7,6 +7,7 @@ export type ShopifyColorSource = {
   sku: string;
   colorLabel: string;
   imageUrl: string;
+  colorImageVerified: boolean;
   price: number;
   inventory: number;
 };
@@ -98,6 +99,7 @@ export function planShopifyColorFamily(input: {
     } catch {
       validImage = false;
     }
+    if (!source.colorImageVerified) blockers.push("variant_image_unverified:" + id);
     if (!validImage) blockers.push("variant_image_missing:" + id);
     else {
       const normalizedImageUrl = new URL(source.imageUrl.trim()).toString();
@@ -142,6 +144,7 @@ export function planShopifyColorFamily(input: {
       sku: source.sku.trim(),
       colorLabel: source.colorLabel.trim(),
       imageUrl: source.imageUrl.trim(),
+      colorImageVerified: source.colorImageVerified === true,
       price: source.price,
       inventory: source.inventory,
     }];
