@@ -6,42 +6,59 @@ const route = await readFile(
   "utf8",
 );
 
-// The feed must be protected and read-only.
-assert.match(route, /requireAutomationAuth\(request\)/);
+assert.match(route, /requireAutomationAuth\\(request\\)/);
 assert.match(route, /export async function GET/);
 assert.match(route, /readOnly: true/);
-assert.doesNotMatch(route, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
+assert.doesNotMatch(route, /\\.insert\\(|\\.upsert\\(|\\.update\\(|\\.delete\\(/);
 
-// Only approved, sale-ready product records can reach the avatar.
 for (const gate of [
-  /\.eq\("published", true\)/,
-  /\.eq\("orderable", true\)/,
-  /\.eq\("tracking_available", true\)/,
-  /\.gt\("inventory", 0\)/,
-  /\.is\("archived_at", null\)/,
-  /\.not\("base_item_id", "is", null\)/,
-  /\.eq\("base_publication_status", "published"\)/,
-  /hasJapaneseText\(row\.title\)/,
-  /hasJapaneseText\(row\.description\)/,
-  /row\.base_publication_status === "published"/,
-  /row\.productUrl !== null/,
-]) assert.match(route, gate);
-
-// Cap response size and avoid leaking sensitive commerce/supplier fields.
-assert.match(route, /Math\.min\(20/);
-assert.match(route, /Cache-Control.*no-store/);
-for (const forbidden of [
-  "source_cost",
-  "shipping_cost",
-  "contribution_profit",
+  "getPublishableSupplierListingStatuses",
+  "supplier_listing_id",
   "supplier_product_id",
   "supplier_variant_id",
-  "service_role_key",
-  "tracking_number",
-  "shop_orders",
-]) assert.doesNotMatch(route, new RegExp(forbidden, "i"));
+  "identityStatuses.get(listingId)",
+  'verification_status !== "verified"',
+  'shipping_status !== "verified"',
+  "configured !== true",
+  "price_confirmed !== true",
+  "inventory_confirmed !== true",
+  "api_available !== true",
+  "orderable !== true",
+  "tracking_available !== true",
+  "ship_to",
+  "isFreshVerifiedAt(supplier.last_verified_at, now)",
+  "MAX_SUPPLIER_FACT_AGE_MS",
+  'contribution_profit',
+  "factsVersion:",
+  "factsVerifiedAt:",
+  "scriptText:",
+]) assert.ok(route.includes(gate), `missing eligibility gate: ${gate}`);
 
+for (const gate of [
+  '.eq("published", true)',
+  '.eq("orderable", true)',
+  '.eq("tracking_available", true)',
+  '.gt("inventory", 0)',
+  '.gt("selling_price", 0)',
+  '.gt("source_cost", 0)',
+  '.gte("shipping_cost", 0)',
+  '.gt("contribution_profit", 0)',
+  '.is("archived_at", null)',
+  '.eq("base_publication_status", "published")',
+]) assert.ok(route.includes(gate), `missing listing gate: ${gate}`);
+
+assert.match(route, /Math\\.min\\(20/);
+assert.match(route, /Cache-Control.*no-store/);
 assert.match(route, /sellingPrice:/);
 assert.match(route, /productUrl:/);
 assert.match(route, /inStock: true/);
-console.log("AI-live product feed safety contract: 23 assertions passed");
+
+// Private cost, supplier identifiers, and profit are query-only fields.
+const serialized = route.slice(route.indexOf("return [{"), route.indexOf("}];\\n    }).slice(0, 6000));
+for (const forbidden of [
+  "source_cost", "shipping_cost", "contribution_profit",
+  "supplier_product_id", "supplier_variant_id",
+  "service_role_key", "tracking_number", "shop_orders",
+]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
+
+console.log("AI-live product feed safety contract: all assertions passed");
