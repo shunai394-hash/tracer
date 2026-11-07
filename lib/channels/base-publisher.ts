@@ -9,7 +9,6 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
-import { getBaseColorFamilyBlockedIds } from "@/lib/channels/base-color-family";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -284,82 +283,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  // BASE currently receives one image per item and has no verified per-variation
-  // image-switching contract. Never publish supplier color families as separate
-  // storefront items: block the entire exact supplier_product_id family instead.
-  // This is deliberately identity-based (not title similarity) and excludes the
-  // merchant-held protein exception above.
-  const supplierProductIds = [...new Set(publishableListings
-    .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
-    .map((listing) => String(listing.supplier_product_id ?? "").trim())
-    .filter(Boolean))];
-  const familyBlockedListingIds = new Set<string>();
-  if (supplierProductIds.length > 0) {
-    const { data: familyRows, error: familyQueryError } = await supabase
-      .from("shop_listings")
-      .select("id,supplier_product_id,base_item_id,title,description,selling_price")
-      .in("supplier_product_id", supplierProductIds)
-      .is("archived_at", null);
-    if (familyQueryError) throw new Error("base_color_family_lookup_failed:" + familyQueryError.message);
-
-    const blockedIds = getBaseColorFamilyBlockedIds(
-      (familyRows ?? []).map((row) => ({
-        id: String(row.id),
-        supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
-      })),
-      ALWAYS_ON_SALE_LISTING_IDS,
-    );
-    for (const id of blockedIds) familyBlockedListingIds.add(id);
-    const blockedRows = (familyRows ?? []).filter((row) => blockedIds.has(String(row.id)));
-
-    for (const row of blockedRows) {
-      const listingId = String(row.id);
-      let hideError: string | null = null;
-      const baseItemId = row.base_item_id == null ? null : String(row.base_item_id);
-      if (baseItemId) {
-        try {
-          const price = Number(row.selling_price);
-          if (!Number.isFinite(price) || price <= 0) throw new Error("base_color_family_hide_price_invalid");
-          await editBaseItem({
-            itemId: baseItemId,
-            title: String(row.title ?? "").trim() || "商品情報確認中",
-            detail: String(row.description ?? row.title ?? "").trim() || "商品情報を確認しています。",
-            price,
-            stock: 0,
-            visible: false,
-          });
-        } catch (error) {
-          hideError = error instanceof Error ? error.message : String(error);
-        }
-      }
-      const now = new Date().toISOString();
-      const { error: blockError } = await supabase.from("shop_listings").update({
-        published: false,
-        orderable: false,
-        published_at: null,
-        base_publication_status: hideError ? "failed" : "blocked",
-        base_publication_lease_until: null,
-        base_last_error: hideError ?? "base_color_variant_image_switching_unverified",
-        pipeline_stage: hideError ? "BASE_RECONCILIATION" : "BLOCKED",
-        pipeline_status: hideError ? "failed" : "blocked",
-        pipeline_reason: hideError ? "base_color_family_hide_failed" : "base_color_variant_image_switching_unverified",
-        pipeline_error: hideError,
-        pipeline_updated_at: now,
-        updated_at: now,
-      }).eq("id", listingId);
-      if (blockError) {
-        results.push({ listingId, ok: false, baseItemId, error: "base_color_family_db_block_failed:" + blockError.message });
-      } else if (hideError) {
-        results.push({ listingId, ok: false, baseItemId, error: "base_color_family_hide_failed:" + hideError });
-      } else {
-        results.push({ listingId, ok: true, baseItemId, hidden: Boolean(baseItemId), skipped: !baseItemId, error: "base_color_variant_image_switching_unverified" });
-      }
-    }
-  }
-
-  const activeListings = publishableListings.filter((listing) =>
-    !identityUnlinkedIds.has(String(listing.id)) && !familyBlockedListingIds.has(String(listing.id))
-  );
+  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -384,7 +308,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (identityUnlinkedIds.has(listingId) || familyBlockedListingIds.has(listingId)) continue;
+    if (identityUnlinkedIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";
