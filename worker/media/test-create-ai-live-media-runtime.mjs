@@ -23,6 +23,7 @@ const runtime = createAiLiveMediaRuntime({
   mediaRoot: "/app/media",
   secretResolver: async () => ({ outputUrl: "rtmps://a.rtmp.youtube.com/live2/opaque" }),
   speechBridge: { async synthesize() { return { status: "handoff" }; } },
+  resolveVideoForProduct: async (id) => `products/${id}.mp4`,
   spawnImpl: () => {
     const child = new FakeChild();
     children.push(child);
@@ -40,12 +41,14 @@ const started = await runtime.start({
 });
 assert.equal(started.state, "connected");
 assert.equal(children.length, 1);
-children[0].exitCode = 1;
-children[0].emit("exit", 1, null);
-for (let i = 0; i < 10 && children.length < 2; i += 1) {
+await runtime.setCurrentProduct("product-42");
+assert.equal(children.length, 2, "changing product should switch the FFmpeg video input");
+children[1].exitCode = 1;
+children[1].emit("exit", 1, null);
+for (let i = 0; i < 10 && children.length < 3; i += 1) {
   await new Promise((resolve) => setImmediate(resolve));
 }
-assert.equal(children.length, 2, "unexpected FFmpeg exit should automatically reconnect");
+assert.equal(children.length, 3, "unexpected FFmpeg exit should automatically reconnect");
 assert.equal(runtime.snapshot().state, "connected");
 await runtime.stop();
 assert.equal(runtime.snapshot().state, "stopped");
