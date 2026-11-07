@@ -200,7 +200,7 @@ export function createYouTubeLiveBroadcastManager({
 
     async completeBroadcast({ broadcastId, signal } = {}) {
       const current = await getBroadcast(broadcastId, signal);
-      if (!["live", "liveStarting", "testing", "testStarting", "ready"].includes(current.lifeCycleStatus)) {
+      if (!["live", "liveStarting", "testing", "testStarting"].includes(current.lifeCycleStatus)) {
         throw new Error("youtube_live_broadcast_cannot_be_completed_from_current_state");
       }
       const payload = await request("/liveBroadcasts/transition", {
