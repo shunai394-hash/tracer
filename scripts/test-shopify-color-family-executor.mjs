@@ -22,9 +22,9 @@ assert.match(executor, /shopify_color_family_verification_inventory_failed/, "fi
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");
 assert.match(executor, /variantImages\.length !== 1/, "each color variant must have exactly one verified image");
 assert.match(executor, /shopify_color_family_verification_color_image_mapping_failed/, "different colors must not share the same image asset");
-assert.match(executor, /canonicalVariantId: string/, "each source color must identify its canonical commerce variant");
-assert.match(executor, /sourceShopifyProductId: string/, "each source color must retain its old Shopify product ID");
-assert.match(executor, /sourceShopifyVariantId: string/, "each source color must retain its old Shopify variant ID");
+assert.match(source, /canonicalVariantId: string/, "each source color must identify its canonical commerce variant");
+assert.match(source, /sourceShopifyProductId: string/, "each source color must retain its old Shopify product ID");
+assert.match(source, /sourceShopifyVariantId: string/, "each source color must retain its old Shopify variant ID");
 assert.match(executor, /channel_listing_external_aliases/, "historical Shopify variant aliases must be persisted");
 assert.match(executor, /shopify_color_family_alias_identity_conflict/, "conflicting historical aliases must fail closed");
 assert.match(executor, /shopify_color_family_alias_verification_failed/, "persisted aliases must be read back and verified");
