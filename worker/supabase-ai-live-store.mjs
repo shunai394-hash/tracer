@@ -81,6 +81,14 @@ export function createSupabaseAiLiveStore({ url, serviceRoleKey, fetchImpl = fet
       });
       return rows?.[0] || null;
     },
+    async insertNew(record) {
+      const rows = await request("?on_conflict=stream_id&select=stream_id,status,updated_at", {
+        method: "POST",
+        body: toRow(record),
+        prefer: "resolution=ignore-duplicates,return=representation",
+      });
+      return rows?.[0] || null;
+    },
     async get(streamId) {
       if (typeof streamId !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(streamId)) throw new Error("invalid_stream_id");
       const rows = await request("?stream_id=eq." + encodeURIComponent(streamId) + "&select=*");
@@ -107,7 +115,10 @@ export function createSupabaseAiLiveStore({ url, serviceRoleKey, fetchImpl = fet
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 300) throw new Error("invalid_lease_seconds");
       const at = new Date(now).toISOString();
       const expires = new Date(new Date(now).getTime() + leaseSeconds * 1000).toISOString();
-      const rows = await request("?stream_id=eq." + encodeURIComponent(streamId) + "&select=stream_id,status,heartbeat_at,lease_expires_at", {
+      const rows = await request("?stream_id=eq." + encodeURIComponent(streamId) +
+        "&lease_owner=eq." + encodeURIComponent(owner) +
+        "&lease_expires_at=gt." + encodeURIComponent(at) +
+        "&select=stream_id,status,heartbeat_at,lease_expires_at", {
         method: "PATCH",
         body: {
           heartbeat_at: at,
