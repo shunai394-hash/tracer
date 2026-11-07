@@ -68,7 +68,7 @@ export function planShopifyColorFamily(input: {
     if (!source.productId.trim() || !variantId) blockers.push("shopify_source_identity_missing:" + id);
     if (!sku) blockers.push("sku_missing:" + id);
     if (!colorLabel || colorLabel === "標準") blockers.push("color_label_missing:" + id);
-    if (!/^https?:\\/\\//i.test(source.imageUrl.trim())) blockers.push("variant_image_missing:" + id);
+    if (!/^https?:\/\//i.test(source.imageUrl.trim())) blockers.push("variant_image_missing:" + id);
     if (!Number.isFinite(source.price) || source.price <= 0) blockers.push("price_invalid:" + id);
     if (!Number.isSafeInteger(source.inventory) || source.inventory < 0) blockers.push("inventory_invalid:" + id);
   }
