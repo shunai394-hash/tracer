@@ -11,7 +11,7 @@ import {
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 import { readCJFreightPrice } from "@/lib/sources/cj/freight-cost";
-import { normalizeCJProductDetailVariants } from "@/lib/sources/cj/product-detail-variants";
+import { normalizeCJProductDetailSummary, normalizeCJProductDetailVariants } from "@/lib/sources/cj/product-detail-variants";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -1078,6 +1078,25 @@ export async function searchCJProducts(
   };
 }
 
+async function queryCJProductDetailSummary(pid: string): Promise<CJProductCandidate | null> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/product/productDetail/query",
+    {
+      method: "POST",
+      headers: {
+        "CJ-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: pid }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return null;
+  const payload = await response.json() as unknown;
+  return normalizeCJProductDetailSummary(payload, pid);
+}
+
 export async function getCJProductDetail(
   pid: string,
 ): Promise<CJProductCandidate | null> {
@@ -1122,7 +1141,8 @@ export async function getCJProductDetail(
   }
 
   if (product) logRawCjProductOnce("product/query", product, detailLogState);
-  return product ? normalizeProduct(product) : null;
+  const normalized = product ? normalizeProduct(product) : null;
+  return normalized ?? await queryCJProductDetailSummary(pid);
 }
 
 /**
