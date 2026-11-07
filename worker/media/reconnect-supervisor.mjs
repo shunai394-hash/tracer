@@ -53,6 +53,10 @@ export function createReconnectSupervisor({
   }
 
   async function retryLoop() {
+    // Tear down any partially connected or disconnected publisher before a
+    // retry. stopAttempt must be idempotent; this prevents overlapping FFmpeg
+    // processes and stale RTMP sessions during reconnect.
+    try { await stopAttempt(); } catch {}
     while (!stopped && retries < maxRetries) {
       retries += 1;
       const delay = Math.min(maxDelayMs, baseDelayMs * (2 ** (retries - 1)));
