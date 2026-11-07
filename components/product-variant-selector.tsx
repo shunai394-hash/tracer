@@ -31,6 +31,7 @@ export function ProductVariantSelector({
       supplierVariantId: listing.supplierVariantId,
       shopifyVariantId: listing.shopifyVariantId,
       shopifyHandle: listing.shopifyHandle,
+      canonicalCommerce: listing.canonicalCommerce,
     }];
     return rows;
   }, [listing, variants]);
@@ -107,6 +108,10 @@ export function ProductVariantSelector({
             <a href={shopifyUrl} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">
               選択したカラーを購入する
             </a>
+          ) : selected.canonicalCommerce ? (
+            <div role="status" className="rounded-xl border border-[#D9C8BE] bg-white px-4 py-4 text-center text-sm leading-6 text-[#5C4035]">
+              購入先の商品バリエーションを確認できないため、現在購入できません。
+            </div>
           ) : (
             <AddToCartButton listingId={selected.id} slug={selected.slug} title={selected.title} unitPrice={selected.sellingPrice} currency={selected.currency} imageUrl={selected.imageUrl} />
           )}
