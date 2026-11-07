@@ -1,6 +1,7 @@
 import http from "node:http";
 import { timingSafeEqual, createHash, randomUUID } from "node:crypto";
 import { createSupabaseAiLiveStore } from "./supabase-ai-live-store.mjs";
+import { createTracerProductFeedClient } from "./tracer-product-feed-client.mjs";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_RUNTIME_SECONDS = 30 * 60;
@@ -83,10 +84,14 @@ export function createAiLiveWorkerServer({
   store = null,
   mediaRuntimeFactory = null,
   mediaRuntimeOptions = null,
+  productFeedProvider = null,
   workerId = randomUUID().replaceAll("-", "_"),
 } = {}) {
   if (!token || token.length < 32) throw new Error("AI_LIVE_WORKER_TOKEN must contain at least 32 characters");
   if (mode !== "fake") throw new Error("Only the fake adapter is implemented; live publishing is disabled");
+  if (productFeedProvider !== null && typeof productFeedProvider !== "function") {
+    throw new Error("product_feed_provider_must_be_a_function");
+  }
   if ((mediaRuntimeFactory && typeof mediaRuntimeFactory !== "function") ||
       (mediaRuntimeOptions && typeof mediaRuntimeOptions !== "function") ||
       Boolean(mediaRuntimeFactory) !== Boolean(mediaRuntimeOptions)) {
@@ -260,7 +265,20 @@ export function createAiLiveWorkerServer({
 
     try {
       if (req.method === "POST" && url.pathname === "/v1/streams") {
-        const job = await readJson(req);
+        const requestedJob = await readJson(req);
+        let job = requestedJob;
+        if (productFeedProvider) {
+          let verifiedSegments;
+          try {
+            verifiedSegments = await productFeedProvider({ limit: 20 });
+          } catch {
+            return json(res, 503, { error: "verified_product_feed_unavailable" });
+          }
+          if (!Array.isArray(verifiedSegments) || verifiedSegments.length < 1 || verifiedSegments.length > 20) {
+            return json(res, 503, { error: "no_verified_products_available" });
+          }
+          job = { ...requestedJob, segments: verifiedSegments };
+        }
         const validationError = validateJob(job, now());
         if (validationError) return json(res, 422, { error: validationError });
         const fingerprint = createHash("sha256").update(JSON.stringify(job)).digest("hex");
@@ -365,7 +383,13 @@ if (isMain) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the isolated worker");
   }
   const store = createSupabaseAiLiveStore({ url: supabaseUrl, serviceRoleKey });
-  const server = createAiLiveWorkerServer({ store });
+  const productFeedProvider = process.env.TRACER_BASE_URL
+    ? createTracerProductFeedClient({
+        baseUrl: process.env.TRACER_BASE_URL,
+        workerToken: process.env.AI_LIVE_WORKER_TOKEN,
+      })
+    : null;
+  const server = createAiLiveWorkerServer({ store, productFeedProvider });
   const port = Number(process.env.PORT || 8080);
   await server.restoreActiveStreams();
   server.startRecoveryLoop();
