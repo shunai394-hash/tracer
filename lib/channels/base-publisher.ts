@@ -9,6 +9,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { getBaseColorFamilyBlockedIds } from "@/lib/channels/base-color-family";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -301,19 +302,15 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
       .is("archived_at", null);
     if (familyQueryError) throw new Error("base_color_family_lookup_failed:" + familyQueryError.message);
 
-    const familyCounts = new Map<string, number>();
-    for (const row of familyRows ?? []) {
-      const supplierProductId = String(row.supplier_product_id ?? "").trim();
-      if (supplierProductId) familyCounts.set(supplierProductId, (familyCounts.get(supplierProductId) ?? 0) + 1);
-    }
-    const blockedRows = (familyRows ?? []).filter((row) => {
-      const id = String(row.id);
-      const supplierProductId = String(row.supplier_product_id ?? "").trim();
-      const isMerchantHeld = ALWAYS_ON_SALE_LISTING_IDS.has(id);
-      const isColorFamily = supplierProductId && (familyCounts.get(supplierProductId) ?? 0) > 1;
-      if (isColorFamily && !isMerchantHeld) familyBlockedListingIds.add(id);
-      return Boolean(isColorFamily && !isMerchantHeld);
-    });
+    const blockedIds = getBaseColorFamilyBlockedIds(
+      (familyRows ?? []).map((row) => ({
+        id: String(row.id),
+        supplierProductId: row.supplier_product_id == null ? null : String(row.supplier_product_id),
+      })),
+      ALWAYS_ON_SALE_LISTING_IDS,
+    );
+    for (const id of blockedIds) familyBlockedListingIds.add(id);
+    const blockedRows = (familyRows ?? []).filter((row) => blockedIds.has(String(row.id)));
 
     for (const row of blockedRows) {
       const listingId = String(row.id);
