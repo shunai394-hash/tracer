@@ -67,8 +67,8 @@ assert.deepEqual(events, [
   "chat:start",
   "comment:comment-1",
   "chat:stop",
-  "broadcast:complete",
   "media:stop",
+  "broadcast:complete",
   "secret:delete",
 ]);
 
@@ -93,3 +93,48 @@ await assert.rejects(() => failed.start({ title: "Failure test", productId: "pro
 assert.equal(failed.snapshot().state, "failed");
 assert.deepEqual(failedEvents, ["media:start", "cancel", "media:stop"]);
 console.log("TRACER YouTube live session orchestration: all assertions passed");
+
+const retryEvents = [];
+let mediaStopAttempts = 0;
+const retrySession = createTracerYouTubeLiveSession({
+  broadcastControl: {
+    ...control,
+    async getStatus() {
+      return { stream: { streamStatus: "active" }, broadcast: { lifeCycleStatus: "ready" } };
+    },
+    async startBroadcast() { return { liveChatId: "chat-retry" }; },
+    async completeBroadcast() { retryEvents.push("broadcast:complete"); },
+  },
+  createMediaRuntime: async () => ({
+    async setCurrentProduct() {},
+    async start() { retryEvents.push("media:start"); },
+    async stop() {
+      mediaStopAttempts += 1;
+      retryEvents.push("media:stop:" + mediaStopAttempts);
+      if (mediaStopAttempts === 1) throw new Error("encoder_still_stopping");
+    },
+  }),
+  createChatClient: async () => ({
+    async start() { retryEvents.push("chat:start"); },
+    async stop() { retryEvents.push("chat:stop"); },
+  }),
+  deleteStreamSecret: async () => { retryEvents.push("secret:delete"); },
+  sleep: async () => {},
+  pollIntervalMs: 250,
+  activeTimeoutMs: 500,
+});
+await retrySession.start({ title: "Retry stop", productId: "product-1" });
+await retrySession.stop();
+assert.equal(retrySession.snapshot().state, "failed");
+assert.equal(retryEvents.includes("secret:delete"), false);
+await retrySession.stop();
+assert.equal(retrySession.snapshot().state, "stopped");
+assert.deepEqual(retryEvents, [
+  "media:start",
+  "chat:start",
+  "chat:stop",
+  "media:stop:1",
+  "broadcast:complete",
+  "media:stop:2",
+  "secret:delete",
+]);
