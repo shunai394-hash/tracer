@@ -50,7 +50,10 @@ const session = createTracerYouTubeLiveSession({
   pollIntervalMs: 250,
   activeTimeoutMs: 500,
 });
-await session.start({ title: "Test stream", productId: "product-1", mediaOptions: { videoFile: "product.mp4", bgmFile: "bgm.mp3" } });
+await session.start({ title: "Test stream", productId: "product-1", mediaOptions: {
+  destination: "tiktok_live", destinationSecretRef: "attacker-ref",
+  videoFile: "product.mp4", bgmFile: "bgm.mp3",
+} });
 assert.equal(session.snapshot().state, "running");
 await chatHandler({ id: "comment-1" });
 await session.stop();
