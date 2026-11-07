@@ -43,7 +43,7 @@ assert.ok(!calls[0].init.body.includes("rtmp://"));
 await store.get("stream_0001");
 assert.match(calls[1].url, /stream_id=eq.stream_0001/);
 await store.listActive();
-assert.match(calls[2].url, /status=in.\\(starting,live,reconnecting\\)/);
+assert.match(calls[2].url, /status=in.\(starting,live,reconnecting\)/);
 
 await store.heartbeat("stream_0001", {
   owner: "worker_instance_01",
