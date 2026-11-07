@@ -11,7 +11,7 @@ const STATE_COOKIE = "tracer_ai_live_youtube_oauth_state";
 const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube";
 
 function redirectResult(requestUrl: URL, result: "connected" | "failed") {
-  const destination = new URL("/admin/operations", requestUrl.origin);
+  const destination = new URL("/admin/operations", "https://tracer-pied-alpha.vercel.app");
   destination.searchParams.set("youtube", result);
   const response = NextResponse.redirect(destination, 303);
   response.headers.set("Cache-Control", "no-store");
