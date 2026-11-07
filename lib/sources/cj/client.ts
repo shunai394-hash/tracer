@@ -1306,7 +1306,9 @@ export async function fetchCJProductVariants(
     rows = rows.map((row) => {
       const vid = row.vid?.trim() || row.variantId?.trim() || "";
       const detailed = detailByVid.get(vid);
-      return detailed?.variantImage && !row.variantImage
+      const currentImage = typeof row.variantImage === "string" ? row.variantImage.trim() : "";
+      const hasCurrentImage = currentImage.startsWith("https://") || currentImage.startsWith("http://");
+      return detailed?.variantImage && !hasCurrentImage
         ? { ...row, variantImage: detailed.variantImage }
         : row;
     });
