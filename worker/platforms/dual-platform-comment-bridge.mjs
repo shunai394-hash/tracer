@@ -46,9 +46,16 @@ export function createAiLiveDualPlatformCommentBridge({
         throw new Error("youtube_live_chat_id_required");
       }
       state = "starting";
+      try {
+        youtubeAdapter.setOnComment?.(forward);
+        tiktokAdapter.setOnComment?.(forward);
+      } catch (error) {
+        state = "failed";
+        throw error;
+      }
       const starts = await Promise.allSettled([
-        youtubeAdapter.start(youtubeLiveChatId, forward),
-        tiktokAdapter.start(forward),
+        youtubeAdapter.start(youtubeLiveChatId),
+        tiktokAdapter.start(),
       ]);
       const failed = starts.find((result) => result.status === "rejected");
       if (failed) {
