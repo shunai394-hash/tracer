@@ -66,7 +66,8 @@
     "test:ai-live-short-drama-studio": "node scripts/test-ai-live-short-drama-studio.mjs",
     "test:ai-live-obs-browser-source": "node scripts/test-ai-live-obs-browser-source.mjs",
     "test:shopify-color-family-plan": "node --experimental-strip-types --no-warnings scripts/test-shopify-color-family-plan.mjs",
-    "test:base-color-family-guard": "node --experimental-strip-types --no-warnings scripts/test-base-color-family-guard.mjs"
+    "test:base-color-family-guard": "node --experimental-strip-types --no-warnings scripts/test-base-color-family-guard.mjs",
+    "test:shopify-color-family-executor": "node scripts/test-shopify-color-family-executor.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
