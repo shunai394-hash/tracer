@@ -23,10 +23,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Test AI Live worker and local FFmpeg renderer
+      - name: Test AI Live worker and destination secret provider
         run: |
           node worker/test-ai-live-worker.mjs
           node worker/test-ffmpeg-media.mjs
+          node worker/test-destination-secret-provider.mjs
       - name: Install FFmpeg for real media integration test
         run: |
           sudo apt-get update
