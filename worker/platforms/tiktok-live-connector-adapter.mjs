@@ -28,6 +28,7 @@ export function createTikTokLiveConnectorAdapter({
   let task = null;
   let state = "idle";
   let reconnectCount = 0;
+  let onCommentHandler = onComment;
 
   const delay = (ms, signal) => new Promise((resolve, reject) => {
     if (signal.aborted) return reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
@@ -51,7 +52,7 @@ export function createTikTokLiveConnectorAdapter({
           if (signal.aborted) break;
           const event = normalizeTikTokAuthorizedComment(raw);
           if (event) {
-            try { await onComment(event); } catch (error) { onError(error); }
+            try { await onCommentHandler(event); } catch (error) { onError(error); }
           }
         }
         if (signal.aborted) break;
@@ -75,6 +76,11 @@ export function createTikTokLiveConnectorAdapter({
 
   return {
     snapshot() { return { state, reconnectCount }; },
+    setOnComment(handler) {
+      if (typeof handler !== "function") throw new Error("on_comment_handler_required");
+      if (task) throw new Error("cannot_replace_comment_handler_while_started");
+      onCommentHandler = handler;
+    },
     async start() {
       if (task) throw new Error("tiktok_connector_already_started");
       controller = new AbortController();
