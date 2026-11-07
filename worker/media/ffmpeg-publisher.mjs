@@ -168,15 +168,22 @@ export function createFfmpegPublisher({
     async writeSpeechAudio(bytes) {
       return writeChunk(bytes);
     },
-    async switchVideo(videoFile) {
+    async switchMedia({ videoFile = lastStartOptions?.videoFile, bgmFile = lastStartOptions?.bgmFile } = {}) {
       if (!lastStartOptions || state !== "publishing") throw new Error("publisher_not_running");
       const nextVideoPath = resolveMediaPath(videoFile, mediaRoot);
+      const nextBgmPath = resolveMediaPath(bgmFile, mediaRoot);
       if (![".mp4", ".mov", ".mkv"].includes(path.extname(nextVideoPath).toLowerCase())) {
         throw new Error("video_file_required");
       }
-      const nextOptions = { ...lastStartOptions, videoFile };
+      if (![".mp3", ".wav", ".m4a"].includes(path.extname(nextBgmPath).toLowerCase())) {
+        throw new Error("bgm_file_required");
+      }
+      const nextOptions = { ...lastStartOptions, videoFile, bgmFile };
       await this.stop();
       return this.start(nextOptions);
+    },
+    async switchVideo(videoFile) {
+      return this.switchMedia({ videoFile });
     },
     async stop({ graceMs = 5000 } = {}) {
       if (!child) {
