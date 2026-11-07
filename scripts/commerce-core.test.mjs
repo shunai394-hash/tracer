@@ -472,6 +472,8 @@ test("TRACER storefront displays published canonical Shopify listings without en
   // Stale supplier checks must not drop published products before offerFresh is evaluated.
   assert.doesNotMatch(store, /\.gte\("last_checked_at", freshAfter\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
+  assert.match(store, /deriveVariantLabel\(variant\.title_ja, attributes\)/);
+  assert.match(store, /attributes\.supplierVariantName/);
   assert.match(productPage, /<ProductVariantSelector/);
   assert.match(productSelector, /href={shopifyUrl}/);
   assert.match(productSelector, /選択したカラーを購入する/);
