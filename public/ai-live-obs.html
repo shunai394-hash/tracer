@@ -50,12 +50,13 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
 <button id="toggle" type="button">操作パネル</button>
 <aside class="panel" id="panel">
  <h1>TRACER OBS 配信コントロール</h1>
- <p>OBS Browser Source用のローカル音声・字幕テスト画面。実商品情報・TikTokコメント・配信先には未接続です。</p>
+ <p>商品情報はTRACERの公開・販売条件を満たす商品だけを読み取り表示します。TikTokコメントと配信先は未接続です。</p>
  <label for="script">読み上げテキスト</label>
  <textarea id="script">こんにちは。TRACER AI LIVEへようこそ。本日はおすすめ商品をご紹介します。</textarea>
  <div class="actions"><button class="primary" id="speak">読み上げ開始</button><button id="stop">音声停止</button></div>
  <label for="voice">Fish Audio 日本語ボイス</label><select id="voice"><option value="">ボイス一覧を読み込んでください</option></select><button id="loadVoices" type="button">許諾済み音声を読み込む</button>
- <label for="token">管理トークン（保存済みBGM読込時のみ）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
+ <label for="products">紹介する商品（TRACER読み取り専用）</label><select id="products"><option value="">商品情報を読み込んでください</option></select><div class="actions"><button id="loadProducts" type="button">商品情報を読み込む</button><button id="applyProduct" type="button">紹介文を台本に反映</button></div>
+ <label for="token">管理トークン（BGM・音声・商品情報の読込時）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
  <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
  <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
  <label for="track">再生するBGM</label><select id="track"><option value="">音源を選択</option></select>
@@ -69,7 +70,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
 (() => {
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
- let tracks=[], urls=[], baseVolume=.35, ducked=false, fishVoices=[], speechObjectUrl=null, speechAudio=null;
+ let tracks=[], urls=[], baseVolume=.35, ducked=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -107,6 +108,28 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   $('track').value=String(i);audio.src=tracks[i].url;setVolume();
   try{await audio.play();setStatus('BGM再生中：'+tracks[i].name)}catch{setStatus('再生できません。もう一度BGM再生を押してください')}
  }
+ async function loadProducts(){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+  $('loadProducts').disabled=true;setStatus('公開済み商品情報を取得中…');
+  try{
+   const r=await fetch('/api/admin/ai-live/products?limit=20',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok||d.readOnly!==true||!Array.isArray(d.products))throw new Error(r.status===401||r.status===403?'認証に失敗しました。':'商品情報を取得できませんでした。');
+   products=d.products;
+   const select=$('products');select.innerHTML='<option value="">紹介する商品を選択</option>';
+   for(const p of products){const o=document.createElement('option');o.value=p.id;o.textContent=p.title+' — '+new Intl.NumberFormat('ja-JP').format(p.sellingPrice)+'円';select.appendChild(o)}
+   setStatus(products.length+'件の商品情報を読み込みました（読み取り専用）');
+  }catch(e){setStatus(e.message||'商品情報の取得に失敗しました')}finally{$('loadProducts').disabled=false}
+ }
+ function applyProduct(){
+  const product=products.find(p=>p.id===$('products').value);
+  if(!product){setStatus('紹介する商品を選択してください');return}
+  const price=new Intl.NumberFormat('ja-JP').format(product.sellingPrice);
+  const description=product.description?product.description:'詳細は商品ページをご確認ください。';
+  $('script').value=product.title+'。価格は'+price+'円です。'+description;
+  $('caption').textContent=product.title+'　'+price+'円';
+  setStatus('商品情報を紹介台本に反映しました');
+ }
  async function loadFishVoices(){
   const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
   $('loadVoices').disabled=true;setStatus('許諾済み日本語ボイスを確認中…');
@@ -142,7 +165,10 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    await speechAudio.play();
   }catch(e){$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus(e.message||'音声生成に失敗しました')}
  }
- $('speak').addEventListener('click',speak);\n $('loadVoices').addEventListener('click',loadFishVoices);
+ $('speak').addEventListener('click',speak);
+ $('loadVoices').addEventListener('click',loadFishVoices);
+ $('loadProducts').addEventListener('click',loadProducts);
+ $('applyProduct').addEventListener('click',applyProduct);
  $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
  $('load').addEventListener('click',loadSaved);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
