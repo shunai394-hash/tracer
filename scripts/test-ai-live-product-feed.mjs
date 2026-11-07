@@ -6,7 +6,9 @@ const route = await readFile(
   "utf8",
 );
 
-// The feed must be protected and read-only.
+// The feed accepts a timing-safe admin token or the existing automation auth, and stays read-only.
+assert.match(route, /timingSafeEqual/);
+assert.match(route, /authorizedAdminToken\(request\)/);
 assert.match(route, /requireAutomationAuth\(request\)/);
 assert.match(route, /export async function GET/);
 assert.match(route, /readOnly: true/);
