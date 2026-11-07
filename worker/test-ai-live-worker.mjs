@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createAiLiveWorkerServer } from "./ai-live-worker.mjs";
 
 const token = "test-token-that-is-long-enough-for-worker-auth";
@@ -103,6 +104,41 @@ try {
     assert.ok(persistenceCalls.some((call) => call[0] === "stop" && call[1] === "test_stream_0005"));
   } finally {
     await new Promise((resolve) => persistedServer.close(resolve));
+  }
+
+  const recoveryStore = {
+    async listActive() {
+      return [{
+        stream_id: "test_stream_0006",
+        status: "live",
+        adapter_mode: "fake",
+        job_payload: { ...job, streamId: "test_stream_0006" },
+        job_fingerprint: createHash("sha256").update(JSON.stringify({ ...job, streamId: "test_stream_0006" })).digest("hex"),
+        active_segment_index: 1,
+        started_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      }];
+    },
+    async claimLease(streamId, options) {
+      persistenceCalls.push(["reclaim", streamId, options.owner]);
+      return { stream_id: streamId };
+    },
+    async heartbeat(streamId) { return { stream_id: streamId }; },
+    async markStopped(streamId, options) { persistenceCalls.push(["recovery_stop", streamId, options.reason]); return { stream_id: streamId }; },
+  };
+  const recoveryServer = createAiLiveWorkerServer({ token, mode: "fake", store: recoveryStore, workerId: "worker_recovery_01" });
+  const recovery = await recoveryServer.restoreActiveStreams();
+  assert.deepEqual(recovery, { restored: 1, skipped: 0 });
+  await new Promise((resolve) => recoveryServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const restoredResponse = await fetch("http://127.0.0.1:" + recoveryServer.address().port + "/v1/streams/test_stream_0006", { headers });
+    assert.equal(restoredResponse.status, 200);
+    const restoredState = await restoredResponse.json();
+    assert.equal(restoredState.state, "live");
+    assert.equal(restoredState.segmentIndex, 1);
+    assert.equal(restoredState.currentSegmentId, "segment-2");
+  } finally {
+    await new Promise((resolve) => recoveryServer.close(resolve));
   }
 
   assert.throws(() => createAiLiveWorkerServer({ token, mode: "ffmpeg" }), /fake adapter is implemented/);
