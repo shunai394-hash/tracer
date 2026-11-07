@@ -4,8 +4,10 @@ This is an isolated-container milestone for the AI Live pipeline. The HTTP
 control API still runs in **fake mode** and does not start a broadcast. A
 separate FFmpeg publisher module now supports a controlled RTMP process, a
 looped background video, MP3 speech on stdin, and an MP3/WAV/M4A BGM track mixed
-at 18% volume. The publisher is not yet wired to the HTTP stream lifecycle or
-a production secret manager; do not treat this as a live-ready deployment.
+at 18% volume. The worker also accepts an explicitly injected media-runtime
+factory for lifecycle tests and controlled host integration. The default
+entrypoint does not inject one and remains fake-only; do not treat this as a
+live-ready deployment.
 
 ## Run locally
 
