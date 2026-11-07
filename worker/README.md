@@ -37,8 +37,7 @@ every 15 seconds and stops locally if it loses ownership. On process startup,
 only validated `fake`-mode records are considered for recovery; the worker
 reclaims an expired lease before restoring the segment index and remaining
 runtime. Live-mode records are never resumed. The migration files must be
-applied before starting the isolated worker. The HTTP control plane still does
-not broadcast.
+applied before starting the isolated worker. The default HTTP control plane still does not broadcast.
 
 Run the focused checks from the repository root:
 
@@ -50,6 +49,7 @@ node worker/media/test-ffmpeg-publisher.mjs
 node worker/media/test-live-media-session.mjs
 node worker/media/test-reconnect-supervisor.mjs
 node worker/media/test-ai-live-stream-runtime.mjs
+node worker/media/test-create-ai-live-media-runtime.mjs
 ```
 
 ## Container
@@ -70,9 +70,7 @@ or health response.
 
 The Supabase state adapter, insert-only start path, atomic lease claim,
 lease-fenced heartbeat, and fake-mode restart recovery are implemented and
-contract-tested. The FFmpeg publisher module remains separate from the HTTP
-lifecycle, reconnect supervisor, and live comment/audio scheduler. The HTTP service still refuses any mode other than `fake`, so it
-cannot accidentally start a real broadcast. Before enabling publishing, wire
+contract-tested. The FFmpeg publisher, speech bridge, media session, and bounded reconnect supervisor can now be assembled into one media runtime. The HTTP worker can manage an explicitly injected runtime through start, product-context updates, stop, runtime-limit, lease-loss, and shutdown paths. This injection is not enabled by the default entrypoint: the HTTP service still refuses any mode other than `fake` and does not create a real publisher unless a host deliberately supplies the factory and its trusted options resolver. Product rotation currently updates product context only; it does not yet switch the on-air video. The worker still has no production platform comment adapters. Before enabling publishing, wire
 in a production secret manager and verify each YouTube/TikTok account's current
 stream eligibility and platform policy requirements. Mount only approved
 media files under `AI_LIVE_MEDIA_ROOT`; do not place stream keys in job JSON.
