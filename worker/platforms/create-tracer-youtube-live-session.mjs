@@ -62,13 +62,32 @@ export function createTracerYouTubeLiveSession({
 
   async function cleanupFailedStart() {
     if (chatClient) {
-      await chatClient.stop().catch((error) => onError({ source: "chat_rollback", error }));
-      chatClient = null;
+      try {
+        await chatClient.stop();
+        chatClient = null;
+      } catch (error) {
+        onError({ source: "chat_rollback", error });
+      }
     }
+    let mediaStopped = !mediaRuntime;
+    if (mediaRuntime) {
+      try {
+        await mediaRuntime.stop();
+        mediaRuntime = null;
+        mediaStopped = true;
+      } catch (error) {
+        onError({ source: "media_rollback", error });
+      }
+    }
+    // Never revoke an ingest key while the encoder may still be publishing.
+    if (!mediaStopped) return;
     if (live && broadcast) {
-      await broadcastControl.completeBroadcast({ broadcastId: broadcast.broadcastId })
-        .catch((error) => onError({ source: "broadcast_rollback", error }));
-      live = false;
+      try {
+        await broadcastControl.completeBroadcast({ broadcastId: broadcast.broadcastId });
+        live = false;
+      } catch (error) {
+        onError({ source: "broadcast_rollback", error });
+      }
     } else if (broadcast && typeof broadcastControl.cancelBroadcast === "function") {
       try {
         await broadcastControl.cancelBroadcast({
@@ -84,10 +103,6 @@ export function createTracerYouTubeLiveSession({
     } else if (broadcast?.streamSecretRef) {
       await deleteStreamSecret(broadcast.streamSecretRef)
         .catch((error) => onError({ source: "secret_rollback", error }));
-    }
-    if (mediaRuntime) {
-      await mediaRuntime.stop().catch((error) => onError({ source: "media_rollback", error }));
-      mediaRuntime = null;
     }
   }
 
@@ -170,8 +185,18 @@ export function createTracerYouTubeLiveSession({
       state = "stopping";
       const failures = [];
       if (chatClient) {
-        try { await chatClient.stop(); } catch (error) { failures.push({ source: "chat_stop", error }); }
-        chatClient = null;
+        try {
+          await chatClient.stop();
+          chatClient = null;
+        } catch (error) { failures.push({ source: "chat_stop", error }); }
+      }
+      let mediaStopped = !mediaRuntime;
+      if (mediaRuntime) {
+        try {
+          await mediaRuntime.stop();
+          mediaRuntime = null;
+          mediaStopped = true;
+        } catch (error) { failures.push({ source: "media_stop", error }); }
       }
       if (live && broadcast) {
         try {
@@ -179,11 +204,7 @@ export function createTracerYouTubeLiveSession({
           live = false;
         } catch (error) { failures.push({ source: "broadcast_complete", error }); }
       }
-      if (mediaRuntime) {
-        try { await mediaRuntime.stop(); } catch (error) { failures.push({ source: "media_stop", error }); }
-        mediaRuntime = null;
-      }
-      if (!live && broadcast?.streamSecretRef) {
+      if (mediaStopped && !live && broadcast?.streamSecretRef) {
         try { await deleteStreamSecret(broadcast.streamSecretRef); }
         catch (error) { failures.push({ source: "secret_cleanup", error }); }
       }
