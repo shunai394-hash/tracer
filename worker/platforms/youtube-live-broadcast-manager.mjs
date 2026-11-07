@@ -27,6 +27,7 @@ function safeResource(payload, field) {
 export function createYouTubeLiveBroadcastManager({
   accessTokenProvider,
   persistStreamSecret,
+  deleteStreamSecret = async () => {},
   fetchImpl = fetch,
   now = Date.now,
 } = {}) {
@@ -112,6 +113,7 @@ export function createYouTubeLiveBroadcastManager({
 
       let streamId = null;
       let broadcastId = null;
+      let streamSecretRef = null;
       try {
         const streamPayload = await request("/liveStreams", {
           method: "POST",
@@ -131,8 +133,8 @@ export function createYouTubeLiveBroadcastManager({
         if (!/^rtmps?:\/\//i.test(ingestionAddress) || ingestionAddress.length > 2048 ||
             !streamName || streamName.length > 1024) throw new Error("youtube_live_ingest_details_missing");
 
-        const secretRef = await persistStreamSecret({ platform: "youtube", streamId, ingestionAddress, streamName });
-        if (typeof secretRef !== "string" || !secretRef.trim() || secretRef.length > 256) {
+        streamSecretRef = await persistStreamSecret({ platform: "youtube", streamId, ingestionAddress, streamName });
+        if (typeof streamSecretRef !== "string" || !streamSecretRef.trim() || streamSecretRef.length > 256) {
           throw new Error("youtube_live_secret_store_did_not_return_reference");
         }
 
@@ -161,11 +163,14 @@ export function createYouTubeLiveBroadcastManager({
         const bound = safeResource(boundPayload, "bound_broadcast");
         return {
           broadcastId, streamId, title: cleanTitle, privacyStatus,
-          scheduledStartTime: startAt, streamSecretRef: secretRef,
+          scheduledStartTime: startAt, streamSecretRef,
           lifeCycleStatus: typeof bound.status?.lifeCycleStatus === "string" ? bound.status.lifeCycleStatus : "created",
           liveChatId: typeof bound.snippet?.liveChatId === "string" ? bound.snippet.liveChatId : null,
         };
       } catch (error) {
+        if (streamSecretRef) {
+          try { await deleteStreamSecret(streamSecretRef); } catch { /* Best-effort secret cleanup. */ }
+        }
         if (broadcastId) await deleteResource("/liveBroadcasts", broadcastId, signal);
         if (streamId) await deleteResource("/liveStreams", streamId, signal);
         throw error;
