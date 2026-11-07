@@ -27,7 +27,7 @@ assert.deepEqual(
   await session.handleComment({ id: "yt:1", text: "質問です" }),
   { status: "rejected", reason: "media_session_not_publishing" },
 );
-await session.start({ destination: "youtube_live", videoFile: "fallback.mp4" });
+await session.start({ destination: "youtube_live", videoFile: "fallback.mp4", bgmFile: "bgm/default.mp3" });
 assert.equal(session.snapshot().state, "publishing");
 await assert.rejects(() => session.setCurrentProduct(""), /invalid_product_id/);
 await session.setCurrentProduct("product-42");
