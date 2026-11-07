@@ -20,5 +20,7 @@ assert.match(executor, /inventoryQuantities: \[\{ locationId, name: "available",
 assert.match(executor, /shopify_color_family_verification_variant_count_failed/, "final readback must verify exact variant count");
 assert.match(executor, /shopify_color_family_verification_inventory_failed/, "final readback must verify inventory");
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");
+assert.match(executor, /variantImages\.length !== 1/, "each color variant must have exactly one verified image");
+assert.match(executor, /shopify_color_family_verification_color_image_mapping_failed/, "different colors must not share the same image asset");
 assert.doesNotMatch(executor, /ensureShopifyProductPublished|unpublishShopifyProduct|archive/i, "executor must not publish or archive source products");
 console.log("Shopify color-family executor safety contract: 12 assertions passed");
