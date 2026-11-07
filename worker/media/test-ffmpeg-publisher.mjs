@@ -32,7 +32,7 @@ class FakeChild extends EventEmitter {
     return true;
   }
 }
-const child = new FakeChild();
+const children = [];
 const publisher = createFfmpegPublisher({
   mediaRoot: "/app/media",
   secretResolver: async ({ destination, secretRef }) => {
@@ -40,7 +40,7 @@ const publisher = createFfmpegPublisher({
     assert.equal(secretRef, "live/youtube/primary");
     return { outputUrl: "rtmps://a.rtmp.youtube.com/live2/private-key" };
   },
-  spawnImpl: (...call) => { spawnCalls.push(call); return child; },
+  spawnImpl: (...call) => { spawnCalls.push(call); const proc = new FakeChild(); children.push(proc); return proc; },
   onState: (value) => stateEvents.push(value.state),
 });
 const started = await publisher.start({
@@ -55,14 +55,14 @@ assert.equal(spawnCalls[0][2].shell, false);
 assert.deepEqual(spawnCalls[0][2].stdio, ["pipe", "ignore", "pipe"]);
 assert.equal(spawnCalls[0][1].at(-1), "rtmps://a.rtmp.youtube.com/live2/private-key");
 await publisher.writeSpeechAudio(new Uint8Array([1, 2, 3]));
+assert.equal((await publisher.switchVideo("product-2.mp4")).state, "publishing");
+assert.equal(spawnCalls.length, 2);
+assert.ok(spawnCalls[1][1].includes("/app/media/product-2.mp4"));
 assert.equal((await publisher.stop({ graceMs: 0 })).state, "stopped");
 assert.ok(stateEvents.includes("starting"));
 assert.ok(stateEvents.includes("publishing"));
 assert.ok(stateEvents.includes("stopping"));
 assert.ok(!JSON.stringify(publisher.snapshot()).includes("private-key"));
-assert.equal((await publisher.switchVideo("product-2.mp4")).state, "publishing");
-assert.equal(spawnCalls.length, 2);
-assert.ok(spawnCalls[1][1].includes("/app/media/product-2.mp4"));
 
 
 let disconnectEvents = [];
