@@ -141,7 +141,10 @@ This is a production-oriented API module, not a live-enabled worker deployment. 
 OAuth credential endpoint, official YouTube broadcast manager, FFmpeg media
 runtime, and official Live Chat client into one start/stop lifecycle.
 
-The deployment must inject a real secret manager with three operations:
+By default, the factory builds a Supabase-backed AES-256-GCM secret store
+using `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and
+`AI_LIVE_OAUTH_ENCRYPTION_KEY`. A deployment may instead inject a real
+secret manager with three operations:
 
 - `persistStreamSecret({ platform, streamId, ingestionAddress, streamName })`
   stores the RTMP ingest credentials and returns an opaque reference.
