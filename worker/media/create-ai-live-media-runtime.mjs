@@ -10,6 +10,7 @@ import { createAiLiveStreamRuntime } from "./ai-live-stream-runtime.mjs";
 export function createAiLiveMediaRuntime({
   secretResolver,
   speechBridge = createTracerspeechBridge(),
+  resolveVideoForProduct = null,
   mediaRoot,
   ffmpegPath,
   spawnImpl,
@@ -30,7 +31,7 @@ export function createAiLiveMediaRuntime({
       void Promise.resolve(runtime.notifyDisconnected(reason)).catch(() => {});
     },
   });
-  const mediaSession = createAiLiveMediaSession({ publisher, speechBridge });
+  const mediaSession = createAiLiveMediaSession({ publisher, speechBridge, resolveVideoForProduct });
   runtime = createAiLiveStreamRuntime({
     mediaSession,
     maxRetries,
