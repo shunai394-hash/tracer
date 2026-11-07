@@ -1365,7 +1365,9 @@ test("CJ variant image URLs are preserved by exact VID and used by the TRACER st
   assert.match(cjClient, /variantImage: typeof row\.variantImage === "string"/);
   assert.match(cjClient, /const row = rows\.find\(\(item\) => \(item\.vid\?\.trim\(\) \|\| item\.variantId\?\.trim\(\)\) === normalizedVid\)/);
   assert.match(core, /variantImageUrl \? \{ variantImageUrl: input\.variantImageUrl \} : \{\}/);
-  assert.match(importer, /variantImageUrl: exactVariant\.variantImage/);
+  assert.match(importer, /const exactVariantImageUrl = exactVariant\.variantImage \?\? \(variant\.vid === exactVariant\.vid \? variant\.variantImage : null\)/);
+  assert.match(importer, /variantImageUrl: exactVariantImageUrl/);
+  assert.match(importer, /variantImageUrl: exactVariantImageUrl \}/);
   assert.match(store, /attributes\.variantImageUrl/);
   assert.match(store, /const imageUrl = variantImageUrl \?\? \(typeof product\.image_url === "string" \? product\.image_url : null\)/);
 });
