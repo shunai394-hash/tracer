@@ -60,6 +60,10 @@ assert.ok(stateEvents.includes("starting"));
 assert.ok(stateEvents.includes("publishing"));
 assert.ok(stateEvents.includes("stopping"));
 assert.ok(!JSON.stringify(publisher.snapshot()).includes("private-key"));
+assert.equal((await publisher.switchVideo("product-2.mp4")).state, "publishing");
+assert.equal(spawnCalls.length, 2);
+assert.ok(spawnCalls[1][1].includes("/app/media/product-2.mp4"));
+
 
 let disconnectEvents = [];
 const disconnectedChild = new FakeChild();
