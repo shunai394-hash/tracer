@@ -55,7 +55,7 @@ function validateJob(job, now = Date.now()) {
   if (containsForbiddenKey(job)) return "credentials_must_not_be_in_job";
   if (typeof job.streamId !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(job.streamId)) return "invalid_stream_id";
   if (typeof job.destination !== "string" || !/^(youtube_live|tiktok_live)$/.test(job.destination)) return "unsupported_destination";
-  if (typeof job.destinationSecretRef !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(job.destinationSecretRef)) return "invalid_secret_reference";
+  if (typeof job.destinationSecretRef !== "string" || !/^[A-Za-z0-9_:-]+(?:\/[A-Za-z0-9_:-]+){0,7}$/.test(job.destinationSecretRef)) return "invalid_secret_reference";
   if (!Number.isInteger(job.maxRuntimeSeconds) || job.maxRuntimeSeconds < MIN_RUNTIME_SECONDS || job.maxRuntimeSeconds > MAX_RUNTIME_SECONDS) return "runtime_out_of_bounds";
   if (!Array.isArray(job.segments) || job.segments.length < 1 || job.segments.length > 20) return "invalid_segments";
   if (job.segmentDurationSeconds !== undefined &&
