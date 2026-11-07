@@ -13,11 +13,12 @@ const sources = ids.map((supplierVariantId, i) => ({
   inventory: 10,
 }));
 
-const valid = planShopifyColorFamily({
+const input = {
   canonicalProductId: "gid://shopify/Product/100",
   sources,
   expectedSupplierVariantIds: ids,
-});
+};
+const valid = planShopifyColorFamily(input);
 assert.equal(valid.ok, true);
 assert.equal(valid.variants.length, 5);
 assert.deepEqual(valid.variants.map((v) => v.supplierVariantId), ids);
@@ -25,27 +26,52 @@ assert.deepEqual(valid.variants.map((v) => v.colorLabel), ["ゼブラ柄", "ク�
 assert.deepEqual(valid.destructiveActions, []);
 
 const missingImage = planShopifyColorFamily({
-  canonicalProductId: "gid://shopify/Product/100",
+  ...input,
   sources: sources.map((s, i) => i === 2 ? { ...s, imageUrl: "" } : s),
-  expectedSupplierVariantIds: ids,
 });
 assert.equal(missingImage.ok, false);
 assert.ok(missingImage.blockers.includes("variant_image_missing:sv-black"));
 
-const duplicate = planShopifyColorFamily({
-  canonicalProductId: "gid://shopify/Product/100",
+const duplicateSupplierId = planShopifyColorFamily({
+  ...input,
   sources: [...sources, sources[0]],
-  expectedSupplierVariantIds: ids,
 });
-assert.equal(duplicate.ok, false);
-assert.ok(duplicate.blockers.includes("supplier_variant_ambiguous:sv-zebra"));
+assert.equal(duplicateSupplierId.ok, false);
+assert.ok(duplicateSupplierId.blockers.includes("supplier_variant_ambiguous:sv-zebra"));
 
-const missing = planShopifyColorFamily({
-  canonicalProductId: "gid://shopify/Product/100",
+const missingSupplierId = planShopifyColorFamily({
+  ...input,
   sources: sources.slice(1),
-  expectedSupplierVariantIds: ids,
 });
-assert.equal(missing.ok, false);
-assert.ok(missing.blockers.includes("expected_supplier_variant_missing:sv-zebra"));
+assert.equal(missingSupplierId.ok, false);
+assert.ok(missingSupplierId.blockers.includes("expected_supplier_variant_missing:sv-zebra"));
 
-console.log("Shopify color family migration plan: 4 scenarios passed");
+const duplicateSku = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 1 ? { ...s, sku: sources[0].sku } : s),
+});
+assert.equal(duplicateSku.ok, false);
+assert.ok(duplicateSku.blockers.includes("sku_ambiguous:" + sources[0].sku));
+
+const duplicateShopifyVariant = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 1 ? { ...s, variantId: sources[0].variantId } : s),
+});
+assert.equal(duplicateShopifyVariant.ok, false);
+assert.ok(duplicateShopifyVariant.blockers.includes("shopify_variant_id_ambiguous:" + sources[0].variantId));
+
+const duplicateColorLabel = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 1 ? { ...s, colorLabel: sources[0].colorLabel } : s),
+});
+assert.equal(duplicateColorLabel.ok, false);
+assert.ok(duplicateColorLabel.blockers.includes("color_label_ambiguous:" + sources[0].colorLabel.toLocaleLowerCase("ja-JP")));
+
+const duplicateExpected = planShopifyColorFamily({
+  ...input,
+  expectedSupplierVariantIds: [...ids, ids[0]],
+});
+assert.equal(duplicateExpected.ok, false);
+assert.ok(duplicateExpected.blockers.includes("expected_supplier_variant_id_duplicate"));
+
+console.log("Shopify color family migration plan: 8 scenarios passed");
