@@ -148,14 +148,19 @@ export function createAiLiveWorkerServer({
       return false;
     }
     if (mediaRuntimeFactory) {
-      record.mediaRuntime = await mediaRuntimeFactory({ job: record.job, workerId });
-      if (!record.mediaRuntime || typeof record.mediaRuntime.start !== "function" ||
-          typeof record.mediaRuntime.stop !== "function" ||
-          typeof record.mediaRuntime.setCurrentProduct !== "function") {
-        throw new Error("invalid_media_runtime");
+      try {
+        record.mediaRuntime = await mediaRuntimeFactory({ job: record.job, workerId });
+        if (!record.mediaRuntime || typeof record.mediaRuntime.start !== "function" ||
+            typeof record.mediaRuntime.stop !== "function" ||
+            typeof record.mediaRuntime.setCurrentProduct !== "function") {
+          throw new Error("invalid_media_runtime");
+        }
+        await record.mediaRuntime.start(await mediaRuntimeOptions(record.job));
+        await record.mediaRuntime.setCurrentProduct(record.job.segments[record.segmentIndex]?.productId || null);
+      } catch (error) {
+        await stopRecord(record, "media_runtime_start_failed");
+        throw error;
       }
-      await record.mediaRuntime.start(await mediaRuntimeOptions(record.job));
-      await record.mediaRuntime.setCurrentProduct(record.job.segments[record.segmentIndex]?.productId || null);
     }
     record.timer = setTimeout(() => { void stopRecord(record, "worker_runtime_limit"); }, remainingMs);
     record.timer.unref?.();
