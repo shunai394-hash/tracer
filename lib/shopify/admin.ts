@@ -942,6 +942,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     if (!createdProductId) throw new Error("shopify_color_family_product_create_missing_id");
     productId = createdProductId;
   }
+  if (!productId) throw new Error("shopify_color_family_product_id_unresolved");
 
   // Read all current variants before writing. Existing SKU collisions are never
   // overwritten; a partial prior run may safely create only missing variants.
