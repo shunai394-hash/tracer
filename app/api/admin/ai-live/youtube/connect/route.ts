@@ -41,7 +41,8 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, error: "youtube_oauth_redirect_uri_invalid" }, 503);
   }
-  if (parsedRedirect.protocol !== "https:" || parsedRedirect.origin !== "https://tracer-pied-alpha.vercel.app") {
+  if (parsedRedirect.protocol !== "https:" || parsedRedirect.origin !== "https://tracer-pied-alpha.vercel.app" ||
+      parsedRedirect.pathname !== "/api/admin/ai-live/youtube/callback" || parsedRedirect.search || parsedRedirect.hash) {
     return json({ ok: false, error: "youtube_oauth_redirect_uri_invalid" }, 503);
   }
 
