@@ -30,7 +30,7 @@ CREATE TABLE public.shop_order_items (
   qty integer NOT NULL CHECK (qty > 0)
 );
 
-\ir ../supabase/migrations/20261103090000_release_manual_inventory_once.sql
+\ir ../supabase/migrations/20261107005739_release_manual_inventory_once.sql
 
 INSERT INTO public.shop_listings (id, manual_inventory, inventory, archived_at)
 VALUES
