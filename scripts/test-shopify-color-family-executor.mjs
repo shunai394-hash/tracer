@@ -11,6 +11,7 @@ assert.match(executor, /status: "DRAFT"/, "new family product must stay draft");
 assert.match(executor, /productVariantsBulkUpdate/, "pre-created first option variant must be adopted, not duplicated");
 assert.match(executor, /shopify_color_family_default_variant_color_mismatch/, "unexpected default color must fail closed");
 assert.match(executor, /productVariantsBulkCreate/, "remaining color variants must be created in bulk");
+assert.match(executor, /shopify_color_family_variant_image_ambiguous/, "duplicate image URLs must block color consolidation");
 assert.match(executor, /mediaSrc: \[expectedDefault\.imageUrl\]/, "default color must receive its own image");
 assert.match(executor, /mediaSrc: \[variant\.imageUrl\]/, "each added color must receive its own image");
 assert.match(executor, /inventoryQuantities: \[\{ locationId, name: "available", quantity: variant\.inventory \}\]/, "variant stock must be written to the configured location");
