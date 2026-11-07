@@ -6,13 +6,18 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 // Read-only catalog discovery for the discontinued five-color handbag.
-// Fixed search terms and bounded result counts; caller input is ignored.
+// Search color-specific terms as well as style terms; caller input is ignored.
 const SEARCH_TERMS = [
   "Pattern Woven Handbag Women Leather Handbags",
   "woven leather handbag women",
   "braided woven handbag women",
+  "woven leather handbag red",
+  "woven leather handbag blue",
+  "woven leather handbag gray",
+  "braided leather handbag black",
+  "woven leather shoulder bag women",
 ] as const;
-const MAX_CANDIDATES = 5;
+const MAX_CANDIDATES = 10;
 const MAX_VARIANTS_PER_PRODUCT = 40;
 
 function safeImageUrl(value: string | null | undefined): string | null {
@@ -33,6 +38,7 @@ function titleScore(title: string): number {
     ["braid", 3],
     ["leather", 2],
     ["women", 1],
+    ["shoulder bag", 2],
   ].reduce((score, [term, points]) => score + (normalized.includes(String(term)) ? Number(points) : 0), 0);
 }
 
@@ -104,9 +110,7 @@ export async function POST(request: Request) {
         detailInventory: detail?.inventory ?? null,
         detailListedNum: detail?.listedNum ?? null,
         detailSaleStatus: detail?.saleStatus ?? null,
-        // This is only the value exposed by CJ's product listing, not a
-        // Japan-specific freight quote. A real JP quote requires a separate
-        // per-variant freight calculation and is intentionally not inferred.
+        // Raw listing freight is not a Japan-specific shipping quote.
         listingShippingCost: detail?.shippingCost ?? candidate.shippingCost,
         variants: variants.slice(0, MAX_VARIANTS_PER_PRODUCT).map((variant) => ({
           vid: variant.vid,
