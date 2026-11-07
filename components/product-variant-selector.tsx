@@ -40,11 +40,17 @@ export function ProductVariantSelector({
   const shopifyUrl = selected.shopifyHandle && variantNumber && shopifyDomain
     ? `https://${shopifyDomain}/products/${encodeURIComponent(selected.shopifyHandle)}?variant=${variantNumber}`
     : null;
-  const isColorFamily = choices.length > 1 && choices[0].optionType === "カラー";
-  const colorImagesVerified = !isColorFamily || (
+  const normalizedLabels = choices.map((choice) => choice.label.normalize("NFKC").trim().toLocaleLowerCase("ja-JP"));
+  const choiceLabelsUnique = new Set(normalizedLabels).size === normalizedLabels.length;
+  const colorLabelPattern = /ブラック|黒|ホワイト|白|レッド|赤|ピンク|ブルー|青|グリーン|緑|イエロー|黄|ベージュ|カーキ|ブラウン|茶|グレー|灰|シルバー|銀|ゴールド|金|パープル|紫|オレンジ|ネイビー|紺|アイボリー|クリーム|モカ|ワインレッド|ローズ|アプリコット|マルチカラー|透明|クリア/u;
+  const labelsIdentifyColors = choices.length > 1 && choices.every((choice) => colorLabelPattern.test(choice.label));
+  const isColorFamily = choices.length > 1 && (
+    choices.some((choice) => choice.optionType === "カラー") || labelsIdentifyColors
+  );
+  const colorImagesVerified = choiceLabelsUnique && (!isColorFamily || (
     choices.every((choice) => Boolean(choice.imageUrl)) &&
     new Set(choices.map((choice) => choice.imageUrl)).size === choices.length
-  );
+  ));
 
   return (
     <div className="grid gap-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:gap-12">
@@ -99,7 +105,9 @@ export function ProductVariantSelector({
         <div className="mt-6">
           {!colorImagesVerified ? (
             <div role="status" className="rounded-xl border border-[#D9C8BE] bg-white px-4 py-4 text-center text-sm leading-6 text-[#5C4035]">
-              色ごとの画像を正しく確認できないため、この商品は現在購入できません。
+              {!choiceLabelsUnique
+                ? "選択肢の名称が重複しているため、この商品は現在購入できません。"
+                : "色ごとの画像を正しく確認できないため、この商品は現在購入できません。"}
             </div>
           ) : shopifyUrl ? (
             <a href={shopifyUrl} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center rounded-full bg-[#3B241A] px-6 py-4 text-sm font-medium text-white transition hover:bg-[#5C4035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9A6B5B] focus-visible:ring-offset-2">
