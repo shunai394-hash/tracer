@@ -12,6 +12,6 @@ const secretManager = {
 };
 assert.throws(
   () => createTracerYouTubeLiveSessionRuntime(secretManager),
-  /youtube_live_product_video_resolver_required/,
+  /ai_live_stream_secret_store_configuration_required/,
 );
 console.log("TRACER YouTube production session composition guards: all assertions passed");
