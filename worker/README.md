@@ -110,3 +110,10 @@ Required deployment secrets (not configured by this code change):
 The migration `20261107040000_ai_live_oauth_credentials.sql` must be applied before connecting. The admin-only `POST /api/admin/ai-live/youtube/connect` endpoint requires `Authorization: Bearer <TRACER_ADMIN_TOKEN>` and returns an authorization URL; the caller must navigate the same browser to that URL so the HttpOnly OAuth state cookie is retained. The callback never returns token material to the browser. The worker credential endpoint is separate and requires the worker token.
 
 This completes secure token handoff only. It does not create a YouTube broadcast, bind a stream, start publishing, or authorize TikTok. Actual OAuth consent and production secret/migration setup remain operator steps.
+
+
+## YouTube Live API lifecycle
+
+The platform layer now includes an official API manager that creates a dedicated RTMP ingest stream, creates an unlisted broadcast, binds the resources, reads their status, and explicitly transitions the broadcast to live or complete. The stream key is handed directly to an injected secret-manager callback; only its opaque reference is returned. Before transitioning to live, the host must start its FFmpeg publisher and explicitly confirm encoder activity; the manager independently verifies YouTube reports the bound ingest stream as active. A separate factory connects the stored YouTube OAuth credential to the official Live Chat API and the normalized comment adapter.
+
+This does not turn on the default worker. The default worker remains fake-only. A production host still must supply a durable stream-key secret manager, wire the secret reference to FFmpeg's secret resolver, coordinate encoder start/stop with broadcast transitions, and supply an approved TikTok connector for dual-platform operation.
