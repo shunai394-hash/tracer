@@ -63,7 +63,7 @@ const handoffBridge = createTracerspeechBridge({
   }), { status: 200, headers: { "content-type": "application/json" } }),
 });
 const handoff = await handoffBridge.synthesize({ comment: "返品したい", productId: "listing-123" });
-assert.deepEqual(handoff, { status: "handoff", reason: "human_handoff" });
+assert.deepEqual(handoff, { status: "handoff", reason: "comment_requires_human" });
 
 let oversizedBodyCancelled = false;
 const oversizedBridge = createTracerspeechBridge({
