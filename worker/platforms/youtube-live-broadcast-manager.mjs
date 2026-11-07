@@ -92,6 +92,14 @@ export function createYouTubeLiveBroadcastManager({
     };
   }
 
+  async function getStatus({ broadcastId, streamId, signal } = {}) {
+    const [broadcast, stream] = await Promise.all([getBroadcast(broadcastId, signal), getStream(streamId, signal)]);
+    if (broadcast.boundStreamId && broadcast.boundStreamId !== stream.id) {
+      throw new Error("youtube_live_broadcast_stream_binding_mismatch");
+    }
+    return { broadcast, stream };
+  }
+
   return {
     async createBroadcast({ title, description = "", privacyStatus = "unlisted", scheduledStartTime, signal } = {}) {
       const cleanTitle = required(title, "title", 100);
@@ -164,17 +172,11 @@ export function createYouTubeLiveBroadcastManager({
       }
     },
 
-    async getStatus({ broadcastId, streamId, signal } = {}) {
-      const [broadcast, stream] = await Promise.all([getBroadcast(broadcastId, signal), getStream(streamId, signal)]);
-      if (broadcast.boundStreamId && broadcast.boundStreamId !== stream.id) {
-        throw new Error("youtube_live_broadcast_stream_binding_mismatch");
-      }
-      return { broadcast, stream };
-    },
+    getStatus,
 
     async startBroadcast({ broadcastId, streamId, confirmEncoderActive = false, signal } = {}) {
       if (confirmEncoderActive !== true) throw new Error("youtube_live_encoder_confirmation_required");
-      const current = await this.getStatus({ broadcastId, streamId, signal });
+      const current = await getStatus({ broadcastId, streamId, signal });
       if (current.broadcast.boundStreamId !== current.stream.id) throw new Error("youtube_live_broadcast_not_bound_to_requested_stream");
       if (current.stream.streamStatus !== "active") throw new Error("youtube_live_ingest_stream_not_active");
       if (current.broadcast.lifeCycleStatus !== "ready") throw new Error("youtube_live_broadcast_not_ready");
