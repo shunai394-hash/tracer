@@ -6,7 +6,7 @@ assert.match(html, /<html lang="ja">/);
 assert.match(html, /background:transparent/);
 assert.match(html, /TRACER OBS 配信コントロール/);
 assert.match(html, /OBS Browser Source用/);
-assert.match(html, /speechSynthesis/);
+assert.match(html, /speechSynthesis/);\nassert.match(html, /\/api\/admin\/ai-live\/fish-audio\/voices/);\nassert.match(html, /\/api\/admin\/ai-live\/fish-audio/);\nassert.match(html, /Fish Audioで音声を生成中/);\nassert.match(html, /許諾済み音声を読み込む/);\nassert.match(html, /referenceId/);
 assert.match(html, /SpeechSynthesisUtterance/);
 assert.match(html, /ducked\?baseVolume\*\.18:baseVolume/);
 assert.match(html, /\/api\/admin\/ai-live\/short-drama\/bgm/);
