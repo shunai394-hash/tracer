@@ -454,6 +454,7 @@ test("both channels use the shared capped storefront quantity and Japanese title
 test("TRACER storefront displays published canonical Shopify listings without enabling local auto-ordering", async () => {
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  const productSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
   assert.match(store, /async function loadCanonicalCommerceListings/);
   assert.match(store, /from\("channel_listings"\)/);
   assert.match(store, /from\("commerce_variants"\)/);
@@ -471,8 +472,9 @@ test("TRACER storefront displays published canonical Shopify listings without en
   // Stale supplier checks must not drop published products before offerFresh is evaluated.
   assert.doesNotMatch(store, /\.gte\("last_checked_at", freshAfter\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
-  assert.match(productPage, /shopifyProductUrl/);
-  assert.match(productPage, /Shopifyで購入する/);
+  assert.match(productPage, /<ProductVariantSelector/);
+  assert.match(productSelector, /href={shopifyUrl}/);
+  assert.match(productSelector, /選択したカラーを購入する/);
 });
 
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
