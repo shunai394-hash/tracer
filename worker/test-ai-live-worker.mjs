@@ -82,6 +82,7 @@ try {
 
   const persistenceCalls = [];
   const fakeStore = {
+    async listActive() { return []; },
     async insertNew(record) { persistenceCalls.push(["insert", record.streamId]); return { stream_id: record.streamId }; },
     async claimLease(streamId, options) { persistenceCalls.push(["claim", streamId, options.owner]); return { stream_id: streamId }; },
     async heartbeat(streamId, options) { persistenceCalls.push(["heartbeat", streamId, options.segmentIndex]); return { stream_id: streamId }; },
@@ -107,6 +108,7 @@ try {
   }
 
   const recoveryStore = {
+    async insertNew() { throw new Error("not_used_in_recovery_test"); },
     async listActive() {
       return [{
         stream_id: "test_stream_0006",
