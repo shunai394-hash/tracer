@@ -186,17 +186,17 @@ export function createAiLiveWorkerServer({
         continue;
       }
       const job = row.job_payload;
+      const lease = await store.claimLease(row.stream_id, { owner: workerId, leaseSeconds: 45 });
+      if (!lease) {
+        skipped += 1;
+        continue;
+      }
       const validationError = validateJob(job, now());
       const fingerprint = createHash("sha256").update(JSON.stringify(job)).digest("hex");
       if (validationError || fingerprint !== row.job_fingerprint ||
           !Number.isInteger(row.active_segment_index) ||
           row.active_segment_index < 0 || row.active_segment_index >= job.segments.length) {
-        await store.markStopped(row.stream_id, { reason: "restore_validation_failed" });
-        skipped += 1;
-        continue;
-      }
-      const lease = await store.claimLease(row.stream_id, { owner: workerId, leaseSeconds: 45 });
-      if (!lease) {
+        await store.markStopped(row.stream_id, { reason: "restore_validation_failed", owner: workerId });
         skipped += 1;
         continue;
       }
