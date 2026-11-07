@@ -41,6 +41,15 @@ AI_LIVE_WORKER_MODE=fake node worker/ai-live-worker.mjs
 
 Jobs accept logical \`youtube_live\` or \`tiktok_live\` destination IDs and an opaque secret reference, never an RTMP URL or stream key. Product facts older than 15 minutes are rejected. Maximum runtime is 30 minutes. Segment rotation is simulated; it does not switch a real broadcast.
 
+The destination secret provider can read JSON secrets from a read-only mounted
+directory using AI_LIVE_SECRET_ROOT. A reference such as
+live/youtube/primary resolves to
+$AI_LIVE_SECRET_ROOT/live/youtube/primary.json. It rejects traversal,
+symlinks, oversized files, malformed JSON, and non-object payloads. Secret
+contents are returned only to in-process adapter code and must never be logged
+or returned from the control API. No actual destination credentials are
+included in the repository.
+
 ## Container
 
 Build from the repository root:
