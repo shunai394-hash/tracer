@@ -28,7 +28,7 @@ assert.deepEqual(
 );
 await session.start({ destination: "youtube_live", videoFile: "fallback.mp4" });
 assert.equal(session.snapshot().state, "publishing");
-assert.throws(() => session.setCurrentProduct(""), /invalid_product_id/);
+await assert.rejects(() => session.setCurrentProduct(""), /invalid_product_id/);
 await session.setCurrentProduct("product-42");
 const event = {
   id: "youtube_live:comment-1",
