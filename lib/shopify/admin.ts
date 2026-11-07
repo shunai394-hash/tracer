@@ -468,10 +468,10 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   const existingMedia = await shopifyGraphQL<{
     product: {
       featuredImage?: { url: string } | null;
-      media: { nodes: Array<{ mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
+      media: { nodes: Array<{ id: string; mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
     } | null;
   }>(
-    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { featuredImage { url } media(first: 10) { nodes { mediaContentType preview { image { url } } } } } }",
+    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { featuredImage { url } media(first: 10) { nodes { id mediaContentType preview { image { url } } } } } }",
     { id: input.productId },
   );
   // Shopify's product image connection can expose a persisted featured image
@@ -1114,10 +1114,12 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === expected.colorLabel)) {
       throw new Error("shopify_color_family_verification_variant_failed:" + expected.sku);
     }
-    const hasImage = actual.media.nodes.some((media) =>
+    const variantImages = actual.media.nodes.filter((media) =>
       media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
     );
-    if (!hasImage) throw new Error("shopify_color_family_verification_image_failed:" + expected.sku);
+    if (variantImages.length !== 1) {
+      throw new Error("shopify_color_family_verification_image_failed:" + expected.sku);
+    }
     const supplierVariantId = actual.metafields.nodes.find((field) => field.namespace === "tracer" && field.key === "supplier_variant_id")?.value;
     if (supplierVariantId !== expected.supplierVariantId) throw new Error("shopify_color_family_verification_supplier_variant_id_failed:" + expected.sku);
     const level = actual.inventoryItem.inventoryLevels.nodes.find((node) => node.location.id === locationId);
@@ -1125,5 +1127,11 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     if (available !== expected.inventory) throw new Error("shopify_color_family_verification_inventory_failed:" + expected.sku);
     return { id: actual.id, sku: expected.sku, price: actual.price, colorLabel: expected.colorLabel, imageUrl: expected.imageUrl };
   });
+  const verifiedImageIds = product.variants.nodes.map((variant) =>
+    variant.media.nodes.filter((media) => media.mediaContentType === "IMAGE").map((media) => media.id),
+  ).flat();
+  if (new Set(verifiedImageIds).size !== variants.length || verifiedImageIds.length !== variants.length) {
+    throw new Error("shopify_color_family_verification_color_image_mapping_failed");
+  }
   return { productId, variants: result, status: "DRAFT" };
 }
