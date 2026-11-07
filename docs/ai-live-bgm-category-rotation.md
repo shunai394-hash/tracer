@@ -10,9 +10,19 @@ The archive manifest at `docs/ai-live-bgm-library-manifest.json` records the
 17 supplied MP3s with measured byte sizes and SHA-256 checksums. Every entry is
 marked `licenseStatus: unverified` and `productionEligible: false`.
 
-## Rotation behavior to implement
+## Implemented in the studio
 
-1. Normalize the studio's scene categories to the library genres:
+- The current studio has one work-level genre selector. The operator can request a genre-matched BGM selection from that selector.
+- Matching categories are 日常・ヒューマン → 日常・会話, 恋愛 → 恋愛, ミステリー / サスペンス → サスペンス, and コメディ → コメディ.
+- If there is no matching track, BGM is cleared. The selector never substitutes a track from an unrelated category.
+- Manual track selection remains available. Automatic selection avoids choosing the immediately previous auto-selected track when the category has multiple tracks.
+- The BGM list is loaded on operator request or token entry; no polling is added.
+
+## Next rotation increment: scene-level choices
+
+The studio currently has a work-level genre selector, not a scene editor with per-scene audio lanes. When a scene model is introduced, extend the same matching rules per scene:
+
+1. Normalize scene categories to the library genres:
    - 日常・ヒューマン → 日常・会話
    - 恋愛 → 恋愛
    - ミステリー / サスペンス → サスペンス
@@ -20,16 +30,11 @@ marked `licenseStatus: unverified` and `productionEligible: false`.
    - 感動 / 余韻 → 感動・余韻
    - アクション / 場面転換 → アクション・場面転換
 2. Query the existing BGM library once per studio session; do not poll.
-3. For each scene, choose only from tracks in the matching genre. Avoid repeating
-   the previous track when that genre has more than one eligible track.
-4. If the category has no eligible track, leave BGM off. Do not silently choose
-   an unrelated category.
-5. Keep manual selection available and let an explicit manual choice override
-   automatic category selection.
-6. Apply BGM only during final mixdown. Do not send BGM to the speech provider
-   or regenerate dialogue when the BGM selection changes.
-7. Preserve a visible per-scene BGM choice so the operator can inspect and
-   override it before export.
+3. For each scene, choose only from tracks in the matching genre and avoid an immediate repeat when multiple tracks exist.
+4. If a scene has no matching track, leave BGM off rather than choosing an unrelated category.
+5. Keep manual selection available and let it override automatic category selection.
+6. Apply BGM only during final mixdown; never regenerate dialogue when BGM changes.
+7. Preserve a visible per-scene selection for operator review before export.
 
 ## Release gate
 
