@@ -89,6 +89,17 @@ export function createSupabaseAiLiveStore({ url, serviceRoleKey, fetchImpl = fet
     async listActive() {
       return request("?status=in.(starting,live,reconnecting)&select=*&order=updated_at.asc");
     },
+    async claimLease(streamId, { owner, leaseSeconds = 45 } = {}) {
+      if (typeof streamId !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(streamId)) throw new Error("invalid_stream_id");
+      if (typeof owner !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(owner)) throw new Error("invalid_lease_owner");
+      if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 300) throw new Error("invalid_lease_seconds");
+      const rows = await request("/rpc/claim_ai_live_worker_stream", {
+        method: "POST",
+        body: { p_stream_id: streamId, p_owner: owner, p_lease_seconds: leaseSeconds },
+        prefer: "return=representation",
+      });
+      return rows?.[0] || null;
+    },
     async heartbeat(streamId, { owner, segmentIndex, productId, reconnectCount, leaseSeconds = 45, now = new Date() } = {}) {
       if (typeof owner !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(owner)) throw new Error("invalid_lease_owner");
       if (!Number.isInteger(segmentIndex) || segmentIndex < 0) throw new Error("invalid_segment_index");
