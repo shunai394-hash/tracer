@@ -131,3 +131,15 @@ path. The worker needs `AI_LIVE_OAUTH_ENCRYPTION_KEY` (the same 32-byte key
 used by the OAuth token encryption), `SUPABASE_URL`, and
 `SUPABASE_SERVICE_ROLE_KEY`. This migration is not applied automatically and
 the default worker remains fake-only.
+
+
+## Curated product media mapping
+
+The production YouTube session runtime now uses an operator-curated media
+manifest at `/app/media/manifest.json` by default (override with
+`AI_LIVE_MEDIA_MANIFEST`). Each TRACER `shop_listings.id` maps to a video
+file under `AI_LIVE_MEDIA_ROOT`. The resolver rejects traversal, unsupported
+extensions, and missing product mappings; it never substitutes an unrelated
+video. Mount approved video and BGM assets into the worker volume and provide
+the matching manifest. BGM is currently selected per session; the manifest
+records optional per-product BGM metadata for the next audio-switching step.
