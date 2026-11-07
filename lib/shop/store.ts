@@ -29,6 +29,28 @@ function hasColorVariantLabel(...values: unknown[]): boolean {
   return /ブラック|黒|ホワイト|白|グレー|灰|シルバー|銀|ゴールド|金|ベージュ|カーキ|ブラウン|茶|ピンク|パープル|紫|オレンジ|イエロー|黄|グリーン|緑|ブルー|青|レッド|赤|ネイビー|モカ|アプリコット|クリーム|black|white|gray|grey|silver|gold|beige|khaki|brown|pink|purple|orange|yellow|green|blue|red|navy|mocha|apricot|cream/u.test(source);
 }
 
+function deriveVariantLabel(title: unknown, attributes: Record<string, unknown>): string | null {
+  if (typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()) return attributes.variationLabel.trim();
+  const suffix = typeof title === "string" ? title.match(/[（(]([^）)]+)[）)]\\s*$/u)?.[1] : null;
+  if (suffix) return suffix;
+  const source = typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName.trim() : "";
+  if (!source) return null;
+  const labels: Array<[RegExp, string]> = [
+    [/zebra/i, "ゼブラ柄"],
+    [/crocodile/i, "クロコ柄"],
+    [/gray.*black|black.*gray/i, "グレー・ブラック"],
+    [/black tabby|\\bblack\\b/i, "ブラック"],
+    [/\\bred\\b/i, "レッド"],
+    [/\\bwhite\\b/i, "ホワイト"],
+    [/\\bbrown\\b/i, "ブラウン"],
+    [/\\bblue\\b/i, "ブルー"],
+    [/\\bgreen\\b/i, "グリーン"],
+    [/\\bkhaki\\b/i, "カーキ"],
+    [/\\bgray\\b|\\bgrey\\b/i, "グレー"],
+  ];
+  return labels.find(([pattern]) => pattern.test(source))?.[1] ?? source;
+}
+
 function asBoolean(value: unknown): boolean {
   return value === true;
 }
@@ -301,12 +323,15 @@ async function attachPublishedVariantOptions(listing: ShopListing): Promise<Shop
     const key = candidate.supplierVariantId || candidate.id;
     if (!unique.has(key)) unique.set(key, candidate);
   }
+  const familyOptionType = [...unique.values()].some((candidate) => candidate.variantOptionType === "カラー")
+    ? "カラー"
+    : [...unique.values()].some((candidate) => candidate.variantOptionType === "サイズ") ? "サイズ" : "種類";
   const variants: ShopVariantOption[] = [...unique.values()].map((candidate) => ({
     id: candidate.id,
     slug: candidate.slug,
     title: candidate.title,
     label: candidate.variantLabel || candidate.title.match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] || "標準",
-    optionType: candidate.variantOptionType ?? "種類",
+    optionType: familyOptionType,
     imageUrl: candidate.variantImageUrl ?? null,
     sellingPrice: candidate.sellingPrice,
     currency: candidate.currency,
