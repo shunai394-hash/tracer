@@ -12,6 +12,7 @@ assert.match(executor, /productVariantsBulkUpdate/, "pre-created first option va
 assert.match(executor, /shopify_color_family_default_variant_color_mismatch/, "unexpected default color must fail closed");
 assert.match(executor, /productVariantsBulkCreate/, "remaining color variants must be created in bulk");
 assert.match(executor, /shopify_color_family_variant_image_ambiguous/, "duplicate image URLs must block color consolidation");
+assert.match(executor, /!variant\.colorImageVerified/, "unverified color images must block Shopify draft creation");
 assert.match(executor, /mediaSrc: \[expectedDefault\.imageUrl\]/, "default color must receive its own image");
 assert.match(executor, /mediaSrc: \[variant\.imageUrl\]/, "each added color must receive its own image");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
