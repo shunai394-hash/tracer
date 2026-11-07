@@ -143,6 +143,41 @@ try {
     await new Promise((resolve) => recoveryServer.close(resolve));
   }
 
+  const mediaLifecycle = [];
+  const mediaServer = createAiLiveWorkerServer({
+    token,
+    mode: "fake",
+    segmentIntervalMs: 10,
+    mediaRuntimeFactory: async ({ job: runtimeJob, workerId: runtimeWorkerId }) => {
+      mediaLifecycle.push(["factory", runtimeJob.streamId, runtimeWorkerId]);
+      return {
+        async start(options) { mediaLifecycle.push(["start", options.profile]); },
+        async setCurrentProduct(productId) { mediaLifecycle.push(["product", productId]); },
+        async stop() { mediaLifecycle.push(["stop"]); },
+      };
+    },
+    mediaRuntimeOptions: async () => ({ profile: "test-only-injected-runtime" }),
+    workerId: "worker_media_test_01",
+  });
+  await new Promise((resolve) => mediaServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const mediaJob = { ...job, streamId: "test_stream_0007" };
+    const mediaStart = await fetch("http://127.0.0.1:" + mediaServer.address().port + "/v1/streams", {
+      method: "POST", headers, body: JSON.stringify(mediaJob),
+    });
+    assert.equal(mediaStart.status, 202);
+    assert.ok(mediaLifecycle.some((entry) => entry[0] === "start" && entry[1] === "test-only-injected-runtime"));
+    assert.ok(mediaLifecycle.some((entry) => entry[0] === "product" && entry[1] === "product-1"));
+    const mediaStop = await fetch("http://127.0.0.1:" + mediaServer.address().port + "/v1/streams/test_stream_0007/stop", {
+      method: "POST", headers,
+    });
+    assert.equal(mediaStop.status, 200);
+    assert.ok(mediaLifecycle.some((entry) => entry[0] === "stop"));
+  } finally {
+    await mediaServer.shutdown();
+    await new Promise((resolve) => mediaServer.close(resolve));
+  }
+
   assert.throws(() => createAiLiveWorkerServer({ token, mode: "ffmpeg" }), /fake adapter is implemented/);
   console.log("AI Live worker control API and simulated product rotation: all assertions passed");
 } finally {
