@@ -117,3 +117,17 @@ This completes secure token handoff only. It does not create a YouTube broadcast
 The platform layer now includes an official API manager that creates a dedicated RTMP ingest stream, creates an unlisted broadcast, binds the resources, reads their status, and explicitly transitions the broadcast to live or complete. The stream key is handed directly to an injected secret-manager callback; only its opaque reference is returned. Before transitioning to live, the host must start its FFmpeg publisher and explicitly confirm encoder activity; the manager independently verifies YouTube reports the bound ingest stream as active. A separate factory connects the stored YouTube OAuth credential to the official Live Chat API and the normalized comment adapter.
 
 This does not turn on the default worker. The default worker remains fake-only. A production host still must supply a durable stream-key secret manager, wire the secret reference to FFmpeg's secret resolver, coordinate encoder start/stop with broadcast transitions, and supply an approved TikTok connector for dual-platform operation.
+
+
+## Encrypted YouTube ingest-secret store
+
+The YouTube session factory can now create a durable Supabase-backed RTMP
+secret store. It encrypts the ingest address and stream key with AES-256-GCM
+before storage; the database receives ciphertext, IV, and authentication tag
+only. FFmpeg resolves the opaque reference just-in-time inside the worker.
+
+Apply migration `20261108010000_ai_live_stream_secrets.sql` before using this
+path. The worker needs `AI_LIVE_OAUTH_ENCRYPTION_KEY` (the same 32-byte key
+used by the OAuth token encryption), `SUPABASE_URL`, and
+`SUPABASE_SERVICE_ROLE_KEY`. This migration is not applied automatically and
+the default worker remains fake-only.
