@@ -206,18 +206,10 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       continue;
     }
     const family = buildFamily(group, requireSku);
-    const presentationOnlyBlock = family.colorSaleBlocked
-      && family.colorSaleBlockers.length > 0
-      && family.colorSaleBlockers.every((blocker) =>
-        blocker.startsWith("variant_image_") || blocker.startsWith("color_label_"),
-      );
-    // If color labels or distinct image evidence are missing, do not pretend
-    // the colors can be selected on one page. Preserve each existing listing
-    // and its current purchase path until CJ data is verified. Identity, SKU,
-    // price, and inventory failures still fail closed.
-    if (presentationOnlyBlock) {
-      for (const member of group) catalog.push(single(member));
-    } else if (family.colorSaleBlocked) {
+    // A multi-color family is one sellable page only when every identity,
+    // SKU, price, stock, label, and exact-color image check passes. Do not
+    // fall back to separately purchasable color pages when any check fails.
+    if (family.colorSaleBlocked) {
       for (const member of group) {
         catalog.push(single(member, ["color_family_unverified:" + family.colorSaleBlockers.join(",")]));
       }
