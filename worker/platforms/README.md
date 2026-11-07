@@ -133,3 +133,31 @@ This is a production-oriented API module, not a live-enabled worker deployment. 
 
 
 `create-tracer-youtube-live-control.mjs` is the production-host composition entrypoint for the YouTube broadcast manager. It loads encrypted TRACER OAuth credentials, refreshes Google access tokens in memory, and supplies them to the official broadcast/stream API controller. The host still injects its durable RTMP secret manager. If resource creation fails after the ingest key was persisted, the manager invokes the optional secret deletion callback and attempts to delete the partially created YouTube resources.
+
+
+## Production YouTube Live session composition
+
+`create-tracer-youtube-live-session-runtime.mjs` composes the encrypted TRACER
+OAuth credential endpoint, official YouTube broadcast manager, FFmpeg media
+runtime, and official Live Chat client into one start/stop lifecycle.
+
+The deployment must inject a real secret manager with three operations:
+
+- `persistStreamSecret({ platform, streamId, ingestionAddress, streamName })`
+  stores the RTMP ingest credentials and returns an opaque reference.
+- `resolveStreamSecret({ destination, secretRef })` resolves that reference
+  just-in-time to `{ outputUrl }` for FFmpeg only.
+- `deleteStreamSecret(secretRef)` removes the stored credential after a
+  cancelled or completed session.
+
+The session creates the broadcast and stream, starts the encoder, waits for
+YouTube to report an active ingest, explicitly transitions the broadcast to
+live, and then attaches official Live Chat. Stop detaches chat, completes the
+broadcast, stops media, and removes the ingest secret. A failed pre-live start
+attempts to cancel the pending broadcast and stream.
+
+This composition is not enabled by the default worker entrypoint. Production
+still requires the Supabase OAuth migration, configured TRACER worker secrets,
+a connected/authorized YouTube channel, durable secret-manager implementation,
+and a deployment host that invokes this composition. TikTok still requires a
+separately approved connector; no unofficial chat scraping is used.
