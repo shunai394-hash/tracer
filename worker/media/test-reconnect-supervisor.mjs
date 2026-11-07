@@ -24,10 +24,11 @@ assert.equal(supervisor.snapshot().retries, 2);
 await supervisor.notifyDisconnected("rtmp_disconnected");
 assert.equal(supervisor.snapshot().state, "connected");
 assert.equal(starts, 4);
+assert.equal(stops, 2, "stale publisher is stopped before reconnect");
 assert.deepEqual(delays, [100, 200, 400]);
 await supervisor.stop();
 assert.equal(supervisor.snapshot().state, "stopped");
-assert.equal(stops, 1);
+assert.equal(stops, 3, "publisher is stopped before retries and on final shutdown");
 assert.ok(states.includes("waiting_to_reconnect"));
 assert.ok(states.includes("reconnecting"));
 
