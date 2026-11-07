@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
+import { resolveCJVariantImageUrl } from "@/lib/sources/cj/variant-image";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
@@ -868,7 +869,7 @@ export async function GET(request: Request) {
             const supplierProductId = String(exactVariant.productId).trim();
             // queryByVid is authoritative for identity and price; some CJ responses omit variantImage.
             // The parent-scoped row is safe as an image fallback only because it was fetched for this exact VID.
-            const exactVariantImageUrl = exactVariant.variantImage ?? (variant.vid === exactVariant.vid ? variant.variantImage : null);
+            const exactVariantImageUrl = resolveCJVariantImageUrl(exactVariant, variant);
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               recordSkip("canonical_supplier_variant_price_unresolved");
