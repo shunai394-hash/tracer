@@ -60,6 +60,7 @@ export function planShopifyColorFamily(input: {
   const bySku = new Map<string, string[]>();
   const byVariantId = new Map<string, string[]>();
   const byColorLabel = new Map<string, string[]>();
+  const byImageUrl = new Map<string, string[]>();
 
   for (const source of input.sources) {
     const id = source.supplierVariantId.trim();
@@ -98,6 +99,10 @@ export function planShopifyColorFamily(input: {
       validImage = false;
     }
     if (!validImage) blockers.push("variant_image_missing:" + id);
+    else {
+      const normalizedImageUrl = new URL(source.imageUrl.trim()).toString();
+      byImageUrl.set(normalizedImageUrl, [...(byImageUrl.get(normalizedImageUrl) ?? []), id]);
+    }
     if (!Number.isFinite(source.price) || source.price <= 0) blockers.push("price_invalid:" + id);
     if (!Number.isSafeInteger(source.inventory) || source.inventory < 0) blockers.push("inventory_invalid:" + id);
   }
@@ -110,6 +115,9 @@ export function planShopifyColorFamily(input: {
   }
   for (const [label, ids] of byColorLabel) {
     if (ids.length > 1) blockers.push("color_label_ambiguous:" + label);
+  }
+  for (const [imageUrl, ids] of byImageUrl) {
+    if (ids.length > 1) blockers.push("variant_image_ambiguous:" + ids.join(","));
   }
 
   for (const id of expected) {
