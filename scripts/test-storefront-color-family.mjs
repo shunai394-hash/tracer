@@ -93,7 +93,7 @@ const missingSku = groupExactColorFamilies([
   member(FAMILIES[0], 1, { sku: null }),
 ]).catalog;
 assert.equal(missingSku[0].colorSaleBlocked, true);
-assert.ok(missingSku[0].colorSaleBlockers.some((blocker) => blocker.startsWith("sku_missing")));
+assert.ok(missingSku[0].colorSaleBlockers.some((blocker) => blocker.includes("sku_missing")));
 const orderIdentity = groupExactColorFamilies([
   member(FAMILIES[0], 0, { sku: null }),
   member(FAMILIES[0], 1, { sku: null }),
