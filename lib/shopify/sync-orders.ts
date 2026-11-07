@@ -206,12 +206,21 @@ export async function syncPaidShopifyOrders(limit = 25): Promise<ShopifyOrderSyn
         .in("external_sku", tracerSkus)
     : { data: [], error: null };
   if (skuListingError) throw new Error("shopify_canonical_sku_lookup_failed:" + skuListingError.message);
+  // Old standalone Shopify variants remain valid order identities after a
+  // family is consolidated. Resolve them through explicit aliases, never title.
+  const { data: variantAliases, error: aliasError } = variantIds.length
+    ? await supabase.from("channel_listing_external_aliases")
+        .select("variant_id,external_variant_id")
+        .eq("channel", "shopify")
+        .in("external_variant_id", variantIds)
+    : { data: [], error: null };
+  if (aliasError) throw new Error("shopify_variant_alias_lookup_failed:" + aliasError.message);
 
   const listingByExternalVariant = new Map<string, { variantId: string; sku: string }>();
   const listingBySku = new Map<string, { variantId: string; sku: string }>();
-  for (const row of [...(listings ?? []), ...(skuListings ?? [])]) {
+  for (const row of [...(listings ?? []), ...(skuListings ?? []), ...(variantAliases ?? [])]) {
     const variantId = String(row.variant_id ?? "").trim();
-    const sku = String(row.external_sku ?? "").trim();
+    const sku = "external_sku" in row ? String(row.external_sku ?? "").trim() : "";
     const externalVariantId = String(row.external_variant_id ?? "").trim();
     const mapped = { variantId, sku };
     if (externalVariantId && variantIds.includes(externalVariantId)) {
