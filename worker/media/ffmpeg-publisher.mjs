@@ -75,6 +75,7 @@ export function createFfmpegPublisher({
   let queuedBytes = 0;
   let closing = false;
   let failureCode = null;
+  let lastStartOptions = null;
 
   function snapshot() {
     return { state, queuedBytes, failureCode };
@@ -153,9 +154,11 @@ export function createFfmpegPublisher({
           }
         });
         setState("publishing");
+        lastStartOptions = { destination, destinationSecretRef, videoFile, bgmFile, width, height, fps };
         return snapshot();
       } catch (error) {
         child = null;
+        lastStartOptions = null;
         setState("failed", error?.message === "destination_host_mismatch" ? "destination_host_mismatch" : "publisher_start_failed");
         throw new Error(state === "failed" ? failureCode : "publisher_start_failed");
       } finally {
@@ -164,6 +167,12 @@ export function createFfmpegPublisher({
     },
     async writeSpeechAudio(bytes) {
       return writeChunk(bytes);
+    },
+    async switchVideo(videoFile) {
+      if (!lastStartOptions || state !== "publishing") throw new Error("publisher_not_running");
+      const nextOptions = { ...lastStartOptions, videoFile };
+      await this.stop();
+      return this.start(nextOptions);
     },
     async stop({ graceMs = 5000 } = {}) {
       if (!child) {
