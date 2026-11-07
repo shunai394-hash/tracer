@@ -170,6 +170,10 @@ export function createFfmpegPublisher({
     },
     async switchVideo(videoFile) {
       if (!lastStartOptions || state !== "publishing") throw new Error("publisher_not_running");
+      const nextVideoPath = resolveMediaPath(videoFile, mediaRoot);
+      if (![".mp4", ".mov", ".mkv"].includes(path.extname(nextVideoPath).toLowerCase())) {
+        throw new Error("video_file_required");
+      }
       const nextOptions = { ...lastStartOptions, videoFile };
       await this.stop();
       return this.start(nextOptions);
@@ -196,7 +200,17 @@ export function createFfmpegPublisher({
             proc.once("exit", () => { clearTimeout(timer); resolve(true); });
           });
           proc.kill("SIGTERM");
-          if (!(await terminated) && child === proc) proc.kill("SIGKILL");
+          if (!(await terminated) && child === proc) {
+            const killed = new Promise((resolve) => {
+              const timer = setTimeout(() => resolve(false), 2000);
+              proc.once("exit", () => { clearTimeout(timer); resolve(true); });
+            });
+            proc.kill("SIGKILL");
+            if (!(await killed)) {
+              setState("failed", "ffmpeg_shutdown_timeout");
+              throw new Error("ffmpeg_shutdown_timeout");
+            }
+          }
         }
       }
       if (child === proc) child = null;
