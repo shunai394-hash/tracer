@@ -79,7 +79,7 @@ export async function GET(request: Request) {
         storedInventory: row.inventory,
         storedInventoryCheckedAt: row.inventory_checked_at,
         liveInventory,
-        error: null,
+        error: liveInventory === null ? "cj_live_inventory_unavailable" : null,
       });
     } catch (cause) {
       results.push({
