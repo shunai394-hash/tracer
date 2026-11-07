@@ -33,6 +33,9 @@ export function createTracerYouTubeLiveSessionRuntime({
   pollIntervalMs,
   activeTimeoutMs,
 } = {}) {
+  if (typeof resolveVideoForProduct !== "function") {
+    throw new Error("youtube_live_product_video_resolver_required");
+  }
   const secretStore = typeof persistStreamSecret === "function" &&
     typeof resolveStreamSecret === "function" && typeof deleteStreamSecret === "function"
     ? { persistStreamSecret, resolveStreamSecret, deleteStreamSecret }
