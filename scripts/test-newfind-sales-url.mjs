@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [source, reconcile, store, page, shopIndex, patrol] = await Promise.all([
+const [source, reconcile, store, page, selector, shopIndex, patrol] = await Promise.all([
   readFile(new URL("../lib/integration/newfind.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/integration/newfind-reconcile.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/shop/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/api/cron/patrol-ai/route.ts", import.meta.url), "utf8"),
 ]);
@@ -85,7 +86,8 @@ assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
 assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
   "only Shopify-synced products may have public sales pages");
 assert.match(shopIndex, /href={`\/shop\/\$\{listing\.id\}`}/, "storefront product cards must link by stable listing UUID so Japanese slugs cannot break detail routing");
-assert.match(page, /href={shopifyProductUrl}/);
-assert.match(page, /Shopifyで購入する/,
-  "the TRACER landing page must direct customers to the live Shopify checkout");
+assert.match(page, /<ProductVariantSelector/);
+assert.match(selector, /href={shopifyUrl}/);
+assert.match(selector, /選択したカラーを購入する/,
+  "the TRACER product selector must direct customers to the selected Shopify variant");
 console.log("NEWFIND retry gates and TRACER public sales links are guarded by regression tests.");
