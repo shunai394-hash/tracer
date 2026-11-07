@@ -49,6 +49,7 @@ node worker/platforms/test-tracer-speech-bridge.mjs
 node worker/media/test-ffmpeg-publisher.mjs
 node worker/media/test-live-media-session.mjs
 node worker/media/test-reconnect-supervisor.mjs
+node worker/media/test-ai-live-stream-runtime.mjs
 ```
 
 ## Container
