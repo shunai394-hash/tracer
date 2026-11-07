@@ -203,15 +203,13 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       continue;
     }
     const family = buildFamily(group, requireSku);
-    const imageOnlyBlock = family.colorSaleBlocked
-      && family.colorSaleBlockers.length > 0
-      && family.colorSaleBlockers.every((blocker) => blocker.startsWith("variant_image_"));
-    // Keep already-published color listings individually purchasable while CJ
-    // image evidence is incomplete. Never claim they are one selectable family.
-    // Once every distinct color image is verified, the same exact-ID group
-    // becomes one color selector automatically.
-    if (imageOnlyBlock) {
-      for (const member of group) catalog.push(single(member));
+    // A family without verified, distinct color images must not be sold at
+    // all. Keeping the old standalone pages purchasable would let customers
+    // buy a color whose image mapping is not proven.
+    if (family.colorSaleBlocked) {
+      for (const member of group) {
+        catalog.push(single(member, ["color_family_unverified:" + family.colorSaleBlockers.join(",")]));
+      }
     } else {
       catalog.push(family);
     }
