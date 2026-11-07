@@ -30,6 +30,13 @@ is simulated control-plane state only and does not switch a real video feed.
 The in-memory registry is not durable across restarts and must not be used for
 production jobs.
 
+Run the focused checks from the repository root:
+
+```sh
+node worker/test-ai-live-worker.mjs
+node worker/platforms/test-normalize-comment.mjs
+```
+
 ## Container
 
 Build from the repository root:
