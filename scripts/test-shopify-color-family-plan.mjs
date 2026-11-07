@@ -6,6 +6,7 @@ const supplierProductId = "CJ-PRODUCT-EXACT-001";
 const sources = ids.map((supplierVariantId, i) => ({
   productId: "gid://shopify/Product/" + (100 + i),
   variantId: "gid://shopify/ProductVariant/" + (200 + i),
+  supplierCode: "cj",
   supplierProductId,
   supplierVariantId,
   sku: "TRC-COLOR-" + i,
@@ -17,6 +18,7 @@ const sources = ids.map((supplierVariantId, i) => ({
 
 const input = {
   canonicalProductId: "gid://shopify/Product/100",
+  expectedSupplierCode: "cj",
   expectedSupplierProductId: supplierProductId,
   sources,
   expectedSupplierVariantIds: ids,
@@ -26,7 +28,7 @@ assert.equal(valid.ok, true);
 assert.equal(valid.variants.length, 5);
 assert.deepEqual(valid.variants.map((v) => v.supplierVariantId), ids);
 assert.deepEqual(valid.variants.map((v) => v.colorLabel), ["ゼブラ柄", "クロコ柄", "ブラック", "ブルー", "グレー・ブラック"]);
-assert.ok(valid.variants.every((v) => v.supplierProductId === supplierProductId));
+assert.ok(valid.variants.every((v) => v.supplierCode === "cj" && v.supplierProductId === supplierProductId));
 assert.deepEqual(valid.destructiveActions, []);
 
 const missingImage = planShopifyColorFamily({
@@ -42,6 +44,13 @@ const insecureImage = planShopifyColorFamily({
 });
 assert.equal(insecureImage.ok, false);
 assert.ok(insecureImage.blockers.includes("variant_image_missing:sv-croc"));
+
+const wrongSupplierNamespace = planShopifyColorFamily({
+  ...input,
+  sources: sources.map((s, i) => i === 3 ? { ...s, supplierCode: "other" } : s),
+});
+assert.equal(wrongSupplierNamespace.ok, false);
+assert.ok(wrongSupplierNamespace.blockers.includes("supplier_code_mismatch:sv-blue"));
 
 const wrongSupplierProduct = planShopifyColorFamily({
   ...input,
