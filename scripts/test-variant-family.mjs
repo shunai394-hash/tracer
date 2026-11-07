@@ -86,6 +86,29 @@ test("same supplier product keeps color variants on one parent and withholds inc
   assert.equal(plan.variations[0].imageUrl, "https://images.example.test/black.jpg");
 });
 
+test("exact supplier product identity allows variants from different TRACER parent products", () => {
+  const plan = planVariantFamily({
+    productId: "canonical-parent",
+    sourceKey: "cj:1234567890123",
+    productTitle: "ヘアクリップ",
+    members: [
+      member({ productId: "parent-black", title: "ヘアクリップ（ブラック）", supplierVariantName: "Black" }),
+      member({
+        productId: "parent-white",
+        variantId: "22222222-2222-4222-8222-222222222222",
+        supplierVariantId: "9876543210988",
+        title: "ヘアクリップ（ホワイト）",
+        supplierVariantName: "White",
+      }),
+    ],
+  });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.memberProductIds, ["parent-black", "parent-white"]);
+  assert.deepEqual(plan.axes, ["色"]);
+  assert.equal(new Set(plan.variations.map((row) => row.supplierProductId)).size, 1);
+  assert.equal(new Set(plan.variations.map((row) => row.supplierVariantId)).size, 2);
+});
+
 test("different supplier product ids are never merged, even when the titles match", () => {
   const conflict = planVariantFamily({
     productId: "product-1",
