@@ -51,13 +51,14 @@ function runFfmpeg(args, { ffmpegPath, spawnImpl, timeoutMs }) {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutTimer);
-      clearTimeout(forceKillTimer);
+      if (error?.message !== "ffmpeg_timeout") clearTimeout(forceKillTimer);
       if (error) reject(error);
       else resolve();
     };
     const timeoutTimer = setTimeout(() => {
       child?.kill("SIGTERM");
       forceKillTimer = setTimeout(() => child?.kill("SIGKILL"), 3000);
+      forceKillTimer.unref?.();
       finish(new Error("ffmpeg_timeout"));
     }, timeoutMs);
     try {

@@ -60,7 +60,7 @@ speech generation, and browser-side drama/BGM mixdown remain separate systems.
 
 ## Not yet implemented
 
-- FFmpeg process management or container deployment
+- RTMP FFmpeg publisher or container deployment
 - RTMP publishing or platform authentication
 - Destination-specific comment ingestion
 - Real-time product rotation and live TTS/BGM orchestration (rotation is

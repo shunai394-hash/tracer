@@ -23,6 +23,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test AI Live worker and local FFmpeg renderer
+        run: |
+          node worker/test-ai-live-worker.mjs
+          node worker/test-ffmpeg-media.mjs
       - run: npm run test:tracer-core
       - name: Test BASE unfulfillable reconciliation retry filter
         run: node scripts/test-base-unfulfillable-reconciliation.mjs
