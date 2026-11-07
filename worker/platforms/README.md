@@ -161,3 +161,20 @@ still requires the Supabase OAuth migration, configured TRACER worker secrets,
 a connected/authorized YouTube channel, durable secret-manager implementation,
 and a deployment host that invokes this composition. TikTok still requires a
 separately approved connector; no unofficial chat scraping is used.
+
+
+## Encrypted YouTube RTMP secret persistence
+
+`supabase-youtube-stream-secret-store.mjs` provides a durable Supabase-backed
+secret store for YouTube ingest address + stream key. It encrypts the payload
+with AES-256-GCM before writing the database; only ciphertext, IV, and auth tag
+are stored. The opaque UUID reference is the only value returned to session
+or job orchestration. FFmpeg resolves the decrypted RTMP URL just-in-time
+inside the worker process.
+
+Apply migration `20261108010000_ai_live_stream_secrets.sql` and configure
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and
+`AI_LIVE_OAUTH_ENCRYPTION_KEY` in the isolated worker. The production session
+factory can now build this store automatically; deployments may still inject
+an external secret manager instead. No migration has been applied to production
+by this code change.
