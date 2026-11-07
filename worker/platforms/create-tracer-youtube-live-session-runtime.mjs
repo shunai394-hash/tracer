@@ -3,6 +3,7 @@ import { createTracerYouTubeLiveChatClient } from "./create-tracer-youtube-live-
 import { createAiLiveMediaRuntime } from "../media/create-ai-live-media-runtime.mjs";
 import { createTracerYouTubeLiveSession } from "./create-tracer-youtube-live-session.mjs";
 import { createSupabaseYouTubeStreamSecretStore } from "./supabase-youtube-stream-secret-store.mjs";
+import { createProductVideoManifestResolver } from "../media/product-video-manifest-resolver.mjs";
 
 /**
  * Production composition root for YouTube Live. Deployment supplies a real
@@ -22,6 +23,7 @@ export function createTracerYouTubeLiveSessionRuntime({
   fetchImpl = fetch,
   speechBridge,
   resolveVideoForProduct,
+  mediaManifestPath,
   mediaRoot,
   ffmpegPath,
   spawnImpl,
@@ -42,9 +44,10 @@ export function createTracerYouTubeLiveSessionRuntime({
       encryptionKey: streamSecretEncryptionKey,
       fetchImpl,
     });
-  if (typeof resolveVideoForProduct !== "function") {
-    throw new Error("youtube_live_product_video_resolver_required");
-  }
+  const productVideoResolver = resolveVideoForProduct ?? createProductVideoManifestResolver({
+    ...(mediaManifestPath ? { manifestPath: mediaManifestPath } : {}),
+    ...(mediaRoot ? { mediaRoot } : {}),
+  });
   const broadcastControl = createTracerYouTubeLiveControl({
     baseUrl,
     workerToken,
@@ -62,7 +65,7 @@ export function createTracerYouTubeLiveSessionRuntime({
     createMediaRuntime: async () => createAiLiveMediaRuntime({
       secretResolver: secretStore.resolveStreamSecret,
       ...(speechBridge ? { speechBridge } : {}),
-      ...(resolveVideoForProduct ? { resolveVideoForProduct } : {}),
+      resolveVideoForProduct: productVideoResolver,
       ...(mediaRoot ? { mediaRoot } : {}),
       ...(ffmpegPath ? { ffmpegPath } : {}),
       ...(spawnImpl ? { spawnImpl } : {}),
