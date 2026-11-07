@@ -204,6 +204,8 @@ Paths are relative to `AI_LIVE_MEDIA_ROOT`, traversal and unsupported
 extensions are rejected, and an unmapped product is a hard failure. No
 unrelated fallback video is played. Add only licensed/approved assets to the
 worker media volume. The resolver reads the manifest for each product selection so an operator's
-latest approved mapping is used. Product BGM may be recorded in the manifest for the next
-per-product audio-mix extension; current FFmpeg runtime uses the BGM file
-provided in the session's media options.
+latest approved mapping is used. Each product may specify its own `bgmFile`. On product rotation, the media
+session resolves both assets and restarts FFmpeg with the new video and BGM
+track together. A missing `bgmFile` retains the session's configured BGM; a
+missing product/video mapping is a hard failure. Switching restarts the
+encoder and can briefly interrupt the live broadcast.
