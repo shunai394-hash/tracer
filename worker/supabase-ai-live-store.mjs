@@ -133,10 +133,13 @@ export function createSupabaseAiLiveStore({ url, serviceRoleKey, fetchImpl = fet
       });
       return rows?.[0] || null;
     },
-    async markStopped(streamId, { reason = "operator_requested", now = new Date() } = {}) {
+    async markStopped(streamId, { reason = "operator_requested", owner, now = new Date() } = {}) {
+      if (typeof streamId !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(streamId)) throw new Error("invalid_stream_id");
       if (typeof reason !== "string" || !/^[a-z0-9_]{1,64}$/i.test(reason)) throw new Error("invalid_stop_reason");
+      if (owner !== undefined && (typeof owner !== "string" || !/^[A-Za-z0-9_-]{8,96}$/.test(owner))) throw new Error("invalid_lease_owner");
       const at = new Date(now).toISOString();
-      const rows = await request("?stream_id=eq." + encodeURIComponent(streamId) + "&select=stream_id,status,stopped_at", {
+      const ownerFilter = owner ? "&lease_owner=eq." + encodeURIComponent(owner) : "";
+      const rows = await request("?stream_id=eq." + encodeURIComponent(streamId) + ownerFilter + "&select=stream_id,status,stopped_at", {
         method: "PATCH",
         body: { status: "stopped", stopped_at: at, stop_reason: reason, lease_expires_at: null, updated_at: at },
         prefer: "return=representation",
