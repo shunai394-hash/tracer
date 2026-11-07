@@ -1,5 +1,5 @@
 import http from "node:http";
-import { timingSafeEqual, createHash } from "node:crypto";
+import { timingSafeEqual, createHash, randomUUID } from "node:crypto";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_RUNTIME_SECONDS = 30 * 60;
@@ -79,10 +79,17 @@ export function createAiLiveWorkerServer({
   mode = process.env.AI_LIVE_WORKER_MODE || "fake",
   now = () => Date.now(),
   segmentIntervalMs = null,
+  store = null,
+  workerId = randomUUID().replaceAll("-", "_"),
 } = {}) {
   if (!token || token.length < 32) throw new Error("AI_LIVE_WORKER_TOKEN must contain at least 32 characters");
   if (mode !== "fake") throw new Error("Only the fake adapter is implemented; live publishing is disabled");
   const streams = new Map();
+  if (store && (typeof store.insertNew !== "function" || typeof store.claimLease !== "function" ||
+      typeof store.heartbeat !== "function" || typeof store.markStopped !== "function")) {
+    throw new Error("invalid_ai_live_store");
+  }
+  if (!/^[A-Za-z0-9_-]{8,96}$/.test(workerId)) throw new Error("invalid_worker_id");
 
   function authorized(req) {
     const header = req.headers.authorization || "";
@@ -110,9 +117,13 @@ export function createAiLiveWorkerServer({
   function stopRecord(record, reason) {
     clearTimeout(record.timer);
     clearInterval(record.segmentTimer);
+    clearInterval(record.heartbeatTimer);
     record.state = "stopped";
     record.stopReason = reason;
     record.lastHeartbeatAt = new Date(now()).toISOString();
+    if (store && reason !== "worker_lease_lost") {
+      void store.markStopped(record.job.streamId, { reason }).catch(() => {});
+    }
   }
 
   const server = http.createServer(async (req, res) => {
@@ -144,7 +155,26 @@ export function createAiLiveWorkerServer({
           stopReason: null,
           timer: null,
           segmentTimer: null,
+          heartbeatTimer: null,
         };
+        if (store) {
+          const inserted = await store.insertNew({
+            streamId: job.streamId,
+            destination: job.destination,
+            status: "live",
+            adapterMode: "fake",
+            jobFingerprint: fingerprint,
+            jobPayload: job,
+            activeSegmentIndex: 0,
+            activeProductId: job.segments[0]?.productId || null,
+            reconnectCount: 0,
+            heartbeatAt: startedAt,
+            startedAt,
+          });
+          if (!inserted) return json(res, 409, { error: "stream_id_already_persisted" });
+          const lease = await store.claimLease(job.streamId, { owner: workerId, leaseSeconds: 45 });
+          if (!lease) return json(res, 409, { error: "worker_lease_unavailable" });
+        }
         record.timer = setTimeout(() => {
           stopRecord(record, "worker_shutdown");
         }, job.maxRuntimeSeconds * 1000);
@@ -159,6 +189,26 @@ export function createAiLiveWorkerServer({
             record.lastHeartbeatAt = record.segmentChangedAt;
           }, durationMs);
           record.segmentTimer.unref?.();
+        }
+        if (store) {
+          record.heartbeatTimer = setInterval(async () => {
+            if (record.state !== "live") return;
+            try {
+              const renewed = await store.heartbeat(job.streamId, {
+                owner: workerId,
+                segmentIndex: record.segmentIndex,
+                productId: job.segments[record.segmentIndex]?.productId || null,
+                reconnectCount: 0,
+                leaseSeconds: 45,
+                now: new Date(now()),
+              });
+              if (!renewed) stopRecord(record, "worker_lease_lost");
+              else record.lastHeartbeatAt = new Date(now()).toISOString();
+            } catch {
+              stopRecord(record, "worker_lease_lost");
+            }
+          }, 15_000);
+          record.heartbeatTimer.unref?.();
         }
         streams.set(job.streamId, record);
         return json(res, 202, snapshot(record));
@@ -187,6 +237,7 @@ export function createAiLiveWorkerServer({
     for (const record of streams.values()) {
       clearTimeout(record.timer);
       clearInterval(record.segmentTimer);
+      clearInterval(record.heartbeatTimer);
     }
   });
   return server;
