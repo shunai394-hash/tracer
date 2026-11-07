@@ -181,3 +181,29 @@ Apply migration `20261108010000_ai_live_stream_secrets.sql` and configure
 factory can now build this store automatically; deployments may still inject
 an external secret manager instead. No migration has been applied to production
 by this code change.
+
+
+## Product-to-video media manifest
+
+The YouTube session runtime now defaults to an operator-curated
+`/app/media/manifest.json` (override with `AI_LIVE_MEDIA_MANIFEST`). Its
+shape is:
+
+```json
+{
+  "products": {
+    "TRACER_SHOP_LISTING_ID": {
+      "videoFile": "products/TRACER_SHOP_LISTING_ID.mp4",
+      "bgmFile": "bgm/ambient.mp3"
+    }
+  }
+}
+```
+
+Paths are relative to `AI_LIVE_MEDIA_ROOT`, traversal and unsupported
+extensions are rejected, and an unmapped product is a hard failure. No
+unrelated fallback video is played. Add only licensed/approved assets to the
+worker media volume. The resolver reloads the manifest when its modification
+time changes. Product BGM may be recorded in the manifest for the next
+per-product audio-mix extension; current FFmpeg runtime uses the BGM file
+provided in the session's media options.
