@@ -123,7 +123,7 @@ export function createAiLiveWorkerServer({
     record.stopReason = reason;
     record.lastHeartbeatAt = new Date(now()).toISOString();
     if (store && reason !== "worker_lease_lost") {
-      void store.markStopped(record.job.streamId, { reason }).catch(() => {});
+      void store.markStopped(record.job.streamId, { reason, owner: workerId }).catch(() => {});
     }
   }
 
