@@ -27,7 +27,7 @@ function wait(ms, signal) {
  */
 export function createYouTubeLiveChatAdapter({
   streamList,
-  onComment,
+  onComment = async () => {},
   onError = () => {},
   maxReconnects = MAX_RECONNECTS,
   baseDelayMs = BASE_DELAY_MS,
