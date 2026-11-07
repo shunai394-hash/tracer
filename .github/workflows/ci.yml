@@ -27,6 +27,12 @@ jobs:
         run: |
           node worker/test-ai-live-worker.mjs
           node worker/test-ffmpeg-media.mjs
+      - name: Install FFmpeg for real media integration test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Render and probe real AI Live MP4 outputs
+        run: node worker/test-ffmpeg-integration.mjs
       - run: npm run test:tracer-core
       - name: Test BASE unfulfillable reconciliation retry filter
         run: node scripts/test-base-unfulfillable-reconciliation.mjs
