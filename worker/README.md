@@ -144,3 +144,23 @@ video. Mount approved video and BGM assets into the worker volume and provide
 the matching manifest. Product rotation resolves both assets and restarts
 FFmpeg with the new video and BGM together; a missing BGM entry retains the
 session's configured BGM.
+
+
+## Product-ID media directory mode
+
+For catalogs where filenames follow the TRACER listing ID, the YouTube session
+runtime can skip the JSON manifest. Construct it with
+`mediaResolverMode: "directory"` and mount assets using this convention:
+
+```text
+/app/media/products/<shop_listings.id>.mp4
+/app/media/bgm/<shop_listings.id>.mp3   # optional
+```
+
+The resolver validates the product ID, checks that the video exists and is
+readable, and selects the matching BGM only when that file exists. If the
+product-specific BGM is absent, the media session keeps the configured session
+BGM. Missing video is a hard error; it never reuses a different product's
+video. This removes the per-product manifest-edit step, but the media files
+still need to be supplied and mounted by the operator. The default resolver
+mode remains `manifest` for backwards compatibility.
