@@ -43,7 +43,7 @@ export function createTracerProductFeedClient({
     const currentTime = now();
     const segments = payload.products.flatMap((product) => {
       if (!product || typeof product !== "object" ||
-          typeof product.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(product.id) ||
+          typeof product.id !== "string" || !/^[A-Za-z0-9_-]{1,88}$/.test(product.id) ||
           typeof product.title !== "string" || !product.title.trim() ||
           typeof product.scriptText !== "string" || !product.scriptText.trim() ||
           product.scriptText.length > 5000 ||
