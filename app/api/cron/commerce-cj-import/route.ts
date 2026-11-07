@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
+import { resolveCJVariantImageUrl } from "@/lib/sources/cj/variant-image";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
@@ -866,6 +867,9 @@ export async function GET(request: Request) {
               continue;
             }
             const supplierProductId = String(exactVariant.productId).trim();
+            // queryByVid is authoritative for identity and price; some CJ responses omit variantImage.
+            // The parent-scoped row is safe as an image fallback only because it was fetched for this exact VID.
+            const exactVariantImageUrl = resolveCJVariantImageUrl(exactVariant, variant);
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               recordSkip("canonical_supplier_variant_price_unresolved");
@@ -1012,7 +1016,7 @@ export async function GET(request: Request) {
               sourceVariantKey: exactVariant.vid,
               variantTitleJa: title + japaneseVariantSuffix(exactVariant.nameEn),
               sku: exactVariant.sku,
-              variantImageUrl: exactVariant.variantImage,
+              variantImageUrl: exactVariantImageUrl,
               attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
               offer: {
                 supplierCode: "cj", supplierProductId,
@@ -1024,6 +1028,7 @@ export async function GET(request: Request) {
                 lastCheckedAt: new Date().toISOString(),
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
+                  ...(exactVariantImageUrl ? { variantImageUrl: exactVariantImageUrl } : {}),
                   stockKnown: stock !== null, shippingKnown: shipping !== null && !shippingWasEstimated,
                   shippingEstimated: shippingWasEstimated,
                   ...(shippingWasEstimated ? { shippingEstimateUsd: 7.76, shippingEstimateSource: "cj_historical_p90_570_offers" } : {}),

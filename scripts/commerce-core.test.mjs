@@ -1,4 +1,5 @@
 import test from "node:test";
+import { resolveCJVariantImageUrl } from "../lib/sources/cj/variant-image.ts";
 import assert from "node:assert/strict";
 import { selectRotatingVariantBatch } from "../lib/commerce/variant-batch.ts";
 import { asRelationRows } from "../lib/commerce/relation-rows.ts";
@@ -1355,19 +1356,13 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
 });
 
 
-test("CJ variant image URLs are preserved by exact VID and used by the TRACER storefront", async () => {
-  const cjTypes = await readFile(new URL("../lib/sources/cj/variant-select.ts", import.meta.url), "utf8");
-  const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
-  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
-  assert.match(cjTypes, /variantImage\?: string \| null/);
-  assert.match(cjClient, /variantImage: typeof row\.variantImage === "string"/);
-  assert.match(cjClient, /const row = rows\.find\(\(item\) => \(item\.vid\?\.trim\(\) \|\| item\.variantId\?\.trim\(\)\) === normalizedVid\)/);
-  assert.match(core, /variantImageUrl \? \{ variantImageUrl: input\.variantImageUrl \} : \{\}/);
-  assert.match(importer, /variantImageUrl: exactVariant\.variantImage/);
-  assert.match(store, /attributes\.variantImageUrl/);
-  assert.match(store, /const imageUrl = variantImageUrl \?\? \(typeof product\.image_url === "string" \? product\.image_url : null\)/);
+test("CJ variant images prefer the exact VID response and only fall back to the matching catalog VID", () => {
+  const exact = "https://img.example/exact-red.jpg";
+  const fallback = "https://img.example/catalog-red.jpg";
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: exact }, { vid: "123", variantImage: fallback }), exact);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "123", variantImage: fallback }), fallback);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "456", variantImage: fallback }), null);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "123", variantImage: null }), null);
 });
 
 test("channel resync preserves existing external identities and persists the exact sellable variant", async () => {
