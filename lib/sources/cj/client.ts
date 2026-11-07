@@ -11,6 +11,7 @@ import {
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 import { readCJFreightPrice } from "@/lib/sources/cj/freight-cost";
+import { normalizeCJProductDetailVariants } from "@/lib/sources/cj/product-detail-variants";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -1256,6 +1257,34 @@ async function queryCJDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
   return Array.isArray(variants) ? (variants as CJVariantRow[]) : [];
 }
 
+/** Fetch the full product-detail payload because its stanProducts[].img field
+ * carries per-variant renders that can be absent from the lighter variant query. */
+async function queryCJProductDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/product/productDetail/query",
+    {
+      method: "POST",
+      headers: {
+        "CJ-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: pid }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return [];
+  const payload = await response.json() as unknown;
+  return normalizeCJProductDetailVariants(payload, pid).map((variant) => ({
+    vid: variant.vid,
+    pid: variant.productId,
+    variantSku: variant.sku ?? undefined,
+    variantNameEn: variant.nameEn ?? undefined,
+    variantImage: variant.variantImage,
+    variantSellPrice: variant.sellPrice ?? undefined,
+  }));
+}
+
 export async function fetchCJProductVariants(
   pid: string,
   options?: { countryCode?: string },
@@ -1267,6 +1296,21 @@ export async function fetchCJProductVariants(
   let rows = await queryCJVariantRows(pid, options?.countryCode);
   if (rows.length === 0 && options?.countryCode) rows = await queryCJVariantRows(pid);
   if (rows.length === 0) rows = await queryCJDetailVariantRows(pid);
+
+  // The lightweight variant endpoints frequently return blank variantImage.
+  // Enrich only those products from the documented full product-detail endpoint;
+  // exact VID matching prevents a sibling color image from leaking across variants.
+  if (rows.some((row) => !(typeof row.variantImage === "string" && /^https?:\\/\\//i.test(row.variantImage.trim())))) {
+    const detailedRows = await queryCJProductDetailVariantRows(pid);
+    const detailByVid = new Map(detailedRows.map((row) => [row.vid, row]));
+    rows = rows.map((row) => {
+      const vid = row.vid?.trim() || row.variantId?.trim() || "";
+      const detailed = detailByVid.get(vid);
+      return detailed?.variantImage && !row.variantImage
+        ? { ...row, variantImage: detailed.variantImage }
+        : row;
+    });
+  }
 
   return rows
     .map((row) => toCJProductVariant(row, pid))
