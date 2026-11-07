@@ -48,10 +48,10 @@ for (const gate of [
 ]) assert.ok(route.includes(gate), `missing listing gate: ${gate}`);
 
 assert.match(route, /Math\\.min\\(20/);
-assert.match(route, /Cache-Control.*no-store/);
-assert.match(route, /sellingPrice:/);
-assert.match(route, /productUrl:/);
-assert.match(route, /inStock: true/);
+assert.ok(route.includes("Cache-Control: \"no-store\""));
+assert.ok(route.includes("sellingPrice:"));
+assert.ok(route.includes("productUrl"));
+assert.ok(route.includes("inStock: true"));
 
 // Private cost, supplier identifiers, and profit are query-only fields.
 const serialized = route.slice(route.indexOf("return [{"), route.indexOf("}];\\n    }).slice(0, 6000));
