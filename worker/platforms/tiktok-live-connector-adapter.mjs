@@ -9,7 +9,7 @@ const MAX_RECONNECTS = 8;
  */
 export function createTikTokLiveConnectorAdapter({
   connector,
-  onComment,
+  onComment = async () => {},
   onError = () => {},
   maxReconnects = MAX_RECONNECTS,
   baseDelayMs = 500,
