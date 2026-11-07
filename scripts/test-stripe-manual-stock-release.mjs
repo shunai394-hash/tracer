@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const [webhook, migration] = await Promise.all([
   readFile(new URL("../app/api/webhooks/stripe/route.ts", import.meta.url), "utf8"),
-  readFile(new URL("../supabase/migrations/20261103090000_release_manual_inventory_once.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/20261107005739_release_manual_inventory_once.sql", import.meta.url), "utf8"),
 ]);
 
 assert.match(webhook, /checkout\.session\.expired/, "expired Checkout Sessions must release reserved stock");
