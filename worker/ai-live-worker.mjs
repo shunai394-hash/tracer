@@ -81,10 +81,17 @@ export function createAiLiveWorkerServer({
   now = () => Date.now(),
   segmentIntervalMs = null,
   store = null,
+  mediaRuntimeFactory = null,
+  mediaRuntimeOptions = null,
   workerId = randomUUID().replaceAll("-", "_"),
 } = {}) {
   if (!token || token.length < 32) throw new Error("AI_LIVE_WORKER_TOKEN must contain at least 32 characters");
   if (mode !== "fake") throw new Error("Only the fake adapter is implemented; live publishing is disabled");
+  if ((mediaRuntimeFactory && typeof mediaRuntimeFactory !== "function") ||
+      (mediaRuntimeOptions && typeof mediaRuntimeOptions !== "function") ||
+      Boolean(mediaRuntimeFactory) !== Boolean(mediaRuntimeOptions)) {
+    throw new Error("media_runtime_factory_and_options_must_be_provided_together");
+  }
   const streams = new Map();
   let recoveryTimer = null;
   if (store && (typeof store.insertNew !== "function" || typeof store.claimLease !== "function" ||
@@ -116,26 +123,41 @@ export function createAiLiveWorkerServer({
     };
   }
 
-  function stopRecord(record, reason) {
+  async function stopRecord(record, reason) {
+    if (record.state === "stopped" || record.state === "failed") return;
     clearTimeout(record.timer);
     clearInterval(record.segmentTimer);
     clearInterval(record.heartbeatTimer);
     record.state = "stopped";
     record.stopReason = reason;
     record.lastHeartbeatAt = new Date(now()).toISOString();
+    if (record.mediaRuntime && !record.mediaRuntimeStopped) {
+      record.mediaRuntimeStopped = true;
+      try { await record.mediaRuntime.stop(); } catch {}
+    }
     if (store && reason !== "worker_lease_lost") {
       void store.markStopped(record.job.streamId, { reason, owner: workerId }).catch(() => {});
     }
   }
 
-  function activateRecord(record) {
+  async function activateRecord(record) {
     const elapsed = Math.max(0, now() - Date.parse(record.startedAt));
     const remainingMs = record.job.maxRuntimeSeconds * 1000 - elapsed;
     if (remainingMs <= 0) {
-      stopRecord(record, "worker_runtime_limit");
+      await stopRecord(record, "worker_runtime_limit");
       return false;
     }
-    record.timer = setTimeout(() => stopRecord(record, "worker_runtime_limit"), remainingMs);
+    if (mediaRuntimeFactory) {
+      record.mediaRuntime = await mediaRuntimeFactory({ job: record.job, workerId });
+      if (!record.mediaRuntime || typeof record.mediaRuntime.start !== "function" ||
+          typeof record.mediaRuntime.stop !== "function" ||
+          typeof record.mediaRuntime.setCurrentProduct !== "function") {
+        throw new Error("invalid_media_runtime");
+      }
+      await record.mediaRuntime.start(await mediaRuntimeOptions(record.job));
+      await record.mediaRuntime.setCurrentProduct(record.job.segments[record.segmentIndex]?.productId || null);
+    }
+    record.timer = setTimeout(() => { void stopRecord(record, "worker_runtime_limit"); }, remainingMs);
     record.timer.unref?.();
     const durationMs = segmentIntervalMs ??
       (record.job.segmentDurationSeconds ?? DEFAULT_SEGMENT_DURATION_SECONDS) * 1000;
@@ -145,6 +167,10 @@ export function createAiLiveWorkerServer({
         record.segmentIndex = (record.segmentIndex + 1) % record.job.segments.length;
         record.segmentChangedAt = new Date(now()).toISOString();
         record.lastHeartbeatAt = record.segmentChangedAt;
+        if (record.mediaRuntime) {
+          void Promise.resolve(record.mediaRuntime.setCurrentProduct(record.job.segments[record.segmentIndex]?.productId || null))
+            .catch(() => stopRecord(record, "media_runtime_product_update_failed"));
+        }
       }, durationMs);
       record.segmentTimer.unref?.();
     }
@@ -160,10 +186,10 @@ export function createAiLiveWorkerServer({
             leaseSeconds: 45,
             now: new Date(now()),
           });
-          if (!renewed) stopRecord(record, "worker_lease_lost");
+          if (!renewed) await stopRecord(record, "worker_lease_lost");
           else record.lastHeartbeatAt = new Date(now()).toISOString();
         } catch {
-          stopRecord(record, "worker_lease_lost");
+          await stopRecord(record, "worker_lease_lost");
         }
       }, 15_000);
       record.heartbeatTimer.unref?.();
@@ -215,7 +241,7 @@ export function createAiLiveWorkerServer({
         heartbeatTimer: null,
       };
       streams.set(job.streamId, record);
-      if (activateRecord(record)) restored += 1;
+      if (await activateRecord(record)) restored += 1;
       else skipped += 1;
     }
     return { restored, skipped };
@@ -271,7 +297,7 @@ export function createAiLiveWorkerServer({
           if (!lease) return json(res, 409, { error: "worker_lease_unavailable" });
         }
         streams.set(job.streamId, record);
-        if (!activateRecord(record)) return json(res, 409, { error: "worker_runtime_limit_reached" });
+        if (!await activateRecord(record)) return json(res, 409, { error: "worker_runtime_limit_reached" });
         return json(res, 202, snapshot(record));
       }
 
@@ -284,7 +310,7 @@ export function createAiLiveWorkerServer({
         const record = streams.get(match[1]);
         if (!record) return json(res, 404, { error: "stream_not_found" });
         if (record.state !== "stopped" && record.state !== "failed") {
-          stopRecord(record, "operator_requested");
+          await stopRecord(record, "operator_requested");
         }
         return json(res, 200, snapshot(record));
       }
@@ -295,6 +321,11 @@ export function createAiLiveWorkerServer({
   });
 
   server.restoreActiveStreams = restoreActiveStreams;
+  server.shutdown = async () => {
+    clearInterval(recoveryTimer);
+    recoveryTimer = null;
+    await Promise.all([...streams.values()].map((record) => stopRecord(record, "worker_shutdown")));
+  };
   server.startRecoveryLoop = (intervalMs = 15_000) => {
     if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 60_000) {
       throw new Error("invalid_recovery_interval");
@@ -312,6 +343,10 @@ export function createAiLiveWorkerServer({
       clearTimeout(record.timer);
       clearInterval(record.segmentTimer);
       clearInterval(record.heartbeatTimer);
+      if (record.mediaRuntime && !record.mediaRuntimeStopped) {
+        record.mediaRuntimeStopped = true;
+        void Promise.resolve(record.mediaRuntime.stop()).catch(() => {});
+      }
     }
   });
   return server;
@@ -330,7 +365,7 @@ if (isMain) {
   await server.restoreActiveStreams();
   server.startRecoveryLoop();
   server.listen(port, "0.0.0.0", () => process.stdout.write("AI Live worker control API ready (fake adapter; publishing disabled)\n"));
-  const shutdown = () => server.close(() => process.exit(0));
+  const shutdown = () => { void server.shutdown().finally(() => server.close(() => process.exit(0))); };
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
 }
