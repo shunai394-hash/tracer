@@ -12,6 +12,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY worker/ai-live-worker.mjs ./ai-live-worker.mjs
 COPY worker/ffmpeg-media.mjs ./ffmpeg-media.mjs
+COPY worker/destination-secret-provider.mjs ./destination-secret-provider.mjs
 
 USER node
 EXPOSE 8080
