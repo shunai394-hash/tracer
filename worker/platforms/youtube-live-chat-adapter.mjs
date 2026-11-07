@@ -48,6 +48,7 @@ export function createYouTubeLiveChatAdapter({
   let reconnectCount = 0;
   let lastPageToken = null;
   let liveChatId = null;
+  let onCommentHandler = onComment;
 
   async function run(signal) {
     state = "connecting";
@@ -67,7 +68,7 @@ export function createYouTubeLiveChatAdapter({
           for (const message of Array.isArray(page.items) ? page.items : []) {
             const event = normalizeYouTubeLiveChatMessage(message);
             if (event) {
-              try { await onComment(event); } catch (error) { onError(error); }
+              try { await onCommentHandler(event); } catch (error) { onError(error); }
             }
           }
         }
@@ -94,6 +95,11 @@ export function createYouTubeLiveChatAdapter({
   return {
     snapshot() {
       return { state, reconnectCount, hasResumeToken: Boolean(lastPageToken) };
+    },
+    setOnComment(handler) {
+      if (typeof handler !== "function") throw new Error("on_comment_handler_required");
+      if (task) throw new Error("cannot_replace_comment_handler_while_started");
+      onCommentHandler = handler;
     },
     async start(id) {
       if (typeof id !== "string" || !id.trim() || id.length > 256) throw new Error("invalid_youtube_live_chat_id");
