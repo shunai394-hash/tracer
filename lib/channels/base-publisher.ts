@@ -169,7 +169,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
   const familyBlockedListingIds = getBaseColorFamilyBlockedIds(
-    publishableListings.map((listing) => ({ id: String(listing.id), supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id) })),
+    publishableListings.map((listing) => ({ id: String(listing.id), supplierCode: listing.supplier_name == null ? null : String(listing.supplier_name), supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id) })),
     ALWAYS_ON_SALE_LISTING_IDS,
   );
   const results: BasePublicationResult["results"] = [];
