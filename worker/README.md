@@ -1,9 +1,11 @@
 # AI Live worker control service
 
-This is the first isolated-container milestone for the AI Live pipeline. It is
-intentionally a **fake lifecycle adapter**: it validates bounded jobs, exposes
-authenticated start/stop/status endpoints, and simulates state. It does not
-invoke FFmpeg, connect to TikTok or YouTube, or publish video/audio.
+This is an isolated-container milestone for the AI Live pipeline. The HTTP
+control API still runs in **fake mode** and does not start a broadcast. A
+separate FFmpeg publisher module now supports a controlled RTMP process, a
+looped background video, MP3 speech on stdin, and an MP3/WAV/M4A BGM track mixed
+at 18% volume. The publisher is not yet wired to the HTTP stream lifecycle or
+a production secret manager; do not treat this as a live-ready deployment.
 
 ## Run locally
 
@@ -36,6 +38,7 @@ Run the focused checks from the repository root:
 node worker/test-ai-live-worker.mjs
 node worker/platforms/test-normalize-comment.mjs
 node worker/platforms/test-tracer-speech-bridge.mjs
+node worker/media/test-ffmpeg-publisher.mjs
 ```
 
 ## Container
@@ -52,9 +55,11 @@ credentials in the image, job payload, logs, or health response.
 
 ## Next implementation gate
 
-The FFmpeg publisher, destination secret resolver, persistent job registry,
-reconnect supervisor, platform eligibility checks, and actual media/BGM
-scheduler are not implemented. The service refuses any mode other than
-`fake`, so it cannot accidentally start a real broadcast. Add YouTube and
-TikTok publishing only after each account's stream-key/API eligibility and
-platform policy checks are verified.
+The FFmpeg publisher module is implemented and contract-tested, and FFmpeg is
+installed in the container image. It is not yet connected to the HTTP control
+API, persistent job registry, reconnect supervisor, or live comment/audio
+scheduler. The HTTP service still refuses any mode other than `fake`, so it
+cannot accidentally start a real broadcast. Before enabling publishing, wire
+in a production secret manager and verify each YouTube/TikTok account's current
+stream eligibility and platform policy requirements. Mount only approved
+media files under `AI_LIVE_MEDIA_ROOT`; do not place stream keys in job JSON.
