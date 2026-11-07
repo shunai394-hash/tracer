@@ -508,10 +508,8 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
     const variantImageUrl = typeof attributes.variantImageUrl === "string" && /^https?:\/\//i.test(attributes.variantImageUrl)
       ? attributes.variantImageUrl : null;
     const imageUrl = variantImageUrl ?? (typeof product.image_url === "string" ? product.image_url : null);
-    const variantLabel = typeof attributes.variationLabel === "string" && attributes.variationLabel.trim()
-      ? attributes.variationLabel.trim()
-      : String(variant.title_ja ?? "").match(/[（(]([^）)]+)[）)]\s*$/u)?.[1] ?? null;
-    const variantOptionType = hasColorVariantLabel(attributes.color, attributes.color_ja, attributes.colorName, variantLabel, variant.title_ja) ? "カラー" : attributes.size ? "サイズ" : "種類";
+    const variantLabel = deriveVariantLabel(variant.title_ja, attributes);
+    const variantOptionType = hasColorVariantLabel(attributes.color, attributes.color_ja, attributes.colorName, attributes.supplierVariantName, variantLabel, variant.title_ja) ? "カラー" : attributes.size ? "サイズ" : "種類";
     if (!title || !description || !imageUrl || !hasJapaneseText(title) || !isPublishableCatalogTitle(title) || !isPublishableCatalogDescription(description)) continue;
     try {
       const image = new URL(imageUrl);
