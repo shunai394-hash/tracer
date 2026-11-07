@@ -55,8 +55,19 @@ node worker/media/test-ffmpeg-publisher.mjs
 node worker/media/test-live-media-session.mjs
 node worker/media/test-reconnect-supervisor.mjs
 node worker/media/test-ai-live-stream-runtime.mjs
-node worker/media/test-create-ai-live-media-runtime.mjs
+node worker/media/test-create-ai-live-media-runtime.mjs\nnode worker/media/test-create-ai-live-platform-runtime.mjs
 ```
+
+## Unified platform runtime
+
+`media/create-ai-live-platform-runtime.mjs` now owns one session lifecycle:
+start the media publisher, start both platform comment adapters, forward both
+comment streams to the same media runtime, and stop the comment sources before
+stopping media. If either adapter fails to start, both adapters are rolled back
+and the media publisher is stopped. It accepts already-constructed adapters
+and a media runtime; it does not acquire OAuth credentials, obtain TikTok LIVE
+access, or enable production publishing. The default worker entrypoint remains
+fake-only and does not instantiate this runtime.
 
 ## Container
 
