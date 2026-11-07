@@ -34,7 +34,7 @@ time is 30 minutes. Product segments rotate in round-robin order; the default
 duration is 45 seconds and accepted values are 15–600 seconds. The default fake
 mode only rotates simulated state. An explicitly injected media runtime can
 resolve each product ID to a trusted video asset under `AI_LIVE_MEDIA_ROOT`;
-when the product changes, FFmpeg is stopped and restarted with the new video.
+when the product changes, FFmpeg is stopped and restarted with the new video and, when configured, the matching product BGM.
 This produces a brief on-air interruption during each switch, so it is a
 functional first implementation rather than seamless frame-accurate switching.
 When Supabase is configured, stream creation uses insert-only semantics,
@@ -141,5 +141,6 @@ manifest at `/app/media/manifest.json` by default (override with
 file under `AI_LIVE_MEDIA_ROOT`. The resolver rejects traversal, unsupported
 extensions, and missing product mappings; it never substitutes an unrelated
 video. Mount approved video and BGM assets into the worker volume and provide
-the matching manifest. BGM is currently selected per session; the manifest
-records optional per-product BGM metadata for the next audio-switching step.
+the matching manifest. Product rotation resolves both assets and restarts
+FFmpeg with the new video and BGM together; a missing BGM entry retains the
+session's configured BGM.
