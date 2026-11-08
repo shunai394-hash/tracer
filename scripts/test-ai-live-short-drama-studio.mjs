@@ -109,10 +109,12 @@ test("fictional child-role voice is designed from text, saved privately, and nev
 
 
 
-test("voice library always lists Soma, Mitsuki, Renji and Rin with local MP3 preview inputs", () => {
+test("voice library always lists Soma, Mitsuki, Renji and Rin with hosted MP3 previews", () => {
   for (const name of ["蒼真","美月","蓮司","凛"]) assert.ok(page.includes('title:"'+name+'"'));
-  assert.ok(page.includes('picker.accept=".mp3,audio/mpeg,audio/mp3"'));
+  assert.ok(page.includes('["蓮司","/audio/drama/renji-preview.mp3"]'));
+  assert.ok(page.includes('["凛","/audio/drama/rin-preview.mp3"]'));
   assert.ok(page.includes('player.controls=true'));
+  assert.ok(page.includes("player.src=sampleUrl"));
   assert.ok(page.includes('Fish Audioモデル未接続'));
   assert.ok(page.includes('renderVoiceLibrary();'));
   assert.doesNotMatch(page, /data:audio\/mpeg;base64,/);

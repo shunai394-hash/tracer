@@ -170,7 +170,7 @@ const voicePresetDefinitions=[
  {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声"},
  {title:"凛",gender:"女性",description:"明るく知的な若手女性の声"}
 ];
-const voiceSampleUrls=new Map();
+const voiceSampleUrls=new Map([["蓮司","/audio/drama/renji-preview.mp3"],["凛","/audio/drama/rin-preview.mp3"]]);
 function renderVoiceLibrary(){
  const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
  const registered=Array.isArray(voices)?voices:[];
@@ -181,11 +181,9 @@ function renderVoiceLibrary(){
   const description=document.createElement("p");description.className="muted";description.textContent=preset.description;
   card.append(name,description);
   if(preset.title==="蓮司"||preset.title==="凛"){
-   const picker=document.createElement("input");picker.type="file";picker.accept=".mp3,audio/mpeg,audio/mp3";picker.setAttribute("aria-label",preset.title+"の試聴MP3を選択");
    const player=document.createElement("audio");player.controls=true;player.preload="metadata";player.style.width="100%";player.setAttribute("aria-label",preset.title+"の試聴");
-   const oldUrl=voiceSampleUrls.get(preset.title);if(oldUrl)player.src=oldUrl;
-   picker.addEventListener("change",()=>{const file=picker.files&&picker.files[0];if(!file)return;if(!/^audio\/(mpeg|mp3)$/i.test(file.type)&&!file.name.toLowerCase().endsWith(".mp3")){status.textContent="MP3ファイルを選択してください。";picker.value="";return;}const previous=voiceSampleUrls.get(preset.title);if(previous)URL.revokeObjectURL(previous);const url=URL.createObjectURL(file);voiceSampleUrls.set(preset.title,url);player.src=url;player.load();status.textContent=preset.title+"の試聴音声を読み込みました。再生ボタンを押してください。";});
-   const sampleLabel=document.createElement("label");sampleLabel.textContent="試聴MP3を選択";sampleLabel.append(picker);card.append(sampleLabel,player);
+   const sampleUrl=voiceSampleUrls.get(preset.title);if(sampleUrl){player.src=sampleUrl;player.load();}
+   const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,player);
   }
   const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);
   const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);
