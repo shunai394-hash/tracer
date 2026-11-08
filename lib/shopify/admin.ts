@@ -625,7 +625,7 @@ export async function ensureShopifyProductPublished(productId: string): Promise<
 }
 
 
-async function setShopifyVariantInventoryAttempt(input: { variantId: string; quantity: number; reference?: string }, attempt = 0): Promise<void> {
+async function setShopifyVariantInventoryAttempt(input: { variantId: string; quantity: number; locationId?: string; reference?: string }, attempt = 0): Promise<void> {
   const quantity = Math.max(0, Math.floor(input.quantity));
   const current = await shopifyGraphQL<{
     productVariant: {
@@ -658,7 +658,7 @@ async function setShopifyVariantInventoryAttempt(input: { variantId: string; qua
 
   const variant = current.productVariant;
   if (!variant) throw new Error("shopify_variant_not_found_for_inventory_sync");
-  const configuredLocation = process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
+  const configuredLocation = input.locationId?.trim() || process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
   const level = variant.inventoryItem.inventoryLevels.nodes.find((node) =>
     configuredLocation ? node.location.id === configuredLocation : true,
   );
@@ -758,7 +758,7 @@ async function setShopifyVariantInventoryAttempt(input: { variantId: string; qua
   }
 }
 
-export async function setShopifyVariantInventory(input: { variantId: string; quantity: number; reference?: string }): Promise<void> {
+export async function setShopifyVariantInventory(input: { variantId: string; quantity: number; locationId?: string; reference?: string }): Promise<void> {
   return setShopifyVariantInventoryAttempt(input);
 }
 
@@ -1030,13 +1030,20 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           inventoryItem: { sku: expectedDefault.sku, tracked: true },
           mediaSrc: [expectedDefault.imageUrl],
           metafields: variantMetafields(expectedDefault.supplierVariantId, expectedDefault.imageUrl),
-          inventoryQuantities: [{ locationId, availableQuantity: expectedDefault.inventory }],
         }],
       },
     );
     if (adopted.productVariantsBulkUpdate.userErrors.length) {
       throw new Error(adopted.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
     }
+    const adoptedVariantId = adopted.productVariantsBulkUpdate.productVariants[0]?.id;
+    if (!adoptedVariantId) throw new Error("shopify_color_family_default_variant_id_missing");
+    await setShopifyVariantInventory({
+      variantId: adoptedVariantId,
+      quantity: expectedDefault.inventory,
+      locationId,
+      reference: `tracer://color-family/${supplierProductId}/${expectedDefault.supplierVariantId}`,
+    });
   }
 
   // Re-read after adopting the pre-created default variant. Remaining colors
