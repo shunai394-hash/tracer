@@ -44,7 +44,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <h3>Fish AudioモデルIDから登録</h3>
 <p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はTRACER共通台帳に保存され、別の端末・ブラウザーからも同じ一覧を利用できます。</p>
 <label for="voiceModelId">Fish AudioモデルID</label><input id="voiceModelId" autocomplete="off" spellcheck="false" value="7478a76f38974bd2afa89c1bbe6831c7">
-<label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" value="蒼真">
+<label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" value="蓮司">
 <button id="registerVoiceId" type="button">IDを照合してボイス登録</button>
 <p id="voiceIdStatus" class="status" role="status" aria-live="polite">未登録</p>
 </div>
@@ -195,9 +195,9 @@ function safeFilename(value){return String(value||"").normalize("NFKC").replace(
 function getLineFilename(row){const index=lineRows.indexOf(row)+1;const speaker=characterRows.find(c=>c.id===row.speakerId)?.name||"話者";const episode=Math.max(1,Number($("episodeNumber")?.value)||1);return safeFilename($("title").value)+"-第"+episode+"話-行"+String(index).padStart(3,"0")+"-"+safeFilename(speaker)+".mp3";}
 function renderOutputs(){for(const oldMouth of outputs.querySelectorAll(".lipSyncMouth"))window.TracerLipSync?.detach(oldMouth);outputs.replaceChildren();for(const row of lineRows.filter(x=>x.audioUrl)){const item=document.createElement("div");item.className="scene";const character=characterRows.find(c=>c.id===row.speakerId);const title=document.createElement("strong");title.textContent=(character?.name||"話者")+"："+row.text.slice(0,70);const face=makeLipSyncFace(character);const mouth=face.querySelector(".lipSyncMouth");const audio=document.createElement("audio");audio.controls=true;audio.src=row.audioUrl;if(window.TracerLipSync)window.TracerLipSync.attach(audio,mouth);const sourceLine=Array.from(lines.children).find(node=>node.dataset.id===row.id);const sourceAudio=sourceLine?.querySelector("audio");if(sourceAudio&&window.TracerLipSync)window.TracerLipSync.attach(sourceAudio,mouth);const link=document.createElement("a");link.href=row.audioUrl;link.download=getLineFilename(row);link.textContent="MP3保存";link.style="display:block;margin-top:8px;color:#93c5fd";const duration=document.createElement("span");duration.className="muted";duration.textContent="実尺 "+formatDuration(row.duration);item.append(title,face,audio,link,duration);outputs.append(item);}updateSceneButtons();}
 const voicePresetDefinitions=[
- {title:"蒼真",gender:"男性",description:"男性キャラクターボイス",modelId:"7478a76f38974bd2afa89c1bbe6831c7"},
+ {title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""},
  {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"},
- {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声",modelId:""},
+ {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声",modelId:"7478a76f38974bd2afa89c1bbe6831c7"},
  {title:"凛",gender:"女性",description:"明るく知的な若手女性の声",modelId:""}
 ];
 const voiceSampleUrls=new Map([["蓮司","/audio/drama/renji-preview.mp3"],["凛","/audio/drama/rin-preview.mp3"]]);
