@@ -35,10 +35,6 @@
       "schedule": "0,30 * * * *"
     },
     {
-      "path": "/api/cron/commerce-cj-import?productIds=2606090341151608200&limit=1&variantLimit=6",
-      "schedule": "20 22 8 11 *"
-    },
-    {
       "path": "/api/cron/commerce-base-orders",
       "schedule": "1,31 * * * *"
     },
