@@ -109,19 +109,19 @@ test("fictional child-role voice is designed from text, saved privately, and nev
 
 
 
-test("adult consented voice clones are registered privately and rediscovered in the drama studio", () => {
-  assert.ok(page.includes('id="cloneAudio"'));
-  assert.ok(page.includes('id="cloneRights"'));
-  assert.ok(page.includes('id="registerClone"'));
-  assert.ok(page.includes('/api/admin/ai-live/fish-audio/clone'));
-  assert.ok(page.includes('form.set("visibility","private")'));
+test("voice list includes the downloaded Renji and Rin MP3 samples without fake generation models", () => {
+  assert.ok(page.includes('title:"蓮司",gender:"男性"'));
+  assert.ok(page.includes('title:"凛",gender:"女性"'));
+  assert.ok(page.includes("情熱的で親しみやすい男性の声"));
+  assert.ok(page.includes("明るく知的な若手女性の声"));
+  assert.equal((page.match(/data:audio\/mpeg;base64,/g)||[]).length,2);
+  assert.ok(page.includes("audio.controls=true"));
+  assert.ok(page.includes("Fish Audioの生成モデルIDではありません"));
+  assert.doesNotMatch(page, /id="cloneAudio"|id="cloneRights"|id="registerClone"/);
+  assert.doesNotMatch(page, /本人許可済みボイスをこの一覧に追加/);
   assert.ok(cloneRoute.includes('speakerType === "child"'));
   assert.ok(cloneRoute.includes('!rightsConfirmed'));
-  assert.ok(cloneRoute.includes('payload.set("visibility", "private")'));
-  assert.ok(cloneRoute.includes('payload.append("tags", "tracer-drama-clone")'));
   assert.ok(voicesRoute.includes("listPrivateDramaCloneVoices(apiKey)"));
-  assert.ok(voicesRoute.includes("privateDramaCloneCount"));
-  assert.ok(privateCloneVoices.includes('model.visibility !== "private"'));
   assert.ok(privateCloneVoices.includes('tags.includes(DRAMA_CLONE_TAG)'));
 });
 
