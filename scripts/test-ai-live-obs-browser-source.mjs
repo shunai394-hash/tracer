@@ -30,6 +30,11 @@ assert.match(html, /BGM権利審査/);
 assert.match(html, /配布元・ライセンス本文を確認/);
 assert.match(html, /\/api\/admin\/ai-live\/short-drama\/bgm\/review/);
 assert.match(html, /reviewBgm/);
+assert.match(html, /既存Supabase音源の権利登録/);
+assert.match(html, /未登録の保存済みMP3を読み込む/);
+assert.match(html, /register-existing/);
+assert.match(html, /商用利用と配信利用の許可を確認してください/);
+
 
 
 assert.match(html, /音声停止/);
