@@ -86,12 +86,18 @@ export async function GET(request: Request) {
   if (dramaCharacterResult.status === "fulfilled") {
     dramaCharacterVoices = dramaCharacterResult.value;
   }
+  // Count only voices actually added to the combined catalogue. A character ID
+  // already present in the shared registry (for example 美月) belongs to that
+  // registry bucket and must not be counted again as a role-specific voice.
+  const uniqueDramaCharacterVoices = dramaCharacterVoices.filter(
+    (voice) => !registeredVoices.some((registered) => registered.id === voice.id),
+  );
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...registeredVoices,
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
-    ...dramaCharacterVoices.filter((voice) => !registeredVoices.some((registered) => registered.id === voice.id)).map((voice) => ({ ...voice, source: "private_drama_character" as const })),
+    ...uniqueDramaCharacterVoices.map((voice) => ({ ...voice, source: "private_drama_character" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
@@ -103,7 +109,7 @@ export async function GET(request: Request) {
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
     privateDramaCloneCount: privateCloneVoices.length,
-    dramaCharacterVoiceCount: dramaCharacterVoices.length,
+    dramaCharacterVoiceCount: uniqueDramaCharacterVoices.length,
     privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",
