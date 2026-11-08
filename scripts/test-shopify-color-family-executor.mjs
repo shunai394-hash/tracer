@@ -16,6 +16,8 @@ assert.match(executor, /!variant\.colorImageVerified/, "unverified color images 
 assert.match(executor, /productUpdate\(identifier: \$identifier, product: \$product, media: \$media\)/, "color images must be created as product media");
 assert.match(executor, /originalSource: variant\.imageUrl/, "each color image must use its exact source URL");
 assert.match(executor, /productVariantAppendMedia/, "each product image must be attached to its exact variant");
+assert.match(executor, /const mediaByColor = \(\) =>/, "retries must reuse the image already attached to its exact color variant");
+assert.match(executor, /fileDelete\(fileIds: \$fileIds\)/, "duplicate orphan media must be cleaned without deleting attached images");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
 assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");

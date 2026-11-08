@@ -1176,11 +1176,24 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_parent_missing");
   const mediaByColor = () => {
     const images = mediaSnapshot.product!.media.nodes.filter((media) => media.mediaContentType === "IMAGE");
+    const byId = new Map(images.map((media) => [media.id, media]));
     const byColor = new Map<string, (typeof images)[number]>();
-    for (const media of images) {
-      if (!media.alt) continue;
-      if (byColor.has(media.alt)) throw new Error("shopify_color_family_media_alt_ambiguous:" + media.alt);
-      byColor.set(media.alt, media);
+    // Prefer the media already attached to the exact SKU/color variant. This
+    // makes retries safe even if an earlier interrupted run uploaded duplicates.
+    for (const actual of mediaSnapshot.product!.variants.nodes) {
+      const expected = variants.find((variant) => variant.sku === actual.sku);
+      if (!expected) continue;
+      const attached = actual.media.nodes.map((node) => byId.get(node.id)).filter(Boolean) as (typeof images)[number][];
+      const matching = attached.filter((media) => media.alt === expected.colorLabel);
+      if (matching.length > 1) throw new Error("shopify_color_family_media_variant_ambiguous:" + expected.sku);
+      if (matching.length === 1) byColor.set(expected.colorLabel, matching[0]);
+      else if (attached.length) throw new Error("shopify_color_family_media_variant_conflict:" + expected.sku);
+    }
+    for (const expected of variants) {
+      if (byColor.has(expected.colorLabel)) continue;
+      const candidates = images.filter((media) => media.alt === expected.colorLabel);
+      if (candidates.length > 1) throw new Error("shopify_color_family_media_alt_ambiguous:" + expected.colorLabel);
+      if (candidates.length === 1) byColor.set(expected.colorLabel, candidates[0]);
     }
     return byColor;
   };
@@ -1271,6 +1284,41 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       .filter((media) => media.mediaContentType === "IMAGE" && media.alt && media.status === "READY")
       .map((media) => [media.alt!, media.id]),
   );
+  // Remove only duplicate orphan uploads whose alt label is already attached
+  // to the matching variant. Never delete the single image used by a variant.
+  mediaSnapshot = await readColorFamilyMedia();
+  if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_cleanup_readback_missing");
+  const attachedMediaIds = new Set(
+    mediaSnapshot.product.variants.nodes.flatMap((variant) => variant.media.nodes.map((media) => media.id)),
+  );
+  const attachedColorLabels = new Set(
+    mediaSnapshot.product.variants.nodes.flatMap((variant) =>
+      variant.media.nodes
+        .map((media) => mediaSnapshot.product!.media.nodes.find((candidate) => candidate.id === media.id)?.alt)
+        .filter((alt): alt is string => Boolean(alt)),
+    ),
+  );
+  const duplicateOrphanIds = mediaSnapshot.product.media.nodes
+    .filter((media) => media.alt && attachedColorLabels.has(media.alt) && !attachedMediaIds.has(media.id))
+    .map((media) => media.id);
+  if (duplicateOrphanIds.length) {
+    const deleted = await shopifyGraphQL<{
+      fileDelete: {
+        deletedFileIds: string[] | null;
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation DeleteTracerDuplicateColorMedia($fileIds: [ID!]!) {
+        fileDelete(fileIds: $fileIds) { deletedFileIds userErrors { field message } }
+      }`,
+      { fileIds: duplicateOrphanIds },
+    );
+    if (deleted.fileDelete.userErrors.length ||
+        (deleted.fileDelete.deletedFileIds ?? []).length !== duplicateOrphanIds.length) {
+      throw new Error("shopify_color_family_duplicate_media_cleanup_failed");
+    }
+  }
+
   // Final read-after-write: exact variant count, SKU, color, price, media, and
   // inventory must match. Do not publish or alter source products here.
   const verified = await shopifyGraphQL<{
