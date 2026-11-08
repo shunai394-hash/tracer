@@ -1,41 +1,40 @@
 import type { FishAudioPublicVoice } from "@/lib/ai-live/fish-audio-public-voices";
 
-const MODEL_LIST_URL = "https://api.fish.audio/model";
+const MODEL_URL = "https://api.fish.audio/model";
 
-/** Exact Fish Audio model IDs explicitly assigned by the account owner to drama characters. */
+/** Exact Fish Audio model IDs assigned by the account owner to drama characters. */
 export const TRACER_DRAMA_CHARACTER_VOICES = [
   { id: "7478a76f38974bd2afa89c1bbe6831c7", title: "蒼真", gender: "男性" },
   { id: "160840e5c583459d89dc5521e7f175e5", title: "美月", gender: "女性" },
 ] as const;
 
+/**
+ * Resolve the two explicitly assigned IDs directly.
+ * Do not rely on the first page of /model?self=true: accounts with more than
+ * 100 models can have valid character models omitted from that page.
+ */
 export async function listTracerDramaCharacterVoices(apiKey: string): Promise<FishAudioPublicVoice[]> {
-  const url = new URL(MODEL_LIST_URL);
-  url.searchParams.set("self", "true");
-  url.searchParams.set("page_size", "100");
-  url.searchParams.set("page_number", "1");
-  url.searchParams.set("sort_by", "created_at");
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-    cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error("fish_audio_owned_models_unavailable");
-  const payload: unknown = await response.json();
-  if (!payload || typeof payload !== "object" || !Array.isArray((payload as { items?: unknown }).items)) {
-    throw new Error("fish_audio_owned_models_invalid_response");
-  }
-  const models = (payload as { items: unknown[] }).items;
-  return TRACER_DRAMA_CHARACTER_VOICES.flatMap((preset): FishAudioPublicVoice[] => {
-    const model = models.find((item) => item && typeof item === "object" && (item as Record<string, unknown>)._id === preset.id) as Record<string, unknown> | undefined;
-    if (!model || model.type !== "tts") return [];
-    return [{
+  const results = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (preset) => {
+    const response = await fetch(`${MODEL_URL}/${encodeURIComponent(preset.id)}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 404 || response.status === 403) return null;
+    if (!response.ok) throw new Error("fish_audio_model_lookup_unavailable");
+    const model: unknown = await response.json();
+    if (!model || typeof model !== "object") return null;
+    const record = model as Record<string, unknown>;
+    if (record._id !== preset.id || record.type !== "tts" || record.state === "failed") return null;
+    return {
       id: preset.id,
       title: preset.title,
       description: `${preset.gender}・TRACERショートドラマ登録ボイス`,
       languages: ["ja"],
       tags: ["TRACERドラマ", preset.gender, "登録済みモデル"],
-    }];
-  });
+    } satisfies FishAudioPublicVoice;
+  }));
+  return results.filter((voice): voice is FishAudioPublicVoice => voice !== null);
 }
 
 export async function isTracerDramaCharacterVoice(apiKey: string, referenceId: string): Promise<boolean> {
