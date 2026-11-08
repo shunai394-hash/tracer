@@ -164,8 +164,8 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
 /**
  * Collapse listings that share one canonical product and one exact supplier
  * product id. Title similarity never creates a family. A family with image-only
- * evidence gaps stays as separate existing listings until distinct color images
- * are verified; other identity, SKU, price, or stock failures fail closed.
+ * evidence gaps stays as separate existing listings until distinct exact-variant image
+ * identities are verified; other identity, SKU, price, or stock failures fail closed.
  */
 export function groupExactColorFamilies<T extends ColorFamilyMember>(
   members: T[],
