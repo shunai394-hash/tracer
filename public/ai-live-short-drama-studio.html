@@ -62,7 +62,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div class="scene" id="clonePanel">
 <h3>本人許可済みの声をドラマ用にクローン登録</h3>
 <p class="muted">成人本人の許可を得た録音だけを登録します。作成した音声モデルはFish Audio上で非公開にし、TRACERの声一覧へ自動追加します。子供の録音は受け付けません。</p>
-<label for="cloneTitle">ボイス名</label><input id="cloneTitle" maxlength="80" value="ドラマ用カスタムボイス">
+<label for="cloneTitle">ボイス名</label><div class="grid"><button id="cloneNameSoma" class="secondary" type="button">蒼真（男性）</button><button id="cloneNameMitsuki" class="secondary" type="button">美月（女性）</button></div><input id="cloneTitle" maxlength="80" value="蒼真｜ドラマ専用ボイス"><p class="muted">登録する音声に合わせて名前を選択してください。蒼真・美月はそれぞれ別モデルとして非公開登録します。</p>
 <label for="cloneAudio">本人許可済みの音声ファイル（WAV推奨・12MB以下）</label><input id="cloneAudio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm">
 <label for="cloneTranscript">録音内容の文字起こし（任意）</label><textarea id="cloneTranscript" maxlength="20000" placeholder="録音で話している内容を入力すると音声学習の補助になります"></textarea>
 <label for="cloneSpeakerType">話者</label><select id="cloneSpeakerType"><option value="adult">成人（18歳以上）</option><option value="child">子供（登録不可）</option></select>
@@ -308,6 +308,7 @@ $("fishDiagnostics").addEventListener("click",async()=>{
  finally{button.disabled=false;}
 });
 $("load").addEventListener("click",loadVoices);token.addEventListener("change",loadVoices);token.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();loadVoices();}});
+$("cloneNameSoma").addEventListener("click",()=>{$("cloneTitle").value="蒼真｜ドラマ専用ボイス";$("cloneStatus").textContent="男性音声用の名前を選択しました。";});$("cloneNameMitsuki").addEventListener("click",()=>{$("cloneTitle").value="美月｜ドラマ専用ボイス";$("cloneStatus").textContent="女性音声用の名前を選択しました。";});
 $("registerClone").addEventListener("click",async()=>{
  const file=$("cloneAudio").files?.[0],title=$("cloneTitle").value.trim(),speakerType=$("cloneSpeakerType").value;
  const message=$("cloneStatus");
