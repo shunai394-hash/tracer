@@ -58,8 +58,12 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmAdminToken">TRACER管理トークン（保存・一覧取得時のみ使用）</label>
 <input id="bgmAdminToken" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
 <div class="bgm-row"><button id="bgmLoadSaved" type="button">保存済みBGMを読み込む</button><button id="bgmUploadSaved" type="button">選択したMP3をサーバー保存</button></div>
-<label for="bgmFiles">MP3 / WAV / OGGをローカル再生（サーバー登録はMP3を1曲ずつ）</label>
+<label for="bgmFiles">MP3 / WAV / OGGをローカル再生（サーバー登録はMP3を1曲ずつ、またはZIPで一括）</label>
 <input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a">
+<label for="bgmZipFile">BGMライブラリZIPを一括登録（ZIP内のMP3を展開して順番に保存）</label>
+<input id="bgmZipFile" type="file" accept=".zip,application/zip">
+<div class="bgm-row"><button id="bgmUploadZip" type="button">ZIP内のMP3を一括サーバー保存</button></div>
+<p class="status" id="bgmZipStatus" role="status">ZIP未選択。1曲10MB以下のMP3を対象にします。</p>
 <label for="bgmTitle">登録する曲名</label><input id="bgmTitle" type="text" maxlength="160" placeholder="曲名">
 <label for="bgmComposer">作曲者・権利者</label><input id="bgmComposer" type="text" maxlength="160" placeholder="作曲者名">
 <label for="bgmSourceUrl">配布元・取得元URL</label><input id="bgmSourceUrl" type="url" placeholder="配布元URLを入力">
@@ -77,7 +81,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmVolume">BGM音量 <span id="bgmVolumeLabel">35%</span></label>
 <input id="bgmVolume" type="range" min="0" max="100" value="35">
 <p class="status" id="bgmStatus" role="status">未登録。音源ファイルを選択してください。</p>
-<small>ローカル再生はブラウザ内のみ。サーバー登録はMP3 1曲（10MB以下）ごとに権利情報を必須入力します。登録直後は審査待ちで、承認されるまでOBS再生一覧には表示されません。既存の未登録ファイルも再生対象外です。セリフ再生中はBGMを18%まで自動で下げます。</small>
+<small>ローカル再生はブラウザ内のみ。サーバー登録はMP3 1曲（10MB以下）またはZIP一括（ZIP100MB以下・最大100曲）で行い、権利情報は共通入力します。登録直後は審査待ちで、承認されるまでOBS再生一覧には表示されません。既存の未登録ファイルも再生対象外です。セリフ再生中はBGMを18%まで自動で下げます。</small>
 <div class="bgm-row" style="margin-top:12px"><button id="bgmLoadReview" type="button">権利審査一覧を読み込む</button></div>
 <div id="bgmReviewList" class="status" aria-live="polite">審査一覧未取得</div>
 <audio id="bgmAudio" preload="none" loop></audio>
@@ -107,6 +111,9 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
   const synth = window.speechSynthesis;
   const bgmAudio = document.getElementById('bgmAudio');
   const bgmFiles = document.getElementById('bgmFiles');
+  const bgmZipFile = document.getElementById('bgmZipFile');
+  const bgmUploadZip = document.getElementById('bgmUploadZip');
+  const bgmZipStatus = document.getElementById('bgmZipStatus');
   const bgmMood = document.getElementById('bgmMood');
   const bgmVolume = document.getElementById('bgmVolume');
   const bgmVolumeLabel = document.getElementById('bgmVolumeLabel');
@@ -191,6 +198,116 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
       bgmStatus.textContent = error instanceof Error ? error.message : '保存済みBGMの取得に失敗しました。';
     } finally { bgmLoadSaved.disabled = false; }
   }
+  function zipCrc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+  async function extractMp3Zip(file) {
+    if (file.size < 22 || file.size > 100 * 1024 * 1024) throw new Error('ZIPは100MB以下のファイルを選択してください。');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const read16 = (offset) => view.getUint16(offset, true);
+    const read32 = (offset) => view.getUint32(offset, true);
+    let eocd = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i -= 1) {
+      if (read32(i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0 || read16(eocd + 4) !== 0 || read16(eocd + 6) !== 0) throw new Error('標準的なZIP形式ではありません（分割ZIP/ZIP64は非対応）。');
+    const entryCount = read16(eocd + 10);
+    const centralSize = read32(eocd + 12);
+    const centralOffset = read32(eocd + 16);
+    if (!entryCount || entryCount > 100 || centralOffset + centralSize > eocd) throw new Error('ZIP内のファイル数または構造が上限を超えています。');
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const tracks = [];
+    let cursor = centralOffset;
+    let totalBytes = 0;
+    for (let index = 0; index < entryCount; index += 1) {
+      if (read32(cursor) !== 0x02014b50) throw new Error('ZIPの目録が破損しています。');
+      const flags = read16(cursor + 8);
+      const method = read16(cursor + 10);
+      const crc = read32(cursor + 16);
+      const compressedSize = read32(cursor + 20);
+      const uncompressedSize = read32(cursor + 24);
+      const nameLength = read16(cursor + 28);
+      const extraLength = read16(cursor + 30);
+      const commentLength = read16(cursor + 32);
+      const externalAttributes = read32(cursor + 38);
+      const localOffset = read32(cursor + 42);
+      const nameBytes = bytes.slice(cursor + 46, cursor + 46 + nameLength);
+      let path;
+      try { path = decoder.decode(nameBytes); } catch { throw new Error('ZIP内ファイル名をUTF-8として読み取れません。'); }
+      cursor += 46 + nameLength + extraLength + commentLength;
+      if (path.endsWith('/')) continue;
+      if (flags & 1) throw new Error('暗号化ZIPには対応していません。');
+      if ((externalAttributes >>> 16 & 0xf000) === 0xa000) throw new Error('ZIP内のシンボリックリンクは許可されません。');
+      if (path.startsWith('/') || /^[a-zA-Z]:/.test(path) || path.split(/[\\/]/).includes('..')) throw new Error('不正なZIP内パスを検出しました。');
+      if (!/\.mp3$/i.test(path)) continue;
+      if (method !== 0 && method !== 8) throw new Error('未対応の圧縮方式です：' + path);
+      if (uncompressedSize > 10 * 1024 * 1024 || compressedSize > 10 * 1024 * 1024 || uncompressedSize === 0 || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) throw new Error('1曲10MB以下のMP3にしてください：' + path);
+      totalBytes += uncompressedSize;
+      if (totalBytes > 100 * 1024 * 1024) throw new Error('ZIP展開後の合計サイズが100MBを超えています。');
+      if (read32(localOffset) !== 0x04034b50) throw new Error('ZIP内の音源データ位置が不正です。');
+      const localNameLength = read16(localOffset + 26);
+      const localExtraLength = read16(localOffset + 28);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+      if (dataStart + compressedSize > bytes.length) throw new Error('ZIP内の音源データが途中で切れています。');
+      let audioBytes;
+      if (method === 0) audioBytes = compressed;
+      else {
+        if (typeof DecompressionStream === 'undefined') throw new Error('このブラウザはZIP展開に対応していません。最新版のChromeまたはEdgeを使用してください。');
+        const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        audioBytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      }
+      if (audioBytes.length !== uncompressedSize || zipCrc32(audioBytes) !== crc) throw new Error('音源の整合性検査に失敗しました：' + path);
+      tracks.push({ file: new File([audioBytes], path.split(/[\\/]/).pop(), { type: 'audio/mpeg' }), path });
+    }
+    if (!tracks.length) throw new Error('ZIP内にMP3が見つかりません。');
+    return tracks;
+  }
+  async function uploadZipBgm() {
+    const token = requireBgmToken();
+    if (!token) return;
+    const zip = bgmZipFile.files?.[0];
+    if (!zip) { bgmZipStatus.textContent = '先にBGMライブラリZIPを選択してください。'; return; }
+    bgmUploadZip.disabled = true;
+    try {
+      bgmZipStatus.textContent = 'ZIPを検査・展開しています…';
+      const tracks = await extractMp3Zip(zip);
+      let saved = 0;
+      bgmZipStatus.textContent = tracks.length + '曲を確認。権利情報を共通入力して順番に登録します…';
+      for (const track of tracks) {
+        const form = new FormData();
+        form.append('file', track.file, track.file.name);
+        form.append('title', track.file.name.replace(/\.mp3$/i, '').slice(0, 160));
+        form.append('composer', document.getElementById('bgmComposer').value.trim());
+        form.append('sourceUrl', document.getElementById('bgmSourceUrl').value.trim());
+        form.append('licenseName', document.getElementById('bgmLicenseName').value.trim());
+        form.append('licenseUrl', document.getElementById('bgmLicenseUrl').value.trim());
+        form.append('evidenceNote', document.getElementById('bgmEvidence').value.trim());
+        form.append('commercialUseAllowed', String(document.getElementById('bgmCommercialAllowed').checked));
+        form.append('platformUseAllowed', String(document.getElementById('bgmPlatformAllowed').checked));
+        form.append('attributionRequired', String(document.getElementById('bgmAttributionRequired').checked));
+        form.append('attributionText', document.getElementById('bgmAttributionText').value.trim());
+        form.append('genre', trackMood(track.path));
+        const response = await fetch('/api/admin/ai-live/short-drama/bgm', {
+          method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form, cache: 'no-store'
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.ok) throw new Error((saved ? saved + '曲登録済み。' : '') + track.file.name + ' の登録に失敗：' + (data?.message || data?.error || response.status));
+        saved += 1;
+        bgmZipStatus.textContent = '登録中 ' + saved + '/' + tracks.length + '：' + track.file.name;
+      }
+      bgmZipStatus.textContent = saved + '曲を権利審査待ちとして登録しました。承認されるまでOBS再生対象には入りません。';
+      await loadReviewQueue();
+    } catch (error) {
+      bgmZipStatus.textContent = error instanceof Error ? error.message : 'ZIP一括登録に失敗しました。';
+    } finally { bgmUploadZip.disabled = false; }
+  }
   async function uploadSelectedBgm() {
     const token = requireBgmToken();
     if (!token) return;
@@ -230,6 +347,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
       bgmStatus.textContent = saved + '曲保存済み。' + (error instanceof Error ? error.message : '保存に失敗しました。') + ' 保存済みBGMを再読み込みして確認してください。';
     } finally { bgmUploadSaved.disabled = false; }
   }
+  bgmUploadZip.addEventListener('click', uploadZipBgm);
   bgmLoadSaved.addEventListener('click', loadSavedBgm);
   bgmUploadSaved.addEventListener('click', uploadSelectedBgm);
 
