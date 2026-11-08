@@ -170,7 +170,7 @@ test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet pl
   assert.ok(page.includes("APIクレジット残高"));
   assert.ok(diagnosticsRoute.includes('"/wallet/self/api-credit?check_free_credit=true"'));
   assert.ok(diagnosticsRoute.includes('"/wallet/self/package"'));
-  assert.ok(diagnosticsRoute.includes('"/model?self=true&page_size=100'));
+  assert.ok(diagnosticsRoute.includes("/model?self=true&page_size=${PAGE_SIZE}&page_number=1"));
   assert.ok(diagnosticsRoute.includes("readOnly: true"));
   assert.ok(diagnosticsRoute.includes("Promise.allSettled"));
   assert.doesNotMatch(diagnosticsRoute, /method:\s*["']POST["']|FISH_MODEL_URL/);
