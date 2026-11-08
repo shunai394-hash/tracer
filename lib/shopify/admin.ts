@@ -1266,10 +1266,10 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
 
   mediaSnapshot = await readColorFamilyMedia();
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_final_readback_missing");
-  const expectedMediaIdBySource = new Map(
+  const expectedMediaIdByColor = new Map(
     mediaSnapshot.product.media.nodes
-      .filter((media) => media.mediaContentType === "IMAGE" && media.originalSource?.url && media.status === "READY")
-      .map((media) => [new URL(media.originalSource!.url).toString(), media.id]),
+      .filter((media) => media.mediaContentType === "IMAGE" && media.alt && media.status === "READY")
+      .map((media) => [media.alt!, media.id]),
   );
   // Final read-after-write: exact variant count, SKU, color, price, media, and
   // inventory must match. Do not publish or alter source products here.
@@ -1312,7 +1312,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === expected.colorLabel)) {
       throw new Error("shopify_color_family_verification_variant_failed:" + expected.sku);
     }
-    const expectedMediaId = expectedMediaIdBySource.get(new URL(expected.imageUrl).toString());
+    const expectedMediaId = expectedMediaIdByColor.get(expected.colorLabel);
     const variantImages = actual.media.nodes.filter((media) => media.mediaContentType === "IMAGE");
     if (!expectedMediaId || variantImages.length !== 1 || variantImages[0].id !== expectedMediaId) {
       throw new Error("shopify_color_family_verification_image_failed:" + expected.sku);
