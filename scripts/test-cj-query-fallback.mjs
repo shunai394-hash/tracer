@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { deterministicCJProductQueries } from "../lib/intelligence/deterministic-cj-product-queries.ts";
 import { normalizeCJProductDetailSummary, normalizeCJProductDetailVariants } from "../lib/sources/cj/product-detail-variants.ts";
+import { normalizeCJVerifiedWarehouseInventory } from "../lib/sources/cj/variant-select.ts";
 
 assert.deepEqual(deterministicCJProductQueries("  H-shaped travel neck pillow  "), ["H-shaped travel neck pillow"]);
 assert.deepEqual(deterministicCJProductQueries("   "), []);
@@ -14,6 +15,19 @@ assert.match(source, /return deterministicCJProductQueries\(demandQuery\);/);
 const pipelineSource = await readFile(new URL("../lib/intelligence/run-intelligence-pipeline.ts", import.meta.url), "utf8");
 assert.match(pipelineSource, /listedProductsNeedingIntelligence\(db,\s*20\)/, "listed products without intelligence must be prioritized");
 assert.match(pipelineSource, /intelligenceBatchOffset/, "intelligence backlog must rotate across product pages");
+
+
+const verifiedInventory = normalizeCJVerifiedWarehouseInventory([
+  { countryCode: "jp", cjInventory: "7.9", verifiedWarehouse: 1, storageId: "jp-a" },
+  { countryCode: "JP", cjInventory: 4, verifiedWarehouse: "1", storageId: "jp-b" },
+  { countryCode: "US", cjInventory: 3, verifiedWarehouse: true, storageId: "us-a" },
+  { countryCode: "JP", cjInventory: 500, verifiedWarehouse: 0, storageId: "factory" },
+  { countryCode: "CN", cjInventory: -2, verifiedWarehouse: 1, storageId: "cn-a" },
+]);
+assert.deepEqual(verifiedInventory, [
+  { countryCode: "JP", quantity: 11, storageId: null },
+  { countryCode: "US", quantity: 3, storageId: "us-a" },
+]);
 
 const detailVariants = normalizeCJProductDetailVariants({
   result: true,
@@ -74,6 +88,8 @@ for (const label of ["ピンクレオパード", "ホワイトフラワー", "�
 
 const cjClientSource = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
 assert.ok(cjClientSource.includes("/product/productDetail/query"));
+assert.ok(cjClientSource.includes('features: "enable_inventory"'));
+assert.ok(cjClientSource.includes("normalizeCJVerifiedWarehouseInventory(row.inventories ?? [])"));
 assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
 assert.ok(cjClientSource.includes("normalizeCJProductDetailVariants(payload, pid)"));
 assert.ok(cjClientSource.includes("return normalized ?? await queryCJProductDetailSummary(pid)"));
