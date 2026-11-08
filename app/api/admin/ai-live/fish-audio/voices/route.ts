@@ -5,7 +5,7 @@ import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voic
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
-import { listTracerDramaCharacterVoices } from "@/lib/ai-live/fish-audio-drama-character-voices";
+import { listTracerDramaCharacterVoices, resolveFishAudioModelVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,4 +88,33 @@ export async function GET(request: Request) {
     publicLibraryAvailable,
     language: "ja",
   });
+}
+
+
+/** Verify and register a user-supplied Fish Audio TTS model ID. */
+export async function POST(request: Request) {
+  if (!authorizedAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
+  const apiKey = process.env.FISH_AUDIO_API_KEY;
+  if (!apiKey) return json({ ok: false, error: "fish_audio_not_configured", message: "FISH_AUDIO_API_KEY is not configured." }, 503);
+  let input: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ ok: false, error: "invalid_json_object" }, 400);
+    input = parsed as Record<string, unknown>;
+  } catch { return json({ ok: false, error: "invalid_json" }, 400); }
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id) || !title || title.length > 60) {
+    return json({ ok: false, error: "invalid_voice_registration", message: "モデルIDと60文字以内の表示名を入力してください。" }, 400);
+  }
+  try {
+    const voice = await resolveFishAudioModelVoice(apiKey, id, title);
+    if (!voice) return json({ ok: false, error: "fish_audio_model_not_accessible", message: "このIDのTTSモデルをFish Audioアカウントから確認できません。IDとAPIキーのアカウントを確認してください。" }, 404);
+    return json({ ok: true, voice });
+  } catch {
+    return json({ ok: false, error: "fish_audio_model_lookup_unavailable", message: "Fish Audioへのモデル照会に失敗しました。時間をおいて再試行してください。" }, 502);
+  }
 }
