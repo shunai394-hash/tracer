@@ -495,7 +495,7 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       shopifyHandle: handle,
       shopifySyncStatus: "synced",
       canonicalCommerce: true,
-      colorImageVerified: attributes.colorImageVerified === true,
+      variantImageIdentityVerified: attributes.variantImageIdentityVerified === true,
       sku: (typeof variant.sku === "string" && variant.sku.trim())
         ? variant.sku.trim()
         : (typeof channel.external_sku === "string" && channel.external_sku.trim() ? channel.external_sku.trim() : null),
