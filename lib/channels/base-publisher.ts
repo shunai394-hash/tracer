@@ -168,10 +168,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
-  const familyBlockedListingIds = getBaseColorFamilyBlockedIds(
-    publishableListings.map((listing) => ({ id: String(listing.id), supplierCode: listing.supplier_name == null ? null : String(listing.supplier_name), supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id) })),
+  // Until BASE per-color image switching is proven, block only brand-new
+  // family listings. Never mark an existing BASE item unpublished or zero its stock.
+  const familyBlockedListingIds = new Set(getBaseColorFamilyBlockedIds(
+    publishableListings
+      .filter((listing) => !listing.base_item_id && listing.published !== true)
+      .map((listing) => ({ id: String(listing.id), supplierCode: listing.supplier_name == null ? null : String(listing.supplier_name), supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id) })),
     ALWAYS_ON_SALE_LISTING_IDS,
-  );
+  ));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
 
@@ -241,15 +245,8 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }).in("id", [...identityUnlinkedIds]);
     if (error) throw new Error(`supplier_identity_block_failed:${error.message}`);
   }
-  if (familyBlockedListingIds.size > 0) {
-    const { error } = await supabase.from("shop_listings").update({
-      published: false, orderable: false, published_at: null,
-      pipeline_stage: "BLOCKED", pipeline_status: "blocked",
-      pipeline_reason: "color_family_variant_unverified",
-      pipeline_updated_at: nowBlocked, updated_at: nowBlocked,
-    }).in("id", [...familyBlockedListingIds]);
-    if (error) throw new Error(`color_family_block_failed:${error.message}`);
-  }
+  // New, not-yet-created family listings are skipped below. Do not mutate
+  // shop_listings rows here: a previously published BASE item must stay live.
 
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of publishableListings) {
