@@ -116,14 +116,12 @@ test("fictional child-role voice is designed from text, saved privately, and nev
 
 
 
-test("voice library always lists Soma, Mitsuki and Rin with hosted MP3 previews", () => {
-  for (const name of ["蒼真","美月","凛"]) assert.ok(page.includes('title:"'+name+'"'));
-  assert.ok(page.includes('["凛","/audio/drama/rin-preview.mp3"]'));
-  assert.ok(page.includes('player.controls=true'));
-  assert.ok(page.includes("player.src=sampleUrl"));
+test("voice library keeps only Soma and Mitsuki as fixed character presets", () => {
+  for (const name of ["蒼真","美月"]) assert.ok(page.includes('title:"'+name+'"'));
+  assert.doesNotMatch(page, /凛|蓮司|rin-preview\\.mp3|renji-preview\\.mp3/);
   assert.ok(page.includes('Fish Audioモデル未接続'));
   assert.ok(page.includes('renderVoiceLibrary();'));
-  assert.doesNotMatch(page, /data:audio\/mpeg;base64,/);
+  assert.doesNotMatch(page, /data:audio\\/mpeg;base64,/);
   assert.doesNotMatch(page, /id="cloneAudio"|id="cloneRights"|id="registerClone"/);
 });
 
@@ -236,7 +234,7 @@ test("voice library reports all six source buckets and clarifies public count ve
   assert.ok(page.includes("公開37件と総数43件は別区分です。"));
   assert.ok(voicesRoute.includes("registeredVoiceCount: registeredVoices.length"));
 });
-test("all three character cards provide the correct Fish Audio connection path", () => {
+test("remaining character cards provide the correct Fish Audio connection path", () => {
   assert.ok(page.includes('{title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"}'));
   assert.ok(page.includes('{title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""}'));
   assert.ok(page.includes('preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録"'));
