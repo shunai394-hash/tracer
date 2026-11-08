@@ -23,7 +23,7 @@ async function authorize(request: Request) {
   return await requireAutomationAuth(request);
 }
 function projectKey(title: string, episode: number) {
-  return title.normalize("NFKC").trim().toLocaleLowerCase("ja-JP").replace(/\\s+/g, " ").slice(0, 100) + "::" + episode;
+  return title.normalize("NFKC").trim().toLocaleLowerCase("ja-JP").replace(/\s+/g, " ").slice(0, 100) + "::" + episode;
 }
 function validProject(value: unknown): value is Record<string, unknown> & { title: string; genre: string; characters: unknown[]; lines: unknown[] } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
