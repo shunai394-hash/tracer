@@ -76,6 +76,13 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   <button id="bgmUpload" type="button">権利情報を添えてSupabaseへ登録</button>
   <small>登録直後は審査待ちです。承認されるまで再生一覧には出ません。権利を確認できない音源は登録しないでください。</small>
  </fieldset>
+ <fieldset style="border:1px solid #52627a;border-radius:10px;padding:10px;margin:12px 0">
+  <legend style="font-size:13px;padding:0 6px">BGM権利審査</legend>
+  <label for="bgmReviewer">審査担当者</label><input id="bgmReviewer" maxlength="120" placeholder="確認者名">
+  <button id="bgmReviewLoad" type="button">審査待ち・登録済み音源を確認</button>
+  <div id="bgmReviewList" aria-live="polite"></div>
+  <small>許諾条件と配信先での利用範囲を実際に確認した音源だけを承認してください。承認後も内部配信専用です。</small>
+ </fieldset>
  <label for="track">再生するBGM</label><select id="track"><option value="">音源を選択</option></select>
  <div class="actions"><button class="primary" id="bgmPlay">BGM再生</button><button id="next">次の曲</button></div>
  <label for="volume">BGM音量 <span id="volumeLabel">35%</span></label><input id="volume" type="range" min="0" max="100" value="35">
@@ -141,6 +148,53 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    if(!r.ok||!d?.ok)throw new Error(d?.message||'BGM登録に失敗しました');
    setStatus('登録完了：審査待ちです。承認後に「保存済みBGMを読み込む」で取得できます');
   }catch(e){setStatus(e.message||'BGM登録に失敗しました')}finally{$('bgmUpload').disabled=false}
+ }
+ async function loadBgmReviews(){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+  $('bgmReviewLoad').disabled=true;setStatus('BGM権利台帳を取得中…');
+  const list=$('bgmReviewList');list.replaceChildren();
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm/review',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok||!Array.isArray(d.items))throw new Error('権利台帳を取得できませんでした');
+   const pending=d.items.filter(x=>x.review_status==='pending');
+   if(!pending.length){const p=document.createElement('p');p.textContent='審査待ち音源はありません';list.append(p)}
+   for(const item of pending){
+    const card=document.createElement('section');card.style.cssText='border:1px solid #52627a;border-radius:8px;padding:10px;margin-top:8px';
+    const heading=document.createElement('strong');heading.textContent=item.title+' — '+item.composer;card.append(heading);
+    const details=document.createElement('p');
+    details.textContent='ジャンル: '+item.genre+' / ライセンス: '+item.license_name+' / 商用利用: '+(item.commercial_use_allowed?'許可':'未確認')+' / 配信利用: '+(item.platform_use_allowed?'許可':'未確認')+' / クレジット: '+(item.attribution_required?(item.attribution_text||'要確認'):'不要');
+    card.append(details);
+    for(const [label,value] of [['配布元',item.source_url],['ライセンス',item.license_url],['追加規約',item.creator_terms_url],['確認根拠',item.evidence_note]]){
+     if(!value)continue;const p=document.createElement('p');p.style.cssText='overflow-wrap:anywhere;font-size:12px';
+     const b=document.createElement('b');b.textContent=label+': ';p.append(b);
+     if(label!=='確認根拠'){const a=document.createElement('a');a.href=value;a.target='_blank';a.rel='noopener noreferrer';a.textContent=value;a.style.color='#93c5fd';p.append(a)}
+     else p.append(document.createTextNode(value));
+     card.append(p);
+    }
+    const reviewed=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.style.width='auto';
+    reviewed.append(check,document.createTextNode('配布元・ライセンス本文を確認し、内部配信での商用利用が許可されることを確認した'));
+    card.append(reviewed);
+    const actions=document.createElement('div');actions.className='actions';
+    const approve=document.createElement('button');approve.className='primary';approve.textContent='確認して承認';
+    const reject=document.createElement('button');reject.textContent='却下';
+    approve.addEventListener('click',()=>reviewBgm(item.id,'approved_internal',check.checked));
+    reject.addEventListener('click',()=>reviewBgm(item.id,'rejected',true));
+    actions.append(approve,reject);card.append(actions);list.append(card);
+   }
+   setStatus('審査待ち '+pending.length+'件（承認済み音源は再生対象）');
+  }catch(e){setStatus(e.message||'権利台帳の取得に失敗しました')}finally{$('bgmReviewLoad').disabled=false}
+ }
+ async function reviewBgm(id,status,confirmed){
+  const token=$('token').value.trim(),reviewer=$('bgmReviewer').value.trim();
+  if(!reviewer){setStatus('審査担当者名を入力してください');return}
+  if(status==='approved_internal'&&!confirmed){setStatus('ライセンス本文を確認してから承認してください');return}
+  if(status==='rejected'&&!window.confirm('この音源を却下しますか？'))return;
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm/review',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id,status,reviewer}),cache:'no-store'});
+   const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error('審査結果を保存できませんでした');
+   setStatus(status==='approved_internal'?'音源を内部配信向けに承認しました':'音源を却下しました');
+   await loadBgmReviews();
+  }catch(e){setStatus(e.message||'審査結果の保存に失敗しました')}
  }
  async function playTrack(index){
   if(!tracks.length){setStatus('先にBGMを読み込んでください');return}
@@ -211,6 +265,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('applyProduct').addEventListener('click',applyProduct);
  $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
  $('bgmUpload').addEventListener('click',uploadBgm);
+ $('bgmReviewLoad').addEventListener('click',loadBgmReviews);
  $('load').addEventListener('click',loadSaved);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
