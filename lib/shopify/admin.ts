@@ -1190,14 +1190,15 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         userErrors: Array<{ field?: string[]; message: string }>;
       };
     }>(
-      `mutation AddTracerColorFamilyMedia($identifier: ProductUpdateIdentifiers!, $media: [CreateMediaInput!]) {
-        productUpdate(identifier: $identifier, media: $media) {
+      `mutation AddTracerColorFamilyMedia($identifier: ProductUpdateIdentifiers!, $product: ProductUpdateInput!, $media: [CreateMediaInput!]) {
+        productUpdate(identifier: $identifier, product: $product, media: $media) {
           product { id }
           userErrors { field message }
         }
       }`,
       {
         identifier: { id: productId },
+        product: { id: productId },
         media: mediaToCreate.map((variant) => ({
           alt: variant.colorLabel,
           mediaContentType: "IMAGE",
