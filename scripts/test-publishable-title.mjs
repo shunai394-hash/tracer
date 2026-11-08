@@ -244,7 +244,7 @@ assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "å•†å
 assert.match(commercePublisher, /if \(channel === "base"\) \{[\s\S]*?supplier_product_id[\s\S]*?baseColorFamilyVariantIds\.add\(id\)/, "canonical BASE publisher must block exact supplier-product color families");
 assert.match(commercePublisher, /if \(channel === "base" && baseColorFamilyVariantIds\.has\(candidate\.id\)\) continue/, "canonical BASE publisher must not publish unverified color-family variants");
 assert.match(commercePublisher, /base_color_variant_new_publication_blocked_until_image_switching_verified/, "canonical BASE publisher must explain why only new color-family listings are blocked");
-const baseFamilyBlock = commercePublisher.slice(commercePublisher.indexOf("// Existing BASE listings are deliberately left untouched."), commercePublisher.indexOf("\\n  }\\n\\n  for (const candidate of candidates)"));
+const baseFamilyBlock = commercePublisher.slice(commercePublisher.indexOf("// Existing BASE listings are deliberately left untouched."), commercePublisher.indexOf("\n  }\n\n  for (const candidate of candidates)"));
 assert.doesNotMatch(baseFamilyBlock, /editBaseItem|getBaseItemDetail|\.update\(/, "color-family guard must never hide or mutate existing BASE listings");
 assert.match(store, /isPublishableCatalogTitle\(listing\.title\)/, "storefront must filter invalid titles");
 assert.match(store, /isPublishableCatalogDescription\(listing\.description\)/, "storefront must filter generic descriptions");
