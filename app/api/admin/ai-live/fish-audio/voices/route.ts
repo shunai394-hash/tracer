@@ -91,7 +91,7 @@ export async function GET(request: Request) {
     ...registeredVoices,
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
-    ...dramaCharacterVoices.map((voice) => ({ ...voice, source: "private_drama_character" as const })),
+    ...dramaCharacterVoices.filter((voice) => !registeredVoices.some((registered) => registered.id === voice.id)).map((voice) => ({ ...voice, source: "private_drama_character" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
