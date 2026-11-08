@@ -1,0 +1,106 @@
+name: TRACER read-only CJ stock audit (15 handbag variants)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tracer-cj-readonly-stock-audit-15.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    # One-shot guard: only run for the reviewed operational workflow merge.
+    if: contains(github.event.head_commit.message, 'run the read-only CJ stock audit for the 15 handbag variants')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout commit history for production ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production contains the audited endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 20); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production contains the reviewed audit workflow commit."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production is not at this commit or a descendant; refusing CJ API calls."
+          exit 1
+
+      - name: Query current CJ stock for the exact 15 variants (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          AUTH="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          IDS="6e120207-c887-4cc9-a7fd-66ee74fa840d,3f7530db-3432-45c5-a1c3-57e80e118027,f5fdf420-04db-4f62-9aee-943fc4a60bc2,bbb826be-b4c6-4d87-9e69-b0b34df3678c,73dab66e-be75-4788-9dd5-00d4f5202072,2ffc13c8-59d9-4fe8-9cfc-a0e93f8cef53,b31768f7-3517-41de-b222-638a0e571156,8a5fab0d-b17a-45d3-a9e8-93d519f360d7,2b05ae63-5392-413b-af77-a04deeadbc2e,4ffff18b-d735-45ea-9af0-a4b5ff98459d,e7a45dce-0fc4-4f54-a5e9-9d096046ccc3,5e048162-b15a-4351-8ef5-21dda53051b7,59bb4e41-a087-4853-ab77-c343f2e4cee6,ad9c465a-c0bb-4679-9979-c6baae360f64,c5732d98-c787-4f4e-8e97-fbb5739606da"
+          code="$(curl -sS -o cj-stock-audit.json -w "%{http_code}" --max-time 110 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/cj-readonly-variant-stock-audit?supplierListingIds=$IDS" || true)"
+          echo "CJ read-only stock audit HTTP $code"
+          HTTP_CODE="$code" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          try:
+              data = json.loads(Path("cj-stock-audit.json").read_text())
+          except Exception:
+              data = {"ok": False, "error": "non_json_or_timeout"}
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          summary = [
+              "## CJ live stock audit — 15 handbag variants",
+              "",
+              f"- HTTP status: {os.environ.get('HTTP_CODE', 'unknown')}",
+              f"- Read-only: {data.get('readOnly')}",
+              f"- Commerce data persisted: {data.get('commerceDataPersisted')}
+              - Operational rate-limit state may change: {data.get('operationalRateLimitStateMayChange')}
+              - Quota circuit may be persisted on provider exhaustion: {data.get('quotaCircuitMayBePersistedOnProviderExhaustion')}",
+              f"- Store publication changed: {data.get('publicationChanged')}",
+              f"- Supplier orders placed: {data.get('supplierOrdersPlaced')}",
+              f"- Requested: {data.get('requestedCount')}",
+              f"- Checked: {data.get('checkedCount')}",
+              f"- Failed: {data.get('failedCount')}",
+              "",
+              "### Exact per-variant results",
+              "",
+              "```json",
+              json.dumps(data, ensure_ascii=False, indent=2),
+              "```",
+          ]
+          with open(__import__('os').environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write("\n".join(summary) + "\n")
+          if os.environ.get("HTTP_CODE") != "200":
+              raise SystemExit("Expected HTTP 200; partial/error responses are not accepted.")
+          if data.get("phase") != "cj_readonly_variant_stock_audit":
+              raise SystemExit("Unexpected response phase; refusing to treat the audit as complete.")
+          if data.get("requestedCount") != 15 or data.get("checkedCount") != 15:
+              raise SystemExit("Expected all 15 exact supplier listings to return live inventory.")
+          if data.get("failedCount") != 0 or data.get("ok") is not True:
+              raise SystemExit("One or more CJ stock lookups failed; audit is incomplete.")
+          if len(data.get("results") or []) != 15:
+              raise SystemExit("Expected exactly 15 per-variant result rows.")
+          if any(row.get("liveInventory") is None or row.get("error") for row in data["results"]):
+              raise SystemExit("A variant has no confirmed live inventory result.")
+          PY
+          cp cj-stock-audit.json cj-stock-audit-result.json
+
+      - name: Upload exact CJ stock audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: cj-readonly-stock-audit-15
+          path: cj-stock-audit-result.json
+          if-no-files-found: error
+          retention-days: 30
