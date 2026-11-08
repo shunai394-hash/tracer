@@ -30,4 +30,17 @@ assert.match(executor, /channel_listing_external_aliases/, "historical Shopify v
 assert.match(executor, /shopify_color_family_alias_identity_conflict/, "conflicting historical aliases must fail closed");
 assert.match(executor, /shopify_color_family_alias_verification_failed/, "persisted aliases must be read back and verified");
 assert.doesNotMatch(executor, /ensureShopifyProductPublished|unpublishShopifyProduct|archive/i, "executor must not publish or archive source products");
-console.log("Shopify color-family executor safety contract: 12 assertions passed");
+
+assert.match(executor, /input\.inventoryLocationId\.trim\(\)/, "migration must use the location verified from the existing Shopify variants");
+assert.match(source, /readShopifyVariantInventorySnapshot/, "migration must read current Shopify stock before creating the family");
+assert.match(source, /activateShopifyProduct/, "verified draft family must be explicitly activated before publication");
+assert.match(source, /status: product\.status as "DRAFT" \| "ACTIVE"/, "migration retries must remain idempotent after activation");
+const migration = readFileSync(new URL("../app/api/internal/shopify-five-color-family-migrate/route.ts", import.meta.url), "utf8");
+assert.match(migration, /2606090341151608200/, "migration must be pinned to the exact supplier product");
+assert.match(migration, /variantImageIdentityVerified !== true/, "unverified exact-variant images must block migration");
+assert.match(migration, /margin_rate\) < 0\.5/, "margin below 50 percent must block migration");
+assert.match(migration, /offer\.ship_to !== "JP"/, "non-Japan supplier offers must block migration");
+assert.match(migration, /ensureShopifyProductPublished\(created\.productId\)/, "new family must be published and verified before old products are unpublished");
+assert.match(migration, /unpublishShopifyProduct\(oldProductId\)/, "only the five exact old Shopify products may be unpublished");
+assert.match(migration, /channel_listing_update_failed/, "channel listing identity must be updated after successful migration");
+\nconsole.log("Shopify color-family executor safety contract: migration and identity assertions passed");
