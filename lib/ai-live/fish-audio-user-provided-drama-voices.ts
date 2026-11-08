@@ -30,7 +30,7 @@ export async function listUserProvidedDramaVoices(apiKey: string): Promise<FishA
       tags: ["ドラマ", "ユーザー指定モデル"],
     } satisfies FishAudioPublicVoice;
   }));
-  return results.filter((voice): voice is FishAudioPublicVoice => voice !== null);
+  return results.flatMap((voice) => voice === null ? [] : [voice]);
 }
 
 export function isUserProvidedDramaVoice(referenceId: string): boolean {
