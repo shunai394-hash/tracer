@@ -4,6 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
+import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,10 +42,12 @@ export async function GET(request: Request) {
   let publicVoices: Awaited<ReturnType<typeof listLicensedJapaneseVoices>> = [];
   let publicLibraryAvailable = true;
   let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
+  let privateCloneVoices: Awaited<ReturnType<typeof listPrivateDramaCloneVoices>> = [];
   let privateChildLibraryAvailable = true;
-  const [publicResult, privateChildResult] = await Promise.allSettled([
+  const [publicResult, privateChildResult, privateCloneResult] = await Promise.allSettled([
     listLicensedJapaneseVoices(apiKey),
     listPrivateDramaChildVoices(apiKey),
+    listPrivateDramaCloneVoices(apiKey),
   ]);
   if (publicResult.status === "fulfilled") {
     publicVoices = publicResult.value;
@@ -56,9 +59,13 @@ export async function GET(request: Request) {
   } else {
     privateChildLibraryAvailable = false;
   }
+  if (privateCloneResult.status === "fulfilled") {
+    privateCloneVoices = privateCloneResult.value;
+  }
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...customVoices,
+    ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
@@ -68,6 +75,7 @@ export async function GET(request: Request) {
     publicLicensedCount: publicVoices.length,
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
+    privateDramaCloneCount: privateCloneVoices.length,
     privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",
