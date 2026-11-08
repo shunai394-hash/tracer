@@ -1,4 +1,5 @@
 name: CJ five-color Shopify migration
+# Retry after correcting numeric price comparison and existing variant image repair.
 # Run the exact five-color migration only after the production route is available.
 
 on:
