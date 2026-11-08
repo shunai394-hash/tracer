@@ -5,6 +5,7 @@ import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voic
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
+import { listTracerDramaCharacterVoices } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,8 +44,9 @@ export async function GET(request: Request) {
   let publicLibraryAvailable = true;
   let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
   let privateCloneVoices: Awaited<ReturnType<typeof listPrivateDramaCloneVoices>> = [];
+  let dramaCharacterVoices: Awaited<ReturnType<typeof listTracerDramaCharacterVoices>> = [];
   let privateChildLibraryAvailable = true;
-  const [publicResult, privateChildResult, privateCloneResult] = await Promise.allSettled([
+  const [publicResult, privateChildResult, privateCloneResult, dramaCharacterResult] = await Promise.allSettled([
     listLicensedJapaneseVoices(apiKey),
     listPrivateDramaChildVoices(apiKey),
     listPrivateDramaCloneVoices(apiKey),
@@ -66,6 +68,7 @@ export async function GET(request: Request) {
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
+    ...dramaCharacterVoices.map((voice) => ({ ...voice, source: "private_drama_character" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
@@ -76,6 +79,7 @@ export async function GET(request: Request) {
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
     privateDramaCloneCount: privateCloneVoices.length,
+    dramaCharacterVoiceCount: dramaCharacterVoices.length,
     privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",
