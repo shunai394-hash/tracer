@@ -253,3 +253,12 @@ test("Fish Audio diagnostics displays the actual scanned model count field", () 
   assert.ok(page.includes('models.scannedCount??"不明"'));
   assert.ok(!page.includes('models.pageCount??"不明"'));
 });
+
+test("Fish Audio diagnostics directly verifies each assigned character model ID", () => {
+  assert.ok(diagnosticsRoute.includes("TRACER_DRAMA_CHARACTER_VOICES.map"));
+  assert.ok(diagnosticsRoute.includes("resolveFishAudioModelVoice(apiKey, character.id, character.title)"));
+  assert.ok(diagnosticsRoute.includes('status: voice ? "accessible" : "not_accessible"'));
+  assert.ok(diagnosticsRoute.includes("assignedCharacterVoices,"));
+  assert.ok(page.includes("TRACER看板キャラクターIDの直接照合"));
+  assert.ok(page.includes('character.status==="not_accessible"'));
+});
