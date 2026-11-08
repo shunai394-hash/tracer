@@ -1013,6 +1013,9 @@ export async function searchCJProducts(
   options?: {
     page?: number;
     size?: number;
+    countryCode?: string;
+    verifiedWarehouse?: 0 | 1 | 2;
+    startWarehouseInventory?: number;
   },
 ): Promise<CJSearchResult> {
   const normalizedQuery = query.trim();
@@ -1031,6 +1034,9 @@ export async function searchCJProducts(
     size: String(size),
     keyWord: normalizedQuery,
   });
+  if (options?.countryCode) params.set("countryCode", options.countryCode.trim().toUpperCase());
+  if (options?.verifiedWarehouse !== undefined) params.set("verifiedWarehouse", String(options.verifiedWarehouse));
+  if (options?.startWarehouseInventory !== undefined) params.set("startWarehouseInventory", String(options.startWarehouseInventory));
 
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/listV2?${params.toString()}`,
