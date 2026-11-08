@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   selectUnambiguousVariant,
   verifyVariantSelectionInvariants,
+  normalizeCJVerifiedWarehouseInventory,
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
