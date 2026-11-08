@@ -14,7 +14,7 @@ export const TRACER_DRAMA_CHARACTER_VOICES = [
  * 100 models can have valid character models omitted from that page.
  */
 export async function listTracerDramaCharacterVoices(apiKey: string): Promise<FishAudioPublicVoice[]> {
-  const results = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (preset) => {
+  const results: Array<FishAudioPublicVoice | null> = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (preset): Promise<FishAudioPublicVoice | null> => {
     const response = await fetch(`${MODEL_URL}/${encodeURIComponent(preset.id)}`, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
       cache: "no-store",
@@ -34,7 +34,7 @@ export async function listTracerDramaCharacterVoices(apiKey: string): Promise<Fi
       tags: ["TRACERドラマ", preset.gender, "登録済みモデル"],
     } satisfies FishAudioPublicVoice;
   }));
-  return results.filter((voice): voice is FishAudioPublicVoice => voice !== null);
+  return results.filter((voice) => voice !== null) as FishAudioPublicVoice[];
 }
 
 export async function isTracerDramaCharacterVoice(apiKey: string, referenceId: string): Promise<boolean> {
