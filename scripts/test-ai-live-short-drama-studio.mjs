@@ -232,7 +232,7 @@ test("voice library reports all six source buckets and clarifies public count ve
   assert.ok(page.includes("共通ID登録 "));
   assert.ok(page.includes("許可確認済みクローン "));
   assert.ok(page.includes("ドラマ専用クローン "));
-  assert.ok(page.includes("役別ID照合 "));
+  assert.ok(page.includes("役別ID照合"));
   assert.ok(page.includes("架空の子供役 "));
   assert.ok(page.includes("重複IDは1回のみ計上"));
   assert.ok(page.includes("共通登録との重複を除外"));
