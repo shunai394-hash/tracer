@@ -1,6 +1,7 @@
 (() => {
   "use strict";
   const contexts = new WeakMap();
+  const attachments = new WeakMap();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   let gain = 0.42;
   function attach(audio, mouth) {
@@ -18,6 +19,8 @@
       contexts.set(audio, entry);
     }
     entry.mouths.add(mouth);
+    let mouthDisposers = attachments.get(mouth);
+    if (!mouthDisposers) { mouthDisposers = new Set(); attachments.set(mouth, mouthDisposers); }
     const setMouth = value => { for (const target of entry.mouths) target.style.setProperty("--lip-open", value.toFixed(3)); };
     const close = () => { entry.smoothed = 0; setMouth(0); };
     const tick = () => {
@@ -52,10 +55,12 @@
       close();
     };
     const dispose = () => {
+      mouthDisposers.delete(dispose);
       entry.mouths.delete(mouth);
       mouth.style.setProperty("--lip-open", "0");
       if (entry.mouths.size === 0) stopLoop();
     };
+    mouthDisposers.add(dispose);
     audio.addEventListener("play", start);
     audio.addEventListener("pause", stopLoop);
     audio.addEventListener("ended", stopLoop);
@@ -69,9 +74,15 @@
       audio.removeEventListener("emptied", stopLoop);
     };
   }
+  function detach(mouth) {
+    const disposers = attachments.get(mouth);
+    if (!disposers) return;
+    for (const dispose of [...disposers]) dispose();
+    attachments.delete(mouth);
+  }
   function setGain(value) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) gain = Math.max(0.05, Math.min(1, parsed));
   }
-  window.TracerLipSync = Object.freeze({ attach, setGain });
+  window.TracerLipSync = Object.freeze({ attach, detach, setGain });
 })();
