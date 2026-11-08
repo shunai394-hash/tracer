@@ -77,6 +77,23 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   <small>登録直後は審査待ちです。承認されるまで再生一覧には出ません。権利を確認できない音源は登録しないでください。</small>
  </fieldset>
  <fieldset style="border:1px solid #52627a;border-radius:10px;padding:10px;margin:12px 0">
+ <fieldset style="border:1px solid #52627a;border-radius:10px;padding:10px;margin:12px 0">
+  <legend style="font-size:13px;padding:0 6px">既存Supabase音源の権利登録</legend>
+  <button id="bgmExistingLoad" type="button">未登録の保存済みMP3を読み込む</button>
+  <label for="bgmExistingComposer">作曲者・権利者</label><input id="bgmExistingComposer" maxlength="160" placeholder="作曲者または権利者">
+  <label for="bgmExistingSource">配布元URL</label><input id="bgmExistingSource" type="url" placeholder="https://..." required>
+  <label for="bgmExistingLicense">ライセンス名</label><input id="bgmExistingLicense" maxlength="160" placeholder="ライセンス名">
+  <label for="bgmExistingLicenseUrl">ライセンス本文URL</label><input id="bgmExistingLicenseUrl" type="url" placeholder="https://..." required>
+  <label for="bgmExistingTerms">追加利用規約URL（任意）</label><input id="bgmExistingTerms" type="url" placeholder="https://...">
+  <label for="bgmExistingEvidence">許諾確認の根拠</label><textarea id="bgmExistingEvidence" maxlength="4000" placeholder="商用利用・配信利用が許可される条項、確認日など"></textarea>
+  <label for="bgmExistingGenre">ジャンル</label><select id="bgmExistingGenre"><option value="daily">日常・ポップ</option><option value="romance">ロマンス</option><option value="emotional">感動</option><option value="suspense">緊張・サスペンス</option><option value="comedy">コメディ</option><option value="action">アクション</option></select>
+  <label><input id="bgmExistingCommercial" type="checkbox" style="width:auto"> 商用利用の許可を確認</label>
+  <label><input id="bgmExistingPlatform" type="checkbox" style="width:auto"> YouTube・TikTok等の配信利用の許可を確認</label>
+  <label><input id="bgmExistingAttribution" type="checkbox" style="width:auto"> クレジット表記が必要</label>
+  <label for="bgmExistingAttributionText">必要なクレジット表記</label><input id="bgmExistingAttributionText" maxlength="1000" placeholder="作者名・曲名・ライセンス">
+  <div id="bgmExistingList" aria-live="polite"></div>
+  <small>この登録操作は音源を複製・移動せず、既存ファイルに権利台帳を追加します。登録後は審査待ちとなり、承認まで再生されません。</small>
+ </fieldset>
   <legend style="font-size:13px;padding:0 6px">BGM権利審査</legend>
   <label for="bgmReviewer">審査担当者</label><input id="bgmReviewer" maxlength="120" placeholder="確認者名">
   <button id="bgmReviewLoad" type="button">審査待ち・登録済み音源を確認</button>
@@ -148,6 +165,42 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    if(!r.ok||!d?.ok)throw new Error(d?.message||'BGM登録に失敗しました');
    setStatus('登録完了：審査待ちです。承認後に「保存済みBGMを読み込む」で取得できます');
   }catch(e){setStatus(e.message||'BGM登録に失敗しました')}finally{$('bgmUpload').disabled=false}
+ }
+ function titleFromStorageName(name){
+  return name.replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.mp3$/i,'').replace(/[-_]+/g,' ').trim()||name;
+ }
+ async function loadExistingBgm(){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+  const list=$('bgmExistingList');list.replaceChildren();$('bgmExistingLoad').disabled=true;
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm/register-existing',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok||!Array.isArray(d.items))throw new Error('未登録音源を取得できませんでした');
+   if(!d.items.length){const p=document.createElement('p');p.textContent='未登録のMP3はありません';list.append(p)}
+   for(const item of d.items){
+    const card=document.createElement('section');card.style.cssText='border:1px solid #52627a;border-radius:8px;padding:10px;margin-top:8px';
+    const heading=document.createElement('strong');heading.textContent=item.name;card.append(heading);
+    const title=document.createElement('input');title.value=titleFromStorageName(item.name);title.maxLength=160;title.setAttribute('aria-label','曲名');title.placeholder='曲名';card.append(title);
+    const register=document.createElement('button');register.className='primary';register.textContent='この音源を権利台帳へ登録';
+    register.addEventListener('click',()=>registerExistingBgm(item.name,title.value,register));
+    card.append(register);list.append(card);
+   }
+   setStatus('未登録の保存済みMP3：'+d.items.length+'件');
+  }catch(e){setStatus(e.message||'未登録音源の取得に失敗しました')}finally{$('bgmExistingLoad').disabled=false}
+ }
+ async function registerExistingBgm(storageObject,title,button){
+  const token=$('token').value.trim();
+  const fields={composer:$('bgmExistingComposer').value.trim(),sourceUrl:$('bgmExistingSource').value.trim(),licenseName:$('bgmExistingLicense').value.trim(),licenseUrl:$('bgmExistingLicenseUrl').value.trim(),evidenceNote:$('bgmExistingEvidence').value.trim()};
+  if(Object.values(fields).some(v=>!v)||!title.trim()){setStatus('曲名・作曲者・配布元URL・ライセンス名/URL・確認根拠を入力してください');return}
+  if(!$('bgmExistingCommercial').checked||!$('bgmExistingPlatform').checked){setStatus('商用利用と配信利用の許可を確認してください');return}
+  if($('bgmExistingAttribution').checked&&!$('bgmExistingAttributionText').value.trim()){setStatus('必要なクレジット表記を入力してください');return}
+  const body={storageObject,title:title.trim(),...fields,creatorTermsUrl:$('bgmExistingTerms').value.trim(),genre:$('bgmExistingGenre').value,commercialUseAllowed:true,platformUseAllowed:true,attributionRequired:$('bgmExistingAttribution').checked,attributionText:$('bgmExistingAttributionText').value.trim()};
+  button.disabled=true;
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm/register-existing',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
+   const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error==='already_registered'?'この音源は既に登録されています':'権利情報の登録に失敗しました');
+   setStatus('既存音源を審査待ちとして登録しました：'+title);
+   await loadExistingBgm();await loadBgmReviews();
+  }catch(e){setStatus(e.message||'既存音源の登録に失敗しました')}finally{button.disabled=false}
  }
  async function loadBgmReviews(){
   const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
@@ -266,6 +319,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
  $('bgmUpload').addEventListener('click',uploadBgm);
  $('bgmReviewLoad').addEventListener('click',loadBgmReviews);
+ $('bgmExistingLoad').addEventListener('click',loadExistingBgm);
  $('load').addEventListener('click',loadSaved);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
