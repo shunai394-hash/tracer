@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import {
   CJConfigError,
   CJRequestError,
@@ -8,6 +9,11 @@ import {
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  // CJ variant data must never be exposed as a public unauthenticated endpoint.
+  // Reuse the repository's GitHub OIDC / CRON_SECRET automation gate.
+  const authError = await requireAutomationAuth(request);
+  if (authError) return authError;
+
   const { searchParams } = new URL(request.url);
   const pid = searchParams.get("pid")?.trim();
 
