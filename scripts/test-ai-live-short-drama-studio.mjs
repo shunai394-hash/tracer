@@ -228,3 +228,26 @@ test("Soma model ID and character name are prefilled for explicit verification",
   assert.ok(page.includes('id="voiceModelId" autocomplete="off" spellcheck="false" value="7478a76f38974bd2afa89c1bbe6831c7"'));
   assert.ok(page.includes('id="voiceModelTitle" maxlength="60" value="蒼真"'));
 });
+
+test("voice library reports all six source buckets and clarifies public count versus total", () => {
+  assert.ok(page.includes("TRACER利用可能ボイス合計"));
+  assert.ok(page.includes("公開ライセンス "));
+  assert.ok(page.includes("共通ID登録 "));
+  assert.ok(page.includes("許可確認済みクローン "));
+  assert.ok(page.includes("ドラマ専用クローン "));
+  assert.ok(page.includes("役別ID照合 "));
+  assert.ok(page.includes("架空の子供役 "));
+  assert.ok(page.includes("公開37件と総数43件は別区分です。"));
+  assert.ok(voicesRoute.includes("registeredVoiceCount: registeredVoices.length"));
+});
+test("all four character cards provide the correct Fish Audio connection path", () => {
+  assert.ok(page.includes('modelId:"7478a76f38974bd2afa89c1bbe6831c7"'));
+  assert.ok(page.includes('modelId:"160840e5c583459d89dc5521e7f175e5"'));
+  assert.ok(page.includes('preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録"'));
+  assert.ok(page.includes('$("voiceModelId").value=preset.modelId||""'));
+  assert.ok(page.includes('if(!found){const register=document.createElement("button")'));
+});
+test("Fish Audio diagnostics displays the actual scanned model count field", () => {
+  assert.ok(page.includes('models.scannedCount??"不明"'));
+  assert.ok(!page.includes('models.pageCount??"不明"'));
+});
