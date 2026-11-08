@@ -30,7 +30,11 @@ export function normalizeCJVerifiedWarehouseInventory(
       : String(row.storageId);
     byCountry.set(countryCode, {
       quantity: (current?.quantity ?? 0) + Math.floor(quantity),
-      storageId: current?.storageId === storageId ? storageId : null,
+      // Preserve a single verified warehouse ID. Null it only when rows
+      // for this country disagree or any row omits its storage ID.
+      storageId: current
+        ? current.storageId === storageId ? storageId : null
+        : storageId,
     });
   }
   return [...byCountry.entries()]
