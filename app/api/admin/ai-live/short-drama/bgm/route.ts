@@ -51,11 +51,18 @@ export async function GET(request: Request) {
   if (authError) return authError;
 
   try {
+    const genre = new URL(request.url).searchParams.get("genre");
+    if (genre && !GENRES.has(genre)) {
+      return json({ ok: false, error: "invalid_genre" }, 400);
+    }
+
     const supabase = createSupabaseAdminClient();
-    const { data: approved, error } = await supabase
+    let query = supabase
       .from("ai_live_bgm_rights")
       .select("storage_object,title,genre,review_status")
-      .eq("review_status", "approved_internal")
+      .eq("review_status", "approved_internal");
+    if (genre) query = query.eq("genre", genre);
+    const { data: approved, error } = await query
       .order("created_at", { ascending: false })
       .limit(MAX_TRACKS);
     if (error) throw error;
