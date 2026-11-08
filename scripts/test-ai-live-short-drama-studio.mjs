@@ -4,6 +4,7 @@ import test from "node:test";
 import { Script } from "node:vm";
 
 const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
+const lipSync = readFileSync("public/tracer-lip-sync.js", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
 const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-voice-design/route.ts", "utf8");
 const cloneRoute = readFileSync("app/api/admin/ai-live/fish-audio/clone/route.ts", "utf8");
@@ -22,6 +23,10 @@ test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("pace"));
   assert.ok(page.includes("pause"));
   assert.ok(page.includes("buildSpokenText"));
+  assert.ok(page.includes("tracer-lip-sync.js"));
+  assert.ok(page.includes("TracerLipSync.attach"));
+  assert.ok(page.includes("lipSyncMouth"));
+  assert.ok(lipSync.includes("getByteTimeDomainData"));
 });
 
 test("generation is explicit, sequential, bounded, and stoppable", () => {
