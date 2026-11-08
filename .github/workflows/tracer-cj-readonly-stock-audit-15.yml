@@ -65,7 +65,9 @@ jobs:
               "",
               f"- HTTP status: {os.environ.get('HTTP_CODE', 'unknown')}",
               f"- Read-only: {data.get('readOnly')}",
-              f"- Persisted to DB: {data.get('persisted')}",
+              f"- Commerce data persisted: {data.get('commerceDataPersisted')}
+              - Operational rate-limit state may change: {data.get('operationalRateLimitStateMayChange')}
+              - Quota circuit may be persisted on provider exhaustion: {data.get('quotaCircuitMayBePersistedOnProviderExhaustion')}",
               f"- Store publication changed: {data.get('publicationChanged')}",
               f"- Supplier orders placed: {data.get('supplierOrdersPlaced')}",
               f"- Requested: {data.get('requestedCount')}",
