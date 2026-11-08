@@ -746,7 +746,6 @@ test("CJ variant image evidence is persisted for exact storefront color grouping
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   assert.ok(core.includes("variantImageIdentityVerified: Boolean(input.variantImageUrl)"));
   assert.ok(core.includes("variantImageUrl: input.variantImageUrl"));
-  assert.ok(core.includes("variantImageUrl: input.variantImageUrl"));
   assert.ok(store.includes("variantImageIdentityVerified: attributes.variantImageIdentityVerified === true"));
   assert.ok(store.includes("attributes.variantImageUrl"));
 });
