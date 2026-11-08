@@ -488,48 +488,24 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
       }
     }
+    // Existing BASE listings are deliberately left untouched. BASE has no
+    // verified per-variation image mapping, so only prevent new family listings
+    // from being created; never hide, zero stock, or rewrite existing listings.
     if (baseColorFamilyVariantIds.size) {
       const familyIds = [...baseColorFamilyVariantIds];
-      for (let offset = 0; offset < familyIds.length; offset += 100) {
-        const { data: familyListings, error: familyListingsError } = await db.from("channel_listings")
-          .select("variant_id,external_product_id,status")
-          .eq("channel", "base")
-          .in("variant_id", familyIds.slice(offset, offset + 100));
-        if (familyListingsError) throw new Error("base_color_family_listing_lookup_failed:" + familyListingsError.message);
-        for (const listing of familyListings ?? []) {
-          const variantId = String(listing.variant_id);
-          const externalId = String(listing.external_product_id ?? "").trim();
-          if (externalId && listing.status === "published") {
-            try {
-              const live = await getBaseItemDetail(externalId);
-              const price = Math.max(50, Math.round(Number(live.price) || 50));
-              await editBaseItem({
-                itemId: externalId,
-                title: String(live.title ?? "商品情報確認中"),
-                detail: String(live.detail ?? live.title ?? "商品情報を確認しています。"),
-                price,
-                stock: 0,
-                visible: false,
-              });
-            } catch (hideError) {
-              const message = hideError instanceof Error ? hideError.message : String(hideError);
-              results.push({ variantId, ok: false, externalId, error: "base_color_family_hide_failed:" + message.slice(0, 160) });
-              continue;
-            }
-          }
-          const now = new Date().toISOString();
-          const { error: stateError } = await db.from("channel_listings").update({
-            status: "error",
-            last_error: "base_color_variant_image_switching_unverified",
-            last_synced_at: now,
-            updated_at: now,
-          }).eq("channel", "base").eq("variant_id", variantId);
-          if (stateError) {
-            results.push({ variantId, ok: false, externalId: externalId || undefined, error: "base_color_family_state_save_failed:" + stateError.message });
-          } else {
-            results.push({ variantId, ok: true, externalId: externalId || undefined, action: externalId ? "unpublished" : undefined, error: "base_color_variant_image_switching_unverified" });
-          }
-        }
+      const { data: existingListings, error: existingListingsError } = await db.from("channel_listings")
+        .select("variant_id,status,external_product_id")
+        .eq("channel", "base")
+        .in("variant_id", familyIds);
+      if (existingListingsError) throw new Error("base_color_family_listing_lookup_failed:" + existingListingsError.message);
+      for (const listing of existingListings ?? []) {
+        if (listing.status === "published" && listing.external_product_id) continue;
+        results.push({
+          variantId: String(listing.variant_id),
+          ok: true,
+          externalId: listing.external_product_id ? String(listing.external_product_id) : undefined,
+          error: "base_color_variant_new_publication_blocked_until_image_switching_verified",
+        });
       }
     }
   }
