@@ -1149,7 +1149,6 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         alt: string | null;
         status: string;
         mediaContentType: string;
-        originalSource: { url: string } | null;
       }> };
       variants: { nodes: Array<{
         id: string;
@@ -1164,7 +1163,6 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         media(first: 100) {
           nodes {
             id alt status mediaContentType
-            ... on MediaImage { originalSource { url } }
           }
         }
         variants(first: 100) {
@@ -1176,13 +1174,18 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   );
   let mediaSnapshot = await readColorFamilyMedia();
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_parent_missing");
-  const mediaBySource = () => new Map(
-    mediaSnapshot.product!.media.nodes
-      .filter((media) => media.mediaContentType === "IMAGE" && media.originalSource?.url)
-      .map((media) => [new URL(media.originalSource!.url).toString(), media]),
-  );
-  let mediaMap = mediaBySource();
-  const mediaToCreate = variants.filter((variant) => !mediaMap.has(new URL(variant.imageUrl).toString()));
+  const mediaByColor = () => {
+    const images = mediaSnapshot.product!.media.nodes.filter((media) => media.mediaContentType === "IMAGE");
+    const byColor = new Map<string, (typeof images)[number]>();
+    for (const media of images) {
+      if (!media.alt) continue;
+      if (byColor.has(media.alt)) throw new Error("shopify_color_family_media_alt_ambiguous:" + media.alt);
+      byColor.set(media.alt, media);
+    }
+    return byColor;
+  };
+  let mediaMap = mediaByColor();
+  const mediaToCreate = variants.filter((variant) => !mediaMap.has(variant.colorLabel));
   if (mediaToCreate.length) {
     const createdMedia = await shopifyGraphQL<{
       productUpdate: {
@@ -1216,9 +1219,9 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   for (let attempt = 0; attempt < 20; attempt += 1) {
     mediaSnapshot = await readColorFamilyMedia();
     if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_readback_missing");
-    mediaMap = mediaBySource();
+    mediaMap = mediaByColor();
     const allReady = variants.every((variant) => {
-      const media = mediaMap.get(new URL(variant.imageUrl).toString());
+      const media = mediaMap.get(variant.colorLabel);
       return media?.status === "READY";
     });
     if (allReady) break;
@@ -1234,7 +1237,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   const variantMediaToAppend: Array<{ variantId: string; mediaIds: string[] }> = [];
   for (const expected of variants) {
     const actual = variantBySku.get(expected.sku);
-    const media = mediaMap.get(new URL(expected.imageUrl).toString());
+    const media = mediaMap.get(expected.colorLabel);
     if (!actual || !media) throw new Error("shopify_color_family_media_identity_missing:" + expected.sku);
     const attachedIds = actual.media.nodes.map((node) => node.id);
     if (attachedIds.includes(media.id)) continue;
