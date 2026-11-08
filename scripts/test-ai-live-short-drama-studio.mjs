@@ -208,3 +208,23 @@ test("character reference image URLs are applied to face overlays and persisted 
   assert.ok(page.includes("image.src=imageUrl"));
   assert.ok(page.includes('character.imageUrl==="string"'));
 });
+
+test("character mouth alignment is adjustable and persists through project export/import", () => {
+  assert.ok(page.includes('class="mouthX"'));
+  assert.ok(page.includes('class="mouthY"'));
+  assert.ok(page.includes('style.setProperty("--mouth-x"'));
+  assert.ok(page.includes('style.setProperty("--mouth-y"'));
+  assert.ok(page.includes("mouthX:Number(mouthX)||50"));
+  assert.ok(page.includes("mouthY:Number(mouthY)||65"));
+  assert.ok(page.includes("character.mouthX,character.mouthY"));
+});
+test("replacing character preview faces detaches old mouth listeners before reattaching", () => {
+  assert.ok(lipSync.includes("function detach(mouth)"));
+  assert.ok(lipSync.includes("attachments.delete(mouth)"));
+  assert.ok(page.includes("window.TracerLipSync?.detach(oldMouth)"));
+  assert.ok(page.includes('for(const oldMouth of outputs.querySelectorAll(".lipSyncMouth"))'));
+});
+test("Soma model ID and character name are prefilled for explicit verification", () => {
+  assert.ok(page.includes('id="voiceModelId" autocomplete="off" spellcheck="false" value="7478a76f38974bd2afa89c1bbe6831c7"'));
+  assert.ok(page.includes('id="voiceModelTitle" maxlength="60" value="蒼真"'));
+});
