@@ -8,8 +8,8 @@ export type ColorFamilyMember = {
   supplierVariantId: string | null;
   sku?: string | null;
   imageUrl: string | null;
-  /** Set only after the supplier image is visually matched to this exact variant. */
-  colorImageVerified?: boolean;
+  /** True only when the image URL came from the exact supplier variant ID response. */
+  variantImageIdentityVerified?: boolean;
   sellingPrice: number | null;
   currency: string | null;
   inventory: number;
@@ -123,7 +123,7 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
     if (!imageUrl) blockers.push("variant_image_missing:" + member.id);
     else if (images.has(imageUrl)) blockers.push("variant_image_ambiguous:" + member.id);
     else images.set(imageUrl, member.id);
-    if (member.colorImageVerified !== true) blockers.push("variant_image_unverified:" + member.id);
+    if (member.variantImageIdentityVerified !== true) blockers.push("variant_image_identity_unverified:" + member.id);
 
     if (!sku) {
       if (requireSku) blockers.push("sku_missing:" + member.id);
@@ -164,8 +164,8 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
 /**
  * Collapse listings that share one canonical product and one exact supplier
  * product id. Title similarity never creates a family. A family with image-only
- * evidence gaps stays as separate existing listings until distinct color images
- * are verified; other identity, SKU, price, or stock failures fail closed.
+ * evidence gaps stays as separate existing listings until distinct exact-variant image
+ * identities are verified; other identity, SKU, price, or stock failures fail closed.
  */
 export function groupExactColorFamilies<T extends ColorFamilyMember>(
   members: T[],
@@ -207,7 +207,7 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
     }
     const family = buildFamily(group, requireSku);
     // A multi-color family is one sellable page only when every identity,
-    // SKU, price, stock, label, and exact-color image check passes. Do not
+    // SKU, price, stock, label, and exact-variant image identity check passes. Do not
     // fall back to separately purchasable color pages when any check fails.
     if (family.colorSaleBlocked) {
       for (const member of group) {
