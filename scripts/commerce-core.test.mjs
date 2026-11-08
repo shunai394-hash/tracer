@@ -1,4 +1,5 @@
 import test from "node:test";
+import { resolveCJVariantImageUrl } from "../lib/sources/cj/variant-image.ts";
 import assert from "node:assert/strict";
 import { selectRotatingVariantBatch } from "../lib/commerce/variant-batch.ts";
 import { asRelationRows } from "../lib/commerce/relation-rows.ts";
@@ -454,6 +455,7 @@ test("both channels use the shared capped storefront quantity and Japanese title
 test("TRACER storefront displays published canonical Shopify listings without enabling local auto-ordering", async () => {
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
   const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
+  const variantSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
   assert.match(store, /async function loadCanonicalCommerceListings/);
   assert.match(store, /from\("channel_listings"\)/);
   assert.match(store, /from\("commerce_variants"\)/);
@@ -471,8 +473,10 @@ test("TRACER storefront displays published canonical Shopify listings without en
   // Stale supplier checks must not drop published products before offerFresh is evaluated.
   assert.doesNotMatch(store, /\.gte\("last_checked_at", freshAfter\)/);
   assert.match(store, /const canonicalListings = await loadCanonicalCommerceListings\(\)/);
-  assert.match(productPage, /shopifyProductUrl/);
-  assert.match(productPage, /Shopifyで購入する/);
+  assert.match(productPage, /ProductVariantSelector/);
+  assert.match(variantSelector, /shopifyUrl/);
+  assert.match(variantSelector, /Shopifyで購入する/);
+  assert.match(variantSelector, /variant=/);
 });
 
 test("CJ importer keeps source titles and localizes handbag subtypes", async () => {
@@ -735,6 +739,16 @@ test("failed supplier procurement retries only when no supplier order id exists"
   assert.match(worker, /\.is\("external_order_id", null\)/);
   assert.match(worker, /retry_count/);
   assert.match(worker, /retryCount >= 3/);
+});
+
+test("CJ variant image evidence is persisted for exact storefront color grouping", async () => {
+  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
+  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  assert.ok(core.includes("variantImageIdentityVerified: Boolean(input.variantImageUrl)"));
+  assert.ok(core.includes("colorImageVerified: input.attributes?.colorImageVerified === true"));
+  assert.ok(core.includes("variantImageUrl: input.variantImageUrl"));
+  assert.ok(store.includes("colorImageVerified: attributes.colorImageVerified === true"));
+  assert.ok(store.includes("attributes.variantImageUrl"));
 });
 
 test("CJ import keeps unknown stock and unknown Japan freight excluded", async () => {
@@ -1352,19 +1366,13 @@ test("scheduled minimum-profit withdrawal batches existing published listings wi
 });
 
 
-test("CJ variant image URLs are preserved by exact VID and used by the TRACER storefront", async () => {
-  const cjTypes = await readFile(new URL("../lib/sources/cj/variant-select.ts", import.meta.url), "utf8");
-  const cjClient = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
-  const core = await readFile(new URL("../lib/commerce/core.ts", import.meta.url), "utf8");
-  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
-  const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
-  assert.match(cjTypes, /variantImage\?: string \| null/);
-  assert.match(cjClient, /variantImage: typeof row\.variantImage === "string"/);
-  assert.match(cjClient, /const row = rows\.find\(\(item\) => \(item\.vid\?\.trim\(\) \|\| item\.variantId\?\.trim\(\)\) === normalizedVid\)/);
-  assert.match(core, /variantImageUrl \? \{ variantImageUrl: input\.variantImageUrl \} : \{\}/);
-  assert.match(importer, /variantImageUrl: exactVariant\.variantImage/);
-  assert.match(store, /attributes\.variantImageUrl/);
-  assert.match(store, /const imageUrl = variantImageUrl \?\? \(typeof product\.image_url === "string" \? product\.image_url : null\)/);
+test("CJ variant images prefer the exact VID response and only fall back to the matching catalog VID", () => {
+  const exact = "https://img.example/exact-red.jpg";
+  const fallback = "https://img.example/catalog-red.jpg";
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: exact }, { vid: "123", variantImage: fallback }), exact);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "123", variantImage: fallback }), fallback);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "456", variantImage: fallback }), null);
+  assert.equal(resolveCJVariantImageUrl({ vid: "123", variantImage: null }, { vid: "123", variantImage: null }), null);
 });
 
 test("channel resync preserves existing external identities and persists the exact sellable variant", async () => {

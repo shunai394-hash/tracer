@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useShopCart } from "@/components/shop-cart";
+import { cartLineTitle, useShopCart } from "@/components/shop-cart";
 import { formatMoney } from "@/lib/intelligence/format-display";
 
 export default function CartPage() {
@@ -71,7 +71,7 @@ export default function CartPage() {
                       )}
                     </div>
                     <div>
-                      <p className="text-sm leading-6 text-zinc-100">{item.title}</p>
+                      <p className="text-sm leading-6 text-zinc-100">{cartLineTitle(item)}</p>
                       <p className="mt-1 text-xs text-zinc-600">数量 {item.qty} · 商品価格 {formatMoney(item.unitPrice, item.currency)}</p>
                     </div>
                     <p className="text-sm font-medium text-zinc-100 sm:text-right">{formatMoney(item.unitPrice * item.qty, item.currency)}</p>

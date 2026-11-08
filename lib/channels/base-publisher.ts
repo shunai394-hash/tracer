@@ -8,6 +8,7 @@ import { isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/lib/catalog/publishable-title";
 import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
+import { getBaseColorFamilyBlockedIds } from "@/lib/channels/base-color-family";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
 
 export type BasePublicationResult = {
@@ -167,6 +168,14 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     .filter((listing) => !ALWAYS_ON_SALE_LISTING_IDS.has(String(listing.id)))
     .filter((listing) => !listing.supplier_listing_id || !supplierStatuses.has(String(listing.id)) || listing.orderable !== true || listing.tracking_available !== true)
     .map((listing) => String(listing.id)));
+  // Until BASE per-color image switching is proven, block only brand-new
+  // family listings. Never mark an existing BASE item unpublished or zero its stock.
+  const familyBlockedListingIds = new Set(getBaseColorFamilyBlockedIds(
+    publishableListings
+      .filter((listing) => !listing.base_item_id && listing.published !== true)
+      .map((listing) => ({ id: String(listing.id), supplierCode: listing.supplier_name == null ? null : String(listing.supplier_name), supplierProductId: listing.supplier_product_id == null ? null : String(listing.supplier_product_id) })),
+    ALWAYS_ON_SALE_LISTING_IDS,
+  ));
   const results: BasePublicationResult["results"] = [];
   let unpublishFailed = 0;
 
@@ -226,26 +235,25 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
 
 
   // Mark unlinked catalog rows blocked before any downstream publication work.
+  const nowBlocked = new Date().toISOString();
   if (identityUnlinkedIds.size > 0) {
-    const now = new Date().toISOString();
-    const { error: blockError } = await supabase.from("shop_listings").update({
-      published: false,
-      orderable: false,
-      published_at: null,
-      pipeline_stage: "BLOCKED",
-      pipeline_status: "blocked",
+    const { error } = await supabase.from("shop_listings").update({
+      published: false, orderable: false, published_at: null,
+      pipeline_stage: "BLOCKED", pipeline_status: "blocked",
       pipeline_reason: "supplier_identity_unlinked",
-      pipeline_updated_at: now,
-      updated_at: now,
+      pipeline_updated_at: nowBlocked, updated_at: nowBlocked,
     }).in("id", [...identityUnlinkedIds]);
-    if (blockError) throw new Error(`supplier_identity_block_failed:${blockError.message}`);
+    if (error) throw new Error(`supplier_identity_block_failed:${error.message}`);
   }
+  // New, not-yet-created family listings are skipped below. Do not mutate
+  // shop_listings rows here: a previously published BASE item must stay live.
 
   // Reconcile stale BASE items, but allow supplier-linked hidden items to be republished below.
   for (const listing of publishableListings) {
     const isIdentityUnlinked = identityUnlinkedIds.has(String(listing.id));
-    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked)) continue;
-    if (listing.published !== true && !isIdentityUnlinked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
+    const isFamilyBlocked = familyBlockedListingIds.has(String(listing.id));
+    if (!listing.base_item_id || (listing.published === true && !isIdentityUnlinked && !isFamilyBlocked)) continue;
+    if (listing.published !== true && !isIdentityUnlinked && !isFamilyBlocked && !["supplier_identity_unlinked_hidden", "tracer_unpublished_hidden", "color_family_variant_unverified_hidden"].includes(String(listing.base_last_error ?? ""))) continue;
     if (listing.selling_price === null) {
       unpublishFailed += 1;
       results.push({ listingId: String(listing.id), ok: false, skipped: true, error: "base_hide_price_unknown" });
@@ -266,10 +274,10 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
         published_at: null,
         base_publication_status: "failed",
         base_publication_lease_until: null,
-        base_last_error: isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
+        base_last_error: isFamilyBlocked ? "color_family_variant_unverified_hidden" : isIdentityUnlinked ? "supplier_identity_unlinked_hidden" : "tracer_unpublished_hidden",
         pipeline_stage: "BLOCKED",
         pipeline_status: "blocked",
-        pipeline_reason: isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
+        pipeline_reason: isFamilyBlocked ? "color_family_variant_unverified" : isIdentityUnlinked ? "supplier_identity_unlinked" : "tracer_unpublished",
         pipeline_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", String(listing.id));
@@ -283,7 +291,9 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
   }
 
-  const activeListings = publishableListings.filter((listing) => !identityUnlinkedIds.has(String(listing.id)));
+  const activeListings = publishableListings.filter((listing) =>
+    !identityUnlinkedIds.has(String(listing.id)) && !familyBlockedListingIds.has(String(listing.id))
+  );
   // Generate Japanese copy concurrently only for listings that can remain visible.
   // spend the full serverless timeout waiting on Gemini one listing at a time.
   const copyResults = await Promise.all(activeListings.map(async (listing) => {
@@ -308,7 +318,7 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     const listingId = String(listing.id);
     // Already-hidden BASE items were reconciled above; do not process them a
     // second time as missing-copy failures or overwrite their reconciliation reason.
-    if (identityUnlinkedIds.has(listingId)) continue;
+    if (identityUnlinkedIds.has(listingId) || familyBlockedListingIds.has(listingId)) continue;
     const copyResult = copyByListingId.get(listingId);
     if (!copyResult?.copy) {
       const message = copyResult?.error ?? "japanese_catalog_copy_required";

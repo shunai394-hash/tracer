@@ -85,7 +85,9 @@ assert.doesNotMatch(productDetail, /getPublishableSupplierListingStatuses/,
 assert.match(productDetail, /\.eq\("shopify_sync_status", "synced"\)/,
   "only Shopify-synced products may have public sales pages");
 assert.match(shopIndex, /href={`\/shop\/\$\{listing\.id\}`}/, "storefront product cards must link by stable listing UUID so Japanese slugs cannot break detail routing");
-assert.match(page, /href={shopifyProductUrl}/);
-assert.match(page, /Shopifyで購入する/,
+const variantSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
+assert.match(page, /ProductVariantSelector/);
+assert.match(variantSelector, /href=\{shopifyUrl\}/);
+assert.match(variantSelector, /Shopifyで購入する/,
   "the TRACER landing page must direct customers to the live Shopify checkout");
 console.log("NEWFIND retry gates and TRACER public sales links are guarded by regression tests.");

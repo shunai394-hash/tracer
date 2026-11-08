@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { isCJQuotaCircuitActive } from "@/lib/sources/cj/rate-limit-policy";
 import { searchCJProducts, getCJProductDetail, fetchCJProductVariants, fetchCJVariantByVid, fetchCJVariantStock, calculateCJFreight } from "@/lib/sources/cj";
+import { resolveCJVariantImageUrl } from "@/lib/sources/cj/variant-image";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
 import { localizeProductTitle } from "@/lib/intelligence/japanese-product";
 import { upsertSupplierOffer, recalculatePrice } from "@/lib/commerce/core";
@@ -363,6 +364,22 @@ function japaneseVariantSuffix(nameEn: unknown): string {
     return "（" + color + "・タイプ" + numberedColor[2] + "）";
   }
   const optionLabels: Array<[RegExp, string]> = [
+    [/pink leopard/, "ピンクレオパード"],
+    [/white flowers?/, "ホワイトフラワー"],
+    [/green floral/, "グリーンフラワー"],
+    [/orange floral/, "オレンジフラワー"],
+    [/cow pattern/, "カウ柄"],
+    [/\bcoffee\b/, "コーヒー色"],
+    [/\bstyle\s*2\b/, "スタイル2"],
+    [/large\s+haze blue/, "大・ヘイズブルー"],
+    [/large\s+white/, "大・ホワイト"],
+    [/large\s+pink/, "大・ピンク"],
+    [/large\s+black/, "大・ブラック"],
+    [/medium\s+mint green/, "中・ミントグリーン"],
+    [/medium\s+white/, "中・ホワイト"],
+    [/medium\s+pink/, "中・ピンク"],
+    [/medium\s+black/, "中・ブラック"],
+    [/medium\s+blue/, "中・ブルー"],
     [/4pin.*no\s*5.*oblique clip/, "4ピン・No.5斜めクリップ"],
     [/4pin.*no\s*5.*straight clip/, "4ピン・No.5ストレートクリップ"],
     [/4pin.*hook/, "4ピン・フッククリップ"],
@@ -866,6 +883,9 @@ export async function GET(request: Request) {
               continue;
             }
             const supplierProductId = String(exactVariant.productId).trim();
+            // queryByVid is authoritative for identity and price; some CJ responses omit variantImage.
+            // The parent-scoped row is safe as an image fallback only because it was fetched for this exact VID.
+            const exactVariantImageUrl = resolveCJVariantImageUrl(exactVariant, variant);
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               recordSkip("canonical_supplier_variant_price_unresolved");
@@ -1012,7 +1032,7 @@ export async function GET(request: Request) {
               sourceVariantKey: exactVariant.vid,
               variantTitleJa: title + japaneseVariantSuffix(exactVariant.nameEn),
               sku: exactVariant.sku,
-              variantImageUrl: exactVariant.variantImage,
+              variantImageUrl: exactVariantImageUrl,
               attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
               offer: {
                 supplierCode: "cj", supplierProductId,
@@ -1024,6 +1044,7 @@ export async function GET(request: Request) {
                 lastCheckedAt: new Date().toISOString(),
                 rawData: {
                   query, page, catalogProductId: candidate.id, productId: supplierProductId, variantId: exactVariant.vid,
+                  ...(exactVariantImageUrl ? { variantImageUrl: exactVariantImageUrl } : {}),
                   stockKnown: stock !== null, shippingKnown: shipping !== null && !shippingWasEstimated,
                   shippingEstimated: shippingWasEstimated,
                   ...(shippingWasEstimated ? { shippingEstimateUsd: 7.76, shippingEstimateSource: "cj_historical_p90_570_offers" } : {}),

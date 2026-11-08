@@ -31,6 +31,16 @@ export function variantFamily(title: string): string {
 
 // Pick up to `limit` listings with images, showing one colour per product family
 // so rows are not filled with the same bag in different colours.
+export function takeWithImage(listings: ShopListing[], limit: number): ShopListing[] {
+  const picked: ShopListing[] = [];
+  for (const listing of listings) {
+    if (!listing.imageUrl) continue;
+    picked.push(listing);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
 export function pickDistinct(listings: ShopListing[], limit: number): ShopListing[] {
   const seen = new Set<string>();
   const picked: ShopListing[] = [];

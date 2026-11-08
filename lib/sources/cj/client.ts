@@ -6,11 +6,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   selectUnambiguousVariant,
   verifyVariantSelectionInvariants,
+  normalizeCJVerifiedWarehouseInventory,
   type CJProductVariant,
 } from "@/lib/sources/cj/variant-select";
 import { firstCJImageUrl, parseCJStockData } from "@/lib/sources/cj/parse";
 import { getCJQuotaCooldownUntil, isCJQuotaCircuitActive, isCJQuotaExhausted } from "@/lib/sources/cj/rate-limit-policy";
 import { readCJFreightPrice } from "@/lib/sources/cj/freight-cost";
+import { normalizeCJProductDetailSummary, normalizeCJProductDetailVariants } from "@/lib/sources/cj/product-detail-variants";
 
 export { selectUnambiguousVariant, verifyVariantSelectionInvariants };
 export type { CJProductVariant };
@@ -1083,6 +1085,25 @@ export async function searchCJProducts(
   };
 }
 
+async function queryCJProductDetailSummary(pid: string): Promise<CJProductCandidate | null> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/product/productDetail/query",
+    {
+      method: "POST",
+      headers: {
+        "CJ-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: pid }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return null;
+  const payload = await response.json() as unknown;
+  return normalizeCJProductDetailSummary(payload, pid);
+}
+
 export async function getCJProductDetail(
   pid: string,
 ): Promise<CJProductCandidate | null> {
@@ -1127,7 +1148,8 @@ export async function getCJProductDetail(
   }
 
   if (product) logRawCjProductOnce("product/query", product, detailLogState);
-  return product ? normalizeProduct(product) : null;
+  const normalized = product ? normalizeProduct(product) : null;
+  return normalized ?? await queryCJProductDetailSummary(pid);
 }
 
 /**
@@ -1194,6 +1216,8 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
   if (!vid) return null;
   const barcode = [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode]
     .find((value) => value !== undefined && value !== null && String(value).trim());
+  const inventoryByCountry = normalizeCJVerifiedWarehouseInventory(row.inventories ?? []);
+  const verifiedInventory = inventoryByCountry.reduce((sum, inventory) => sum + inventory.quantity, 0);
   return {
     vid,
     productId: row.pid?.trim() || row.productId?.trim() || pid,
@@ -1205,13 +1229,14 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
         ? null
         : String(row.variantSellPrice),
     barcode: barcode ? String(barcode).replace(/\D/g, "") || null : null,
-    inventory: null,
+    inventory: inventoryByCountry.length > 0 ? verifiedInventory : null,
+    inventoryByCountry,
   };
 }
 
 async function queryCJVariantRows(pid: string, countryCode?: string): Promise<CJVariantRow[]> {
   const token = await getAccessToken();
-  const params = new URLSearchParams({ pid });
+  const params = new URLSearchParams({ pid, features: "enable_inventory" });
   if (countryCode) params.set("countryCode", countryCode);
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
@@ -1262,6 +1287,34 @@ async function queryCJDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
   return Array.isArray(variants) ? (variants as CJVariantRow[]) : [];
 }
 
+/** Fetch the full product-detail payload because its stanProducts[].img field
+ * carries per-variant renders that can be absent from the lighter variant query. */
+async function queryCJProductDetailVariantRows(pid: string): Promise<CJVariantRow[]> {
+  const token = await getAccessToken();
+  const response = await fetchCJWithRateLimit(
+    "https://developers.cjdropshipping.com/api2.0/v1/product/productDetail/query",
+    {
+      method: "POST",
+      headers: {
+        "CJ-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: pid }),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) return [];
+  const payload = await response.json() as unknown;
+  return normalizeCJProductDetailVariants(payload, pid).map((variant) => ({
+    vid: variant.vid,
+    pid: variant.productId,
+    variantSku: variant.sku ?? undefined,
+    variantNameEn: variant.nameEn ?? undefined,
+    variantImage: variant.variantImage,
+    variantSellPrice: variant.sellPrice ?? undefined,
+  }));
+}
+
 export async function fetchCJProductVariants(
   pid: string,
   options?: { countryCode?: string },
@@ -1273,6 +1326,23 @@ export async function fetchCJProductVariants(
   let rows = await queryCJVariantRows(pid, options?.countryCode);
   if (rows.length === 0 && options?.countryCode) rows = await queryCJVariantRows(pid);
   if (rows.length === 0) rows = await queryCJDetailVariantRows(pid);
+
+  // The lightweight variant endpoints frequently return blank variantImage.
+  // Enrich only those products from the documented full product-detail endpoint;
+  // exact VID matching prevents a sibling color image from leaking across variants.
+  if (rows.some((row) => !(typeof row.variantImage === "string" && (row.variantImage.trim().startsWith("https://") || row.variantImage.trim().startsWith("http://"))))) {
+    const detailedRows = await queryCJProductDetailVariantRows(pid);
+    const detailByVid = new Map(detailedRows.map((row) => [row.vid, row]));
+    rows = rows.map((row) => {
+      const vid = row.vid?.trim() || row.variantId?.trim() || "";
+      const detailed = detailByVid.get(vid);
+      const currentImage = typeof row.variantImage === "string" ? row.variantImage.trim() : "";
+      const hasCurrentImage = currentImage.startsWith("https://") || currentImage.startsWith("http://");
+      return detailed?.variantImage && !hasCurrentImage
+        ? { ...row, variantImage: detailed.variantImage }
+        : row;
+    });
+  }
 
   return rows
     .map((row) => toCJProductVariant(row, pid))

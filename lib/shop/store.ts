@@ -10,6 +10,7 @@ import { isCJLiveOrderPathReady } from "@/lib/config/env";
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { MINIMUM_LISTING_PRICE_JPY, isMinimumListingPriceEligible } from "@/lib/commerce/minimum-listing-price";
 import { applyManualTitle, freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { groupExactColorFamilies, type ColorFamilyChoice } from "@/lib/shop/color-family-storefront";
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -52,6 +53,12 @@ export type ShopListing = {
   shopifySyncStatus: string | null;
   canonicalCommerce?: boolean;
   manualInventory?: boolean;
+  sku?: string | null;
+  variants?: ColorFamilyChoice[];
+  colorSaleBlocked?: boolean;
+  colorSaleBlockers?: string[];
+  colorImageVerified?: boolean;
+  selectedVariantId?: string | null;
 };
 
 function mapListing(row: Record<string, unknown>): ShopListing {
@@ -81,6 +88,8 @@ function mapListing(row: Record<string, unknown>): ShopListing {
     shopifySyncStatus: typeof row.shopify_sync_status === "string" ? row.shopify_sync_status : null,
     canonicalCommerce: false,
     manualInventory: row.manual_inventory === true,
+    colorImageVerified: row.color_image_verified === true,
+    sku: typeof row.sku === "string" && row.sku.trim() ? row.sku.trim() : null,
   };
 }
 
@@ -207,12 +216,24 @@ async function loadLiveListings(rows: Record<string, unknown>[]): Promise<ShopLi
 const LISTINGS_TTL_MS = 60_000;
 let listingsCache: { at: number; value: Promise<ShopListing[]> } | null = null;
 
-export function listPublishedShopListings(): Promise<ShopListing[]> {
+function listCatalogFamilies(): Promise<ShopListing[]> {
   if (listingsCache && Date.now() - listingsCache.at < LISTINGS_TTL_MS) return listingsCache.value;
-  const value = loadPublishedShopListings();
+  const value = loadPublishedShopListings().then((rows) => groupExactColorFamilies(rows).catalog);
   listingsCache = { at: Date.now(), value };
   value.catch(() => { if (listingsCache?.value === value) listingsCache = null; });
   return value;
+}
+
+export function listPublishedShopListings(): Promise<ShopListing[]> {
+  return listCatalogFamilies().then((rows) => rows.filter((row) => row.colorSaleBlocked !== true));
+}
+
+function withColorFamily(listing: ShopListing, requestedId: string, families: ShopListing[]): ShopListing {
+  const family = families.find((item) =>
+    item.id === requestedId || item.variants?.some((variant) => variant.id === requestedId || variant.slug === requestedId),
+  );
+  if (!family) return { ...listing, variants: listing.variants ?? [], colorSaleBlocked: false, colorSaleBlockers: [] };
+  return { ...family, selectedVariantId: requestedId };
 }
 
 async function loadPublishedShopListings(): Promise<ShopListing[]> {
@@ -293,13 +314,20 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
     // canonical commerce listings). Resolve misses through that same source of
     // truth so every published sitemap slug can also be opened as a detail page.
     // This fallback is only used when the direct indexed lookup misses.
-    const published = await listPublishedShopListings();
-    const matched = published.find((listing) => listing.slug === normalizedSlug || listing.slug === slug);
-    if (matched) return matched;
+    const families = await listCatalogFamilies();
+    const matched = families.find((listing) =>
+      listing.slug === normalizedSlug || listing.slug === slug || listing.id === normalizedSlug ||
+      listing.variants?.some((variant) => variant.slug === normalizedSlug || variant.slug === slug || variant.id === normalizedSlug),
+    );
+    if (matched) {
+      const selected = matched.variants?.find((variant) => variant.slug === normalizedSlug || variant.slug === slug || variant.id === normalizedSlug);
+      return { ...matched, selectedVariantId: selected?.id ?? matched.id };
+    }
 
     if (!isListingId) return null;
     const canonical = await loadCanonicalCommerceListings({ variantIds: [normalizedSlug] });
-    return canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    const found = canonical.find((listing) => listing.id === normalizedSlug) ?? null;
+    return found ? withColorFamily(found, found.id, await listCatalogFamilies()) : null;
   }
 
   const listing = mapListing(data as Record<string, unknown>);
@@ -313,7 +341,7 @@ export async function getShopListingBySlug(slug: string): Promise<ShopListing | 
   // already-published Shopify product. Supplier identity and live-stock checks
   // remain mandatory in publication and order-time procurement paths, but must
   // not turn an existing public sales URL into a 404.
-  return listing;
+  return withColorFamily(listing, listing.id, await listCatalogFamilies());
 }
 
 export 
@@ -467,6 +495,10 @@ async function loadCanonicalCommerceListings(options: { variantIds?: string[] } 
       shopifyHandle: handle,
       shopifySyncStatus: "synced",
       canonicalCommerce: true,
+      colorImageVerified: attributes.colorImageVerified === true,
+      sku: (typeof variant.sku === "string" && variant.sku.trim())
+        ? variant.sku.trim()
+        : (typeof channel.external_sku === "string" && channel.external_sku.trim() ? channel.external_sku.trim() : null),
     });
   }
   if (candidates.length === 0) return [];
@@ -544,6 +576,39 @@ export async function placeShopOrder(args: {
 
   if (error) throw new Error(error.message);
   if (!listings || listings.length !== new Set(listingIds).size) throw new Error("published listing not found");
+
+  const supplierProductIds = [...new Set(listings.map((listing) => String(listing.supplier_product_id ?? "").trim()).filter(Boolean))];
+  if (supplierProductIds.length > 0) {
+    const { data: siblings, error: siblingError } = await supabase
+      .from("shop_listings")
+      .select("id,slug,title,product_id,supplier_name,supplier_product_id,supplier_variant_id,image_url,selling_price,currency,inventory,shopify_variant_id,shopify_handle,manual_inventory")
+      .in("supplier_product_id", supplierProductIds)
+      .is("archived_at", null)
+      .eq("published", true);
+    if (siblingError) throw new Error(siblingError.message);
+    const grouped = groupExactColorFamilies((siblings ?? []).map((row) => ({
+      id: String(row.id),
+      slug: String(row.slug ?? row.id),
+      title: String(row.title ?? ""),
+      productId: String(row.product_id ?? ""),
+      supplierName: typeof row.supplier_name === "string" ? row.supplier_name : null,
+      supplierProductId: row.supplier_product_id ? String(row.supplier_product_id) : null,
+      supplierVariantId: row.supplier_variant_id ? String(row.supplier_variant_id) : null,
+      sku: null,
+      imageUrl: typeof row.image_url === "string" ? row.image_url : null,
+      sellingPrice: asNumber(row.selling_price),
+      currency: typeof row.currency === "string" ? row.currency : null,
+      inventory: Math.max(0, Math.floor(asNumber(row.inventory) ?? 0)),
+      shopifyVariantId: row.shopify_variant_id ? String(row.shopify_variant_id) : null,
+      shopifyHandle: typeof row.shopify_handle === "string" ? row.shopify_handle : null,
+      manualInventory: row.manual_inventory === true,
+    })), { requireSku: false });
+    const orderedIds = new Set(listings.map((listing) => String(listing.id)));
+    const blocked = grouped.catalog.find((item) =>
+      item.colorSaleBlocked && (orderedIds.has(item.id) || item.variants.some((variant) => orderedIds.has(variant.id))),
+    );
+    if (blocked) throw new Error("color_family_unverified:" + (blocked.colorSaleBlockers[0] ?? "color_family"));
+  }
 
   const supplierRequired = listings.filter((listing) => listing.manual_inventory !== true);
   const supplierStatuses = await getPublishableSupplierListingStatuses(supplierRequired.map((listing) => ({
@@ -634,7 +699,17 @@ export async function placeShopOrder(args: {
         total: subtotal,
         currency,
         notes: args.notes ?? null,
-        metadata: { kind: "observed_checkout", inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier", ...(isDomesticFreeShippingOrder ? { shippingPolicy: "domestic_free_shipping" } : {}) },
+        metadata: {
+          kind: "observed_checkout",
+          inventorySource: lines.some((line) => line.listing.manual_inventory === true) ? "mixed_or_manual" : "supplier",
+          ...(isDomesticFreeShippingOrder ? { shippingPolicy: "domestic_free_shipping" } : {}),
+          colorSelections: lines.map((line) => ({
+            listingId: String(line.listing.id),
+            supplierVariantId: line.listing.supplier_variant_id ?? null,
+            sku: typeof line.listing.sku === "string" ? line.listing.sku : null,
+            title: String(line.listing.title ?? ""),
+          })),
+        },
       })
       .select("id")
       .single();

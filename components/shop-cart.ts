@@ -6,11 +6,20 @@ export type ShopCartItem = {
   listingId: string;
   slug: string;
   title: string;
+  colorLabel?: string | null;
+  sku?: string | null;
+  supplierVariantId?: string | null;
   unitPrice: number;
   currency: string;
   imageUrl: string | null;
   qty: number;
 };
+
+export function cartLineTitle(item: Pick<ShopCartItem, "title" | "colorLabel">): string {
+  const label = item.colorLabel?.trim() ?? "";
+  if (!label || item.title.includes(label)) return item.title;
+  return `${item.title}（${label}）`;
+}
 
 const KEY = "tracer-shop-cart";
 
@@ -49,7 +58,7 @@ export function useShopCart() {
     const next = existing
       ? current.map((row) =>
           row.listingId === item.listingId
-            ? { ...row, qty: row.qty + qty }
+            ? { ...item, qty: row.qty + qty }
             : row,
         )
       : [...current, { ...item, qty }];
