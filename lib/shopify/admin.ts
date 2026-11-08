@@ -1028,7 +1028,6 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           price: expectedDefault.price.toFixed(2),
           inventoryPolicy: "DENY",
           inventoryItem: { sku: expectedDefault.sku, tracked: true },
-          mediaSrc: [expectedDefault.imageUrl],
           metafields: variantMetafields(expectedDefault.supplierVariantId, expectedDefault.imageUrl),
         }],
       },
@@ -1091,7 +1090,6 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           inventoryPolicy: "DENY",
           inventoryItem: { sku: variant.sku, tracked: true },
           optionValues: [{ optionName: "カラー", name: variant.colorLabel }],
-          mediaSrc: [variant.imageUrl],
           metafields: variantMetafields(variant.supplierVariantId, variant.imageUrl),
           inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }],
         })),
@@ -1121,7 +1119,6 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           return {
             id: current.id,
             price: variant.price.toFixed(2),
-            mediaSrc: [variant.imageUrl],
             metafields: variantMetafields(variant.supplierVariantId, variant.imageUrl),
           };
         }),
@@ -1139,6 +1136,127 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         locationId,
         reference: `tracer://color-family/${supplierProductId}/${variant.supplierVariantId}`,
       });
+    }
+  }
+
+  // Create product-level media first, then explicitly associate one image with each
+  // exact variant. ProductVariantsBulkInput.mediaSrc alone does not reliably
+  // establish the variant-media relationship on this Admin API version.
+  type ColorFamilyMediaSnapshot = {
+    product: {
+      media: { nodes: Array<{
+        id: string;
+        alt: string | null;
+        status: string;
+        mediaContentType: string;
+        originalSource: { url: string } | null;
+      }> };
+      variants: { nodes: Array<{
+        id: string;
+        sku: string | null;
+        media: { nodes: Array<{ id: string }> };
+      }> };
+    } | null;
+  };
+  const readColorFamilyMedia = () => shopifyGraphQL<ColorFamilyMediaSnapshot>(
+    `query ReadTracerColorFamilyMedia($id: ID!) {
+      product(id: $id) {
+        media(first: 100) {
+          nodes {
+            id alt status mediaContentType
+            ... on MediaImage { originalSource { url } }
+          }
+        }
+        variants(first: 100) {
+          nodes { id sku media(first: 10) { nodes { id } } }
+        }
+      }
+    }`,
+    { id: productId },
+  );
+  let mediaSnapshot = await readColorFamilyMedia();
+  if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_parent_missing");
+  const mediaBySource = () => new Map(
+    mediaSnapshot.product!.media.nodes
+      .filter((media) => media.mediaContentType === "IMAGE" && media.originalSource?.url)
+      .map((media) => [new URL(media.originalSource!.url).toString(), media]),
+  );
+  let mediaMap = mediaBySource();
+  const mediaToCreate = variants.filter((variant) => !mediaMap.has(new URL(variant.imageUrl).toString()));
+  if (mediaToCreate.length) {
+    const createdMedia = await shopifyGraphQL<{
+      productUpdate: {
+        product: { id: string } | null;
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation AddTracerColorFamilyMedia($identifier: ProductUpdateIdentifiers!, $media: [CreateMediaInput!]) {
+        productUpdate(identifier: $identifier, media: $media) {
+          product { id }
+          userErrors { field message }
+        }
+      }`,
+      {
+        identifier: { id: productId },
+        media: mediaToCreate.map((variant) => ({
+          alt: variant.colorLabel,
+          mediaContentType: "IMAGE",
+          originalSource: variant.imageUrl,
+        })),
+      },
+    );
+    if (createdMedia.productUpdate.userErrors.length) {
+      throw new Error(createdMedia.productUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  // Shopify processes remote image URLs asynchronously. Wait for all five
+  // exact source URLs to become READY before associating them with variants.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    mediaSnapshot = await readColorFamilyMedia();
+    if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_readback_missing");
+    mediaMap = mediaBySource();
+    const allReady = variants.every((variant) => {
+      const media = mediaMap.get(new URL(variant.imageUrl).toString());
+      return media?.status === "READY";
+    });
+    if (allReady) break;
+    if (attempt === 19) throw new Error("shopify_color_family_media_processing_timeout");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  const variantBySku = new Map(
+    mediaSnapshot.product!.variants.nodes
+      .filter((variant) => variant.sku)
+      .map((variant) => [variant.sku!, variant]),
+  );
+  const variantMediaToAppend: Array<{ variantId: string; mediaIds: string[] }> = [];
+  for (const expected of variants) {
+    const actual = variantBySku.get(expected.sku);
+    const media = mediaMap.get(new URL(expected.imageUrl).toString());
+    if (!actual || !media) throw new Error("shopify_color_family_media_identity_missing:" + expected.sku);
+    const attachedIds = actual.media.nodes.map((node) => node.id);
+    if (attachedIds.includes(media.id)) continue;
+    if (attachedIds.length) throw new Error("shopify_color_family_media_variant_conflict:" + expected.sku);
+    variantMediaToAppend.push({ variantId: actual.id, mediaIds: [media.id] });
+  }
+  if (variantMediaToAppend.length) {
+    const appended = await shopifyGraphQL<{
+      productVariantAppendMedia: {
+        productVariants: Array<{ id: string }> | null;
+        userErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation AttachTracerColorFamilyMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+        productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+          productVariants { id }
+          userErrors { field message }
+        }
+      }`,
+      { productId, variantMedia: variantMediaToAppend },
+    );
+    if (appended.productVariantAppendMedia.userErrors.length) {
+      throw new Error(appended.productVariantAppendMedia.userErrors.map((error) => error.message).join("; "));
     }
   }
 
