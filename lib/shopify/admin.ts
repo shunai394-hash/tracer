@@ -1198,7 +1198,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       }`,
       {
         identifier: { id: productId },
-        product: { id: productId },
+        product: {},
         media: mediaToCreate.map((variant) => ({
           alt: variant.colorLabel,
           mediaContentType: "IMAGE",
