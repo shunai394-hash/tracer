@@ -293,7 +293,7 @@ $("registerClone").addEventListener("click",async()=>{
   const form=new FormData();form.set("title",title);form.set("description","本人許可確認済みのTRACERショートドラマ用非公開クローン");form.set("speakerType","adult");form.set("rightsConfirmed","true");form.set("visibility","private");form.set("transcript",$("cloneTranscript").value.trim());form.set("audio",file,file.name);
   const response=await fetch("/api/admin/ai-live/fish-audio/clone",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
   const data=await response.json().catch(()=>({}));
-  if(!response.ok||!data.ok)throw new Error(data.message||data.error||"クローン登録に失敗しました。");
+  if(!response.ok||!data.ok){const detail=typeof data.providerDetail==="string"&&data.providerDetail.trim()? "\\nFish Audio詳細: "+data.providerDetail.trim():"";throw new Error((data.message||data.error||"クローン登録に失敗しました。")+detail);}
   const list=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store"});
   const catalogue=await list.json();if(!list.ok||!catalogue.ok)throw new Error("Fish Audioには登録されましたが、TRACERの声一覧を再取得できません。ボイス一覧を再読み込みしてください。");
   voices=catalogue.voices;refreshCharacterVoiceOptions();addCharacter(data.title||title,data.modelId);
