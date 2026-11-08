@@ -19,6 +19,14 @@ assert.match(html, /Authorization:\s*'Bearer '\s*\+\s*token/);
 assert.match(html, /audio\/\*|\.mp3/);
 assert.match(html, /読み上げ開始/);
 assert.match(html, /BGM再生/);
+assert.match(html, /BGM登録・権利情報/);
+assert.match(html, /権利情報を添えてSupabaseへ登録/);
+assert.match(html, /bgmCommercial/);
+assert.match(html, /bgmPlatforms/);
+assert.match(html, /bgmLicenseUrl/);
+assert.match(html, /10\*1024\*1024/);
+assert.match(html, /approved_internal/);
+
 assert.match(html, /音声停止/);
 assert.match(html, /BGM停止/);
 assert.match(html, /TRACERの公開・販売条件を満たす商品だけを読み取り表示/);
