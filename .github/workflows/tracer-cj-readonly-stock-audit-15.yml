@@ -13,7 +13,6 @@ permissions:
 
 jobs:
   audit:
-    # One-shot guard: only run for the reviewed operational workflow merge.
     if: contains(github.event.head_commit.message, 'run the read-only CJ stock audit for the 15 handbag variants')
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -65,9 +64,9 @@ jobs:
               "",
               f"- HTTP status: {os.environ.get('HTTP_CODE', 'unknown')}",
               f"- Read-only: {data.get('readOnly')}",
-              f"- Commerce data persisted: {data.get('commerceDataPersisted')}
-              - Operational rate-limit state may change: {data.get('operationalRateLimitStateMayChange')}
-              - Quota circuit may be persisted on provider exhaustion: {data.get('quotaCircuitMayBePersistedOnProviderExhaustion')}",
+              f"- Commerce data persisted: {data.get('commerceDataPersisted')}",
+              f"- Operational rate-limit state may change: {data.get('operationalRateLimitStateMayChange')}",
+              f"- Quota circuit may be persisted on provider exhaustion: {data.get('quotaCircuitMayBePersistedOnProviderExhaustion')}",
               f"- Store publication changed: {data.get('publicationChanged')}",
               f"- Supplier orders placed: {data.get('supplierOrdersPlaced')}",
               f"- Requested: {data.get('requestedCount')}",
@@ -80,7 +79,7 @@ jobs:
               json.dumps(data, ensure_ascii=False, indent=2),
               "```",
           ]
-          with open(__import__('os').environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n".join(summary) + "\n")
           if os.environ.get("HTTP_CODE") != "200":
               raise SystemExit("Expected HTTP 200; partial/error responses are not accepted.")
