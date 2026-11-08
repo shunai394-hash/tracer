@@ -5,6 +5,7 @@ import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voic
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
+import { listUserProvidedDramaVoices } from "@/lib/ai-live/fish-audio-user-provided-drama-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,11 +44,13 @@ export async function GET(request: Request) {
   let publicLibraryAvailable = true;
   let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
   let privateCloneVoices: Awaited<ReturnType<typeof listPrivateDramaCloneVoices>> = [];
+  let userProvidedVoices: Awaited<ReturnType<typeof listUserProvidedDramaVoices>> = [];
   let privateChildLibraryAvailable = true;
-  const [publicResult, privateChildResult, privateCloneResult] = await Promise.allSettled([
+  const [publicResult, privateChildResult, privateCloneResult, userProvidedResult] = await Promise.allSettled([
     listLicensedJapaneseVoices(apiKey),
     listPrivateDramaChildVoices(apiKey),
     listPrivateDramaCloneVoices(apiKey),
+    listUserProvidedDramaVoices(apiKey),
   ]);
   if (publicResult.status === "fulfilled") {
     publicVoices = publicResult.value;
@@ -66,6 +69,7 @@ export async function GET(request: Request) {
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
+    ...userProvidedVoices.map((voice) => ({ ...voice, source: "user_provided_reference" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
@@ -76,6 +80,7 @@ export async function GET(request: Request) {
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
     privateDramaCloneCount: privateCloneVoices.length,
+    userProvidedDramaVoiceCount: userProvidedVoices.length,
     privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",
