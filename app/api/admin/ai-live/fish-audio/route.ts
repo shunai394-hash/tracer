@@ -8,12 +8,12 @@ import { isTracerDramaCharacterVoice, resolveFishAudioModelVoice } from "@/lib/a
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
-const PROVIDER_TIMEOUT_MS = 25_000;
+const PROVIDER_TIMEOUT_MS = 50_000;
 
 function authorizedAdminToken(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
