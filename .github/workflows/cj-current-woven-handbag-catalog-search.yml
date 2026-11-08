@@ -1,3 +1,4 @@
+# Runs the read-only catalog diagnostic when its workflow or implementation changes.
 name: CJ current woven handbag catalog search
 
 on:
@@ -7,6 +8,8 @@ on:
       - main
     paths:
       - .github/workflows/cj-current-woven-handbag-catalog-search.yml
+      - app/api/internal/cj-current-woven-handbag-catalog-search/**
+      - lib/sources/cj/**
 
 permissions:
   contents: read
