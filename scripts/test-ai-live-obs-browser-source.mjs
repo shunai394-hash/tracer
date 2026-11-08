@@ -26,6 +26,11 @@ assert.match(html, /bgmPlatforms/);
 assert.match(html, /bgmLicenseUrl/);
 assert.match(html, /10\*1024\*1024/);
 assert.match(html, /approved_internal/);
+assert.match(html, /BGM権利審査/);
+assert.match(html, /配布元・ライセンス本文を確認/);
+assert.match(html, /\/api\/admin\/ai-live\/short-drama\/bgm\/review/);
+assert.match(html, /reviewBgm/);
+
 
 assert.match(html, /音声停止/);
 assert.match(html, /BGM停止/);
