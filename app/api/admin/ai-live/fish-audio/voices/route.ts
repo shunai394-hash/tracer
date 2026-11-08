@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
@@ -39,6 +40,23 @@ export async function GET(request: Request) {
     return json({ ok: false, error: "fish_audio_not_configured", message: "FISH_AUDIO_API_KEY is not configured." }, 503);
   }
 
+  let registeredVoices: Array<{ id: string; title: string; description: string; languages: string[]; tags: string[]; source: "id_registered" }> = [];
+  try {
+    const db = createSupabaseAdminClient();
+    const { data, error } = await db.from("fish_audio_registered_voices").select("model_id,title,metadata").order("updated_at", { ascending: false });
+    if (error) throw error;
+    registeredVoices = (data ?? []).map((row) => ({
+      id: row.model_id,
+      title: row.title,
+      description: "TRACER共通登録・Fish Audio ID照合済み",
+      languages: ["ja"],
+      tags: ["Fish Audio登録モデル", "TRACER共通登録"],
+      source: "id_registered" as const,
+    }));
+  } catch {
+    return json({ ok: false, error: "voice_registry_unavailable", message: "TRACER共通ボイス台帳を読み込めません。管理者に連絡してください。" }, 503);
+  }
+
   const customVoices = getConsentedCustomJapaneseVoices();
   let publicVoices: Awaited<ReturnType<typeof listLicensedJapaneseVoices>> = [];
   let publicLibraryAvailable = true;
@@ -70,6 +88,7 @@ export async function GET(request: Request) {
   }
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
+    ...registeredVoices,
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
     ...dramaCharacterVoices.map((voice) => ({ ...voice, source: "private_drama_character" as const })),
@@ -113,7 +132,19 @@ export async function POST(request: Request) {
   try {
     const voice = await resolveFishAudioModelVoice(apiKey, id, title);
     if (!voice) return json({ ok: false, error: "fish_audio_model_not_accessible", message: "このIDのTTSモデルをFish Audioアカウントから確認できません。IDとAPIキーのアカウントを確認してください。" }, 404);
-    return json({ ok: true, voice });
+    const db = createSupabaseAdminClient();
+    const { error: saveError } = await db.from("fish_audio_registered_voices").upsert({
+      model_id: id,
+      title: title.trim(),
+      model_type: "tts",
+      model_state: "verified",
+      metadata: { verified_by: "fish_audio_model_api", language: "ja" },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "model_id" });
+    if (saveError) {
+      return json({ ok: false, error: "voice_registry_save_failed", message: "Fish Audioでの照合は成功しましたが、TRACER共通台帳への保存に失敗しました。登録完了にはなっていません。" }, 503);
+    }
+    return json({ ok: true, voice: { ...voice, source: "id_registered" } });
   } catch {
     return json({ ok: false, error: "fish_audio_model_lookup_unavailable", message: "Fish Audioへのモデル照会に失敗しました。時間をおいて再試行してください。" }, 502);
   }
