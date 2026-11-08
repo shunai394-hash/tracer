@@ -166,6 +166,21 @@ export async function POST(request: Request) {
       variants: variantsForShopify,
     });
 
+    const createdBySku = new Map(created.variants.map((row) => [row.sku, row]));
+    for (const variant of mapped) {
+      const currentChannel = channelsByVariant.get(variant.canonicalVariantId);
+      const newVariant = createdBySku.get(variant.sku);
+      if (!currentChannel || !newVariant) throw new Error("color_family_channel_identity_readback_missing:" + variant.sku);
+      const currentProductId = String(currentChannel.external_product_id ?? "");
+      const currentVariantId = String(currentChannel.external_variant_id ?? "");
+      if (currentProductId !== variant.sourceShopifyProductId && currentProductId !== created.productId) {
+        throw new Error("color_family_channel_product_identity_conflict:" + variant.sku);
+      }
+      if (currentVariantId !== variant.sourceShopifyVariantId && currentVariantId !== newVariant.id) {
+        throw new Error("color_family_channel_variant_identity_conflict:" + variant.sku);
+      }
+    }
+
     await activateShopifyProduct(created.productId);
     const publication = await ensureShopifyProductPublished(created.productId);
     if (!publication.published) throw new Error("color_family_new_parent_publish_unverified");
