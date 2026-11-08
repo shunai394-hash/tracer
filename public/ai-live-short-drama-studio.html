@@ -39,6 +39,14 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <h2>日本語ボイス一覧</h2>
 <p class="muted">蒼真・美月・蓮司・凛の4名を常時表示します。蓮司・凛は試聴MP3を選択して再生できます。Fish Audioモデル未接続の声は音声生成には使用できません。</p>
 <div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">ボイス一覧を読み込み中…</p></div>
+<div class="scene" id="voiceIdRegistration">
+<h3>Fish AudioモデルIDから登録</h3>
+<p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はこのブラウザーに保存され、人物の担当ボイスから選べます。</p>
+<label for="voiceModelId">Fish AudioモデルID</label><input id="voiceModelId" autocomplete="off" spellcheck="false" placeholder="例：7478a76f38974bd2afa89c1bbe6831c7">
+<label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" placeholder="例：蒼真">
+<button id="registerVoiceId" type="button">IDを照合してボイス登録</button>
+<p id="voiceIdStatus" class="status" role="status" aria-live="polite">未登録</p>
+</div>
 
 </section>
 <section class="panel" id="bgmPanel">
@@ -105,7 +113,9 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 const $=id=>document.getElementById(id);
 const token=$("token"), characters=$("characters"), lines=$("lines"), outputs=$("outputs"), status=$("status");
 let voices=[], characterRows=[], lineRows=[], pending=false, stopRequested=false, counter=0;
-function optionList(selected=""){const groups=[["TRACERドラマ登録ボイス",voices.filter(v=>v.source==="private_drama_character")],["Fish Audio 公開日本語ボイス",voices.filter(v=>v.source==="public_licensed")],["追加クローン音声（許可確認済み）",voices.filter(v=>v.source==="user_provided_clone")],["追加の架空キャラクターボイス",voices.filter(v=>v.source==="private_voice_design")]];return '<option value="">声を選択</option>'+groups.filter(([,items])=>items.length).map(([label,items])=>'<optgroup label="'+label+'">'+items.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+'</option>').join("")+'</optgroup>').join("");}
+function optionList(selected=""){const groups=[["TRACERドラマ登録ボイス",voices.filter(v=>v.source==="private_drama_character")],["Fish Audio 公開日本語ボイス",voices.filter(v=>v.source==="public_licensed")],["IDから登録したボイス",voices.filter(v=>v.source==="id_registered")],["追加クローン音声（許可確認済み）",voices.filter(v=>v.source==="user_provided_clone")],["追加の架空キャラクターボイス",voices.filter(v=>v.source==="private_voice_design")]];return '<option value="">声を選択</option>'+groups.filter(([,items])=>items.length).map(([label,items])=>'<optgroup label="'+label+'">'+items.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+'</option>').join("")+'</optgroup>').join("");}
+function savedIdVoices(){try{const value=JSON.parse(localStorage.getItem("tracer-fish-audio-id-voices")||"[]");return Array.isArray(value)?value.filter(v=>v&&typeof v.id==="string"&&typeof v.title==="string"):[];}catch{return [];}}
+function persistIdVoices(items){localStorage.setItem("tracer-fish-audio-id-voices",JSON.stringify(items));}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function addCharacter(name="登場人物",voiceId=""){
  const id="c"+(++counter); characterRows.push({id,name,voiceId});
@@ -193,7 +203,7 @@ function renderVoiceLibrary(){
  for(const voice of registered.filter(v=>!voicePresetDefinitions.some(p=>p.title===v.title))){
   const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,choose);root.append(card);
  }
-} voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");voices=d.voices;lastVoiceToken=value;refreshCharacterVoiceOptions();renderVoiceLibrary();$("loadStatus").textContent="日本語ボイス "+voices.length+"件を読み込みました（公開 "+(d.publicLicensedCount||0)+"件／許可確認済み "+(d.consentedCustomCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件）。人物の「担当ボイス」から選択できます。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
+} voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");voices=[...d.voices,...savedIdVoices().map(v=>({...v,source:"id_registered"})).filter(v=>!d.voices.some(x=>x.id===v.id))];lastVoiceToken=value;refreshCharacterVoiceOptions();renderVoiceLibrary();$("loadStatus").textContent="日本語ボイス "+voices.length+"件を読み込みました（公開 "+(d.publicLicensedCount||0)+"件／許可確認済み "+(d.consentedCustomCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件）。人物の「担当ボイス」から選択できます。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
  const channels=2,sampleRate=buffer.sampleRate,frames=buffer.length;
  const bytesPerSample=2,dataBytes=frames*channels*bytesPerSample;
  const out=new ArrayBuffer(44+dataBytes),view=new DataView(out);
@@ -302,6 +312,24 @@ bgmSelect.addEventListener("change",selectBgm);
 $("bgmVolume").addEventListener("input",()=>{$("bgmVolumeValue").textContent=$("bgmVolume").value+"%";bgmPreview.volume=Number($("bgmVolume").value)/100;});
 $("bgmLoop").addEventListener("change",()=>bgmPreview.loop=$("bgmLoop").checked);
 token.addEventListener("change",loadBgm);
+$("registerVoiceId").addEventListener("click",async()=>{
+ const id=$("voiceModelId").value.trim(),title=$("voiceModelTitle").value.trim(),button=$("registerVoiceId"),out=$("voiceIdStatus");
+ if(!token.value.trim()){out.textContent="先にTRACER管理トークンを入力してください。";token.focus();return;}
+ if(!id||!title){out.textContent="モデルIDと表示名を入力してください。";return;}
+ button.disabled=true;out.textContent="Fish AudioへモデルIDを照会中…";
+ try{
+  const response=await fetch("/api/admin/ai-live/fish-audio/voices",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({id,title})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok||!data.voice)throw new Error(data.message||data.error||"モデルIDを登録できませんでした。");
+  const registered=savedIdVoices().filter(v=>v.id!==id);registered.push(data.voice);persistIdVoices(registered);
+  voices=voices.filter(v=>v.id!==id);voices.push({...data.voice,source:"id_registered"});
+  refreshCharacterVoiceOptions();renderVoiceLibrary();
+  $("voiceModelId").value="";$("voiceModelTitle").value="";
+  out.textContent="登録完了："+data.voice.title+"（"+data.voice.id+"）。人物の「担当ボイス」から選択できます。";
+  $("loadStatus").textContent="ID登録ボイスを追加しました。";
+ }catch(error){out.textContent="登録失敗："+error.message;}
+ finally{button.disabled=false;}
+});
 $("fishDiagnostics").addEventListener("click",async()=>{
  const output=$("fishDiagnosticsResult");
  if(!token.value.trim()){output.textContent="先にTRACER管理トークンを入力してください。";token.focus();return;}
