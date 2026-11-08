@@ -13,8 +13,9 @@ assert.match(executor, /shopify_color_family_default_variant_color_mismatch/, "u
 assert.match(executor, /productVariantsBulkCreate/, "remaining color variants must be created in bulk");
 assert.match(executor, /shopify_color_family_variant_image_ambiguous/, "duplicate image URLs must block color consolidation");
 assert.match(executor, /!variant\.colorImageVerified/, "unverified color images must block Shopify draft creation");
-assert.match(executor, /mediaSrc: \[expectedDefault\.imageUrl\]/, "default color must receive its own image");
-assert.match(executor, /mediaSrc: \[variant\.imageUrl\]/, "each added color must receive its own image");
+assert.match(executor, /productUpdate\(identifier: \$identifier, media: \$media\)/, "color images must be created as product media");
+assert.match(executor, /originalSource: variant\.imageUrl/, "each color image must use its exact source URL");
+assert.match(executor, /productVariantAppendMedia/, "each product image must be attached to its exact variant");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
 assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");
