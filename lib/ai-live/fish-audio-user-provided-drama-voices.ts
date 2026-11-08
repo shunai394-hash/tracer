@@ -6,7 +6,18 @@ const USER_PROVIDED_DRAMA_VOICES = [
 ] as const;
 const MODEL_URL = "https://api.fish.audio/model/";
 
-/** Verify explicitly supplied model IDs against Fish Audio before exposing them to TTS. */
+/** Register supplied IDs in the picker without requiring a catalogue search. */
+export function getRegisteredUserProvidedDramaVoices(): FishAudioPublicVoice[] {
+  return USER_PROVIDED_DRAMA_VOICES.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    description: "ユーザー指定IDで登録。利用可能性は音声生成時にFish Audio APIで確認します。",
+    languages: ["ja"],
+    tags: ["ドラマ", "ユーザー指定モデル"],
+  }));
+}
+
+/** Verify explicitly supplied model IDs against Fish Audio before any TTS request. */
 export async function listUserProvidedDramaVoices(apiKey: string): Promise<FishAudioPublicVoice[]> {
   const results = await Promise.all(USER_PROVIDED_DRAMA_VOICES.map(async (entry) => {
     const response = await fetch(new URL(encodeURIComponent(entry.id), MODEL_URL), {
