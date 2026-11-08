@@ -8,8 +8,10 @@ export const maxDuration = 120;
 
 /**
  * Read-only, exact-VID CJ stock audit.
- * This endpoint deliberately does not persist supplier evidence, update catalog
+ * This endpoint does not persist supplier evidence or update commerce/catalog
  * records, publish/unpublish channel listings, or place supplier orders.
+ * The shared CJ rate limiter does write operational API-slot state to Supabase,
+ * and a provider quota-exhaustion signal may persist the quota circuit there.
  */
 export async function GET(request: Request) {
   const authError = await requireAutomationAuth(request);
@@ -104,7 +106,9 @@ export async function GET(request: Request) {
     ok: failed === 0 && results.length === ids.length,
     phase: "cj_readonly_variant_stock_audit",
     readOnly: true,
-    persisted: false,
+    commerceDataPersisted: false,
+    operationalRateLimitStateMayChange: true,
+    quotaCircuitMayBePersistedOnProviderExhaustion: true,
     publicationChanged: false,
     supplierOrdersPlaced: false,
     requestedCount: ids.length,
