@@ -13,7 +13,7 @@ assert.match(executor, /shopify_color_family_default_variant_color_mismatch/, "u
 assert.match(executor, /productVariantsBulkCreate/, "remaining color variants must be created in bulk");
 assert.match(executor, /shopify_color_family_variant_image_ambiguous/, "duplicate image URLs must block color consolidation");
 assert.match(executor, /!variant\.colorImageVerified/, "unverified color images must block Shopify draft creation");
-assert.match(executor, /productUpdate\(identifier: \$identifier, media: \$media\)/, "color images must be created as product media");
+assert.match(executor, /productUpdate\(identifier: \$identifier, product: \$product, media: \$media\)/, "color images must be created as product media");
 assert.match(executor, /originalSource: variant\.imageUrl/, "each color image must use its exact source URL");
 assert.match(executor, /productVariantAppendMedia/, "each product image must be attached to its exact variant");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
