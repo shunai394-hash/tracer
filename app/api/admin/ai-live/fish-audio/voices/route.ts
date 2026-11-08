@@ -98,6 +98,7 @@ export async function GET(request: Request) {
     ok: true,
     voices,
     count: voices.length,
+    registeredVoiceCount: registeredVoices.length,
     publicLicensedCount: publicVoices.length,
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
