@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const db = createSupabaseAdminClient();
   const now = new Date();
   const nowIso = now.toISOString();
-  const expectedByVid = new Map(FAMILY.map((item) => [item.vid, item]));
+  const expectedByVid = new Map<string, (typeof FAMILY)[number]>(FAMILY.map((item) => [item.vid, item]));
 
   try {
     const { data: product, error: productError } = await db.from("commerce_products")
