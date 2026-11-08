@@ -184,3 +184,27 @@ test("all drama audio playback surfaces attach the shared lip-sync engine", () =
   assert.ok(page.includes('audio.play().catch(error=>{cleanup();reject(error);})'));
   assert.ok(page.includes('const audio=line?.querySelector("audio")'));
 });
+
+test("lip sync closes fully on silence, reacts quickly, and limits maximum opening", () => {
+  assert.ok(lipSync.includes("rms <= 0.022"));
+  assert.ok(lipSync.includes("smoothed *= 0.48"));
+  assert.ok(lipSync.includes("smoothed = 0"));
+  assert.ok(lipSync.includes("setGain"));
+  assert.ok(lipSync.includes("mouths: new Set()"));
+  assert.ok(page.includes("height:calc(1px + 7px * var(--lip-open,0))"));
+  assert.ok(page.includes('id="lipSyncGain"'));
+});
+test("output-list face mirrors sequential playback from the script-row audio", () => {
+  assert.ok(page.includes("const sourceAudio=sourceLine?.querySelector(\"audio\")"));
+  assert.ok(page.includes("window.TracerLipSync.attach(sourceAudio,mouth)"));
+});
+test("voice preview cards attach the shared lip-sync engine", () => {
+  assert.ok(page.includes("sampleFace=makeLipSyncFace"));
+  assert.ok(page.includes("window.TracerLipSync.attach(player,sampleFace.querySelector(\".lipSyncMouth\"))"));
+});
+test("character reference image URLs are applied to face overlays and persisted in project data", () => {
+  assert.ok(page.includes('class="cimage"'));
+  assert.ok(page.includes("imageUrl:imageUrl||\"\""));
+  assert.ok(page.includes("image.src=imageUrl"));
+  assert.ok(page.includes('character.imageUrl==="string"'));
+});
