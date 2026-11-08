@@ -1260,6 +1260,83 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }
   }
 
+  // Shopify does not reliably attach mediaSrc to an already-created default
+  // variant. Create product media explicitly, then append each exact image to
+  // the exact SKU variant. Alt markers make this safe to retry after partial writes.
+  const mediaSnapshot = await shopifyGraphQL<{
+    product: {
+      id: string;
+      media: { nodes: Array<{ id: string; alt: string | null; mediaContentType: string; status: string }> };
+      variants: { nodes: Array<{ id: string; sku: string | null; media: { nodes: Array<{ id: string }> } }> };
+    } | null;
+  }>(
+    `query ReadTracerColorFamilyMedia($id: ID!) {
+      product(id: $id) {
+        id
+        media(first: 100) { nodes { id alt mediaContentType status } }
+        variants(first: 100) { nodes { id sku media(first: 100) { nodes { id } } } }
+      }
+    }`,
+    { id: productId },
+  );
+  if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_parent_missing");
+  const variantBySku = new Map(mediaSnapshot.product.variants.nodes.map((variant) => [String(variant.sku ?? ""), variant]));
+  const mediaByMarker = new Map(mediaSnapshot.product.media.nodes
+    .filter((media) => media.alt?.startsWith("TRACER_COLOR_VARIANT:"))
+    .map((media) => [String(media.alt), media]));
+  const mediaToCreate = variants.filter((variant) => !mediaByMarker.has("TRACER_COLOR_VARIANT:" + variant.supplierVariantId));
+  if (mediaToCreate.length) {
+    const createdMedia = await shopifyGraphQL<{
+      productCreateMedia: {
+        media: Array<{ id: string; alt: string | null; mediaContentType: string; status: string }>;
+        mediaUserErrors: Array<{ field?: string[]; message: string }>;
+      };
+    }>(
+      `mutation CreateTracerColorFamilyMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+        productCreateMedia(productId: $productId, media: $media) {
+          media { id alt mediaContentType status }
+          mediaUserErrors { field message }
+        }
+      }`,
+      {
+        productId,
+        media: mediaToCreate.map((variant) => ({
+          originalSource: variant.imageUrl,
+          mediaContentType: "IMAGE",
+          alt: "TRACER_COLOR_VARIANT:" + variant.supplierVariantId,
+        })),
+      },
+    );
+    if (createdMedia.productCreateMedia.mediaUserErrors.length) {
+      throw new Error(createdMedia.productCreateMedia.mediaUserErrors.map((error) => error.message).join("; "));
+    }
+    for (const media of createdMedia.productCreateMedia.media) {
+      if (media.alt) mediaByMarker.set(media.alt, media);
+    }
+  }
+  const variantMediaToAppend = variants.flatMap((variant) => {
+    const targetVariant = variantBySku.get(variant.sku);
+    const targetMedia = mediaByMarker.get("TRACER_COLOR_VARIANT:" + variant.supplierVariantId);
+    if (!targetVariant || !targetMedia) throw new Error("shopify_color_family_media_identity_missing:" + variant.sku);
+    const alreadyAttached = targetVariant.media.nodes.some((media) => media.id === targetMedia.id);
+    return alreadyAttached ? [] : [{ variantId: targetVariant.id, mediaId: targetMedia.id }];
+  });
+  if (variantMediaToAppend.length) {
+    const appended = await shopifyGraphQL<{
+      productVariantAppendMedia: { userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation AppendTracerColorFamilyMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+        productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+          userErrors { field message }
+        }
+      }`,
+      { productId, variantMedia: variantMediaToAppend },
+    );
+    if (appended.productVariantAppendMedia.userErrors.length) {
+      throw new Error(appended.productVariantAppendMedia.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
   // Final read-after-write: exact variant count, SKU, color, price, media, and
   // inventory must match. Do not publish or alter source products here.
   const verified = await shopifyGraphQL<{
