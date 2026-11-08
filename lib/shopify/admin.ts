@@ -1179,7 +1179,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   if (product.variants.nodes.length !== variants.length) throw new Error("shopify_color_family_verification_variant_count_failed");
   const result = variants.map((expected) => {
     const actual = product.variants.nodes.find((variant) => variant.sku === expected.sku);
-    if (!actual || actual.price !== expected.price.toFixed(2) ||
+    if (!actual || Number(actual.price) !== expected.price ||
         !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === expected.colorLabel)) {
       throw new Error("shopify_color_family_verification_variant_failed:" + expected.sku);
     }
