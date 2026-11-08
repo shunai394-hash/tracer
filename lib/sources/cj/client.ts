@@ -1209,6 +1209,8 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
   if (!vid) return null;
   const barcode = [row.barcode, row.variantBarcode, row.variantBarCode, row.productBarCode]
     .find((value) => value !== undefined && value !== null && String(value).trim());
+  const inventoryByCountry = normalizeCJVerifiedWarehouseInventory(row.inventories ?? []);
+  const verifiedInventory = inventoryByCountry.reduce((sum, inventory) => sum + inventory.quantity, 0);
   return {
     vid,
     productId: row.pid?.trim() || row.productId?.trim() || pid,
