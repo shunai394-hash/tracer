@@ -4,7 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { isPrivateDramaChildVoice, listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
-import { isTracerDramaCharacterVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
+import { isTracerDramaCharacterVoice, resolveFishAudioModelVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,6 +109,7 @@ export async function POST(request: Request) {
 
   const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
   let isDramaCharacterVoice = false;
+  let isDirectlyVerifiedVoice = false;
   if (!isCustomVoice) {
     try {
       isDramaCharacterVoice = await isTracerDramaCharacterVoice(apiKey, referenceId);
@@ -117,6 +118,13 @@ export async function POST(request: Request) {
     }
   }
   if (!isCustomVoice && !isDramaCharacterVoice) {
+    try {
+      isDirectlyVerifiedVoice = Boolean(await resolveFishAudioModelVoice(apiKey, referenceId, "登録モデル"));
+    } catch {
+      return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "Fish Audioモデルを確認できませんでした。音声生成は行っていません。" }, 502);
+    }
+  }
+  if (!isCustomVoice && !isDramaCharacterVoice && !isDirectlyVerifiedVoice) {
     let licensedVoices;
     let privateChildVoices;
     try {
