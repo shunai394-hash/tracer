@@ -48,6 +48,8 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   const searches: Array<{ query: string; totalRecords: number; returned: number; error: string | null }> = [];
+  const jpVerifiedSearches: Array<{ query: string; totalRecords: number; returned: number; error: string | null }> = [];
+  const jpVerifiedCandidateIds = new Set<string>();
   const candidates = new Map<string, {
     id: string;
     title: string;
@@ -86,6 +88,45 @@ export async function POST(request: Request) {
         totalRecords: 0,
         returned: 0,
         error: error instanceof Error ? error.message.slice(0, 160) : "search_failed",
+      });
+    }
+  }
+
+  // Second, independent catalog pass: only products matching CJ's documented
+  // JP-country verified-warehouse filters. This does not infer Japan dispatch
+  // from CN-to-JP freight quotes and never changes any listing.
+  for (const query of SEARCH_TERMS) {
+    try {
+      const result = await searchCJProducts(query, {
+        page: 1,
+        size: 10,
+        countryCode: "JP",
+        verifiedWarehouse: 1,
+      });
+      jpVerifiedSearches.push({ query, totalRecords: result.totalRecords, returned: result.products.length, error: null });
+      for (const product of result.products) {
+        jpVerifiedCandidateIds.add(product.id);
+        const current = candidates.get(product.id);
+        if (!current || titleScore(product.title) > titleScore(current.title)) {
+          candidates.set(product.id, {
+            id: product.id,
+            title: product.title,
+            sku: product.sku,
+            price: product.price,
+            imageUrl: safeImageUrl(product.imageUrl),
+            inventory: product.inventory,
+            listedNum: product.listedNum,
+            saleStatus: product.saleStatus,
+            shippingCost: product.shippingCost,
+          });
+        }
+      }
+    } catch (error) {
+      jpVerifiedSearches.push({
+        query,
+        totalRecords: 0,
+        returned: 0,
+        error: error instanceof Error ? error.message.slice(0, 160) : "jp_verified_search_failed",
       });
     }
   }
@@ -196,6 +237,10 @@ export async function POST(request: Request) {
     originalProductId: "1360428949011828736",
     searchTerms: SEARCH_TERMS,
     searches,
+    jpVerifiedWarehouseFilter: { countryCode: "JP", verifiedWarehouse: 1 },
+    jpVerifiedSearches,
+    jpVerifiedCandidateCount: jpVerifiedCandidateIds.size,
+    jpVerifiedCandidateIds: [...jpVerifiedCandidateIds],
     candidateCount: detailed.length,
     imageVariantCount,
     exactVariantChecks,
