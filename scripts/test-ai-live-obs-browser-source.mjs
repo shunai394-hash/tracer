@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const html = await readFile(new URL("../public/ai-live-obs.html", import.meta.url), "utf8");
+const bgmRoute = await readFile(new URL("../app/api/admin/ai-live/short-drama/bgm/route.ts", import.meta.url), "utf8");
 assert.match(html, /<html lang="ja">/);
 assert.match(html, /background:transparent/);
 assert.match(html, /TRACER OBS 配信コントロール/);
@@ -33,6 +34,14 @@ assert.match(html, /reviewBgm/);
 assert.match(html, /既存Supabase音源の権利登録/);
 assert.match(html, /未登録の保存済みMP3を読み込む/);
 assert.match(html, /register-existing/);
+assert.match(html, /ドラマの演出ジャンル/);
+assert.match(html, /bgmAutoSelect/);
+assert.match(html, /ジャンルに合わせて自動選曲・再生/);
+assert.match(html, /async function autoSelectBgm/);
+assert.match(html, /Math\.random\(\)\*tracks\.length/);
+assert.match(bgmRoute, /searchParams\.get\("genre"\)/);
+assert.match(bgmRoute, /query\.eq\("genre", genre\)/);
+assert.match(bgmRoute, /GENRES\.has\(genre\)/);
 assert.match(html, /商用利用と配信利用の許可を確認してください/);
 
 
