@@ -226,9 +226,9 @@ test("replacing character preview faces detaches old mouth listeners before reat
   assert.ok(page.includes("window.TracerLipSync?.detach(oldMouth)"));
   assert.ok(page.includes('for(const oldMouth of outputs.querySelectorAll(".lipSyncMouth"))'));
 });
-test("Soma model ID and character name are prefilled for explicit verification", () => {
+test("Renji model ID and character name are prefilled for explicit verification", () => {
   assert.ok(page.includes('id="voiceModelId" autocomplete="off" spellcheck="false" value="7478a76f38974bd2afa89c1bbe6831c7"'));
-  assert.ok(page.includes('id="voiceModelTitle" maxlength="60" value="蒼真"'));
+  assert.ok(page.includes('id="voiceModelTitle" maxlength="60" value="蓮司"'));
 });
 
 test("voice library reports all six source buckets and clarifies public count versus total", () => {
@@ -243,8 +243,9 @@ test("voice library reports all six source buckets and clarifies public count ve
   assert.ok(voicesRoute.includes("registeredVoiceCount: registeredVoices.length"));
 });
 test("all four character cards provide the correct Fish Audio connection path", () => {
-  assert.ok(page.includes('modelId:"7478a76f38974bd2afa89c1bbe6831c7"'));
-  assert.ok(page.includes('modelId:"160840e5c583459d89dc5521e7f175e5"'));
+  assert.ok(page.includes('{title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声",modelId:"7478a76f38974bd2afa89c1bbe6831c7"}'));
+  assert.ok(page.includes('{title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"}'));
+  assert.ok(page.includes('{title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""}'));
   assert.ok(page.includes('preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録"'));
   assert.ok(page.includes('$("voiceModelId").value=preset.modelId||""'));
   assert.ok(page.includes('if(!found){const register=document.createElement("button")'));
