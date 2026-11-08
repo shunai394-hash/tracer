@@ -1223,13 +1223,14 @@ function toCJProductVariant(row: CJVariantRow, pid: string): CJProductVariant | 
         ? null
         : String(row.variantSellPrice),
     barcode: barcode ? String(barcode).replace(/\D/g, "") || null : null,
-    inventory: null,
+    inventory: inventoryByCountry.length > 0 ? verifiedInventory : null,
+    inventoryByCountry,
   };
 }
 
 async function queryCJVariantRows(pid: string, countryCode?: string): Promise<CJVariantRow[]> {
   const token = await getAccessToken();
-  const params = new URLSearchParams({ pid });
+  const params = new URLSearchParams({ pid, features: "enable_inventory" });
   if (countryCode) params.set("countryCode", countryCode);
   const response = await fetchCJWithRateLimit(
     `https://developers.cjdropshipping.com/api2.0/v1/product/variant/query?${params.toString()}`,
