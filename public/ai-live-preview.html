@@ -58,15 +58,28 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmAdminToken">TRACER管理トークン（保存・一覧取得時のみ使用）</label>
 <input id="bgmAdminToken" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
 <div class="bgm-row"><button id="bgmLoadSaved" type="button">保存済みBGMを読み込む</button><button id="bgmUploadSaved" type="button">選択したMP3をサーバー保存</button></div>
-<label for="bgmFiles">MP3 / WAV / OGGを複数登録（ローカル再生）</label>
-<input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
+<label for="bgmFiles">MP3 / WAV / OGGをローカル再生（サーバー登録はMP3を1曲ずつ）</label>
+<input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a">
+<label for="bgmTitle">登録する曲名</label><input id="bgmTitle" type="text" maxlength="160" placeholder="曲名">
+<label for="bgmComposer">作曲者・権利者</label><input id="bgmComposer" type="text" maxlength="160" placeholder="作曲者名">
+<label for="bgmSourceUrl">配布元・取得元URL</label><input id="bgmSourceUrl" type="url" placeholder="配布元URLを入力">
+<label for="bgmLicenseName">ライセンス名</label><input id="bgmLicenseName" type="text" maxlength="160" placeholder="利用規約・ライセンス名">
+<label for="bgmLicenseUrl">ライセンスURL</label><input id="bgmLicenseUrl" type="url" placeholder="ライセンスURLを入力">
+<label for="bgmEvidence">許諾根拠・確認メモ</label><textarea id="bgmEvidence" rows="3" maxlength="4000" placeholder="商用利用・YouTube/TikTok配信が許可される条項など"></textarea>
+<label><input id="bgmCommercialAllowed" type="checkbox"> 商用利用が許可されていることを確認した</label>
+<label><input id="bgmPlatformAllowed" type="checkbox"> YouTube/TikTok等の配信プラットフォーム利用が許可されていることを確認した</label>
+<label><input id="bgmAttributionRequired" type="checkbox"> クレジット表記が必要</label>
+<label for="bgmAttributionText">クレジット表記（必要な場合）</label><input id="bgmAttributionText" type="text" maxlength="1000" placeholder="作曲者・配布元・指定文言">
+<label for="bgmReviewer">審査担当者名</label><input id="bgmReviewer" type="text" maxlength="120" placeholder="確認者名">
 <label for="bgmMood">選曲ジャンル</label>
 <select id="bgmMood"><option value="auto">自動選曲（ファイル名から分類）</option><option value="daily">日常・商品紹介</option><option value="romance">恋愛</option><option value="emotional">感動・余韻</option><option value="suspense">サスペンス</option><option value="comedy">コメディ</option><option value="action">アクション・転換</option><option value="all">全曲から選曲</option></select>
 <div class="bgm-row"><button id="bgmPlay" type="button">BGM再生</button><button id="bgmStop" type="button">BGM停止</button></div>
 <label for="bgmVolume">BGM音量 <span id="bgmVolumeLabel">35%</span></label>
 <input id="bgmVolume" type="range" min="0" max="100" value="35">
 <p class="status" id="bgmStatus" role="status">未登録。音源ファイルを選択してください。</p>
-<small>ローカル再生はブラウザ内のみ。サーバー保存は管理トークンを入力して明示的に実行したMP3だけです（1曲10MBまで）。保存先は非公開Supabase Storageで、一覧取得時は期限付きURLを使用します。利用許諾を確認した音源を登録してください。セリフ再生中はBGMを18%まで自動で下げます。</small>
+<small>ローカル再生はブラウザ内のみ。サーバー登録はMP3 1曲（10MB以下）ごとに権利情報を必須入力します。登録直後は審査待ちで、承認されるまでOBS再生一覧には表示されません。既存の未登録ファイルも再生対象外です。セリフ再生中はBGMを18%まで自動で下げます。</small>
+<div class="bgm-row" style="margin-top:12px"><button id="bgmLoadReview" type="button">権利審査一覧を読み込む</button></div>
+<div id="bgmReviewList" class="status" aria-live="polite">審査一覧未取得</div>
 <audio id="bgmAudio" preload="none" loop></audio>
 </div>
 </section>
@@ -191,6 +204,16 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
         bgmStatus.textContent = '保存中 ' + (saved + 1) + '/' + files.length + '：' + file.name;
         const form = new FormData();
         form.append('file', file, file.name);
+        form.append('title', document.getElementById('bgmTitle').value.trim() || file.name.replace(/\\.mp3$/i, ''));
+        form.append('composer', document.getElementById('bgmComposer').value.trim());
+        form.append('sourceUrl', document.getElementById('bgmSourceUrl').value.trim());
+        form.append('licenseName', document.getElementById('bgmLicenseName').value.trim());
+        form.append('licenseUrl', document.getElementById('bgmLicenseUrl').value.trim());
+        form.append('evidenceNote', document.getElementById('bgmEvidence').value.trim());
+        form.append('commercialUseAllowed', String(document.getElementById('bgmCommercialAllowed').checked));
+        form.append('platformUseAllowed', String(document.getElementById('bgmPlatformAllowed').checked));
+        form.append('attributionRequired', String(document.getElementById('bgmAttributionRequired').checked));
+        form.append('attributionText', document.getElementById('bgmAttributionText').value.trim());
         form.append('genre', bgmMood.value === 'auto' || bgmMood.value === 'all' ? trackMood(file.name) : bgmMood.value);
         const response = await fetch('/api/admin/ai-live/short-drama/bgm', {
           method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form, cache: 'no-store'
@@ -201,14 +224,87 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
         }
         saved += 1;
       }
-      await loadSavedBgm();
-      bgmStatus.textContent = saved + '曲を非公開Supabase Storageへ保存しました。';
+      bgmStatus.textContent = saved + '曲を権利審査待ちとして登録しました。承認まで再生されません。';
+      await loadReviewQueue();
     } catch (error) {
       bgmStatus.textContent = saved + '曲保存済み。' + (error instanceof Error ? error.message : '保存に失敗しました。') + ' 保存済みBGMを再読み込みして確認してください。';
     } finally { bgmUploadSaved.disabled = false; }
   }
   bgmLoadSaved.addEventListener('click', loadSavedBgm);
   bgmUploadSaved.addEventListener('click', uploadSelectedBgm);
+
+  async function loadReviewQueue() {
+    const token = requireBgmToken();
+    if (!token) return;
+    const list = document.getElementById('bgmReviewList');
+    list.textContent = '権利台帳を取得中…';
+    try {
+      const response = await fetch('/api/admin/ai-live/short-drama/bgm/review', {
+        headers: { Authorization: 'Bearer ' + token }, cache: 'no-store'
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error('権利審査一覧を取得できませんでした。');
+      list.replaceChildren();
+      if (!data.items.length) { list.textContent = '登録済み音源はありません。'; return; }
+      data.items.forEach(item => {
+        const card = document.createElement('div');
+        card.style.cssText = 'padding:12px;margin:8px 0;background:#1f2937;border:1px solid #374151;border-radius:10px';
+        const heading = document.createElement('strong');
+        heading.textContent = item.title + ' — ' + item.review_status;
+        const details = document.createElement('p');
+        details.textContent = '作曲者: ' + item.composer + ' / ライセンス: ' + item.license_name + ' / ジャンル: ' + item.genre;
+        const links = document.createElement('p');
+        links.textContent = '配布元: ' + item.source_url + ' / 規約: ' + item.license_url;
+        const evidence = document.createElement('p');
+        evidence.textContent = '確認根拠: ' + item.evidence_note;
+        card.append(heading, details, links, evidence);
+        if (item.attribution_required) {
+          const credit = document.createElement('p');
+          credit.textContent = 'クレジット: ' + (item.attribution_text || '未設定');
+          card.append(credit);
+        }
+        if (item.review_status === 'pending') {
+          const actions = document.createElement('div');
+          actions.className = 'bgm-row';
+          const approve = document.createElement('button');
+          approve.textContent = '内部配信を承認';
+          approve.addEventListener('click', () => reviewTrack(item.id, 'approved_internal'));
+          const reject = document.createElement('button');
+          reject.textContent = '却下';
+          reject.addEventListener('click', () => reviewTrack(item.id, 'rejected'));
+          actions.append(approve, reject);
+          card.append(actions);
+        }
+        list.append(card);
+      });
+    } catch (error) {
+      list.textContent = error instanceof Error ? error.message : '審査一覧の取得に失敗しました。';
+    }
+  }
+
+  async function reviewTrack(id, status) {
+    const token = requireBgmToken();
+    if (!token) return;
+    const reviewer = document.getElementById('bgmReviewer').value.trim();
+    if (!reviewer) { bgmStatus.textContent = '審査担当者名を入力してください。'; return; }
+    if (status === 'approved_internal' && !window.confirm('商用利用・配信プラットフォーム利用の許諾根拠を確認しましたか？')) return;
+    try {
+      const response = await fetch('/api/admin/ai-live/short-drama/bgm/review', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status, reviewer }), cache: 'no-store'
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error('審査結果を保存できませんでした。');
+      bgmStatus.textContent = status === 'approved_internal' ? '内部配信向けに承認しました。' : '音源を却下しました。';
+      await loadReviewQueue();
+      if (status === 'approved_internal') await loadSavedBgm();
+    } catch (error) {
+      bgmStatus.textContent = error instanceof Error ? error.message : '審査処理に失敗しました。';
+    }
+  }
+
+  document.getElementById('bgmLoadReview').addEventListener('click', loadReviewQueue);
 
   bgmFiles.addEventListener('change', () => {
     bgmObjectUrls.forEach(url => URL.revokeObjectURL(url));
