@@ -14,17 +14,14 @@
       analyser.smoothingTimeConstant = 0.12;
       source.connect(analyser);
       analyser.connect(context.destination);
-      entry = { context, analyser, data: new Uint8Array(analyser.fftSize) };
+      entry = { context, analyser, data: new Uint8Array(analyser.fftSize), mouths: new Set(), running: false, frame: 0, smoothed: 0 };
       contexts.set(audio, entry);
     }
-    let active = true;
-    let running = false;
-    let smoothed = 0;
-    let frame = 0;
-    const setMouth = value => mouth.style.setProperty("--lip-open", value.toFixed(3));
-    const close = () => { smoothed = 0; setMouth(0); };
+    entry.mouths.add(mouth);
+    const setMouth = value => { for (const target of entry.mouths) target.style.setProperty("--lip-open", value.toFixed(3)); };
+    const close = () => { entry.smoothed = 0; setMouth(0); };
     const tick = () => {
-      if (!active || !running) return;
+      if (!entry.running || entry.mouths.size === 0) return;
       entry.analyser.getByteTimeDomainData(entry.data);
       let energy = 0;
       for (let i = 0; i < entry.data.length; i++) {
@@ -34,41 +31,43 @@
       const rms = Math.sqrt(energy / entry.data.length);
       const target = rms <= 0.022 ? 0 : Math.max(0, Math.min(0.48, (rms - 0.022) * 6.5 * gain));
       if (target === 0) {
-        smoothed *= 0.48;
-        if (smoothed < 0.012) smoothed = 0;
+        entry.smoothed *= 0.48;
+        if (entry.smoothed < 0.012) entry.smoothed = 0;
       } else {
-        smoothed += (target - smoothed) * 0.52;
+        entry.smoothed += (target - entry.smoothed) * 0.52;
       }
-      setMouth(smoothed);
-      frame = requestAnimationFrame(tick);
+      setMouth(entry.smoothed);
+      entry.frame = requestAnimationFrame(tick);
     };
     const start = () => {
-      if (!active || running) return;
-      running = true;
+      if (entry.running) return;
+      entry.running = true;
       entry.context.resume().catch(() => {});
-      if (!frame) tick();
+      if (!entry.frame) tick();
     };
     const stopLoop = () => {
-      running = false;
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
+      entry.running = false;
+      if (entry.frame) cancelAnimationFrame(entry.frame);
+      entry.frame = 0;
       close();
     };
     const dispose = () => {
-      if (!active) return;
-      active = false;
-      stopLoop();
-      audio.removeEventListener("play", start);
-      audio.removeEventListener("pause", stopLoop);
-      audio.removeEventListener("ended", stopLoop);
-      audio.removeEventListener("emptied", stopLoop);
+      entry.mouths.delete(mouth);
+      mouth.style.setProperty("--lip-open", "0");
+      if (entry.mouths.size === 0) stopLoop();
     };
     audio.addEventListener("play", start);
     audio.addEventListener("pause", stopLoop);
     audio.addEventListener("ended", stopLoop);
     audio.addEventListener("emptied", stopLoop);
     if (!audio.paused) start();
-    return dispose;
+    return () => {
+      dispose();
+      audio.removeEventListener("play", start);
+      audio.removeEventListener("pause", stopLoop);
+      audio.removeEventListener("ended", stopLoop);
+      audio.removeEventListener("emptied", stopLoop);
+    };
   }
   function setGain(value) {
     const parsed = Number(value);
