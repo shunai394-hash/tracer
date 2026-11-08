@@ -28,7 +28,8 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <label for="token">TRACER管理トークン</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
 <div class="grid">
 <div><label for="title">作品タイトル</label><input id="title" maxlength="100" value="ショートドラマ"></div>
-<div><label for="episodeNumber">話数</label><input id="episodeNumber" type="number" min="1" max="999" value="1"></div>\n<div><label for="genre">ジャンル</label><select id="genre"><option>日常・ヒューマン</option><option>恋愛</option><option>ミステリー</option><option>コメディ</option><option>ファンタジー</option><option>サスペンス</option></select></div>
+<div><label for="episodeNumber">話数</label><input id="episodeNumber" type="number" min="1" max="999" value="1"></div>
+<div><label for="genre">ジャンル</label><select id="genre"><option>日常・ヒューマン</option><option>恋愛</option><option>ミステリー</option><option>コメディ</option><option>ファンタジー</option><option>サスペンス</option></select></div>
 </div>
 <button id="load" class="secondary" type="button">利用可能な日本語ボイスを読み込む</button>
 <p id="loadStatus" class="muted">ボイス一覧の取得のみ。音声生成は行いません。</p>
@@ -41,7 +42,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">ボイス一覧を読み込み中…</p></div>
 <div class="scene" id="voiceIdRegistration">
 <h3>Fish AudioモデルIDから登録</h3>
-<p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はこのブラウザーに保存され、人物の担当ボイスから選べます。</p>
+<p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はTRACER共通台帳に保存され、別の端末・ブラウザーからも同じ一覧を利用できます。</p>
 <label for="voiceModelId">Fish AudioモデルID</label><input id="voiceModelId" autocomplete="off" spellcheck="false" placeholder="例：7478a76f38974bd2afa89c1bbe6831c7">
 <label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" placeholder="例：蒼真">
 <button id="registerVoiceId" type="button">IDを照合してボイス登録</button>
@@ -82,7 +83,8 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div class="grid">
 <button id="generateAll" type="button" disabled>全セリフを順番に生成</button>
 <button id="exportScript" class="secondary" type="button">脚本JSONを書き出す</button>
-<button id="saveProject" class="secondary" type="button">音声込み作品データをファイル保存</button>\n<button id="saveSharedProject" type="button">作品シートをサーバーに保存</button>\n<button id="loadSharedProject" class="secondary" type="button">サーバーから作品シートを読み込む</button>
+<button id="saveProject" class="secondary" type="button">音声込み作品データをファイル保存</button>
+<button id="saveSharedProject" type="button">作品シートをサーバーに保存</button>\n<button id="loadSharedProject" class="secondary" type="button">サーバーから作品シートを読み込む</button>
 <button id="loadProject" class="secondary" type="button">作品データを読み込む</button>
 <input id="projectFile" type="file" accept="application/json,.json" hidden>
 </div>
@@ -120,12 +122,13 @@ function addCharacter(name="登場人物",voiceId=""){
  const el=document.createElement("div");el.className="scene";el.dataset.id=id;
  el.innerHTML='<label>人物名</label><input class="cname" maxlength="40" value="'+escapeHtml(name)+'"><label>担当ボイス</label><select class="cvoice">'+optionList(voiceId)+'</select><button class="secondary remove" type="button">人物を削除</button>';
  el.querySelector(".cname").addEventListener("input",e=>{const row=characterRows.find(x=>x.id===id);if(row)row.name=e.target.value;refreshLineCharacters();});
- el.querySelector(".cvoice").addEventListener("change",e=>{const row=characterRows.find(x=>x.id===id);if(row)row.voiceId=e.target.value;});
+ el.querySelector(".cvoice").addEventListener("change",e=>{const row=characterRows.find(x=>x.id===id);if(row)row.voiceId=e.target.value;refreshLineVoiceNotes();});
  el.querySelector(".remove").addEventListener("click",()=>{characterRows=characterRows.filter(x=>x.id!==id);el.remove();refreshLineCharacters();});
  characters.append(el);refreshLineCharacters();
 }
-function refreshCharacterVoiceOptions(){document.querySelectorAll(".scene .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.innerHTML=optionList(value);select.value=value;});}
-function refreshLineCharacters(){document.querySelectorAll(".line").forEach(el=>{const select=el.querySelector(".speaker");const val=select.value;select.innerHTML=characterRows.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name||"名前未設定")+'</option>').join("");if(characterRows.some(c=>c.id===val))select.value=val;});}
+function refreshCharacterVoiceOptions(){document.querySelectorAll(".scene .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.innerHTML=optionList(value);select.value=value;});refreshLineVoiceNotes();}
+function refreshLineVoiceNotes(){document.querySelectorAll(".line").forEach(el=>{const row=lineRows.find(item=>item.id===el.dataset.id);const character=row&&characterRows.find(c=>c.id===row.speakerId);const voice=character&&voices.find(v=>v.id===character.voiceId);const note=el.querySelector(".voiceNote");if(note)note.textContent=character?(character.name+" ／ "+(voice?.title||"未登録ボイス")+" ／ モデルID: "+(character.voiceId||"未設定")):"担当者未設定";});}
+function refreshLineCharacters(){document.querySelectorAll(".line").forEach(el=>{const select=el.querySelector(".speaker");const val=select.value;select.innerHTML=characterRows.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name||"名前未設定")+'</option>').join("");if(characterRows.some(c=>c.id===val))select.value=val;});refreshLineVoiceNotes();}
 function addLine(text="セリフを入力してください",speakerId=characterRows[0]?.id||"",emotion="自然",pace="標準",pause="通常"){
  const id="l"+(++counter);const row={id,text,speakerId,emotion,pace,pause,audioUrl:null,duration:null};lineRows.push(row);
  const el=document.createElement("div");el.className="line";el.dataset.id=id;
@@ -135,9 +138,9 @@ function addLine(text="セリフを入力してください",speakerId=character
  el.querySelector(".remove").addEventListener("click",()=>{if(row.audioUrl)URL.revokeObjectURL(row.audioUrl);lineRows=lineRows.filter(x=>x.id!==id);el.remove();});
  el.querySelector(".generateOne").addEventListener("click",()=>generateLine(row,el));
  el.querySelector(".text").addEventListener("input",e=>row.text=e.target.value);
- el.querySelector(".speaker").addEventListener("change",e=>row.speakerId=e.target.value);
+ el.querySelector(".speaker").addEventListener("change",e=>{row.speakerId=e.target.value;refreshLineVoiceNotes();});
  for(const cls of ["emotion","pace","pause"])el.querySelector("."+cls).addEventListener("change",e=>row[cls]=e.target.value);
- lines.append(el);return row;
+ lines.append(el);refreshLineVoiceNotes();return row;
 }
 function buildSpokenText(row){const emotion={自然:"[natural conversational delivery]",喜び:"[happy, bright and warm]",悲しみ:"[sad, restrained, slightly trembling voice]",怒り:"[angry, tense and forceful]",驚き:"[surprised, startled reaction]",不安:"[anxious, hesitant delivery]",ささやき:"[whispering]",緊張:"[nervous, tense delivery]"}[row.emotion]||"[natural delivery]";const pause={短い間:"[brief pause]",通常:"",長い間:"[long dramatic pause]"}[row.pause];return [emotion,pause,row.text.trim()].filter(Boolean).join("\n");}
 function buildProsody(row){return {speed:{ゆっくり:0.82,標準:1,速め:1.18}[row.pace]||1};}
