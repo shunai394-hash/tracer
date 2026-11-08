@@ -53,11 +53,60 @@ export async function PATCH(request: Request) {
     const id = typeof body.id === "string" ? body.id : "";
     const status = body.status;
     const reviewer = typeof body.reviewer === "string" ? body.reviewer.trim().slice(0, 120) : "";
-    if (!id || !reviewer || (status !== "approved_internal" && status !== "rejected")) {
+    const isMetadataUpdate = body.action === "update_metadata";
+    if (!id || (!isMetadataUpdate && (!reviewer || (status !== "approved_internal" && status !== "rejected")))) {
       return json({ ok: false, error: "invalid_review_request" }, 400);
     }
 
     const db = createSupabaseAdminClient();
+
+    if (body.action === "update_metadata") {
+      const title = typeof body.title === "string" ? body.title.trim().slice(0, 160) : "";
+      const composer = typeof body.composer === "string" ? body.composer.trim().slice(0, 160) : "";
+      const sourceUrl = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
+      const licenseName = typeof body.licenseName === "string" ? body.licenseName.trim().slice(0, 160) : "";
+      const licenseUrl = typeof body.licenseUrl === "string" ? body.licenseUrl.trim() : "";
+      const evidenceNote = typeof body.evidenceNote === "string" ? body.evidenceNote.trim().slice(0, 4000) : "";
+      const genre = typeof body.genre === "string" ? body.genre : "";
+      const attributionRequired = body.attributionRequired === true;
+      const attributionText = typeof body.attributionText === "string" ? body.attributionText.trim().slice(0, 1000) : "";
+      const validUrl = (value: string) => {
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol === "https:" || parsed.protocol === "http:";
+        } catch {
+          return false;
+        }
+      };
+      const creatorTermsUrl = typeof body.creatorTermsUrl === "string" ? body.creatorTermsUrl.trim() : "";
+      if (!title || !composer || !licenseName || !evidenceNote ||
+          !validUrl(sourceUrl) || !validUrl(licenseUrl) ||
+          (creatorTermsUrl && !validUrl(creatorTermsUrl)) ||
+          !["daily", "romance", "emotional", "suspense", "comedy", "action"].includes(genre) ||
+          body.commercialUseAllowed !== true || body.platformUseAllowed !== true ||
+          (attributionRequired && !attributionText)) {
+        return json({ ok: false, error: "invalid_rights_metadata" }, 400);
+      }
+      const { data: updated, error: updateError } = await db
+        .from("ai_live_bgm_rights")
+        .update({
+          title, composer, source_url: sourceUrl, license_name: licenseName,
+          license_url: licenseUrl, license_checked_at: new Date().toISOString(),
+          creator_terms_url: creatorTermsUrl || null, evidence_note: evidenceNote,
+          genre, commercial_use_allowed: true, platform_use_allowed: true,
+          attribution_required: attributionRequired,
+          attribution_text: attributionRequired ? attributionText : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("review_status", "pending")
+        .select("id,title,composer,genre,review_status")
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!updated) return json({ ok: false, error: "pending_track_not_found_or_already_reviewed" }, 409);
+      return json({ ok: true, item: updated });
+    }
+
     const { data, error } = await db
       .from("ai_live_bgm_rights")
       .update({

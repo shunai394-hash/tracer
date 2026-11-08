@@ -236,6 +236,35 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
      else p.append(document.createTextNode(value));
      card.append(p);
     }
+    const edit=document.createElement('details');edit.style.margin='10px 0';
+    const editSummary=document.createElement('summary');editSummary.textContent='権利情報を編集';edit.append(editSummary);
+    const editFields={};
+    const addEditField=(key,label,value,type='text')=>{
+     const wrap=document.createElement('label');wrap.textContent=label;
+     const input=document.createElement(type==='textarea'?'textarea':'input');
+     if(type!=='textarea')input.type=type;
+     input.value=value??'';input.maxLength=key==='evidenceNote'?4000:1000;
+     input.style.width='100%';input.style.margin='4px 0 8px';
+     wrap.append(input);edit.append(wrap);editFields[key]=input;
+    };
+    addEditField('title','曲名',item.title);
+    addEditField('composer','作曲者・権利者',item.composer);
+    addEditField('sourceUrl','配布元URL',item.source_url,'url');
+    addEditField('licenseName','ライセンス名',item.license_name);
+    addEditField('licenseUrl','ライセンス本文URL',item.license_url,'url');
+    addEditField('creatorTermsUrl','追加利用規約URL',item.creator_terms_url||'','url');
+    addEditField('evidenceNote','許諾確認の根拠',item.evidence_note,'textarea');
+    const genreWrap=document.createElement('label');genreWrap.textContent='ジャンル';
+    const genreSelect=document.createElement('select');
+    [['daily','日常・ポップ'],['romance','ロマンス'],['emotional','感動'],['suspense','緊張・サスペンス'],['comedy','コメディ'],['action','アクション']].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;genreSelect.append(o)});
+    genreSelect.value=item.genre;genreWrap.append(genreSelect);edit.append(genreWrap);editFields.genre=genreSelect;
+    const addEditCheck=(key,label,value)=>{const wrap=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=value===true;input.style.width='auto';wrap.append(input,document.createTextNode(label));edit.append(wrap);editFields[key]=input};
+    addEditCheck('commercialUseAllowed','商用利用許可を確認',item.commercial_use_allowed);
+    addEditCheck('platformUseAllowed','配信利用許可を確認',item.platform_use_allowed);
+    addEditCheck('attributionRequired','クレジット表記が必要',item.attribution_required);
+    addEditField('attributionText','必要なクレジット表記',item.attribution_text||'');
+    const saveMetadata=document.createElement('button');saveMetadata.textContent='権利情報を保存（審査待ちのまま）';
+    saveMetadata.addEventListener('click',()=>saveBgmMetadata(item.id,editFields,saveMetadata));edit.append(saveMetadata);card.append(edit);
     const reviewed=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.style.width='auto';
     reviewed.append(check,document.createTextNode('配布元・ライセンス本文を確認し、内部配信での商用利用が許可されることを確認した'));
     card.append(reviewed);
@@ -248,6 +277,19 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    }
    setStatus('審査待ち '+pending.length+'件（承認済み音源は再生対象）');
   }catch(e){setStatus(e.message||'権利台帳の取得に失敗しました')}finally{$('bgmReviewLoad').disabled=false}
+ }
+ async function saveBgmMetadata(id,fields,button){
+  const token=$('token').value.trim();
+  const body={action:'update_metadata'};
+  Object.entries(fields).forEach(([key,input])=>{body[key]=input.type==='checkbox'?input.checked:input.value.trim()});
+  if(!body.commercialUseAllowed||!body.platformUseAllowed){setStatus('商用利用・配信利用の許諾を確認してから保存してください');return}
+  button.disabled=true;
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm/review',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id,...body}),cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok)throw new Error(d?.error==='invalid_rights_metadata'?'入力内容・URL・許諾確認を見直してください':'権利情報を保存できませんでした');
+   setStatus('権利情報を更新しました。審査状態は「審査待ち」のままです');await loadBgmReviews();
+  }catch(e){setStatus(e.message||'権利情報の保存に失敗しました')}finally{button.disabled=false}
  }
  async function reviewBgm(id,status,confirmed){
   const token=$('token').value.trim(),reviewer=$('bgmReviewer').value.trim();
