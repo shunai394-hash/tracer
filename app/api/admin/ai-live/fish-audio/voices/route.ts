@@ -63,7 +63,6 @@ export async function GET(request: Request) {
   if (privateCloneResult.status === "fulfilled") {
     privateCloneVoices = privateCloneResult.value;
   }
-  const userProvidedVoices = userProvidedResult.status === "fulfilled" ? userProvidedResult.value : [];
   const userProvidedVoices = getRegisteredUserProvidedDramaVoices();
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
