@@ -17,7 +17,7 @@ assert.match(executor, /mediaSrc: \[expectedDefault\.imageUrl\]/, "default color
 assert.match(executor, /mediaSrc: \[variant\.imageUrl\]/, "each added color must receive its own image");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
-assert.match(executor, /inventoryQuantities: \\[\\{ locationId, availableQuantity: variant\\.inventory \\}\\]/, "variant stock must use Shopify InventoryLevelInput.availableQuantity");
+assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");
 assert.match(executor, /shopify_color_family_verification_variant_count_failed/, "final readback must verify exact variant count");
 assert.match(executor, /shopify_color_family_verification_inventory_failed/, "final readback must verify inventory");
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");
