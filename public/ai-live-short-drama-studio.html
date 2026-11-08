@@ -195,10 +195,10 @@ function safeFilename(value){return String(value||"").normalize("NFKC").replace(
 function getLineFilename(row){const index=lineRows.indexOf(row)+1;const speaker=characterRows.find(c=>c.id===row.speakerId)?.name||"話者";const episode=Math.max(1,Number($("episodeNumber")?.value)||1);return safeFilename($("title").value)+"-第"+episode+"話-行"+String(index).padStart(3,"0")+"-"+safeFilename(speaker)+".mp3";}
 function renderOutputs(){for(const oldMouth of outputs.querySelectorAll(".lipSyncMouth"))window.TracerLipSync?.detach(oldMouth);outputs.replaceChildren();for(const row of lineRows.filter(x=>x.audioUrl)){const item=document.createElement("div");item.className="scene";const character=characterRows.find(c=>c.id===row.speakerId);const title=document.createElement("strong");title.textContent=(character?.name||"話者")+"："+row.text.slice(0,70);const face=makeLipSyncFace(character);const mouth=face.querySelector(".lipSyncMouth");const audio=document.createElement("audio");audio.controls=true;audio.src=row.audioUrl;if(window.TracerLipSync)window.TracerLipSync.attach(audio,mouth);const sourceLine=Array.from(lines.children).find(node=>node.dataset.id===row.id);const sourceAudio=sourceLine?.querySelector("audio");if(sourceAudio&&window.TracerLipSync)window.TracerLipSync.attach(sourceAudio,mouth);const link=document.createElement("a");link.href=row.audioUrl;link.download=getLineFilename(row);link.textContent="MP3保存";link.style="display:block;margin-top:8px;color:#93c5fd";const duration=document.createElement("span");duration.className="muted";duration.textContent="実尺 "+formatDuration(row.duration);item.append(title,face,audio,link,duration);outputs.append(item);}updateSceneButtons();}
 const voicePresetDefinitions=[
- {title:"蒼真",gender:"男性",description:"男性キャラクターボイス"},
- {title:"美月",gender:"女性",description:"女性キャラクターボイス"},
- {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声"},
- {title:"凛",gender:"女性",description:"明るく知的な若手女性の声"}
+ {title:"蒼真",gender:"男性",description:"男性キャラクターボイス",modelId:"7478a76f38974bd2afa89c1bbe6831c7"},
+ {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"},
+ {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声",modelId:""},
+ {title:"凛",gender:"女性",description:"明るく知的な若手女性の声",modelId:""}
 ];
 const voiceSampleUrls=new Map([["蓮司","/audio/drama/renji-preview.mp3"],["凛","/audio/drama/rin-preview.mp3"]]);
 function renderVoiceLibrary(){
@@ -217,10 +217,10 @@ function renderVoiceLibrary(){
    const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,sampleFace,player);
   }
   const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み・ID照合済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found?.id){const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+found.id;card.append(modelId);}
-  const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if((preset.title==="蓮司"||preset.title==="凛")&&!found){const register=document.createElement("button");register.type="button";register.textContent="この声をFish Audio IDで登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").focus();$("voiceIdStatus").textContent=preset.title+"のモデルIDを入力して登録してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});});card.append(register);}
+  const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if(!found){const register=document.createElement("button");register.type="button";register.textContent=preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").value=preset.modelId||"";$("voiceIdStatus").textContent=preset.modelId?preset.title+"の既知IDをTRACERのFish Audioキーで照合してください。":"この役に割り当てたFish AudioモデルIDを入力してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});if(!preset.modelId)$("voiceModelId").focus();});card.append(register);}
   root.append(card);
  }
- const heading=document.createElement("p");heading.className="muted";heading.textContent="Fish Audio登録済みボイス："+registered.length+"件";root.append(heading);
+ const heading=document.createElement("p");heading.className="muted";heading.textContent="TRACER利用可能ボイス合計："+registered.length+"件（公開・登録済み・専用音声を含む）";root.append(heading);
  for(const voice of registered.filter(v=>v.source==="id_registered"&&!voicePresetDefinitions.some(p=>p.title===v.title))){
   const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,choose);root.append(card);
  }
@@ -240,7 +240,7 @@ for(const oldVoice of legacy){
 }
 if(pendingLegacy.length)localStorage.setItem("tracer-fish-audio-id-voices",JSON.stringify(pendingLegacy));
 else localStorage.removeItem("tracer-fish-audio-id-voices");
-voices=sharedVoices;lastVoiceToken=value;refreshCharacterVoiceOptions();renderVoiceLibrary();$("loadStatus").textContent="日本語ボイス "+voices.length+"件を読み込みました（公開 "+(d.publicLicensedCount||0)+"件／許可確認済み "+(d.consentedCustomCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件）。人物の「担当ボイス」から選択できます。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
+voices=sharedVoices;lastVoiceToken=value;refreshCharacterVoiceOptions();renderVoiceLibrary();$("loadStatus").textContent="TRACER利用可能ボイス合計 "+(Number.isFinite(d.count)?d.count:voices.length)+"件を読み込みました。内訳：公開ライセンス "+(d.publicLicensedCount||0)+"件／共通ID登録 "+(d.registeredVoiceCount||0)+"件／許可確認済みクローン "+(d.consentedCustomCount||0)+"件／ドラマ専用クローン "+(d.privateDramaCloneCount||0)+"件／蒼真・美月などの役別ID照合 "+(d.dramaCharacterVoiceCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件。公開37件と総数43件は別区分です。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
  const channels=2,sampleRate=buffer.sampleRate,frames=buffer.length;
  const bytesPerSample=2,dataBytes=frames*channels*bytesPerSample;
  const out=new ArrayBuffer(44+dataBytes),view=new DataView(out);
@@ -384,7 +384,7 @@ $("fishDiagnostics").addEventListener("click",async()=>{
    "プラン："+(pkg.type??"不明")+"／残高："+(pkg.balance??"不明")+"／総枠："+(pkg.total??"不明"),
    "",
    "【登録済み音声モデル】"+(models.ok?"取得成功":"取得失敗"),
-   "今回取得したモデル数："+(models.pageCount??"不明")+"／Fish Audio側の総数："+(models.total??"不明"),
+   "今回取得したモデル数："+(models.scannedCount??"不明")+"／Fish Audio側の総数："+(models.total??"不明"),
    "蒼真・ドラマ用クローン候補："+(models.matchingSomaCount??"不明")
   ];
   for(const model of models.matchingSoma||[])lines.push("・"+model.title+"／"+model.visibility+"／ID："+model.id);
