@@ -1030,7 +1030,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           inventoryItem: { sku: expectedDefault.sku, tracked: true },
           mediaSrc: [expectedDefault.imageUrl],
           metafields: variantMetafields(expectedDefault.supplierVariantId, expectedDefault.imageUrl),
-          inventoryQuantities: [{ locationId, name: "available", quantity: expectedDefault.inventory }],
+          inventoryQuantities: [{ locationId, availableQuantity: expectedDefault.inventory }],
         }],
       },
     );
@@ -1086,7 +1086,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
           optionValues: [{ optionName: "カラー", name: variant.colorLabel }],
           mediaSrc: [variant.imageUrl],
           metafields: variantMetafields(variant.supplierVariantId, variant.imageUrl),
-          inventoryQuantities: [{ locationId, name: "available", quantity: variant.inventory }],
+          inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }],
         })),
       },
     );
