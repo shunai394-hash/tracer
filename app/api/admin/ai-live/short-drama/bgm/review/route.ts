@@ -53,7 +53,8 @@ export async function PATCH(request: Request) {
     const id = typeof body.id === "string" ? body.id : "";
     const status = body.status;
     const reviewer = typeof body.reviewer === "string" ? body.reviewer.trim().slice(0, 120) : "";
-    if (!id || !reviewer || (status !== "approved_internal" && status !== "rejected")) {
+    const isMetadataUpdate = body.action === "update_metadata";
+    if (!id || (!isMetadataUpdate && (!reviewer || (status !== "approved_internal" && status !== "rejected")))) {
       return json({ ok: false, error: "invalid_review_request" }, 400);
     }
 
