@@ -38,13 +38,13 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </section>
 <section class="panel" id="voiceLibraryPanel">
 <h2>日本語ボイス一覧</h2>
-<p class="muted">蒼真・美月・蓮司・凛の4名を常時表示します。蓮司・凛は試聴MP3を選択して再生できます。Fish Audioモデル未接続の声は音声生成には使用できません。</p>
+<p class="muted">蒼真・美月・凛の3名を常時表示します。凛は試聴MP3を選択して再生できます。Fish Audioモデル未接続の声は音声生成には使用できません。</p>
 <div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">ボイス一覧を読み込み中…</p></div><label for="lipSyncGain">口の開き具合 <span id="lipSyncGainValue">42%</span></label><input id="lipSyncGain" type="range" min="10" max="100" value="42"><p class="muted">無音では口を閉じ、最大開口を控えめにします。試聴・セリフ再生に共通で反映します。</p>
 <div class="scene" id="voiceIdRegistration">
 <h3>Fish AudioモデルIDから登録</h3>
 <p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はTRACER共通台帳に保存され、別の端末・ブラウザーからも同じ一覧を利用できます。</p>
-<label for="voiceModelId">Fish AudioモデルID</label><input id="voiceModelId" autocomplete="off" spellcheck="false" value="7478a76f38974bd2afa89c1bbe6831c7">
-<label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" value="蓮司">
+<label for="voiceModelId">Fish AudioモデルID</label><input id="voiceModelId" autocomplete="off" spellcheck="false" value="">
+<label for="voiceModelTitle">一覧に表示する名前</label><input id="voiceModelTitle" maxlength="60" value="">
 <button id="registerVoiceId" type="button">IDを照合してボイス登録</button>
 <p id="voiceIdStatus" class="status" role="status" aria-live="polite">未登録</p>
 </div>
@@ -197,10 +197,9 @@ function renderOutputs(){for(const oldMouth of outputs.querySelectorAll(".lipSyn
 const voicePresetDefinitions=[
  {title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""},
  {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"},
- {title:"蓮司",gender:"男性",description:"情熱的で親しみやすい男性の声",modelId:"7478a76f38974bd2afa89c1bbe6831c7"},
  {title:"凛",gender:"女性",description:"明るく知的な若手女性の声",modelId:""}
 ];
-const voiceSampleUrls=new Map([["蓮司","/audio/drama/renji-preview.mp3"],["凛","/audio/drama/rin-preview.mp3"]]);
+const voiceSampleUrls=new Map([["凛","/audio/drama/rin-preview.mp3"]]);
 function renderVoiceLibrary(){
  const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
  const registered=Array.isArray(voices)?voices:[];
@@ -210,7 +209,7 @@ function renderVoiceLibrary(){
   const name=document.createElement("strong");name.textContent=preset.title+"（"+preset.gender+"）";
   const description=document.createElement("p");description.className="muted";description.textContent=preset.description;
   card.append(name,description);
-  if(preset.title==="蓮司"||preset.title==="凛"){
+  if(preset.title==="凛"){
    const player=document.createElement("audio");player.controls=true;player.preload="metadata";player.style.width="100%";player.setAttribute("aria-label",preset.title+"の試聴");
    const sampleUrl=voiceSampleUrls.get(preset.title);if(sampleUrl){player.src=sampleUrl;player.load();}
    const sampleFace=makeLipSyncFace({name:preset.title});if(window.TracerLipSync)window.TracerLipSync.attach(player,sampleFace.querySelector(".lipSyncMouth"));

@@ -4,12 +4,11 @@ const MODEL_URL = "https://api.fish.audio/model";
 
 /** Exact Fish Audio model IDs assigned by the account owner to drama characters. */
 export const TRACER_DRAMA_CHARACTER_VOICES = [
-  { id: "7478a76f38974bd2afa89c1bbe6831c7", title: "蓮司", gender: "男性" },
   { id: "160840e5c583459d89dc5521e7f175e5", title: "美月", gender: "女性" },
 ] as const;
 
 /**
- * Resolve the two explicitly assigned IDs directly.
+ * Resolve the explicitly assigned IDs directly.
  * Do not rely on the first page of /model?self=true: accounts with more than
  * 100 models can have valid character models omitted from that page.
  */
