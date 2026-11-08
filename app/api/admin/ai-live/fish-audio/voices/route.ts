@@ -50,6 +50,7 @@ export async function GET(request: Request) {
     listLicensedJapaneseVoices(apiKey),
     listPrivateDramaChildVoices(apiKey),
     listPrivateDramaCloneVoices(apiKey),
+    listTracerDramaCharacterVoices(apiKey),
   ]);
   if (publicResult.status === "fulfilled") {
     publicVoices = publicResult.value;
@@ -63,6 +64,9 @@ export async function GET(request: Request) {
   }
   if (privateCloneResult.status === "fulfilled") {
     privateCloneVoices = privateCloneResult.value;
+  }
+  if (dramaCharacterResult.status === "fulfilled") {
+    dramaCharacterVoices = dramaCharacterResult.value;
   }
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
