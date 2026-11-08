@@ -61,7 +61,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmFiles">MP3 / WAV / OGGをローカル再生（サーバー登録はMP3を1曲ずつ、またはZIPで一括）</label>
 <input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a">
 <label for="bgmZipFile">BGMライブラリZIPを一括登録（ZIP内のMP3を展開して順番に保存）</label>
-<input id="bgmZipFile" type="file" accept=".zip,application/zip">
+<input id="bgmZipFile" type="file" accept=".zip,.ZIP,application/zip,application/x-zip-compressed">
 <div class="bgm-row"><button id="bgmUploadZip" type="button">ZIP内のMP3を一括サーバー保存</button></div>
 <p class="status" id="bgmZipStatus" role="status">ZIP未選択。1曲10MB以下のMP3を対象にします。</p>
 <label for="bgmTitle">登録する曲名</label><input id="bgmTitle" type="text" maxlength="160" placeholder="曲名">
@@ -269,11 +269,25 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     if (!tracks.length) throw new Error('ZIP内にMP3が見つかりません。');
     return tracks;
   }
+  bgmZipFile.addEventListener('change', () => {
+    const file = bgmZipFile.files && bgmZipFile.files[0];
+    bgmZipStatus.textContent = file
+      ? '選択済み：' + file.name + '（' + (file.size / 1024 / 1024).toFixed(1) + 'MB）。一括保存ボタンで登録を開始できます。'
+      : 'ZIP未選択。ファイルを選択してください。';
+  });
   async function uploadZipBgm() {
+    const zip = bgmZipFile.files && bgmZipFile.files[0];
+    if (!zip) {
+      bgmZipStatus.textContent = 'ファイルが選択されていません。ZIP選択欄から選び直してください。';
+      bgmZipFile.focus();
+      return;
+    }
     const token = requireBgmToken();
-    if (!token) return;
-    const zip = bgmZipFile.files?.[0];
-    if (!zip) { bgmZipStatus.textContent = '先にBGMライブラリZIPを選択してください。'; return; }
+    if (!token) {
+      bgmZipStatus.textContent = '管理トークンを入力してから、もう一度一括保存を押してください。';
+      bgmAdminToken.focus();
+      return;
+    }
     bgmUploadZip.disabled = true;
     try {
       bgmZipStatus.textContent = 'ZIPを検査・展開しています…';
