@@ -1,4 +1,5 @@
 name: CJ five-color Shopify migration
+# Re-run only after the live importer and guarded Shopify migration route are deployed.
 
 on:
   workflow_dispatch:
