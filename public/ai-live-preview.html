@@ -61,7 +61,7 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
 <label for="bgmFiles">MP3 / WAV / OGGをローカル再生（サーバー登録はMP3を1曲ずつ、またはZIPで一括）</label>
 <input id="bgmFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a">
 <label for="bgmZipFile">BGMライブラリZIPを一括登録（ZIP内のMP3を展開して順番に保存）</label>
-<input id="bgmZipFile" type="file" accept=".zip,.ZIP,application/zip,application/x-zip-compressed">
+<input id="bgmZipFile" type="file">
 <div class="bgm-row"><button id="bgmUploadZip" type="button">ZIP内のMP3を一括サーバー保存</button></div>
 <p class="status" id="bgmZipStatus" role="status">ZIP未選択。1曲10MB以下のMP3を対象にします。</p>
 <label for="bgmTitle">登録する曲名</label><input id="bgmTitle" type="text" maxlength="160" placeholder="曲名">
@@ -279,6 +279,12 @@ label{display:block;font-size:.9rem;margin:14px 0 6px}select{width:100%}.status{
     const zip = bgmZipFile.files && bgmZipFile.files[0];
     if (!zip) {
       bgmZipStatus.textContent = 'ファイルが選択されていません。ZIP選択欄から選び直してください。';
+      bgmZipFile.focus();
+      return;
+    }
+    if (!/\.zip$/i.test(zip.name)) {
+      bgmZipStatus.textContent = '選択されたファイルはZIPではありません。拡張子が .zip のファイルを選んでください。';
+      bgmZipFile.value = '';
       bgmZipFile.focus();
       return;
     }
