@@ -18,6 +18,9 @@ assert.match(executor, /mediaSrc: \[variant\.imageUrl\]/, "each added color must
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
 assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");
+const defaultAdoption = executor.slice(executor.indexOf("productVariantsBulkUpdate($productId"), executor.indexOf("// Re-read after adopting"));
+assert.doesNotMatch(defaultAdoption, /inventoryQuantities/, "existing default variants must not receive create-only inventoryQuantities");
+assert.match(defaultAdoption, /setShopifyVariantInventory/, "existing default variant inventory must be set with inventorySetQuantities");
 assert.match(executor, /shopify_color_family_verification_variant_count_failed/, "final readback must verify exact variant count");
 assert.match(executor, /shopify_color_family_verification_inventory_failed/, "final readback must verify inventory");
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");
