@@ -100,6 +100,9 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   <div id="bgmReviewList" aria-live="polite"></div>
   <small>許諾条件と配信先での利用範囲を実際に確認した音源だけを承認してください。承認後も内部配信専用です。</small>
  </fieldset>
+ <label for="bgmAutoGenre">ドラマの演出ジャンル</label>
+ <select id="bgmAutoGenre"><option value="daily">日常・ポップ</option><option value="romance">ロマンス</option><option value="emotional">感動</option><option value="suspense">緊張・サスペンス</option><option value="comedy">コメディ</option><option value="action">アクション</option></select>
+ <button class="primary" id="bgmAutoSelect" type="button">ジャンルに合わせて自動選曲・再生</button>
  <label for="track">再生するBGM</label><select id="track"><option value="">音源を選択</option></select>
  <div class="actions"><button class="primary" id="bgmPlay">BGM再生</button><button id="next">次の曲</button></div>
  <label for="volume">BGM音量 <span id="volumeLabel">35%</span></label><input id="volume" type="range" min="0" max="100" value="35">
@@ -133,15 +136,25 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   tracks=Array.from(files).filter(f=>f.type.startsWith('audio/')||/\.(mp3|wav|ogg|m4a)$/i.test(f.name)).map(f=>{const url=URL.createObjectURL(f);urls.push(url);return{name:f.name,url}});
   renderTracks();setStatus(tracks.length+'曲をローカル登録しました');
  }
- async function loadSaved(){
-  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
+ async function loadSaved(genre=null){
+  const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return false}
   $('load').disabled=true;setStatus('保存済みBGMを取得中…');
   try{
-   const r=await fetch('/api/admin/ai-live/short-drama/bgm',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const suffix=genre?'?genre='+encodeURIComponent(genre):'';
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm'+suffix,{headers:{Authorization:'Bearer '+token},cache:'no-store'});
    const d=await r.json().catch(()=>null);
    if(!r.ok||!d?.ok||!Array.isArray(d.tracks))throw new Error(r.status===401||r.status===403?'認証に失敗しました。':'保存済みBGMを取得できませんでした。');
-   tracks=d.tracks.map(t=>({name:t.title||t.name,url:t.url}));renderTracks();setStatus(tracks.length+'曲を読み込みました');
-  }catch(e){setStatus(e.message||'読み込みに失敗しました')}finally{$('load').disabled=false}
+   tracks=d.tracks.map(t=>({name:t.title||t.name,url:t.url,genre:t.genre}));renderTracks();setStatus(tracks.length+'曲を読み込みました'+(genre?'（'+$('bgmAutoGenre').selectedOptions[0].textContent+'）':''));
+   return true;
+  }catch(e){setStatus(e.message||'読み込みに失敗しました');return false}finally{$('load').disabled=false}
+ }
+ async function autoSelectBgm(){
+  const genre=$('bgmAutoGenre').value;
+  const loaded=await loadSaved(genre);
+  if(!loaded)return;
+  if(!tracks.length){setStatus('このジャンルの承認済みBGMはまだありません。権利審査後に利用できます。');return}
+  const index=Math.floor(Math.random()*tracks.length);
+  playTrack(index);
  }
  async function uploadBgm(){
   const token=$('token').value.trim(), file=$('files').files?.[0];
@@ -320,7 +333,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('bgmUpload').addEventListener('click',uploadBgm);
  $('bgmReviewLoad').addEventListener('click',loadBgmReviews);
  $('bgmExistingLoad').addEventListener('click',loadExistingBgm);
- $('load').addEventListener('click',loadSaved);
+ $('load').addEventListener('click',()=>loadSaved());
+ $('bgmAutoSelect').addEventListener('click',autoSelectBgm);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
  $('next').addEventListener('click',()=>playTrack(Number($('track').value||0)+1));
