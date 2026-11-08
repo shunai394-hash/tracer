@@ -44,7 +44,6 @@ export async function GET(request: Request) {
   let publicLibraryAvailable = true;
   let privateChildVoices: Awaited<ReturnType<typeof listPrivateDramaChildVoices>> = [];
   let privateCloneVoices: Awaited<ReturnType<typeof listPrivateDramaCloneVoices>> = [];
-  let userProvidedVoices: Awaited<ReturnType<typeof listUserProvidedDramaVoices>> = [];
   let privateChildLibraryAvailable = true;
   const [publicResult, privateChildResult, privateCloneResult, userProvidedResult] = await Promise.allSettled([
     listLicensedJapaneseVoices(apiKey),
@@ -65,6 +64,7 @@ export async function GET(request: Request) {
   if (privateCloneResult.status === "fulfilled") {
     privateCloneVoices = privateCloneResult.value;
   }
+  const userProvidedVoices = userProvidedResult.status === "fulfilled" ? userProvidedResult.value : [];
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...customVoices,
