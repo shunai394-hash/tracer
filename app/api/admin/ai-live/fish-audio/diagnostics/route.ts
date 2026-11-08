@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
+import { TRACER_DRAMA_CHARACTER_VOICES, resolveFishAudioModelVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -116,6 +117,15 @@ export async function GET(request: Request) {
   });
   const targetModels = ownModels.filter((model) => /蒼真|soma|tracer-drama-clone/i.test(model.title + " " + model.tags.join(" ")));
 
+  const assignedCharacterVoices = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (character) => {
+    try {
+      const voice = await resolveFishAudioModelVoice(apiKey, character.id, character.title);
+      return { title: character.title, id: character.id, accessible: Boolean(voice), status: voice ? "accessible" : "not_accessible" };
+    } catch {
+      return { title: character.title, id: character.id, accessible: false, status: "lookup_failed" };
+    }
+  }));
+
   const checks = {
     apiCredit: creditResult.status === "fulfilled"
       ? { ok: true, balance: typeof credit?.credit === "string" || typeof credit?.credit === "number" ? String(credit.credit) : null, hasFreeCredit: typeof credit?.has_free_credit === "boolean" ? credit.has_free_credit : null }
@@ -134,6 +144,7 @@ export async function GET(request: Request) {
     readOnly: true,
     checkedAt: new Date().toISOString(),
     account: checks,
+    assignedCharacterVoices,
     interpretation: allReadable
       ? "Fish Audio account, API credit, membership package, and owned voice models were read. The model-creation quota itself is not exposed by these read endpoints; if the API balance is positive and 蒼真 is absent, ask Fish Audio support to inspect the API key's model-creation entitlement before paying."
       : "One or more read-only checks failed. Review each provider status; do not retry voice uploads until the API key account and API credit are confirmed.",
