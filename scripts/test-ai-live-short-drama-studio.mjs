@@ -33,7 +33,7 @@ test("generation is explicit, sequential, bounded, and stoppable", () => {
   assert.ok(page.includes('"Authorization":"Bearer "+token.value.trim()'));
   assert.ok(route.includes("MAX_TEXT_CHARS = 1200"));
   assert.ok(route.includes("MAX_AUDIO_BYTES = 12 * 1024 * 1024"));
-  assert.ok(route.includes("PROVIDER_TIMEOUT_MS = 25_000"));
+  assert.ok(route.includes("PROVIDER_TIMEOUT_MS = 50_000"));
 });
 
 test("studio does not auto-publish, schedule, or retry generated audio", () => {
