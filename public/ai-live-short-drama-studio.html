@@ -196,8 +196,9 @@ function getLineFilename(row){const index=lineRows.indexOf(row)+1;const speaker=
 function renderOutputs(){for(const oldMouth of outputs.querySelectorAll(".lipSyncMouth"))window.TracerLipSync?.detach(oldMouth);outputs.replaceChildren();for(const row of lineRows.filter(x=>x.audioUrl)){const item=document.createElement("div");item.className="scene";const character=characterRows.find(c=>c.id===row.speakerId);const title=document.createElement("strong");title.textContent=(character?.name||"話者")+"："+row.text.slice(0,70);const face=makeLipSyncFace(character);const mouth=face.querySelector(".lipSyncMouth");const audio=document.createElement("audio");audio.controls=true;audio.src=row.audioUrl;if(window.TracerLipSync)window.TracerLipSync.attach(audio,mouth);const sourceLine=Array.from(lines.children).find(node=>node.dataset.id===row.id);const sourceAudio=sourceLine?.querySelector("audio");if(sourceAudio&&window.TracerLipSync)window.TracerLipSync.attach(sourceAudio,mouth);const link=document.createElement("a");link.href=row.audioUrl;link.download=getLineFilename(row);link.textContent="MP3保存";link.style="display:block;margin-top:8px;color:#93c5fd";const duration=document.createElement("span");duration.className="muted";duration.textContent="実尺 "+formatDuration(row.duration);item.append(title,face,audio,link,duration);outputs.append(item);}updateSceneButtons();}
 const voicePresetDefinitions=[
  {title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""},
- {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"},
+ {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"}
 ];
+const voiceSampleUrls=new Map([]);
 function renderVoiceLibrary(){
  const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
  const registered=Array.isArray(voices)?voices:[];
@@ -207,6 +208,12 @@ function renderVoiceLibrary(){
   const name=document.createElement("strong");name.textContent=preset.title+"（"+preset.gender+"）";
   const description=document.createElement("p");description.className="muted";description.textContent=preset.description;
   card.append(name,description);
+  if(voiceSampleUrls.has(preset.title)){
+   const player=document.createElement("audio");player.controls=true;player.preload="metadata";player.style.width="100%";player.setAttribute("aria-label",preset.title+"の試聴");
+   const sampleUrl=voiceSampleUrls.get(preset.title);if(sampleUrl){player.src=sampleUrl;player.load();}
+   const sampleFace=makeLipSyncFace({name:preset.title});if(window.TracerLipSync)window.TracerLipSync.attach(player,sampleFace.querySelector(".lipSyncMouth"));
+   const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,sampleFace,player);
+  }
   const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み・ID照合済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found?.id){const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+found.id;card.append(modelId);}
   const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if(!found){const register=document.createElement("button");register.type="button";register.textContent=preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").value=preset.modelId||"";$("voiceIdStatus").textContent=preset.modelId?preset.title+"の既知IDをTRACERのFish Audioキーで照合してください。":"この役に割り当てたFish AudioモデルIDを入力してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});if(!preset.modelId)$("voiceModelId").focus();});card.append(register);}
   root.append(card);
