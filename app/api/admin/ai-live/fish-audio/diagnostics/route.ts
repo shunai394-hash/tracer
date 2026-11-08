@@ -8,6 +8,8 @@ export const maxDuration = 30;
 
 const BASE = "https://api.fish.audio";
 const TIMEOUT_MS = 12_000;
+const PAGE_SIZE = 100;
+const MAX_MODEL_PAGES = 10;
 
 function authorizedAdminToken(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
@@ -26,7 +28,7 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
-async function fishGet(path: string, apiKey: string): Promise<{ status: number; body: unknown }> {
+async function fishGet(path: string, apiKey: string): Promise<unknown> {
   const response = await fetch(new URL(path, BASE), {
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
@@ -42,7 +44,27 @@ async function fishGet(path: string, apiKey: string): Promise<{ status: number; 
       providerStatus: response.status,
     });
   }
-  return { status: response.status, body };
+  return body;
+}
+
+async function listOwnedModels(apiKey: string): Promise<{ items: unknown[]; total: number | null; pagesScanned: number }> {
+  const first = await fishGet(`/model?self=true&page_size=${PAGE_SIZE}&page_number=1&sort_by=created_at`, apiKey);
+  if (!first || typeof first !== "object" || !Array.isArray((first as Record<string, unknown>).items)) {
+    throw new Error("Fish Audio returned an invalid model list.");
+  }
+  const firstPage = first as { items: unknown[]; total?: unknown };
+  const total = typeof firstPage.total === "number" && Number.isFinite(firstPage.total) ? Math.max(0, firstPage.total) : null;
+  const pages = total === null ? 1 : Math.min(MAX_MODEL_PAGES, Math.max(1, Math.ceil(total / PAGE_SIZE)));
+  const remaining = await Promise.all(Array.from({ length: pages - 1 }, (_, index) =>
+    fishGet(`/model?self=true&page_size=${PAGE_SIZE}&page_number=${index + 2}&sort_by=created_at`, apiKey)
+  ));
+  const items = [...firstPage.items];
+  for (const page of remaining) {
+    if (page && typeof page === "object" && Array.isArray((page as Record<string, unknown>).items)) {
+      items.push(...((page as { items: unknown[] }).items));
+    }
+  }
+  return { items, total, pagesScanned: pages };
 }
 
 function safeError(error: unknown) {
@@ -67,20 +89,17 @@ export async function GET(request: Request) {
   const [creditResult, packageResult, modelsResult] = await Promise.allSettled([
     fishGet("/wallet/self/api-credit?check_free_credit=true", apiKey),
     fishGet("/wallet/self/package", apiKey),
-    fishGet("/model?self=true&page_size=100&page_number=1&sort_by=created_at", apiKey),
+    listOwnedModels(apiKey),
   ]);
 
-  const credit = creditResult.status === "fulfilled" && creditResult.value.body && typeof creditResult.value.body === "object"
-    ? creditResult.value.body as Record<string, unknown>
+  const credit = creditResult.status === "fulfilled" && creditResult.value && typeof creditResult.value === "object"
+    ? creditResult.value as Record<string, unknown>
     : null;
-  const subscription = packageResult.status === "fulfilled" && packageResult.value.body && typeof packageResult.value.body === "object"
-    ? packageResult.value.body as Record<string, unknown>
+  const subscription = packageResult.status === "fulfilled" && packageResult.value && typeof packageResult.value === "object"
+    ? packageResult.value as Record<string, unknown>
     : null;
-  const modelPayload = modelsResult.status === "fulfilled" && modelsResult.value.body && typeof modelsResult.value.body === "object"
-    ? modelsResult.value.body as Record<string, unknown>
-    : null;
-  const modelItems = modelPayload && Array.isArray(modelPayload.items) ? modelPayload.items : [];
-  const ownModels = modelItems.flatMap((item) => {
+  const owned = modelsResult.status === "fulfilled" ? modelsResult.value : null;
+  const ownModels = (owned?.items ?? []).flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const model = item as Record<string, unknown>;
     const id = typeof model._id === "string" ? model._id : "";
@@ -105,7 +124,7 @@ export async function GET(request: Request) {
       ? { ok: true, type: typeof subscription?.type === "string" ? subscription.type : null, balance: typeof subscription?.balance === "number" ? subscription.balance : null, total: typeof subscription?.total === "number" ? subscription.total : null }
       : safeError(packageResult.reason),
     modelLibrary: modelsResult.status === "fulfilled"
-      ? { ok: true, pageCount: ownModels.length, total: typeof modelPayload?.total === "number" ? modelPayload.total : null, matchingSomaCount: targetModels.length, matchingSoma: targetModels }
+      ? { ok: true, scannedCount: ownModels.length, total: owned?.total, pagesScanned: owned?.pagesScanned, truncated: owned?.total !== null && (owned?.total ?? 0) > ownModels.length, matchingSomaCount: targetModels.length, matchingSoma: targetModels }
       : safeError(modelsResult.reason),
   };
 
@@ -116,7 +135,7 @@ export async function GET(request: Request) {
     checkedAt: new Date().toISOString(),
     account: checks,
     interpretation: allReadable
-      ? "Fish Audio account, API credit, membership package, and first page of owned models were read. A 0/0 model-creation quota is not exposed by these read endpoints; if the balance is positive and no 蒼真 model exists, request Fish Audio to inspect the account's model-creation entitlement before paying."
-      : "One or more read-only checks failed. Review each provider status; do not retry voice uploads until the account identity and API credit are confirmed.",
+      ? "Fish Audio account, API credit, membership package, and owned voice models were read. The model-creation quota itself is not exposed by these read endpoints; if the API balance is positive and 蒼真 is absent, ask Fish Audio support to inspect the API key's model-creation entitlement before paying."
+      : "One or more read-only checks failed. Review each provider status; do not retry voice uploads until the API key account and API credit are confirmed.",
   });
 }
