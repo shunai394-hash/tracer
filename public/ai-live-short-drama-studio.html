@@ -388,6 +388,8 @@ $("fishDiagnostics").addEventListener("click",async()=>{
    "蒼真・ドラマ用クローン候補："+(models.matchingSomaCount??"不明")
   ];
   for(const model of models.matchingSoma||[])lines.push("・"+model.title+"／"+model.visibility+"／ID："+model.id);
+  lines.push("", "【TRACER看板キャラクターIDの直接照合】");
+  for(const character of data.assignedCharacterVoices||[])lines.push("・"+character.title+"／"+character.id+"／"+(character.status==="accessible"?"接続可能":character.status==="not_accessible"?"Fish Audio側で参照不可":"照会エラー"));
   lines.push("",data.interpretation||"");
   output.textContent=lines.join("\n");
  }catch(error){output.textContent="診断エラー："+error.message;}
