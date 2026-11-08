@@ -817,6 +817,7 @@ export type ShopifyColorFamilyVariantInput = {
 };
 
 export type ShopifyColorFamilyCreateInput = {
+  inventoryLocationId: string;
   title: string;
   descriptionHtml: string;
   handle: string;
@@ -837,8 +838,8 @@ export type ShopifyColorFamilyCreateInput = {
  */
 export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateInput): Promise<{
   productId: string;
-  variants: Array<{ id: string; sku: string; price: string; colorLabel: string; imageUrl: string }>;
-  status: "DRAFT";
+  variants: Array<{ id: string; sku: string; price: string; colorLabel: string; imageUrl: string; canonicalVariantId: string; sourceShopifyVariantId: string }>;
+  status: "DRAFT" | "ACTIVE";
 }> {
   if (process.env.SHOPIFY_COLOR_FAMILY_EXECUTION_ENABLED !== "1") {
     throw new Error("shopify_color_family_execution_disabled");
@@ -848,7 +849,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   const supplierCode = input.supplierCode.trim().toLowerCase();
   const supplierProductId = input.supplierProductId.trim();
   const canonicalProductId = input.canonicalProductId.trim();
-  const locationId = process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
+  const locationId = input.inventoryLocationId.trim() || process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
   if (!title || !supplierCode || !supplierProductId || !canonicalProductId) {
     throw new Error("shopify_color_family_identity_incomplete");
   }
@@ -990,7 +991,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     { id: productId },
   );
   if (!before.product) throw new Error("shopify_color_family_parent_readback_missing");
-  if (before.product.status !== "DRAFT") throw new Error("shopify_color_family_parent_not_draft");
+  if (!["DRAFT", "ACTIVE"].includes(before.product.status)) throw new Error("shopify_color_family_parent_status_invalid");
   const currentBySku = new Map<string, typeof before.product.variants.nodes[number]>();
   for (const variant of before.product.variants.nodes) {
     if (variant.sku) {
@@ -1048,7 +1049,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }`,
     { id: productId },
   );
-  if (!refreshed.product || refreshed.product.status !== "DRAFT") {
+  if (!refreshed.product || !["DRAFT", "ACTIVE"].includes(refreshed.product.status)) {
     throw new Error("shopify_color_family_parent_refresh_failed");
   }
   const refreshedBySku = new Map<string, typeof refreshed.product.variants.nodes[number]>();
@@ -1127,7 +1128,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     { id: productId },
   );
   const product = verified.product;
-  if (!product || product.status !== "DRAFT") throw new Error("shopify_color_family_verification_parent_failed");
+  if (!product || !["DRAFT", "ACTIVE"].includes(product.status)) throw new Error("shopify_color_family_verification_parent_failed");
   if (product.variants.nodes.length !== variants.length) throw new Error("shopify_color_family_verification_variant_count_failed");
   const result = variants.map((expected) => {
     const actual = product.variants.nodes.find((variant) => variant.sku === expected.sku);
@@ -1209,6 +1210,95 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       canonicalVariantId: variants.find((expected) => expected.sku === variant.sku)!.canonicalVariantId,
       sourceShopifyVariantId: variants.find((expected) => expected.sku === variant.sku)!.sourceShopifyVariantId,
     })),
-    status: "DRAFT",
+    status: product.status as "DRAFT" | "ACTIVE",
   };
+}
+
+
+export async function readShopifyVariantInventorySnapshot(variantIds: string[]): Promise<Array<{
+  variantId: string;
+  locationId: string;
+  available: number;
+}>> {
+  const ids = [...new Set(variantIds.map((id) => toShopifyGid("ProductVariant", id)).filter((id): id is string => Boolean(id)))];
+  if (!ids.length || ids.length !== variantIds.length) throw new Error("shopify_inventory_snapshot_variant_ids_invalid");
+  const data = await shopifyGraphQL<{
+    nodes: Array<{
+      id: string;
+      inventoryItem: {
+        inventoryLevels: {
+          nodes: Array<{
+            location: { id: string };
+            quantities: Array<{ name: string; quantity: number }>;
+          }>;
+        };
+      } | null;
+    } | null>;
+  }>(
+    `query ReadTracerColorFamilySourceInventory($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on ProductVariant {
+          id
+          inventoryItem {
+            inventoryLevels(first: 50) {
+              nodes {
+                location { id }
+                quantities(names: ["available"]) { name quantity }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { ids },
+  );
+  if (data.nodes.length !== ids.length) throw new Error("shopify_inventory_snapshot_variant_count_mismatch");
+  const configuredLocation = process.env.SHOPIFY_INVENTORY_LOCATION_ID?.trim();
+  return data.nodes.map((node, index) => {
+    if (!node?.inventoryItem) throw new Error("shopify_inventory_snapshot_variant_missing:" + ids[index]);
+    const levels = node.inventoryItem.inventoryLevels.nodes;
+    const level = configuredLocation
+      ? levels.find((entry) => entry.location.id === configuredLocation)
+      : levels.length === 1 ? levels[0] : null;
+    if (!level) throw new Error("shopify_inventory_snapshot_location_ambiguous:" + ids[index]);
+    const quantity = level.quantities.find((entry) => entry.name === "available")?.quantity;
+    if (!Number.isSafeInteger(quantity) || Number(quantity) < 0) {
+      throw new Error("shopify_inventory_snapshot_quantity_invalid:" + ids[index]);
+    }
+    return { variantId: node.id, locationId: level.location.id, available: Number(quantity) };
+  });
+}
+
+export async function activateShopifyProduct(productId: string): Promise<void> {
+  const current = await shopifyGraphQL<{
+    product: { id: string; status: string } | null;
+  }>(
+    `query ReadTracerColorFamilyProductStatus($id: ID!) {
+      product(id: $id) { id status }
+    }`,
+    { id: productId },
+  );
+  if (!current.product) throw new Error("shopify_color_family_activation_product_missing");
+  if (current.product.status === "ACTIVE") return;
+  if (current.product.status !== "DRAFT") throw new Error("shopify_color_family_activation_status_invalid");
+  const updated = await shopifyGraphQL<{
+    productUpdate: {
+      product: { id: string; status: string } | null;
+      userErrors: Array<{ field?: string[]; message: string }>;
+    };
+  }>(
+    `mutation ActivateTracerColorFamily($product: ProductUpdateInput!) {
+      productUpdate(product: $product) {
+        product { id status }
+        userErrors { field message }
+      }
+    }`,
+    { product: { id: productId, status: "ACTIVE" } },
+  );
+  if (updated.productUpdate.userErrors.length) {
+    throw new Error(updated.productUpdate.userErrors.map((error) => error.message).join("; "));
+  }
+  if (updated.productUpdate.product?.status !== "ACTIVE") {
+    throw new Error("shopify_color_family_activation_verification_failed");
+  }
 }
