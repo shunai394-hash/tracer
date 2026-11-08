@@ -109,18 +109,15 @@ export async function POST(request: Request) {
 
   const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
   if (!isCustomVoice) {
-    let licensedVoices;
-    let privateChildVoices;
-    let userProvidedVoices;
-    try {
-      [licensedVoices, privateChildVoices, userProvidedVoices] = await Promise.all([
-        listLicensedJapaneseVoices(apiKey),
-        listPrivateDramaChildVoices(apiKey),
-        listUserProvidedDramaVoices(apiKey),
-      ]);
-    } catch {
+    const verifiedVoiceLibraries = await Promise.all([
+      listLicensedJapaneseVoices(apiKey),
+      listPrivateDramaChildVoices(apiKey),
+      listUserProvidedDramaVoices(apiKey),
+    ]).catch(() => null);
+    if (!verifiedVoiceLibraries) {
       return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
     }
+    const [licensedVoices, privateChildVoices, userProvidedVoices] = verifiedVoiceLibraries;
     if (!licensedVoices.some((voice) => voice.id === referenceId) && !isPrivateDramaChildVoice(privateChildVoices, referenceId) && !userProvidedVoices.some((voice) => voice.id === referenceId)) {
       return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a licensed public Japanese voice, a consent-confirmed custom voice, or a private TRACER-designed fictional child voice." }, 400);
     }
