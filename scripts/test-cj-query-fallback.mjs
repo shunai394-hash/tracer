@@ -61,9 +61,9 @@ assert.equal(normalizeCJProductDetailSummary({ result: false, data: {} }, "pid-a
 
 const cjImporterSource = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
 for (const pattern of [
-  String.raw`[/\bcoffee\b/, "コーヒー色"]`,
-  String.raw`[/large\s+white/, "大・ホワイト"]`,
-  String.raw`[/medium\s+white/, "中・ホワイト"]`,
+  String.raw`[/\\bcoffee\\b/, "コーヒー色"]`,
+  String.raw`[/large\\s+white/, "大・ホワイト"]`,
+  String.raw`[/medium\\s+white/, "中・ホワイト"]`,
 ]) {
   assert.ok(cjImporterSource.includes(pattern), "CJ variant label regex must use real regex escapes: " + pattern);
 }
@@ -78,4 +78,19 @@ assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
 assert.ok(cjClientSource.includes("normalizeCJProductDetailVariants(payload, pid)"));
 assert.ok(cjClientSource.includes("return normalized ?? await queryCJProductDetailSummary(pid)"));
 
-console.log("CJ query fallback and full product-detail variant image tests passed");
+// The production diagnostic endpoint must enforce its exact reviewed PID scope
+// independently of the workflow's fixed list and reject cross-family responses.
+const inspectRouteSource = await readFile(new URL("../app/api/intelligence/cj-variant-inspect/route.ts", import.meta.url), "utf8");
+for (const pid of [
+  "2608270931501632200",
+  "2611030217281638700",
+  "2610130254321621100",
+]) {
+  assert.ok(inspectRouteSource.includes(pid), "approved audit PID missing: " + pid);
+}
+assert.match(inspectRouteSource, /ALLOWED_AUDIT_PRODUCT_IDS\.has\(pid\)/);
+assert.match(inspectRouteSource, /status:\s*403/);
+assert.match(inspectRouteSource, /variant\.productId !== pid/);
+assert.match(inspectRouteSource, /requireAutomationAuth\(request\)/);
+
+console.log("CJ query fallback, exact-VID image mapping, and audit endpoint scope tests passed");
