@@ -1,0 +1,99 @@
+name: TRACER exact 15 CJ color image audit (read only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Wait for authenticated production endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production includes the reviewed endpoint."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production has not deployed the reviewed commit; refusing CJ requests."
+          exit 1
+
+      - name: Fetch exact CJ product variant records (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          mkdir -p cj-audit
+          for pid in 2608270931501632200 2611030217281638700 2610130254321621100; do
+            echo "Read-only CJ query pid=$pid"
+            code="$(curl -sS --max-time 240 -o "cj-audit/$pid.json" -w "%{http_code}" -H "Authorization: Bearer $token" "$BASE/api/intelligence/cj-variant-inspect?pid=$pid")"
+            test "$code" = "200"
+            python3 - "$pid" "cj-audit/$pid.json" <<'PY'
+          import json,sys
+          pid,path=sys.argv[1:]
+          data=json.load(open(path))
+          if data.get("ok") is not True or data.get("pid") != pid:
+              raise SystemExit(f"CJ inspection failed for {pid}: {data.get('error') or 'unexpected response'}")
+          print(f"pid={pid} variants={data.get('count')}")
+          PY
+          done
+
+      - name: Build exact-VID comparison CSV
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv,json,pathlib
+          expected = {
+            "2608270931501632200": {"2608270931501633200","2608270931501633201","2608270931501633202","2608270931501633203","2608270931501633204"},
+            "2611030217281638700": {"2611030217291630600","2611030217291630601","2611030217291630602","2611030217291630603","2611030217291630604"},
+            "2610130254321621100": {"2610130254321622300","2610130254321622301","2610130254321622302","2610130254321622303","2610130254321622304"},
+          }
+          rows=[]; errors=[]
+          for pid,vids in expected.items():
+            data=json.load(open(f"cj-audit/{pid}.json"))
+            found={str(v.get("vid") or ""):v for v in data.get("variants",[])}
+            for vid in sorted(vids):
+              v=found.get(vid)
+              if not v:
+                errors.append(f"missing_exact_vid:{vid}")
+                rows.append({"pid":pid,"vid":vid,"sku":"","color_name":"","image_url":"","sell_price":"","inventory":"","exact_vid_found":"false"})
+                continue
+              rows.append({"pid":pid,"vid":vid,"sku":v.get("sku") or "","color_name":v.get("nameEn") or "","image_url":v.get("variantImage") or "","sell_price":v.get("sellPrice") or "","inventory":v.get("inventory") if v.get("inventory") is not None else "","exact_vid_found":"true"})
+              if not v.get("variantImage"): errors.append(f"missing_variant_image:{vid}")
+              if not v.get("sku"): errors.append(f"missing_sku:{vid}")
+          with open("cj-audit/exact-15-variants.csv","w",newline="",encoding="utf-8-sig") as f:
+            w=csv.DictWriter(f,fieldnames=["pid","vid","sku","color_name","image_url","sell_price","inventory","exact_vid_found"])
+            w.writeheader(); w.writerows(rows)
+          summary={"expected_variants":15,"matched_variants":sum(r["exact_vid_found"]=="true" for r in rows),"errors":errors,"note":"GET-only inspection; URLs are not visual verification and must not set colorImageVerified."}
+          pathlib.Path("cj-audit/summary.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2))
+          print(json.dumps(summary,ensure_ascii=False,indent=2))
+          if errors: raise SystemExit("Audit incomplete; inspect artifact.")
+          PY
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-cj-exact-15-color-audit
+          path: cj-audit/
+          if-no-files-found: error
+          retention-days: 14
