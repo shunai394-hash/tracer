@@ -234,7 +234,9 @@ test("voice library reports all six source buckets and clarifies public count ve
   assert.ok(page.includes("ドラマ専用クローン "));
   assert.ok(page.includes("役別ID照合 "));
   assert.ok(page.includes("架空の子供役 "));
-  assert.ok(page.includes("公開37件と総数43件は別区分です。"));
+  assert.ok(page.includes("重複IDは1回のみ計上"));
+  assert.ok(page.includes("共通登録との重複を除外"));
+  assert.ok(voicesRoute.includes("uniqueDramaCharacterVoices.length"));
   assert.ok(voicesRoute.includes("registeredVoiceCount: registeredVoices.length"));
 });
 test("character cards provide the correct Fish Audio connection path", () => {
