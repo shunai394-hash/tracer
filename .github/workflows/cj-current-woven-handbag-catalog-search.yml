@@ -1,5 +1,4 @@
-# Runs the read-only catalog diagnostic when its workflow or implementation changes.
-name: CJ current woven handbag catalog search
+name: CJ color-family live refresh
 
 on:
   workflow_dispatch:
@@ -8,73 +7,41 @@ on:
       - main
     paths:
       - .github/workflows/cj-current-woven-handbag-catalog-search.yml
-      - app/api/internal/cj-current-woven-handbag-catalog-search/**
-      - lib/sources/cj/**
+      - app/api/cron/commerce-cj-import/**
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: cj-current-woven-handbag-catalog-search
+  group: cj-color-family-live-refresh
   cancel-in-progress: false
 
 jobs:
-  diagnostic:
+  refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Call read-only production catalog diagnostic
+      - name: Refresh one five-color handbag family from live CJ data
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          code="$(curl -sS -o diagnostic.json -w "%{http_code}" --max-time 720 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/cj-current-woven-handbag-catalog-search" || true)"
-          echo "=== read-only CJ catalog search HTTP $code ==="
+          code="$(curl -sS -o import.json -w "%{http_code}" --max-time 720 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import?productIds=2606090341151608200&limit=1&variantLimit=6" || true)"
+          echo "=== targeted CJ five-color family refresh HTTP $code ==="
           python3 - <<'PY'
           import json
-          d = json.load(open("diagnostic.json"))
+          d = json.load(open("import.json"))
           print(json.dumps({
             "ok": d.get("ok"),
-            "readOnly": d.get("readOnly"),
-            "originalProductId": d.get("originalProductId"),
-            "searches": d.get("searches"),
-            "jpVerifiedWarehouseFilter": d.get("jpVerifiedWarehouseFilter"),
-            "jpVerifiedSearches": d.get("jpVerifiedSearches"),
-            "jpVerifiedCandidateCount": d.get("jpVerifiedCandidateCount"),
-            "jpVerifiedCandidateIds": d.get("jpVerifiedCandidateIds"),
-            "candidateCount": d.get("candidateCount"),
-            "imageVariantCount": d.get("imageVariantCount"),
-            "exactVariantChecks": d.get("exactVariantChecks"),
-            "exactVariantCheckLimit": d.get("exactVariantCheckLimit"),
-            "variantStockNote": d.get("variantStockNote"),
-            "freightNote": d.get("freightNote"),
-            "candidates": [
-              {
-                **{k: v for k, v in candidate.items() if k != "exactVariants"},
-                "exactVariants": [
-                  {
-                    "requestedVid": variant.get("requestedVid"),
-                    "exactVidMatched": variant.get("exactVidMatched"),
-                    "exactProductId": variant.get("exactProductId"),
-                    "exactSku": variant.get("exactSku"),
-                    "exactColorOrOption": variant.get("exactColorOrOption"),
-                    "exactVariantImageUrl": variant.get("exactVariantImageUrl"),
-                    "verifiedInventoryByCountry": variant.get("verifiedInventoryByCountry"),
-                    "variantStockQuantity": variant.get("variantStockQuantity"),
-                    "variantStockError": variant.get("variantStockError"),
-                    "japanFreightOptions": variant.get("japanFreightOptions"),
-                    "verificationError": variant.get("verificationError"),
-                  }
-                  for variant in candidate.get("exactVariants", [])
-                ],
-              }
-              for candidate in d.get("candidates", [])
-            ],
+            "skipped": d.get("skipped"),
+            "reason": d.get("reason"),
+            "imported": d.get("imported"),
+            "stats": d.get("stats"),
+            "error": d.get("error"),
           }, ensure_ascii=False, indent=2))
           PY
-          if [ "$code" != "200" ] && [ "$code" != "207" ]; then
+          if [ "$code" != "200" ] && [ "$code" != "207" ] && [ "$code" != "202" ]; then
             exit 1
           fi
-          python3 -c 'import json,sys; d=json.load(open("diagnostic.json")); sys.exit(0 if d.get("readOnly") is True else 1)'
