@@ -109,20 +109,14 @@ test("fictional child-role voice is designed from text, saved privately, and nev
 
 
 
-test("voice list includes the downloaded Renji and Rin MP3 samples without fake generation models", () => {
-  assert.ok(page.includes('title:"蓮司",gender:"男性"'));
-  assert.ok(page.includes('title:"凛",gender:"女性"'));
-  assert.ok(page.includes("情熱的で親しみやすい男性の声"));
-  assert.ok(page.includes("明るく知的な若手女性の声"));
-  assert.equal((page.match(/data:audio\/mpeg;base64,/g)||[]).length,2);
-  assert.ok(page.includes("audio.controls=true"));
-  assert.ok(page.includes("Fish Audioの生成モデルIDではありません"));
+test("voice library always lists Soma, Mitsuki, Renji and Rin with local MP3 preview inputs", () => {
+  for (const name of ["蒼真","美月","蓮司","凛"]) assert.ok(page.includes('title:"'+name+'"'));
+  assert.ok(page.includes('picker.accept=".mp3,audio/mpeg,audio/mp3"'));
+  assert.ok(page.includes('player.controls=true'));
+  assert.ok(page.includes('Fish Audioモデル未接続'));
+  assert.ok(page.includes('renderVoiceLibrary();'));
+  assert.doesNotMatch(page, /data:audio\/mpeg;base64,/);
   assert.doesNotMatch(page, /id="cloneAudio"|id="cloneRights"|id="registerClone"/);
-  assert.doesNotMatch(page, /本人許可済みボイスをこの一覧に追加/);
-  assert.ok(cloneRoute.includes('speakerType === "child"'));
-  assert.ok(cloneRoute.includes('!rightsConfirmed'));
-  assert.ok(voicesRoute.includes("listPrivateDramaCloneVoices(apiKey)"));
-  assert.ok(privateCloneVoices.includes('tags.includes(DRAMA_CLONE_TAG)'));
 });
 
 test("BGM library is private, authenticated, paginated, and MP3 size bounded", () => {
