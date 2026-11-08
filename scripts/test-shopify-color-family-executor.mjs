@@ -43,4 +43,5 @@ assert.match(migration, /offer\.ship_to !== "JP"/, "non-Japan supplier offers mu
 assert.match(migration, /ensureShopifyProductPublished\(created\.productId\)/, "new family must be published and verified before old products are unpublished");
 assert.match(migration, /unpublishShopifyProduct\(oldProductId\)/, "only the five exact old Shopify products may be unpublished");
 assert.match(migration, /channel_listing_update_failed/, "channel listing identity must be updated after successful migration");
-\nconsole.log("Shopify color-family executor safety contract: migration and identity assertions passed");
+
+console.log("Shopify color-family executor safety contract: migration and identity assertions passed");
