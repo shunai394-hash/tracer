@@ -35,6 +35,22 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <button id="fishDiagnostics" class="secondary" type="button">Fish Audioアカウントを読み取り診断</button>
 <pre id="fishDiagnosticsResult" class="status" role="status" aria-live="polite">残高・契約枠・登録済みモデルを確認します。音声生成や課金は行いません。</pre>
 </section>
+<section class="panel" id="voiceLibraryPanel">
+<h2>日本語ボイス一覧</h2>
+<p class="muted">ドラマで使用する声はここに集約します。登録済みの声だけが人物設定から選択できます。蒼真・美月はモデル登録が完了するまで「未登録」と表示します。</p>
+<div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">管理トークンを入力してボイス一覧を読み込んでください。</p></div>
+<div class="scene" id="clonePanel">
+<h3>本人許可済みボイスをこの一覧に追加</h3>
+<p class="muted">成人本人の許可を得た録音だけを登録します。作成した音声モデルはFish Audio上で非公開にし、TRACERの声一覧へ自動追加します。子供の録音は受け付けません。</p>
+<label for="cloneTitle">ボイス名</label><div class="grid"><button id="cloneNameSoma" class="secondary" type="button">蒼真（男性）</button><button id="cloneNameMitsuki" class="secondary" type="button">美月（女性）</button></div><input id="cloneTitle" maxlength="80" value="蒼真｜ドラマ専用ボイス"><p class="muted">登録する音声に合わせて名前を選択してください。蒼真・美月はそれぞれ別モデルとして非公開登録します。</p>
+<label for="cloneAudio">本人許可済みの音声ファイル（WAV推奨・12MB以下）</label><input id="cloneAudio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm">
+<label for="cloneTranscript">録音内容の文字起こし（任意）</label><textarea id="cloneTranscript" maxlength="20000" placeholder="録音で話している内容を入力すると音声学習の補助になります"></textarea>
+<label for="cloneSpeakerType">話者</label><select id="cloneSpeakerType"><option value="adult">成人（18歳以上）</option><option value="child">子供（登録不可）</option></select>
+<label><input id="cloneRights" type="checkbox" style="width:auto;margin-right:8px">声の本人から、声クローン作成およびTRACER内でのドラマ音声生成について許可を得ています。</label>
+<button id="registerClone" type="button">非公開クローンを作成して登録</button>
+<p id="cloneStatus" class="status" role="status" aria-live="polite">許可確認と音声ファイルを指定して登録してください。</p>
+</div>
+</section>
 <section class="panel" id="bgmPanel">
 <h2>BGMライブラリ</h2>
 <p class="muted">BGM音源（MP3）を複数選択して登録できます。音源は非公開Storageに保存し、台詞音声の生成とは独立して管理します。</p>
@@ -59,19 +75,6 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div id="characters" class="grid"></div>
 <button id="addCharacter" class="secondary" type="button">登場人物を追加</button>
 <button id="createChildVoice" type="button">架空の子供役ボイスを作成</button>
-<div class="scene" id="clonePanel">
-<h3>本人許可済みの声をドラマ用にクローン登録</h3>
-<p class="muted">成人本人の許可を得た録音だけを登録します。作成した音声モデルはFish Audio上で非公開にし、TRACERの声一覧へ自動追加します。子供の録音は受け付けません。</p>
-<label for="cloneTitle">ボイス名</label><div class="grid"><button id="cloneNameSoma" class="secondary" type="button">蒼真（男性）</button><button id="cloneNameMitsuki" class="secondary" type="button">美月（女性）</button></div><input id="cloneTitle" maxlength="80" value="蒼真｜ドラマ専用ボイス"><p class="muted">登録する音声に合わせて名前を選択してください。蒼真・美月はそれぞれ別モデルとして非公開登録します。</p>
-<label for="cloneAudio">本人許可済みの音声ファイル（WAV推奨・12MB以下）</label><input id="cloneAudio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm">
-<label for="cloneTranscript">録音内容の文字起こし（任意）</label><textarea id="cloneTranscript" maxlength="20000" placeholder="録音で話している内容を入力すると音声学習の補助になります"></textarea>
-<label for="cloneSpeakerType">話者</label><select id="cloneSpeakerType"><option value="adult">成人（18歳以上）</option><option value="child">子供（登録不可）</option></select>
-<label><input id="cloneRights" type="checkbox" style="width:auto;margin-right:8px">声の本人から、声クローン作成およびTRACER内でのドラマ音声生成について許可を得ています。</label>
-<button id="registerClone" type="button">非公開クローンを作成して登録</button>
-<p id="cloneStatus" class="status" role="status" aria-live="polite">許可確認と音声ファイルを指定して登録してください。</p>
-</div>
-
-<p class="muted">録音素材は使わず、文章の指示だけでオリジナルの子供役音声を作成します。作成後は非公開の固定ボイスとして一覧に追加します。音声設計の利用料金が発生する場合があります。</p>
 </section>
 <section class="panel">
 <h2>脚本・セリフ</h2>
@@ -171,7 +174,15 @@ function triggerDownload(blob,filename){const url=URL.createObjectURL(blob);cons
 async function exportSceneWav(){if(pending||scenePlaybackActive||sceneExporting)return;const rows=lineRows.filter(row=>row.audioUrl);if(!rows.length)return;sceneExporting=true;updateSceneButtons();status.textContent="生成済み音声を読み込み、WAVに結合しています…";let context;try{const AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass)throw new Error("このブラウザーは音声変換に対応していません。");context=new AudioContextClass();const decoded=[];for(let i=0;i<rows.length;i++){status.textContent="音声を解析中："+(i+1)+"/"+rows.length+"件";decoded.push(await decodeGeneratedAudio(rows[i],context));}const sampleRate=decoded[0].sampleRate;if(decoded.some(buffer=>buffer.sampleRate!==sampleRate))throw new Error("音声のサンプルレートが異なるため結合できません。");const channels=Math.min(2,Math.max(...decoded.map(buffer=>buffer.numberOfChannels)));const totalFrames=decoded.reduce((sum,buffer)=>sum+buffer.length,0);if(totalFrames*channels*2>300*1024*1024)throw new Error("WAVが大きすぎます（PCMデータ上限300MB）。作品を分けて書き出してください。");const combined=context.createBuffer(channels,totalFrames,sampleRate);let offset=0;for(const source of decoded){for(let channel=0;channel<channels;channel++){const sourceChannel=source.getChannelData(Math.min(channel,source.numberOfChannels-1));combined.getChannelData(channel).set(sourceChannel,offset);}offset+=source.length;}const wav=writeWav(combined);const filename=(( $("title").value||"short-drama").replace(/[^\\p{L}\\p{N}_-]+/gu,"-").slice(0,50)||"short-drama")+"-full.wav";triggerDownload(wav,filename);status.textContent=rows.length+"件の音声を1本のWAVに書き出しました。";}catch(error){status.textContent="WAV書き出しエラー："+error.message;}finally{if(context)await context.close().catch(()=>{});sceneExporting=false;updateSceneButtons();}}
 $("playScene").addEventListener("click",playScene);$("stopScene").addEventListener("click",stopScene);$("exportSceneWav").addEventListener("click",exportSceneWav);
 function renderOutputs(){outputs.replaceChildren();for(const row of lineRows.filter(x=>x.audioUrl)){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=(characterRows.find(c=>c.id===row.speakerId)?.name||"話者")+"："+row.text.slice(0,70);const audio=document.createElement("audio");audio.controls=true;audio.src=row.audioUrl;const link=document.createElement("a");link.href=row.audioUrl;link.download="tracer-drama-"+row.id+".mp3";link.textContent="MP3保存";link.style="display:block;margin-top:8px;color:#93c5fd";item.append(title,audio,link);outputs.append(item);}updateSceneButtons();}
-let voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");voices=d.voices;lastVoiceToken=value;refreshCharacterVoiceOptions();$("loadStatus").textContent="日本語ボイス "+voices.length+"件を読み込みました（公開 "+(d.publicLicensedCount||0)+"件／許可確認済み "+(d.consentedCustomCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件）。人物の「担当ボイス」から選択できます。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
+let function renderVoiceLibrary(){
+ const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
+ const presets=[{title:"蒼真｜ドラマ専用ボイス",gender:"男性",pattern:/蒼真|soma/i},{title:"美月｜ドラマ専用ボイス",gender:"女性",pattern:/美月|mitsuki/i}];
+ const actual=voices.map(v=>({title:v.title,id:v.id,source:v.source}));
+ for(const preset of presets){const found=actual.find(v=>preset.pattern.test(v.title));const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=preset.title+"（"+preset.gender+"）";const state=document.createElement("p");state.className="muted";state.textContent=found?"登録済み・使用可能／非公開クローン":"未登録：Fish Audioのモデル作成枠が利用可能になると登録できます。";card.append(name,state);if(found){const id=document.createElement("small");id.textContent="モデルID："+found.id;card.append(id);}root.append(card);}
+ const heading=document.createElement("p");heading.className="muted";heading.textContent="登録済みボイス："+actual.length+"件";root.append(heading);
+ for(const voice of actual){const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent=(voice.source==="user_provided_clone"?"本人許可済みクローン・非公開":voice.source==="private_voice_design"?"架空キャラクターボイス":"公開ライセンス音声")+"／使用可能";const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,choose);root.append(card);}
+}
+ voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");voices=d.voices;lastVoiceToken=value;refreshCharacterVoiceOptions();renderVoiceLibrary();$("loadStatus").textContent="日本語ボイス "+voices.length+"件を読み込みました（公開 "+(d.publicLicensedCount||0)+"件／許可確認済み "+(d.consentedCustomCount||0)+"件／架空の子供役 "+(d.privateChildVoiceCount||0)+"件）。人物の「担当ボイス」から選択できます。";$("generateAll").disabled=!voices.length||!lineRows.length;if(!voices.length)$("loadStatus").textContent+=" ボイスが0件です。Fish Audioのライセンス付き日本語音声一覧を確認してください。";}catch(e){$("loadStatus").textContent=e.message;}finally{voiceLoadInFlight=false;$("load").disabled=false;}}function encodeWav(buffer){
  const channels=2,sampleRate=buffer.sampleRate,frames=buffer.length;
  const bytesPerSample=2,dataBytes=frames*channels*bytesPerSample;
  const out=new ArrayBuffer(44+dataBytes),view=new DataView(out);
@@ -326,7 +337,7 @@ $("registerClone").addEventListener("click",async()=>{
   if(!response.ok||!data.ok){const detail=typeof data.providerDetail==="string"&&data.providerDetail.trim()? "\\nFish Audio詳細: "+data.providerDetail.trim():"";throw new Error((data.message||data.error||"クローン登録に失敗しました。")+detail);}
   const list=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store"});
   const catalogue=await list.json();if(!list.ok||!catalogue.ok)throw new Error("Fish Audioには登録されましたが、TRACERの声一覧を再取得できません。ボイス一覧を再読み込みしてください。");
-  voices=catalogue.voices;refreshCharacterVoiceOptions();addCharacter(data.title||title,data.modelId);
+  voices=catalogue.voices;refreshCharacterVoiceOptions();renderVoiceLibrary();addCharacter(data.title||title,data.modelId);
   $("cloneAudio").value="";$("cloneTranscript").value="";$("cloneRights").checked=false;
   message.textContent="登録完了：非公開モデル「"+(data.title||title)+"」を声一覧へ追加しました。";
   status.textContent="声クローンを作成し、登場人物の担当ボイスに追加しました。";
