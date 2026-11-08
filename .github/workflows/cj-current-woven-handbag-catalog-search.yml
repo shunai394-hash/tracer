@@ -55,6 +55,20 @@ jobs:
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          ready=0
+          for attempt in $(seq 1 30); do
+            probe_code="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "$BASE/api/internal/shopify-five-color-family-migrate" || true)"
+            if [ "$probe_code" = "405" ]; then
+              ready=1
+              break
+            fi
+            echo "Waiting for the deployed Shopify migration route (HTTP $probe_code), attempt $attempt/30"
+            sleep 10
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Shopify migration route did not become available"
+            exit 1
+          fi
           code="$(curl -sS -o family.json -w "%{http_code}" --max-time 720 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/shopify-five-color-family-migrate" || true)"
           echo "=== Shopify five-color family migration HTTP $code ==="
           python3 - <<'PY'
