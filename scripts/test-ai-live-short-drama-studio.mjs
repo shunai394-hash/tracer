@@ -182,3 +182,14 @@ test("Soma and Mitsuki supplied Fish Audio IDs are verified before appearing or 
   assert.ok(route.includes("listUserProvidedDramaVoices(apiKey)"));
   assert.ok(page.includes('v.source==="user_provided_reference"'));
 });
+
+test("user-supplied Fish Audio model IDs are registered directly in the picker and checked before TTS", () => {
+  assert.ok(userProvidedDramaVoices.includes("getRegisteredUserProvidedDramaVoices"));
+  assert.ok(userProvidedDramaVoices.includes("7478a76f38974bd2afa89c1bbe6831c7"));
+  assert.ok(userProvidedDramaVoices.includes("160840e5c583459d89dc5521e7f175e5"));
+  assert.ok(voicesRoute.includes("getRegisteredUserProvidedDramaVoices()"));
+  assert.ok(voicesRoute.includes('source: "user_provided_reference"'));
+  assert.ok(route.includes("listUserProvidedDramaVoices(apiKey)"));
+  assert.ok(page.includes("指定モデルID登録済み（生成時に利用可否を確認）"));
+  assert.ok(page.includes("Model ID: "+'"+found.id'));
+});
