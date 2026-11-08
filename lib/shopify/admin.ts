@@ -1068,7 +1068,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   const missing = variants.filter((variant) => !refreshedBySku.has(variant.sku));
   for (const variant of variants) {
     const current = refreshedBySku.get(variant.sku);
-    if (current && (current.price !== variant.price.toFixed(2) ||
+    if (current && (Number(current.price) !== variant.price ||
         !current.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.colorLabel))) {
       throw new Error("shopify_color_family_existing_variant_mismatch:" + variant.sku);
     }
@@ -1099,6 +1099,46 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     );
     if (created.productVariantsBulkCreate.userErrors.length) {
       throw new Error(created.productVariantsBulkCreate.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  const existingVariantsToRepair = variants.filter((variant) => refreshedBySku.has(variant.sku));
+  if (existingVariantsToRepair.length) {
+    const updated = await shopifyGraphQL<{
+      productVariantsBulkUpdate: { productVariants: Array<{ id: string; sku: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
+    }>(
+      `mutation RepairTracerColorVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+          productVariants { id sku }
+          userErrors { field message }
+        }
+      }`,
+      {
+        productId,
+        variants: existingVariantsToRepair.map((variant) => {
+          const current = refreshedBySku.get(variant.sku);
+          if (!current) throw new Error("shopify_color_family_existing_variant_missing:" + variant.sku);
+          return {
+            id: current.id,
+            price: variant.price.toFixed(2),
+            mediaSrc: [variant.imageUrl],
+            metafields: variantMetafields(variant.supplierVariantId, variant.imageUrl),
+          };
+        }),
+      },
+    );
+    if (updated.productVariantsBulkUpdate.userErrors.length) {
+      throw new Error(updated.productVariantsBulkUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+    for (const variant of existingVariantsToRepair) {
+      const current = refreshedBySku.get(variant.sku);
+      if (!current) throw new Error("shopify_color_family_existing_variant_missing:" + variant.sku);
+      await setShopifyVariantInventory({
+        variantId: current.id,
+        quantity: variant.inventory,
+        locationId,
+        reference: `tracer://color-family/${supplierProductId}/${variant.supplierVariantId}`,
+      });
     }
   }
 
