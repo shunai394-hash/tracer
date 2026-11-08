@@ -4,6 +4,44 @@ export type CJVerifiedWarehouseInventory = {
   storageId: string | null;
 };
 
+
+/** Normalize only CJ-owned stock in explicitly verified warehouses. */
+export function normalizeCJVerifiedWarehouseInventory(
+  rows: Array<{
+    countryCode?: string;
+    cjInventory?: number | string;
+    verifiedWarehouse?: number | string | boolean;
+    storageId?: string | number;
+  }>,
+): CJVerifiedWarehouseInventory[] {
+  const byCountry = new Map<string, { quantity: number; storageId: string | null }>();
+  for (const row of rows) {
+    const countryCode = String(row.countryCode ?? "").trim().toUpperCase();
+    const quantity = Number(row.cjInventory);
+    if (
+      !/^[A-Z]{2}$/.test(countryCode) ||
+      Number(row.verifiedWarehouse) !== 1 ||
+      !Number.isFinite(quantity) ||
+      quantity <= 0
+    ) continue;
+    const current = byCountry.get(countryCode);
+    const storageId = row.storageId === undefined || row.storageId === null
+      ? null
+      : String(row.storageId);
+    byCountry.set(countryCode, {
+      quantity: (current?.quantity ?? 0) + Math.floor(quantity),
+      storageId: current?.storageId === storageId ? storageId : null,
+    });
+  }
+  return [...byCountry.entries()]
+    .map(([countryCode, value]) => ({
+      countryCode,
+      quantity: value.quantity,
+      storageId: value.storageId,
+    }))
+    .sort((a, b) => b.quantity - a.quantity);
+}
+
 export type CJProductVariant = {
   vid: string;
   productId: string;
