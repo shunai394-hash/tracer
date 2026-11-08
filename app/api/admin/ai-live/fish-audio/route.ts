@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
-import { isUserProvidedDramaVoice, listUserProvidedDramaVoices } from "@/lib/ai-live/fish-audio-user-provided-drama-voices";
+import { listUserProvidedDramaVoices } from "@/lib/ai-live/fish-audio-user-provided-drama-voices";
 import { isPrivateDramaChildVoice, listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 
 export const runtime = "nodejs";
@@ -107,14 +107,16 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "text_length_out_of_range", maxCharacters: MAX_TEXT_CHARS }, 400);
   }
 
-  const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);\n  const isUserProvidedVoice = isUserProvidedDramaVoice(referenceId);
-  if (!isCustomVoice && !isUserProvidedVoice) {
+  const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
+  if (!isCustomVoice) {
     let licensedVoices;
-    let privateChildVoices;\n    let userProvidedVoices;
+    let privateChildVoices;
+    let userProvidedVoices;
     try {
       [licensedVoices, privateChildVoices, userProvidedVoices] = await Promise.all([
         listLicensedJapaneseVoices(apiKey),
-        listPrivateDramaChildVoices(apiKey),\n        listUserProvidedDramaVoices(apiKey),
+        listPrivateDramaChildVoices(apiKey),
+        listUserProvidedDramaVoices(apiKey),
       ]);
     } catch {
       return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
