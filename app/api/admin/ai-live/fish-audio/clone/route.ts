@@ -119,12 +119,26 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      // Preserve Fish Audio's actual validation response so operators can fix the
+      // request without blindly uploading the same voice sample again.
+      const providerBody = await response.text().catch(() => "");
+      let providerDetail = providerBody;
+      try {
+        const parsed = JSON.parse(providerBody) as Record<string, unknown>;
+        providerDetail = String(
+          parsed.message ?? parsed.detail ?? parsed.error ?? parsed.description ?? providerBody,
+        );
+      } catch {
+        // Keep the plain-text provider response.
+      }
       return json({
         ok: false,
         error: "fish_audio_model_creation_rejected",
         providerStatus: response.status,
-        message: "Fish Audio rejected the private model request. No automatic retry was made.",
+        providerDetail: providerDetail.slice(0, 1600),
+        message: "Fish Audio rejected the private model request. Review providerDetail before attempting another upload.",
         uploadStarted: true,
+        automaticRetry: false,
       }, 502);
     }
 
