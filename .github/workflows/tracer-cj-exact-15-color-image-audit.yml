@@ -2,6 +2,10 @@ name: TRACER exact 15 CJ color image audit (read only)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-cj-exact-15-color-image-audit.yml"
 
 permissions:
   contents: read
