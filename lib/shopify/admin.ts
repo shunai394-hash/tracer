@@ -1162,7 +1162,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         id status
         variants(first: 100) {
           nodes {
-            id sku price selectedOptions
+            id sku price selectedOptions { name value }
             media(first: 10) { nodes { id mediaContentType preview { image { url } } } }
             metafields(first: 5, namespace: "tracer") { nodes { namespace key value } }
             inventoryItem { inventoryLevels(first: 20) {
