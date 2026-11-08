@@ -1,4 +1,4 @@
-name: CJ color-family live refresh
+name: CJ five-color Shopify migration
 
 on:
   workflow_dispatch:
@@ -8,21 +8,24 @@ on:
     paths:
       - .github/workflows/cj-current-woven-handbag-catalog-search.yml
       - app/api/cron/commerce-cj-import/**
+      - app/api/internal/shopify-five-color-family-migrate/**
+      - lib/sources/cj/**
+      - lib/shopify/admin.ts
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: cj-color-family-live-refresh
+  group: cj-five-color-shopify-migration
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: Refresh one five-color handbag family from live CJ data
+      - name: Refresh exact CJ supplier data for the five-color family
         shell: bash
         run: |
           set -euo pipefail
@@ -43,5 +46,33 @@ jobs:
           }, ensure_ascii=False, indent=2))
           PY
           if [ "$code" != "200" ] && [ "$code" != "207" ] && [ "$code" != "202" ]; then
+            exit 1
+          fi
+
+      - name: Consolidate the five verified colors into one published Shopify product
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o family.json -w "%{http_code}" --max-time 720 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/shopify-five-color-family-migrate" || true)"
+          echo "=== Shopify five-color family migration HTTP $code ==="
+          python3 - <<'PY'
+          import json,sys
+          d = json.load(open("family.json"))
+          print(json.dumps({
+            "ok": d.get("ok"),
+            "status": d.get("status"),
+            "supplierProductId": d.get("supplierProductId"),
+            "productId": d.get("productId"),
+            "productUrl": d.get("productUrl"),
+            "variantCount": d.get("variantCount"),
+            "variants": d.get("variants"),
+            "oldProductsUnpublished": d.get("oldProductsUnpublished"),
+            "error": d.get("error"),
+          }, ensure_ascii=False, indent=2))
+          sys.exit(0 if d.get("ok") is True and d.get("status") == "PUBLISHED" and d.get("variantCount") == 5 else 1)
+          PY
+          if [ "$code" != "200" ]; then
             exit 1
           fi
