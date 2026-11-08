@@ -179,6 +179,8 @@ test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet pl
 
 
 test("all drama audio playback surfaces attach the shared lip-sync engine", () => {
-  assert.ok(page.includes('window.TracerLipSync.attach(audio,item.querySelector(".lipSyncMouth"))'));
+  assert.ok(page.includes('window.TracerLipSync.attach(audio,mouth)'));
   assert.ok(page.includes('window.TracerLipSync.attach(audio,el.querySelector(".lipSyncMouth"))'));
+  assert.ok(page.includes('audio.play().catch(error=>{cleanup();reject(error);})'));
+  assert.ok(page.includes('const audio=line?.querySelector("audio")'));
 });
