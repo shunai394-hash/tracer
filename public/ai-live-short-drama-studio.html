@@ -32,6 +32,8 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </div>
 <button id="load" class="secondary" type="button">利用可能な日本語ボイスを読み込む</button>
 <p id="loadStatus" class="muted">ボイス一覧の取得のみ。音声生成は行いません。</p>
+<button id="fishDiagnostics" class="secondary" type="button">Fish Audioアカウントを読み取り診断</button>
+<pre id="fishDiagnosticsResult" class="status" role="status" aria-live="polite">残高・契約枠・登録済みモデルを確認します。音声生成や課金は行いません。</pre>
 </section>
 <section class="panel" id="bgmPanel">
 <h2>BGMライブラリ</h2>
@@ -278,6 +280,33 @@ bgmSelect.addEventListener("change",selectBgm);
 $("bgmVolume").addEventListener("input",()=>{$("bgmVolumeValue").textContent=$("bgmVolume").value+"%";bgmPreview.volume=Number($("bgmVolume").value)/100;});
 $("bgmLoop").addEventListener("change",()=>bgmPreview.loop=$("bgmLoop").checked);
 token.addEventListener("change",loadBgm);
+$("fishDiagnostics").addEventListener("click",async()=>{
+ const output=$("fishDiagnosticsResult");
+ if(!token.value.trim()){output.textContent="先にTRACER管理トークンを入力してください。";token.focus();return;}
+ const button=$("fishDiagnostics");button.disabled=true;output.textContent="Fish AudioのAPI残高・契約枠・登録済みモデルを読み取り中…";
+ try{
+  const response=await fetch("/api/admin/ai-live/fish-audio/diagnostics",{headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw new Error(data.message||data.error||"診断に失敗しました");
+  const credit=data.account?.apiCredit||{},pkg=data.account?.membershipPackage||{},models=data.account?.modelLibrary||{};
+  const lines=[
+   "【APIキー／API残高】"+(credit.ok?"正常":"取得失敗"),
+   "APIクレジット残高："+(credit.balance??"取得できず"),
+   "無料枠フラグ："+(credit.hasFreeCredit===null?"不明":credit.hasFreeCredit?"あり":"なし"),
+   "",
+   "【メンバーシップ枠】"+(pkg.ok?"取得成功":"取得失敗"),
+   "プラン："+(pkg.type??"不明")+"／残高："+(pkg.balance??"不明")+"／総枠："+(pkg.total??"不明"),
+   "",
+   "【登録済み音声モデル】"+(models.ok?"取得成功":"取得失敗"),
+   "今回取得したモデル数："+(models.pageCount??"不明")+"／Fish Audio側の総数："+(models.total??"不明"),
+   "蒼真・ドラマ用クローン候補："+(models.matchingSomaCount??"不明")
+  ];
+  for(const model of models.matchingSoma||[])lines.push("・"+model.title+"／"+model.visibility+"／ID："+model.id);
+  lines.push("",data.interpretation||"");
+  output.textContent=lines.join("\n");
+ }catch(error){output.textContent="診断エラー："+error.message;}
+ finally{button.disabled=false;}
+});
 $("load").addEventListener("click",loadVoices);token.addEventListener("change",loadVoices);token.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();loadVoices();}});
 $("registerClone").addEventListener("click",async()=>{
  const file=$("cloneAudio").files?.[0],title=$("cloneTitle").value.trim(),speakerType=$("cloneSpeakerType").value;
