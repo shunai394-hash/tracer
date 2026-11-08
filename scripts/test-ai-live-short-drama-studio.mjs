@@ -7,6 +7,7 @@ const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
 const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-voice-design/route.ts", "utf8");
 const cloneRoute = readFileSync("app/api/admin/ai-live/fish-audio/clone/route.ts", "utf8");
+const diagnosticsRoute = readFileSync("app/api/admin/ai-live/fish-audio/diagnostics/route.ts", "utf8");
 const privateCloneVoices = readFileSync("lib/ai-live/fish-audio-private-drama-clone-voices.ts", "utf8");
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
@@ -161,4 +162,16 @@ test("short drama studio inline JavaScript parses without syntax errors", () => 
   const scriptEnd = page.indexOf("</script>", scriptStart);
   assert.ok(scriptStart >= 0 && scriptEnd > scriptStart, "studio inline script exists");
   new Script(page.slice(scriptStart + "<script>".length, scriptEnd));
+});
+
+test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet plus owned models", () => {
+  assert.ok(page.includes('id="fishDiagnostics"'));
+  assert.ok(page.includes('/api/admin/ai-live/fish-audio/diagnostics'));
+  assert.ok(page.includes("APIクレジット残高"));
+  assert.ok(diagnosticsRoute.includes('"/wallet/self/api-credit?check_free_credit=true"'));
+  assert.ok(diagnosticsRoute.includes('"/wallet/self/package"'));
+  assert.ok(diagnosticsRoute.includes('"/model?self=true&page_size=100'));
+  assert.ok(diagnosticsRoute.includes("readOnly: true"));
+  assert.ok(diagnosticsRoute.includes("Promise.allSettled"));
+  assert.doesNotMatch(diagnosticsRoute, /method:\s*["']POST["']|FISH_MODEL_URL/);
 });
