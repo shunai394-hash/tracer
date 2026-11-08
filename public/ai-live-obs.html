@@ -59,6 +59,23 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <label for="token">管理トークン（BGM・音声・商品情報の読込時）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
  <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
  <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
+ <fieldset style="border:1px solid #52627a;border-radius:10px;padding:10px;margin:12px 0">
+  <legend style="font-size:13px;padding:0 6px">BGM登録・権利情報（MP3 / 10MB以下）</legend>
+  <label for="bgmTitle">曲名</label><input id="bgmTitle" maxlength="160" placeholder="曲名">
+  <label for="bgmComposer">作曲者・権利者</label><input id="bgmComposer" maxlength="160" placeholder="作曲者または権利者">
+  <label for="bgmGenre">ジャンル</label><select id="bgmGenre"><option value="daily">日常・ポップ</option><option value="romance">ロマンス</option><option value="emotional">感動</option><option value="suspense">緊張・サスペンス</option><option value="comedy">コメディ</option><option value="action">アクション</option></select>
+  <label for="bgmSourceUrl">配布元・入手元URL</label><input id="bgmSourceUrl" type="url" placeholder="https://..." required>
+  <label for="bgmLicenseName">ライセンス名</label><input id="bgmLicenseName" maxlength="160" placeholder="例：CC0 1.0 Universal">
+  <label for="bgmLicenseUrl">ライセンス本文URL</label><input id="bgmLicenseUrl" type="url" placeholder="https://..." required>
+  <label for="bgmTermsUrl">作者・配布元の追加利用規約URL（任意）</label><input id="bgmTermsUrl" type="url" placeholder="https://...">
+  <label for="bgmEvidence">許諾確認の根拠・確認メモ</label><textarea id="bgmEvidence" maxlength="4000" placeholder="商用利用、YouTube/TikTok等の配信利用が許可される条項と確認日を記録"></textarea>
+  <label><input id="bgmCommercial" type="checkbox" style="width:auto"> 商用利用が許可されていることを確認</label>
+  <label><input id="bgmPlatforms" type="checkbox" style="width:auto"> 配信プラットフォームでの利用が許可されていることを確認</label>
+  <label><input id="bgmAttribution" type="checkbox" style="width:auto"> クレジット表記が必要</label>
+  <label for="bgmAttributionText">クレジット表記（必要な場合）</label><input id="bgmAttributionText" maxlength="1000" placeholder="作者名・曲名・ライセンス表記">
+  <button id="bgmUpload" type="button">権利情報を添えてSupabaseへ登録</button>
+  <small>登録直後は審査待ちです。承認されるまで再生一覧には出ません。権利を確認できない音源は登録しないでください。</small>
+ </fieldset>
  <label for="track">再生するBGM</label><select id="track"><option value="">音源を選択</option></select>
  <div class="actions"><button class="primary" id="bgmPlay">BGM再生</button><button id="next">次の曲</button></div>
  <label for="volume">BGM音量 <span id="volumeLabel">35%</span></label><input id="volume" type="range" min="0" max="100" value="35">
@@ -101,6 +118,29 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    if(!r.ok||!d?.ok||!Array.isArray(d.tracks))throw new Error(r.status===401||r.status===403?'認証に失敗しました。':'保存済みBGMを取得できませんでした。');
    tracks=d.tracks.map(t=>({name:t.title||t.name,url:t.url}));renderTracks();setStatus(tracks.length+'曲を読み込みました');
   }catch(e){setStatus(e.message||'読み込みに失敗しました')}finally{$('load').disabled=false}
+ }
+ async function uploadBgm(){
+  const token=$('token').value.trim(), file=$('files').files?.[0];
+  if(!token){setStatus('管理トークンを入力してください');return}
+  if(!file){setStatus('登録するMP3ファイルを選択してください');return}
+  if(!/\.mp3$/i.test(file.name)||file.size<1||file.size>10*1024*1024){setStatus('MP3形式・10MB以下の音源を選択してください');return}
+  const fields={title:$('bgmTitle').value.trim(),composer:$('bgmComposer').value.trim(),sourceUrl:$('bgmSourceUrl').value.trim(),licenseName:$('bgmLicenseName').value.trim(),licenseUrl:$('bgmLicenseUrl').value.trim(),evidenceNote:$('bgmEvidence').value.trim()};
+  if(Object.values(fields).some(v=>!v)){setStatus('曲名・作曲者・配布元URL・ライセンス名/URL・確認根拠をすべて入力してください');return}
+  if(!$('bgmCommercial').checked||!$('bgmPlatforms').checked){setStatus('商用利用と配信利用の許可を確認してチェックしてください');return}
+  if($('bgmAttribution').checked&&!$('bgmAttributionText').value.trim()){setStatus('必要なクレジット表記を入力してください');return}
+  const form=new FormData();
+  form.set('file',file);form.set('title',fields.title);form.set('composer',fields.composer);
+  form.set('sourceUrl',fields.sourceUrl);form.set('licenseName',fields.licenseName);form.set('licenseUrl',fields.licenseUrl);
+  form.set('creatorTermsUrl',$('bgmTermsUrl').value.trim());form.set('evidenceNote',fields.evidenceNote);
+  form.set('genre',$('bgmGenre').value);form.set('commercialUseAllowed','true');form.set('platformUseAllowed','true');
+  form.set('attributionRequired',String($('bgmAttribution').checked));form.set('attributionText',$('bgmAttributionText').value.trim());
+  $('bgmUpload').disabled=true;setStatus('権利情報と音源をSupabaseへ登録中…');
+  try{
+   const r=await fetch('/api/admin/ai-live/short-drama/bgm',{method:'POST',headers:{Authorization:'Bearer '+token},body:form,cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok)throw new Error(d?.message||'BGM登録に失敗しました');
+   setStatus('登録完了：審査待ちです。承認後に「保存済みBGMを読み込む」で取得できます');
+  }catch(e){setStatus(e.message||'BGM登録に失敗しました')}finally{$('bgmUpload').disabled=false}
  }
  async function playTrack(index){
   if(!tracks.length){setStatus('先にBGMを読み込んでください');return}
@@ -170,6 +210,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('loadProducts').addEventListener('click',loadProducts);
  $('applyProduct').addEventListener('click',applyProduct);
  $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
+ $('bgmUpload').addEventListener('click',uploadBgm);
  $('load').addEventListener('click',loadSaved);
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
