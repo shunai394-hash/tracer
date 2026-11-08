@@ -89,6 +89,8 @@ for (const label of ["ピンクレオパード", "ホワイトフラワー", "�
 const cjClientSource = await readFile(new URL("../lib/sources/cj/client.ts", import.meta.url), "utf8");
 assert.ok(cjClientSource.includes("/product/productDetail/query"));
 assert.ok(cjClientSource.includes('features: "enable_inventory"'));
+assert.ok(cjClientSource.includes("inventory: inventoryByCountry.length > 0 ? verifiedInventory : null"));
+assert.ok(cjClientSource.includes("inventoryByCountry,"));
 assert.ok(cjClientSource.includes("normalizeCJVerifiedWarehouseInventory(row.inventories ?? [])"));
 assert.ok(cjClientSource.includes("detailByVid.get(vid)"));
 assert.ok(cjClientSource.includes("normalizeCJProductDetailVariants(payload, pid)"));
