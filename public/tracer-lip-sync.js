@@ -18,9 +18,10 @@
     }
     entry.users += 1;
     let active = true;
+    let running = false;
     let smoothed = 0;
     const tick = () => {
-      if (!active) return;
+      if (!active || !running) return;
       entry.analyser.getByteTimeDomainData(entry.data);
       let energy = 0;
       for (let i = 0; i < entry.data.length; i++) {
@@ -34,24 +35,30 @@
       entry.frame = requestAnimationFrame(tick);
     };
     const start = () => {
+      if (!active || running) return;
+      running = true;
       entry.context.resume().catch(() => {});
       if (!entry.frame) tick();
     };
-    const stop = () => {
-      if (!active) return;
-      active = false;
+    const stopLoop = () => {
+      running = false;
       if (entry.frame) cancelAnimationFrame(entry.frame);
       entry.frame = 0;
       mouth.style.setProperty("--lip-open", "0");
+    };
+    const dispose = () => {
+      if (!active) return;
+      active = false;
+      stopLoop();
       audio.removeEventListener("play", start);
-      audio.removeEventListener("pause", stop);
-      audio.removeEventListener("ended", stop);
+      audio.removeEventListener("pause", stopLoop);
+      audio.removeEventListener("ended", stopLoop);
     };
     audio.addEventListener("play", start);
-    audio.addEventListener("pause", stop);
-    audio.addEventListener("ended", stop);
+    audio.addEventListener("pause", stopLoop);
+    audio.addEventListener("ended", stopLoop);
     if (!audio.paused) start();
-    return stop;
+    return dispose;
   }
   window.TracerLipSync = Object.freeze({ attach });
 })();
