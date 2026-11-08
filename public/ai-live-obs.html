@@ -108,6 +108,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <small>OBSではこのページをBrowser Sourceとして追加し、幅1920・高さ1080を推奨。音声を配信に含める場合はOBSの音声設定でBrowser Source音声を有効化してください。音源は利用許諾済みのものを使用してください。</small>
 </aside>
 <audio id="audio" preload="none" loop></audio>
+<script src="/tracer-lip-sync.js"></script>
 <script>
 (() => {
  const $=id=>document.getElementById(id);
@@ -317,7 +318,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    const type=r.headers.get('content-type')||'';
    if(!r.ok||!type.toLowerCase().includes('audio/')){const d=await r.json().catch(()=>null);throw new Error(d?.message||d?.error||'Fish Audio音声生成に失敗しました')}
    const blob=await r.blob();speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
-   speechAudio.onplay=()=>{$('avatar').classList.add('talking');if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));setStatus('Fish Audio読み上げ中（リップシンク）')};
+   if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus('Fish Audio読み上げ中（リップシンク）')};
    speechAudio.onended=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus('待機中')};
    speechAudio.onerror=()=>{$('avatar').classList.remove('talking');$('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');ducked=false;setVolume();$('speak').disabled=false;setStatus('音声再生に失敗しました')};
    await speechAudio.play();
