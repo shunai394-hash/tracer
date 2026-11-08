@@ -173,10 +173,10 @@ test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet pl
   assert.doesNotMatch(diagnosticsRoute, /method:\s*["']POST["']|FISH_MODEL_URL/);
 });
 
-test("Soma and Mitsuki supplied Fish Audio IDs are verified before appearing or generating", () => {
+test("Soma and Mitsuki supplied Fish Audio IDs are registered and verified before generating", () => {
   assert.ok(userProvidedDramaVoices.includes('id: "7478a76f38974bd2afa89c1bbe6831c7", title: "蒼真"'));
   assert.ok(userProvidedDramaVoices.includes('id: "160840e5c583459d89dc5521e7f175e5", title: "美月"'));
-  assert.ok(userProvidedDramaVoices.includes('value.state !== "trained"'));
+  assert.ok(userProvidedDramaVoices.includes('state !== "trained"'));
   assert.ok(userProvidedDramaVoices.includes('value.type !== "tts"'));
   assert.ok(voicesRoute.includes("listUserProvidedDramaVoices(apiKey)"));
   assert.ok(route.includes("listUserProvidedDramaVoices(apiKey)"));
