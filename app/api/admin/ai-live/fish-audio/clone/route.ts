@@ -105,6 +105,7 @@ export async function POST(request: Request) {
   if (transcript) payload.set("texts", transcript.slice(0, 20_000));
   payload.append("tags", "ja");
   payload.append("tags", "tracer-drama");
+  payload.append("tags", "tracer-drama-clone");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);

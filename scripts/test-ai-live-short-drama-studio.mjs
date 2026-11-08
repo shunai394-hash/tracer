@@ -6,6 +6,8 @@ import { Script } from "node:vm";
 const page = readFileSync("public/ai-live-short-drama-studio.html", "utf8");
 const route = readFileSync("app/api/admin/ai-live/fish-audio/route.ts", "utf8");
 const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-voice-design/route.ts", "utf8");
+const cloneRoute = readFileSync("app/api/admin/ai-live/fish-audio/clone/route.ts", "utf8");
+const privateCloneVoices = readFileSync("lib/ai-live/fish-audio-private-drama-clone-voices.ts", "utf8");
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
@@ -104,6 +106,23 @@ test("fictional child-role voice is designed from text, saved privately, and nev
   assert.ok(voicesRoute.includes('source: "private_voice_design"'));
 });
 
+
+
+test("adult consented voice clones are registered privately and rediscovered in the drama studio", () => {
+  assert.ok(page.includes('id="cloneAudio"'));
+  assert.ok(page.includes('id="cloneRights"'));
+  assert.ok(page.includes('id="registerClone"'));
+  assert.ok(page.includes('/api/admin/ai-live/fish-audio/clone'));
+  assert.ok(page.includes('form.set("visibility","private")'));
+  assert.ok(cloneRoute.includes('speakerType === "child"'));
+  assert.ok(cloneRoute.includes('!rightsConfirmed'));
+  assert.ok(cloneRoute.includes('payload.set("visibility", "private")'));
+  assert.ok(cloneRoute.includes('payload.append("tags", "tracer-drama-clone")'));
+  assert.ok(voicesRoute.includes("listPrivateDramaCloneVoices(apiKey)"));
+  assert.ok(voicesRoute.includes("privateDramaCloneCount"));
+  assert.ok(privateCloneVoices.includes('model.visibility !== "private"'));
+  assert.ok(privateCloneVoices.includes('tags.includes(DRAMA_CLONE_TAG)'));
+});
 
 test("BGM library is private, authenticated, paginated, and MP3 size bounded", () => {
   assert.ok(page.includes('id="bgmPanel"'));
