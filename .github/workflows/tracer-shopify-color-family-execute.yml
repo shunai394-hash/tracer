@@ -1,0 +1,74 @@
+name: TRACER one-time Shopify color family draft creation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-shopify-color-family-execute.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-shopify-color-family-draft-create
+  cancel-in-progress: false
+
+jobs:
+  create-draft-families:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Obtain GitHub OIDC token
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_json="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://tracer-pied-alpha.vercel.app")"
+          token="$(jq -r '.value // empty' <<< "$token_json")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Create the three DRAFT parent products
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/family-a.json <<'JSON'
+          {"input":{"inventoryLocationId":"gid://shopify/Location/84495990828","title":"アニマル柄・メタルパーツ付き レディースハンドバッグ","descriptionHtml":"コーディネートに合わせて使えるハンドバッグです。カラーを選択してご注文ください。","handle":"tracer-cj-2608270931501632200","supplierCode":"cj","supplierProductId":"2608270931501632200","canonicalProductId":"78440a5e-c95e-4282-bf39-f7885f66dc0f","variants":[
+          {"supplierVariantId":"2608270931501633200","canonicalVariantId":"ae270a8c-c0cb-4275-a767-8f53e69e634f","sourceShopifyProductId":"8659230195756","sourceShopifyVariantId":"46578673025068","sku":"CJNS310228901AZ","colorLabel":"ゼブラ柄","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/0f9782b6-9414-4c56-8dbd-7d8e731ceca9_0796ccda-9a7a-476c-9f3c-15cf571a66e4.jpg?v=1793802648","colorImageVerified":true,"price":11546,"inventory":10},
+          {"supplierVariantId":"2608270931501633201","canonicalVariantId":"2722178e-120f-43e8-a219-e3da7b1b32a6","sourceShopifyProductId":"8659229999148","sourceShopifyVariantId":"46578672861228","sku":"CJNS310228902BY","colorLabel":"クロコ柄","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/0f9782b6-9414-4c56-8dbd-7d8e731ceca9_f311d0a3-b23a-4d8f-b9d8-ee06fdaf9817.jpg?v=1793802641","colorImageVerified":true,"price":11546,"inventory":10},
+          {"supplierVariantId":"2608270931501633202","canonicalVariantId":"f3152e19-7d52-4c37-810e-3e6741c98781","sourceShopifyProductId":"8659229835308","sourceShopifyVariantId":"46578672730156","sku":"CJNS310228903CX","colorLabel":"ブラックタビー","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/0f9782b6-9414-4c56-8dbd-7d8e731ceca9_a3030458-a810-41b1-8db7-cfab51edea37.jpg?v=1793802636","colorImageVerified":true,"price":11546,"inventory":10},
+          {"supplierVariantId":"2608270931501633203","canonicalVariantId":"20ea992b-2a82-4953-aea9-685027cc7406","sourceShopifyProductId":"8659229638700","sourceShopifyVariantId":"46578672599084","sku":"CJNS310228904DW","colorLabel":"ブルーマット","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/0f9782b6-9414-4c56-8dbd-7d8e731ceca9_ca075e87-a018-4a7f-bf01-09ac38f0f5ad.jpg?v=1793802632","colorImageVerified":true,"price":11546,"inventory":10},
+          {"supplierVariantId":"2608270931501633204","canonicalVariantId":"44012552-de1c-4e6e-9a46-1f42bf308a85","sourceShopifyProductId":"8659229409324","sourceShopifyVariantId":"46578672468012","sku":"CJNS310228905EV","colorLabel":"グレーブラックマット","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/0f9782b6-9414-4c56-8dbd-7d8e731ceca9.jpg?v=1793802626","colorImageVerified":true,"price":11546,"inventory":10}
+          ]}}
+          JSON
+          cat > /tmp/family-b.json <<'JSON'
+          {"input":{"inventoryLocationId":"gid://shopify/Location/84495990828","title":"レトロデザイン レディースハンドバッグ","descriptionHtml":"コーディネートに合わせて使えるハンドバッグです。カラーを選択してご注文ください。","handle":"tracer-cj-2611030217281638700","supplierCode":"cj","supplierProductId":"2611030217281638700","canonicalProductId":"cda6d104-1036-4d06-a6d7-6896b3bbca79","variants":[
+          {"supplierVariantId":"2611030217291630600","canonicalVariantId":"b226e1c8-64fa-4f94-b654-83f10871ab04","sourceShopifyProductId":"8665688375340","sourceShopifyVariantId":"46595166732332","sku":"CJNS355974201AZ","colorLabel":"ブラック","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/2759fe09-30d3-40d5-b299-1b9396ca758b_d67833ba-d9e8-4304-aaee-1245a15972bb.jpg?v=1793982644","colorImageVerified":true,"price":9610,"inventory":10},
+          {"supplierVariantId":"2611030217291630601","canonicalVariantId":"5a576ab9-6104-448d-8a70-ceaf0b299d8e","sourceShopifyProductId":"8665688113196","sourceShopifyVariantId":"46595166175276","sku":"CJNS355974202BY","colorLabel":"レッド","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/2759fe09-30d3-40d5-b299-1b9396ca758b_d71b1415-b055-49f8-be89-9acb34eba80b.jpg?v=1793982640","colorImageVerified":true,"price":9610,"inventory":10},
+          {"supplierVariantId":"2611030217291630602","canonicalVariantId":"21b5cf37-9fd7-440f-aa13-ecace8aacb9e","sourceShopifyProductId":"8665687982124","sourceShopifyVariantId":"46595165650988","sku":"CJNS355974203CX","colorLabel":"ホワイト","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/2759fe09-30d3-40d5-b299-1b9396ca758b_3d8b5cb4-1d22-428a-86c1-e3ebff1801e3.jpg?v=1793982636","colorImageVerified":true,"price":9610,"inventory":10},
+          {"supplierVariantId":"2611030217291630603","canonicalVariantId":"8a587f26-28f5-48f5-9bfc-800a5aa3adf8","sourceShopifyProductId":"8665687818284","sourceShopifyVariantId":"46595165159468","sku":"CJNS355974204DW","colorLabel":"ブラウン","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/2759fe09-30d3-40d5-b299-1b9396ca758b_bbf172f2-261c-4ff7-9d27-126c8f0b6a1d.jpg?v=1793982631","colorImageVerified":true,"price":9610,"inventory":10},
+          {"supplierVariantId":"2611030217291630604","canonicalVariantId":"8cc4f281-c3a2-42b5-8c4d-efc0cd9cf902","sourceShopifyProductId":"8665687588908","sourceShopifyVariantId":"46595164667948","sku":"CJNS355974205EV","colorLabel":"グレー","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/2759fe09-30d3-40d5-b299-1b9396ca758b.jpg?v=1793982627","colorImageVerified":true,"price":9610,"inventory":10}
+          ]}}
+          JSON
+          cat > /tmp/family-c.json <<'JSON'
+          {"input":{"inventoryLocationId":"gid://shopify/Location/84495990828","title":"大容量・斜めがけ レディースハンドバッグ","descriptionHtml":"コーディネートに合わせて使えるハンドバッグです。カラーを選択してご注文ください。","handle":"tracer-cj-2610130254321621100","supplierCode":"cj","supplierProductId":"2610130254321621100","canonicalProductId":"7552ee45-64f7-4f9b-8a4c-026f85ec5a97","variants":[
+          {"supplierVariantId":"2610130254321622300","canonicalVariantId":"b8a81003-ca31-41d2-b092-49a053ffc907","sourceShopifyProductId":"8661943124012","sourceShopifyVariantId":"46584580669484","sku":"CJNS325064801AZ","colorLabel":"カーキ","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/efba2566-74c0-4da5-9507-79368e24f4c3_683c503e-2e57-46fd-8a08-53c5184ef45b.png?v=1793874642","colorImageVerified":true,"price":5824,"inventory":10},
+          {"supplierVariantId":"2610130254321622301","canonicalVariantId":"fa7d6f54-881f-4720-93b8-a65887e16c2c","sourceShopifyProductId":"8661943058476","sourceShopifyVariantId":"46584580636716","sku":"CJNS325064802BY","colorLabel":"レッド","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/efba2566-74c0-4da5-9507-79368e24f4c3_a7738c4c-36be-46bd-97be-f422b3fa783e.png?v=1793874638","colorImageVerified":true,"price":5824,"inventory":10},
+          {"supplierVariantId":"2610130254321622302","canonicalVariantId":"ba1b7089-c6ee-42f8-8682-6ef764cfdcc3","sourceShopifyProductId":"8661942796332","sourceShopifyVariantId":"46584580407340","sku":"CJNS325064803CX","colorLabel":"ブラック","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/efba2566-74c0-4da5-9507-79368e24f4c3_8c8b7a6c-5fee-49d9-993e-4b058f3aab32.png?v=1793874634","colorImageVerified":true,"price":5824,"inventory":10},
+          {"supplierVariantId":"2610130254321622303","canonicalVariantId":"2170283d-d650-4cef-8bf2-94e4ac1edde5","sourceShopifyProductId":"8661941813292","sourceShopifyVariantId":"46584578670636","sku":"CJNS325064804DW","colorLabel":"ブルー","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/efba2566-74c0-4da5-9507-79368e24f4c3_412fc85e-8dde-4ee5-9fe2-7de2091b2172.png?v=1793874630","colorImageVerified":true,"price":5824,"inventory":10},
+          {"supplierVariantId":"2610130254321622304","canonicalVariantId":"33d4c321-2157-4c91-8ea0-6cec48df1433","sourceShopifyProductId":"8661941485612","sourceShopifyVariantId":"46584579522604","sku":"CJNS325064805EV","colorLabel":"グリーン","imageUrl":"https://cdn.shopify.com/s/files/1/0746/2443/4220/files/efba2566-74c0-4da5-9507-79368e24f4c3.png?v=1793874626","colorImageVerified":true,"price":5824,"inventory":10}
+          ]}}
+          JSON
+
+          for family in a b c; do
+            code="$(curl -sS -o "/tmp/result-${family}.json" -w "%{http_code}" -X POST "https://tracer-pied-alpha.vercel.app/api/admin/shopify/color-family" \
+              -H "Authorization: Bearer ${OIDC_TOKEN}" -H "Content-Type: application/json" \
+              --data-binary "@/tmp/family-${family}.json")"
+            cat "/tmp/result-${family}.json"
+            echo
+            test "$code" = "200"
+          done
