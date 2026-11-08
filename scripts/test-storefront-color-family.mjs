@@ -82,11 +82,11 @@ const protein = groupExactColorFamilies([
 ]).catalog;
 const unverifiedImageIdentity = groupExactColorFamilies([
   member(FAMILIES[0], 0, { variantImageIdentityVerified: false }),
-  member(FAMILIES[0], 1, { colorImageVerified: false }),
+  member(FAMILIES[0], 1, { variantImageIdentityVerified: false }),
 ]).catalog;
-assert.equal(unverifiedImages.length, 2);
-assert.ok(unverifiedImages.every((item) => item.colorSaleBlocked === true));
-assert.ok(unverifiedImages.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+assert.equal(unverifiedImageIdentity.length, 2);
+assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlocked === true));
+assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
 
 const missingLabels = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "レディース ハンドバッグ" }),
