@@ -4,6 +4,7 @@ import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { isPrivateDramaChildVoice, listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
+import { isTracerDramaCharacterVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,7 +108,15 @@ export async function POST(request: Request) {
   }
 
   const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
+  let isDramaCharacterVoice = false;
   if (!isCustomVoice) {
+    try {
+      isDramaCharacterVoice = await isTracerDramaCharacterVoice(apiKey, referenceId);
+    } catch {
+      return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected TRACER drama voice could not be verified. No TTS generation was requested." }, 502);
+    }
+  }
+  if (!isCustomVoice && !isDramaCharacterVoice) {
     let licensedVoices;
     let privateChildVoices;
     try {
