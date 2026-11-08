@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { Script } from "node:vm";
 
 const script = readFileSync(new URL("./ai-live-local-demo.mjs", import.meta.url), "utf8");
 assert.match(script, /local-only AI-live rehearsal/i);
@@ -47,6 +48,18 @@ assert.match(deployedPreview, /minutes \* 60 \* 1000/);
 assert.match(deployedPreview, /連続テストを手動停止/);
 assert.match(deployedPreview, /fetch\('\/api\/admin\/ai-live\/short-drama\/bgm'/);
 assert.match(deployedPreview, /Authorization:\s*'Bearer '\s*\+\s*token/);
+assert.ok(deployedPreview.includes('id="bgmZipFile"'));
+assert.ok(deployedPreview.includes('id="bgmUploadZip"'));
+assert.ok(deployedPreview.includes("async function extractMp3Zip"));
+assert.ok(deployedPreview.includes("zipCrc32(audioBytes) !== crc"));
+assert.ok(deployedPreview.includes("DecompressionStream"));
+assert.ok(deployedPreview.includes("deflate-raw"));
+assert.ok(deployedPreview.includes("uncompressedSize > 10 * 1024 * 1024"));
+assert.ok(deployedPreview.includes("totalBytes > 100 * 1024 * 1024"));
+const previewScriptStart = deployedPreview.indexOf("<script>");
+const previewScriptEnd = deployedPreview.indexOf("</script>", previewScriptStart);
+assert.ok(previewScriptStart >= 0 && previewScriptEnd > previewScriptStart);
+new Script(deployedPreview.slice(previewScriptStart + "<script>".length, previewScriptEnd));
 assert.doesNotMatch(deployedPreview, /WebSocket|EventSource|https?:\/\//);
 assert.doesNotMatch(deployedPreview, /fetch\s*\(\s*['"]https?:/);
 const dramaPreview = readFileSync(new URL("../public/ai-live-drama-preview.html", import.meta.url), "utf8");
