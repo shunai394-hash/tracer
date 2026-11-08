@@ -2,6 +2,11 @@ name: CJ current woven handbag catalog search
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/cj-current-woven-handbag-catalog-search.yml
 
 permissions:
   contents: read
@@ -36,8 +41,30 @@ jobs:
             "imageVariantCount": d.get("imageVariantCount"),
             "exactVariantChecks": d.get("exactVariantChecks"),
             "exactVariantCheckLimit": d.get("exactVariantCheckLimit"),
+            "variantStockNote": d.get("variantStockNote"),
             "freightNote": d.get("freightNote"),
-            "candidates": d.get("candidates"),
+            "candidates": [
+              {
+                **{k: v for k, v in candidate.items() if k != "exactVariants"},
+                "exactVariants": [
+                  {
+                    "requestedVid": variant.get("requestedVid"),
+                    "exactVidMatched": variant.get("exactVidMatched"),
+                    "exactProductId": variant.get("exactProductId"),
+                    "exactSku": variant.get("exactSku"),
+                    "exactColorOrOption": variant.get("exactColorOrOption"),
+                    "exactVariantImageUrl": variant.get("exactVariantImageUrl"),
+                    "verifiedInventoryByCountry": variant.get("verifiedInventoryByCountry"),
+                    "variantStockQuantity": variant.get("variantStockQuantity"),
+                    "variantStockError": variant.get("variantStockError"),
+                    "japanFreightOptions": variant.get("japanFreightOptions"),
+                    "verificationError": variant.get("verificationError"),
+                  }
+                  for variant in candidate.get("exactVariants", [])
+                ],
+              }
+              for candidate in d.get("candidates", [])
+            ],
           }, ensure_ascii=False, indent=2))
           PY
           if [ "$code" != "200" ] && [ "$code" != "207" ]; then
