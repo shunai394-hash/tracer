@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voices";
 import { isConsentedCustomJapaneseVoice } from "@/lib/ai-live/fish-audio-consented-custom-voices";
+import { listUserProvidedDramaVoices } from "@/lib/ai-live/fish-audio-user-provided-drama-voices";
 import { isPrivateDramaChildVoice, listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 
 export const runtime = "nodejs";
@@ -108,17 +109,16 @@ export async function POST(request: Request) {
 
   const isCustomVoice = isConsentedCustomJapaneseVoice(referenceId);
   if (!isCustomVoice) {
-    let licensedVoices;
-    let privateChildVoices;
-    try {
-      [licensedVoices, privateChildVoices] = await Promise.all([
-        listLicensedJapaneseVoices(apiKey),
-        listPrivateDramaChildVoices(apiKey),
-      ]);
-    } catch {
+    const verifiedVoiceLibraries = await Promise.all([
+      listLicensedJapaneseVoices(apiKey),
+      listPrivateDramaChildVoices(apiKey),
+      listUserProvidedDramaVoices(apiKey),
+    ]).catch(() => null);
+    if (!verifiedVoiceLibraries) {
       return json({ ok: false, error: "fish_audio_voice_library_unavailable", message: "The selected public voice could not be verified. No TTS generation was requested." }, 502);
     }
-    if (!licensedVoices.some((voice) => voice.id === referenceId) && !isPrivateDramaChildVoice(privateChildVoices, referenceId)) {
+    const [licensedVoices, privateChildVoices, userProvidedVoices] = verifiedVoiceLibraries;
+    if (!licensedVoices.some((voice) => voice.id === referenceId) && !isPrivateDramaChildVoice(privateChildVoices, referenceId) && !userProvidedVoices.some((voice) => voice.id === referenceId)) {
       return json({ ok: false, error: "voice_not_in_licensed_japanese_library", message: "Choose a licensed public Japanese voice, a consent-confirmed custom voice, or a private TRACER-designed fictional child voice." }, 400);
     }
   }

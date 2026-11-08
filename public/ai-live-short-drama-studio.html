@@ -37,7 +37,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </section>
 <section class="panel" id="voiceLibraryPanel">
 <h2>日本語ボイス一覧</h2>
-<p class="muted">蒼真・美月・蓮司・凛の4名を常時表示します。蓮司・凛は試聴MP3を選択して再生できます。Fish Audioモデル未接続の声は音声生成には使用できません。</p>
+<p class="muted">蒼真・美月・蓮司・凛の4名を常時表示します。蒼真・美月は指定Fish AudioモデルIDから一覧へ直接登録し、蓮司・凛は試聴MP3を再生できます。音声生成時にはモデルの利用可否をFish Audio APIで確認します。Fish Audioモデル未接続の声は音声生成には使用できません。</p>
 <div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">ボイス一覧を読み込み中…</p></div>
 
 </section>
@@ -105,7 +105,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 const $=id=>document.getElementById(id);
 const token=$("token"), characters=$("characters"), lines=$("lines"), outputs=$("outputs"), status=$("status");
 let voices=[], characterRows=[], lineRows=[], pending=false, stopRequested=false, counter=0;
-function optionList(selected=""){const groups=[["Fish Audio 公開日本語ボイス",voices.filter(v=>v.source==="public_licensed")],["追加クローン音声（許可確認済み）",voices.filter(v=>v.source==="user_provided_clone")],["追加の架空キャラクターボイス",voices.filter(v=>v.source==="private_voice_design")]];return '<option value="">声を選択</option>'+groups.filter(([,items])=>items.length).map(([label,items])=>'<optgroup label="'+label+'">'+items.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+'</option>').join("")+'</optgroup>').join("");}
+function optionList(selected=""){const groups=[["Fish Audio 公開日本語ボイス",voices.filter(v=>v.source==="public_licensed")],["追加クローン音声（許可確認済み）",voices.filter(v=>v.source==="user_provided_clone")],["指定モデル（蒼真・美月）",voices.filter(v=>v.source==="user_provided_reference")],["追加の架空キャラクターボイス",voices.filter(v=>v.source==="private_voice_design")]];return '<option value="">声を選択</option>'+groups.filter(([,items])=>items.length).map(([label,items])=>'<optgroup label="'+label+'">'+items.map(v=>'<option value="'+escapeHtml(v.id)+'" '+(v.id===selected?'selected':'')+'>'+escapeHtml(v.title)+'</option>').join("")+'</optgroup>').join("");}
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function addCharacter(name="登場人物",voiceId=""){
  const id="c"+(++counter); characterRows.push({id,name,voiceId});
@@ -185,7 +185,7 @@ function renderVoiceLibrary(){
    const sampleUrl=voiceSampleUrls.get(preset.title);if(sampleUrl){player.src=sampleUrl;player.load();}
    const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,player);
   }
-  const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);
+  const state=document.createElement("p");state.className="muted";state.textContent=found?(preset.title==="蒼真"||preset.title==="美月"?"指定モデルID登録済み（生成時に利用可否を確認）":"Fish Audioモデル登録済み"):"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found&&(preset.title==="蒼真"||preset.title==="美月")){const modelId=document.createElement("p");modelId.className="muted";modelId.textContent="Model ID: "+found.id;card.append(modelId);}
   const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);
   root.append(card);
  }

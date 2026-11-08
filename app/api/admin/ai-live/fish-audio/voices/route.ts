@@ -5,6 +5,7 @@ import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voic
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
+import { getRegisteredUserProvidedDramaVoices } from "@/lib/ai-live/fish-audio-user-provided-drama-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,10 +63,12 @@ export async function GET(request: Request) {
   if (privateCloneResult.status === "fulfilled") {
     privateCloneVoices = privateCloneResult.value;
   }
+  const userProvidedVoices = getRegisteredUserProvidedDramaVoices();
   const voices = [
     ...publicVoices.map((voice) => ({ ...voice, source: "public_licensed" as const })),
     ...customVoices,
     ...privateCloneVoices.map((voice) => ({ ...voice, source: "user_provided_clone" as const, consentStatus: "confirmed" as const })),
+    ...userProvidedVoices.map((voice) => ({ ...voice, source: "user_provided_reference" as const, verification: "checked_before_generation" as const })),
     ...privateChildVoices.map((voice) => ({ ...voice, source: "private_voice_design" as const })),
   ];
   return json({
@@ -76,6 +79,7 @@ export async function GET(request: Request) {
     consentedCustomCount: customVoices.length,
     privateChildVoiceCount: privateChildVoices.length,
     privateDramaCloneCount: privateCloneVoices.length,
+    userProvidedDramaVoiceCount: userProvidedVoices.length,
     privateChildLibraryAvailable,
     publicLibraryAvailable,
     language: "ja",

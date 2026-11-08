@@ -9,6 +9,7 @@ const childDesignRoute = readFileSync("app/api/admin/ai-live/fish-audio/child-vo
 const cloneRoute = readFileSync("app/api/admin/ai-live/fish-audio/clone/route.ts", "utf8");
 const diagnosticsRoute = readFileSync("app/api/admin/ai-live/fish-audio/diagnostics/route.ts", "utf8");
 const privateCloneVoices = readFileSync("lib/ai-live/fish-audio-private-drama-clone-voices.ts", "utf8");
+const userProvidedDramaVoices = readFileSync("lib/ai-live/fish-audio-user-provided-drama-voices.ts", "utf8");
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
@@ -170,4 +171,25 @@ test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet pl
   assert.ok(diagnosticsRoute.includes("readOnly: true"));
   assert.ok(diagnosticsRoute.includes("Promise.allSettled"));
   assert.doesNotMatch(diagnosticsRoute, /method:\s*["']POST["']|FISH_MODEL_URL/);
+});
+
+test("Soma and Mitsuki supplied Fish Audio IDs are registered and verified before generating", () => {
+  assert.ok(userProvidedDramaVoices.includes('id: "7478a76f38974bd2afa89c1bbe6831c7", title: "蒼真"'));
+  assert.ok(userProvidedDramaVoices.includes('id: "160840e5c583459d89dc5521e7f175e5", title: "美月"'));
+  assert.ok(userProvidedDramaVoices.includes('state !== "trained"'));
+  assert.ok(userProvidedDramaVoices.includes('value.type !== "tts"'));
+  assert.ok(voicesRoute.includes("listUserProvidedDramaVoices(apiKey)"));
+  assert.ok(route.includes("listUserProvidedDramaVoices(apiKey)"));
+  assert.ok(page.includes('v.source==="user_provided_reference"'));
+});
+
+test("user-supplied Fish Audio model IDs are registered directly in the picker and checked before TTS", () => {
+  assert.ok(userProvidedDramaVoices.includes("getRegisteredUserProvidedDramaVoices"));
+  assert.ok(userProvidedDramaVoices.includes("7478a76f38974bd2afa89c1bbe6831c7"));
+  assert.ok(userProvidedDramaVoices.includes("160840e5c583459d89dc5521e7f175e5"));
+  assert.ok(voicesRoute.includes("getRegisteredUserProvidedDramaVoices()"));
+  assert.ok(voicesRoute.includes('source: "user_provided_reference"'));
+  assert.ok(route.includes("listUserProvidedDramaVoices(apiKey)"));
+  assert.ok(page.includes("指定モデルID登録済み（生成時に利用可否を確認）"));
+  assert.ok(page.includes("Model ID: "+'"+found.id'));
 });
