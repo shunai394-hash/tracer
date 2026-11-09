@@ -215,12 +215,20 @@ export async function POST(request: Request) {
     ].filter((id) => /^\\d+$/.test(id)))];
 
     const identifier = "TRC-COLOR-FAMILY-" + supplierProductId;
+    const groupedBaseItemIds = [...new Set(oldRows
+      .filter((row) => row.external_variant_id && String(row.external_variant_id) !== String(row.external_product_id))
+      .map((row) => String(row.external_product_id)))];
+    if (groupedBaseItemIds.length > 1) throw new Error("base_color_family_existing_grouped_item_ambiguous");
     const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
     if (snapshot.complete !== true) throw new Error("base_color_family_recovery_snapshot_incomplete");
     const matches = snapshot.items.filter((item) => String(item.identifier ?? "").trim() === identifier);
     if (matches.length > 1) throw new Error("base_color_family_base_identifier_ambiguous");
+    const snapshotItemId = matches[0] ? String(matches[0].item_id) : "";
+    if (groupedBaseItemIds.length && snapshotItemId && groupedBaseItemIds[0] !== snapshotItemId) {
+      throw new Error("base_color_family_existing_item_identity_conflict");
+    }
     const expectedBySupplierId = new Map(prepared.map((variant) => [variant.supplierVariantId, variant] as const));
-    let itemId = matches[0] ? String(matches[0].item_id) : "";
+    let itemId = groupedBaseItemIds[0] ?? snapshotItemId;
     let baseItem = itemId ? await getBaseItemDetail(itemId) : null;
     const existingVariations = rows(baseItem?.variations);
     const existingByIdentifier = new Map<string, Row>();
