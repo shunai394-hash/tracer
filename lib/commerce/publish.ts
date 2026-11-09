@@ -520,9 +520,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
       }
     }
-    // Existing BASE listings are deliberately left untouched. BASE has no
-    // verified per-variation image mapping, so only prevent new family listings
-    // from being created; never hide, zero stock, or rewrite existing listings.
+    // Existing standalone BASE color pages are left untouched here. New families
+    // must use the exact-ID migration route; already-grouped items are synchronized
+    // per variation later in this function.
     if (baseColorFamilyVariantIds.size) {
       const familyIds = [...baseColorFamilyVariantIds];
       const { data: existingListings, error: existingListingsError } = await db.from("channel_listings")
