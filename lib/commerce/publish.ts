@@ -539,6 +539,36 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     }
   }
 
+  const baseFamilyPriceCache = new Map<string, Promise<number | null>>();
+  const getUniformBaseFamilyPrice = (productId: string): Promise<number | null> => {
+    const cached = baseFamilyPriceCache.get(productId);
+    if (cached) return cached;
+    const pending = (async () => {
+      const { data: familyVariants, error: familyVariantsError } = await db.from("commerce_variants")
+        .select("id").eq("product_id", productId);
+      if (familyVariantsError || !familyVariants || familyVariants.length < 2) return null;
+      const ids = familyVariants.map((row) => String(row.id));
+      const { data: familyPrices, error: familyPricesError } = await db.from("commerce_prices")
+        .select("variant_id,currency,selling_price,calculated_at")
+        .in("variant_id", ids)
+        .order("calculated_at", { ascending: false });
+      if (familyPricesError) return null;
+      const latest = new Map<string, { currency: string; selling_price: number }>();
+      for (const row of familyPrices ?? []) {
+        const id = String(row.variant_id);
+        if (!latest.has(id)) latest.set(id, { currency: String(row.currency), selling_price: Math.round(Number(row.selling_price)) });
+      }
+      if (latest.size !== ids.length) return null;
+      const values = [...latest.values()];
+      const common = values[0]?.selling_price;
+      if (common === undefined || !Number.isFinite(common) || common <= 0 ||
+          values.some((row) => row.currency !== "JPY" || row.selling_price !== common)) return null;
+      return common;
+    })();
+    baseFamilyPriceCache.set(productId, pending);
+    return pending;
+  };
+
   for (const candidate of candidates) {
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
