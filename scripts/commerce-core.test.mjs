@@ -574,13 +574,28 @@ test("Shopify paid webhook is signature-verified, idempotent, and writes canonic
   assert.match(core, /payment_status/);
 });
 
-test("BASE order polling only imports confirmed paid orders and maps published canonical listings", async () => {
+test("BASE order polling maps consolidated color variants by exact variation ID and stable variation identifier", async () => {
   const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
   assert.match(baseOrders, /function isPaid\(/);
   assert.match(baseOrders, /dispatch_status === "unpaid"/);
   assert.match(baseOrders, /status", "published"/);
+  assert.match(baseOrders, /item\.variation_id/);
+  assert.match(baseOrders, /external_variant_id/);
+  assert.match(baseOrders, /item\.variation_identifier/);
+  assert.match(baseOrders, /item\.item_identifier/);
+  assert.match(baseOrders, /base_item_variation_mapping_ambiguous/);
+  assert.match(baseOrders, /base_item_identifier_mapping_ambiguous/);
   assert.match(baseOrders, /ingestPaidOrder\(/);
   assert.match(baseOrders, /splitJapaneseAddress/);
+});
+
+test("BASE item creation carries each color's own stock and stable variation identifier", async () => {
+  const base = await readFile(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
+  assert.match(base, /variations\?: Array/);
+  assert.match(base, /variation\[\$\{index\}\]/);
+  assert.match(base, /variation_stock\[\$\{index\}\]/);
+  assert.match(base, /variation_identifier\[\$\{index\}\]/);
+  assert.match(base, /BASE_VARIATION_NAME_OR_IDENTIFIER_REQUIRED/);
 });
 
 test("procurement submits only paid orders with complete shipping and exact current profitable CJ offer", async () => {
