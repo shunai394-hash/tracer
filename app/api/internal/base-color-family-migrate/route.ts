@@ -313,6 +313,10 @@ export async function POST(request: Request) {
         external_variant_id: oldVariantId,
       }];
     });
+    const aliasesPreservedCount = new Set([
+      ...(priorAliases ?? []).map((alias) => String(alias.external_variant_id)),
+      ...aliases.map((alias) => alias.external_variant_id),
+    ]).size;
     if (new Set(aliases.map((alias) => alias.external_variant_id)).size !== aliases.length) {
       throw new Error("base_color_family_legacy_alias_identity_collision");
     }
@@ -397,7 +401,7 @@ export async function POST(request: Request) {
       })),
       imageCount: finalImages.length,
       oldItemsHidden: hiddenOldItems,
-      aliasesPreserved: aliases.length,
+      aliasesPreserved: aliasesPreservedCount,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
