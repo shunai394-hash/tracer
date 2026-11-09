@@ -32,6 +32,7 @@ assert.match(executor, /shopify_color_family_verification_variant_count_failed/,
 assert.match(executor, /shopify_color_family_verification_inventory_failed/, "final readback must verify inventory");
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");
 assert.match(executor, /variantImages\.length !== 1/, "each color variant must have exactly one verified image");
+assert.match(executor, /actual\.media\.nodes[\s\S]*mediaByIdForVerification/, "final image verification must compare the media attached to each exact variant, not an unattached duplicate");
 assert.match(executor, /shopify_color_family_verification_color_image_mapping_failed/, "different colors must not share the same image asset");
 assert.match(source, /canonicalVariantId: string/, "each source color must identify its canonical commerce variant");
 assert.match(source, /sourceShopifyProductId: string/, "each source color must retain its old Shopify product ID");
