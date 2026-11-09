@@ -539,8 +539,37 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     }
   }
 
+  const baseFamilyPriceCache = new Map<string, Promise<number | null>>();
+  const getUniformBaseFamilyPrice = (productId: string): Promise<number | null> => {
+    const cached = baseFamilyPriceCache.get(productId);
+    if (cached) return cached;
+    const pending = (async () => {
+      const { data: familyVariants, error: familyVariantsError } = await db.from("commerce_variants")
+        .select("id").eq("product_id", productId);
+      if (familyVariantsError || !familyVariants || familyVariants.length < 2) return null;
+      const ids = familyVariants.map((row) => String(row.id));
+      const { data: familyPrices, error: familyPricesError } = await db.from("commerce_prices")
+        .select("variant_id,currency,selling_price,calculated_at")
+        .in("variant_id", ids)
+        .order("calculated_at", { ascending: false });
+      if (familyPricesError) return null;
+      const latest = new Map<string, { currency: string; selling_price: number }>();
+      for (const row of familyPrices ?? []) {
+        const id = String(row.variant_id);
+        if (!latest.has(id)) latest.set(id, { currency: String(row.currency), selling_price: Number(row.selling_price) });
+      }
+      if (latest.size !== ids.length) return null;
+      const values = [...latest.values()];
+      const common = values[0]?.selling_price;
+      if (!Number.isFinite(common) || common <= 0 ||
+          values.some((row) => row.currency !== "JPY" || row.selling_price !== common)) return null;
+      return common;
+    })();
+    baseFamilyPriceCache.set(productId, pending);
+    return pending;
+  };
+
   for (const candidate of candidates) {
-    if (channel === "base" && baseColorFamilyVariantIds.has(candidate.id)) continue;
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => {
@@ -780,6 +809,71 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const storefrontDescription = supplierShippingKnown
       ? shippingInclusiveDescription(description)
       : `${description}\n\n日本向け送料を確認中のため、販売を一時停止しています。`;
+
+    if (channel === "base" && baseColorFamilyVariantIds.has(candidate.id)) {
+      const familyState = stateByVariant.get(candidate.id);
+      const itemId = String(familyState?.external_product_id ?? "");
+      const variationId = String(familyState?.external_variant_id ?? "");
+      if (!itemId || !variationId || variationId === itemId || familyState?.status !== "published") {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_requires_verified_shared_item_variation_mapping" });
+        continue;
+      }
+      const uniformPrice = await getUniformBaseFamilyPrice(String(product.id));
+      if (uniformPrice === null || uniformPrice !== Math.round(Number(price.selling_price))) {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_shared_price_mismatch" });
+        continue;
+      }
+      const labelMatch = String(candidate.title_ja ?? "").match(/（([^（）]+)）$/);
+      const label = labelMatch?.[1]?.trim() ?? "";
+      if (!label || !offer.supplier_variant_id) {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_variant_label_missing" });
+        continue;
+      }
+      try {
+        const currentItem = await getBaseItemDetail(itemId);
+        const currentVariations = Array.isArray(currentItem.variations)
+          ? currentItem.variations.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+          : [];
+        const currentVariation = currentVariations.find((value) => String(value.variation_id ?? "") === variationId);
+        if (!currentVariation || String(currentVariation.variation_identifier ?? "") !== String(offer.supplier_variant_id) ||
+            String(currentVariation.variation ?? "") !== label) {
+          throw new Error("base_color_family_variant_identity_mismatch");
+        }
+        await editBaseItem({
+          itemId,
+          price: uniformPrice,
+          variations: [{
+            id: variationId,
+            name: label,
+            stock: storefrontStock,
+            identifier: String(offer.supplier_variant_id),
+          }],
+        });
+        const readback = await getBaseItemDetail(itemId);
+        const updatedVariation = (Array.isArray(readback.variations) ? readback.variations : [])
+          .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+          .find((value) => String(value.variation_id ?? "") === variationId);
+        if (!updatedVariation || Number(updatedVariation.variation_stock) !== storefrontStock ||
+            Number(readback.price) !== uniformPrice) {
+          throw new Error("base_color_family_stock_price_readback_mismatch");
+        }
+        if (!isVisible(readback.visible)) await editBaseItem({ itemId, visible: true });
+        const { error: familySaveError } = await db.from("channel_listings").update({
+          status: "published",
+          selling_price: uniformPrice,
+          external_sku: sku,
+          last_error: null,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("channel", "base").eq("variant_id", candidate.id);
+        if (familySaveError) throw new Error("base_color_family_listing_save_failed:" + familySaveError.message);
+        results.push({ variantId: candidate.id, ok: true, externalId: itemId, externalVariantId: variationId, expectedPrice: uniformPrice, action: "published" });
+      } catch (error) {
+        results.push({ variantId: candidate.id, ok: false, externalId: itemId, error: error instanceof Error ? error.message.slice(0, 240) : String(error) });
+      }
+      continue;
+    }
+
     // SEO snippet is derived from the real product copy; never invent specifications.
     const seoTitle = `${title.slice(0, 62 - " | TRACER".length).trim()} | TRACER`.slice(0, 70);
     const seoDescription = storefrontDescription.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
