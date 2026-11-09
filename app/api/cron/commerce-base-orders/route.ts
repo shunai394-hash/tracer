@@ -94,6 +94,7 @@ export async function GET(request: Request) {
           const { data: directListing, error: listingError } = await db.from("channel_listings")
             .select("variant_id,external_sku")
             .eq("channel", "base")
+            .eq("status", "published")
             .eq("external_product_id", baseItemId)
             .eq("external_variant_id", baseVariationId)
             .maybeSingle();
@@ -113,6 +114,7 @@ export async function GET(request: Request) {
               const { data: aliasedListing, error: aliasedListingError } = await db.from("channel_listings")
                 .select("variant_id,external_sku")
                 .eq("channel", "base")
+                .eq("status", "published")
                 .eq("variant_id", String(alias.variant_id))
                 .maybeSingle();
               if (aliasedListingError) throw new Error("base_item_alias_listing_lookup_failed:" + aliasedListingError.message);
