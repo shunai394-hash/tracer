@@ -9,7 +9,8 @@ export type { BaseSnapshotCheckpoint };
 
 export type BaseItemVariationInput = {
   /** Existing BASE variation ID. Use an empty string only when creating a new variation. */
-  variationId: string;
+  id?: string | number;
+  variationId?: string;
   name: string;
   stock: number;
   identifier?: string;
@@ -279,7 +280,7 @@ export async function editBaseItem(input: {
     const seenSkus = new Set<string>();
     let stockTotal = 0;
     input.variations.forEach((variation, index) => {
-      const id = String(variation.variationId ?? "").trim();
+      const id = String(variation.variationId ?? variation.id ?? "").trim();
       const name = String(variation.name ?? "").trim();
       const identifier = String(variation.identifier ?? "").trim();
       const barcode = String(variation.barcode ?? "").trim();
