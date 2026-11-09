@@ -241,7 +241,7 @@ test("voice library reports all six source buckets and clarifies public count ve
 });
 test("character cards provide the correct Fish Audio connection path", () => {
   assert.ok(page.includes('{title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"}'));
-  assert.ok(page.includes('{title:"蒼真",gender:"男性",description:"男性キャラクターボイス（Fish Audioモデル未接続）",modelId:""}'));
+  assert.ok(page.includes('{title:"蓮司",gender:"男性",description:"男性キャラクターボイス",modelId:"7478a76f38974bd2afa89c1bbe6831c7"}'));
   assert.ok(page.includes('preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録"'));
   assert.ok(page.includes('$("voiceModelId").value=preset.modelId||""'));
   assert.ok(page.includes('if(!found){const register=document.createElement("button")'));
