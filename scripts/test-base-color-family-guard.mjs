@@ -37,6 +37,7 @@ assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
 const migration = readFileSync(new URL("../app/api/internal/base-color-family-migrate/route.ts", import.meta.url), "utf8");
 assert.match(migration, /variationImageIdentityVerified !== true/, "unverified supplier images must block BASE color migration");
+assert.match(migration, /offer\.tracking_supported !== true/, "supplier tracking must be verified before BASE publication");
 assert.match(migration, /colorImageVerified !== true/, "unverified color images must block BASE color migration");
 assert.match(migration, /variation_identifier/, "BASE variation identifiers must preserve exact supplier variant IDs");
 assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs must remain mapped for historical orders");
