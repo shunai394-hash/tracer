@@ -14,6 +14,12 @@ type BaseItemInput = {
   price: number;
   stock?: number;
   visible?: boolean;
+  variations?: Array<{
+    name: string;
+    stock: number;
+    identifier: string;
+    barcode?: string | null;
+  }>;
 };
 
 type BaseItemResponse = {
@@ -231,17 +237,27 @@ async function requestBase(
 }
 
 export async function createBaseItem(input: BaseItemInput) {
-  return requestBase(
-    "/items/add",
-    new URLSearchParams({
-      title: input.title,
-      ...(input.identifier ? { identifier: input.identifier } : {}),
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-  );
+  const variations = input.variations ?? [];
+  if (variations.length > 100) throw new Error("BASE_VARIATION_COUNT_EXCEEDED");
+  const body = new URLSearchParams({
+    title: input.title,
+    ...(input.identifier ? { identifier: input.identifier } : {}),
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? variations.reduce((sum, variation) => sum + Math.max(0, Math.floor(variation.stock)), 0)))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  variations.forEach((variation, index) => {
+    const name = String(variation.name ?? "").trim();
+    const identifier = String(variation.identifier ?? "").trim();
+    if (!name || !identifier) throw new Error("BASE_VARIATION_NAME_OR_IDENTIFIER_REQUIRED");
+    body.set(`variation[${index}]`, name);
+    body.set(`variation_stock[${index}]`, String(Math.max(0, Math.floor(variation.stock))));
+    body.set(`variation_identifier[${index}]`, identifier);
+    const barcode = String(variation.barcode ?? "").trim();
+    if (barcode) body.set(`barcode[${index}]`, barcode);
+  });
+  return requestBase("/items/add", body);
 }
 
 export async function editBaseItem(input: {
@@ -393,6 +409,10 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number | null;
+    item_identifier?: string | null;
+    variation_identifier?: string | null;
+    variation?: string | null;
     title?: string;
     price?: number;
     amount?: number;
