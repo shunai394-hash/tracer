@@ -21,6 +21,7 @@ function member(family, index, overrides = {}) {
     sku: `SKU-${family.supplierProductId}-${index}`,
     imageUrl: `https://images.example.test/${family.supplierProductId}/${COLORS[index]}.jpg`,
     variantImageIdentityVerified: true,
+    colorImageVerified: true,
     sellingPrice: 4980 + index * 100,
     currency: "JPY",
     inventory: 10,
@@ -87,6 +88,16 @@ const unverifiedImageIdentity = groupExactColorFamilies([
 assert.equal(unverifiedImageIdentity.length, 2);
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlocked === true));
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+
+
+const distinctUrlsButUnverifiedColors = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { colorImageVerified: false }),
+  member(FAMILIES[0], 1, { colorImageVerified: false }),
+]).catalog;
+assert.equal(distinctUrlsButUnverifiedColors.length, 2);
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlocked === true));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_color_image_unverified:"))));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.variants.length === 0));
 
 const missingLabels = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "レディース ハンドバッグ" }),
