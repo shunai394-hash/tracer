@@ -549,6 +549,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       ? candidate.attributes as Record<string, unknown>
       : {};
     const verifiedVariantImage = variantAttributes.variantImageIdentityVerified === true
+      && variantAttributes.colorImageVerified === true
       ? safeUrl(variantAttributes.variantImageUrl)
       : null;
     const imageUrl = verifiedVariantImage ?? safeUrl(product.image_url);
