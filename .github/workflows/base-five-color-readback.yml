@@ -1,4 +1,5 @@
 name: BASE five-color item readback
+# Refresh exact item/variation state after the first guarded consolidation attempt.
 
 on:
   push:
