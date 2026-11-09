@@ -52,7 +52,8 @@ const sharedImage = groupExactColorFamilies([
 assert.equal(sharedImage.length, 2);
 assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
-assert.ok(sharedImage.every((item) => item.variants.length === 0));\nassert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_image_ambiguous:"))));
+assert.ok(sharedImage.every((item) => item.variants.length === 0));
+assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_image_ambiguous:"))));
 
 const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 0, { imageUrl: null }),
@@ -130,9 +131,11 @@ const cart = readFileSync(new URL("../components/shop-cart.ts", import.meta.url)
 const button = readFileSync(new URL("../components/add-to-cart-button.tsx", import.meta.url), "utf8");
 const store = readFileSync(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 assert.match(store, /variantImageIdentityVerified: attributes\.variantImageIdentityVerified === true/);
-assert.match(store, /variantImageIdentityVerified: attributes\\.variantImageIdentityVerified === true/);
-assert.match(store, /colorImageVerified: attributes\\.colorImageVerified === true/);
-assert.match(store, /colorImageVerified: row\\.color_image_verified === true/);
+assert.match(store, /colorImageVerified: attributes\.colorImageVerified === true/);
+assert.match(store, /colorImageVerified: row\.color_image_verified === true/);
+
+
+
 assert.match(page, /ProductVariantSelector/);
 assert.match(page, /saleBlocked=\{listing\.colorSaleBlocked === true\}/);
 assert.match(cart, /supplierVariantId\?: string \| null/);
