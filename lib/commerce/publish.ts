@@ -479,10 +479,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   }
   const results: Array<{ variantId: string; ok: boolean; externalId?: string; externalVariantId?: string; expectedPrice?: number; error?: string; missingEvidence?: string[]; action?: "published" | "unpublished" }> = [];
 
-  // BASE's API publisher stores a single item image and does not yet prove
-  // per-variation image switching. Block exact supplier-product families here,
-  // in the canonical commerce pipeline (not the legacy shop_listings worker).
-  // Query the full family so a limited publish batch cannot miss sibling colors.
+  // BASE supports item variations, but images are an item-level gallery rather
+  // than dynamically bound to each variation. New color families therefore go
+  // through the exact-ID family migration route, which verifies every supplier
+  // image and maps each BASE variation ID. Query the full family so a limited
+  // publish batch cannot miss sibling colors.
   const baseColorFamilyVariantIds = new Set<string>();
   if (channel === "base") {
     const supplierProductIds = [...new Set(candidates.flatMap((candidate) =>
@@ -533,7 +534,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           variantId: String(listing.variant_id),
           ok: true,
           externalId: listing.external_product_id ? String(listing.external_product_id) : undefined,
-          error: "base_color_variant_new_publication_blocked_until_image_switching_verified",
+          error: "base_color_variant_requires_verified_family_migration",
         });
       }
     }
