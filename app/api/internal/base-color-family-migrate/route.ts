@@ -311,6 +311,9 @@ export async function POST(request: Request) {
         external_variant_id: oldVariantId,
       }];
     });
+    if (new Set(aliases.map((alias) => alias.external_variant_id)).size !== aliases.length) {
+      throw new Error("base_color_family_legacy_alias_identity_collision");
+    }
     if (aliases.length) {
       const { data: existingAliases, error: aliasReadError } = await db.from("channel_listing_external_aliases")
         .select("variant_id,external_product_id,external_variant_id")
