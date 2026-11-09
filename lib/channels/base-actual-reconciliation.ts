@@ -15,6 +15,8 @@ export type BaseChannelListing = {
 
 export type BaseReconciliationItem = {
   baseItemId: string | null;
+  baseVariationId: string | null;
+  baseVariationName: string | null;
   title: string | null;
   baseIdentifier: string | null;
   basePrice: number | null;
@@ -25,7 +27,7 @@ export type BaseReconciliationItem = {
   dbStatus: string | null;
   existingExternalProductId: string | null;
   mappingStatus: "matched" | "unmapped" | "ambiguous" | "id_conflict";
-  mappingMethod: "base_item_id" | "exact_sku" | "none";
+  mappingMethod: "base_item_id" | "base_item_variation_id" | "exact_sku" | "none";
   candidateCount: number;
   candidateListingIds: string[];
   priceMatches: boolean | null;
@@ -93,13 +95,47 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     }
   }
 
-  const built = snapshotItems.map((item) => {
+  // BASE represents a color family as one item with many variations. Expand
+  // each variation into its own audit row so item_id alone never selects a
+  // sibling color from the same parent.
+  type ExpandedBaseItem = { item: Record<string, unknown>; variation: Record<string, unknown> | null };
+  const expandedItems: ExpandedBaseItem[] = snapshotItems.flatMap((item): ExpandedBaseItem[] => {
+    const variations = Array.isArray(item.variations)
+      ? item.variations.filter((value): value is Record<string, unknown> =>
+          Boolean(value) && typeof value === "object" && !Array.isArray(value))
+      : [];
+    return variations.length
+      ? variations.map((variation): ExpandedBaseItem => ({ item, variation }))
+      : [{ item, variation: null }];
+  });
+
+  const built = expandedItems.map(({ item, variation }) => {
     const externalId = textValue(item.item_id);
-    const identifier = textValue(item.identifier);
+    const variationId = variation ? textValue(variation.variation_id) : null;
+    const variationName = variation ? textValue(variation.variation) : null;
+    const identifier = (variation ? textValue(variation.variation_identifier) : null)
+      ?? textValue(item.identifier);
     const idCandidates = externalId ? byExternalId.get(externalId) ?? [] : [];
+    const variationCandidates = variationId
+      ? idCandidates.filter((row) => textValue(row.externalVariantId) === variationId)
+      : [];
     const skuCandidates = identifier ? bySku.get(identifier.toUpperCase()) ?? [] : [];
-    const candidates = idCandidates.length > 0 ? idCandidates : skuCandidates;
-    const mappingMethod = idCandidates.length > 0 ? "base_item_id" : skuCandidates.length > 0 ? "exact_sku" : "none";
+    const candidates = variationId && variationCandidates.length > 0
+      ? variationCandidates
+      : idCandidates.length === 1
+        ? idCandidates
+        : skuCandidates.length > 0
+          ? skuCandidates
+          : idCandidates;
+    const mappingMethod = variationId && variationCandidates.length > 0
+      ? "base_item_variation_id"
+      : idCandidates.length === 1
+        ? "base_item_id"
+        : skuCandidates.length > 0
+          ? "exact_sku"
+          : idCandidates.length > 0
+            ? "base_item_id"
+            : "none";
     const listing = candidates.length === 1 ? candidates[0] : null;
     const skuPointsToDifferentId = idCandidates.length === 0
       && skuCandidates.length === 1
@@ -138,6 +174,8 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     ];
     const view: BaseReconciliationItem = {
       baseItemId: externalId,
+      baseVariationId: variationId,
+      baseVariationName: variationName,
       title: textValue(item.title),
       baseIdentifier: identifier,
       basePrice: externalPrice,
@@ -159,7 +197,7 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const row: BaseAuditInsertRow = {
       channel: "base",
       external_product_id: externalId,
-      external_variant_id: listing?.externalVariantId ?? null,
+      external_variant_id: variationId ?? listing?.externalVariantId ?? null,
       variant_id: mappingStatus === "matched" ? listing?.variantId ?? null : null,
       external_sku: identifier,
       internal_sku: listing?.externalSku ?? null,
@@ -173,6 +211,8 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
       details: {
         source: "base_items_api",
         apiVisible: visible,
+        baseVariationId: variationId,
+        baseVariationName: variationName,
         mappingCount: candidates.length,
         mappingStatus,
         mappingMethod,
@@ -196,6 +236,7 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
       dbListingCount: listings.length,
       mappedItems: count((item) => item.mappingStatus === "matched"),
       exactIdMatches: count((item) => item.mappingMethod === "base_item_id" && item.mappingStatus === "matched"),
+      exactVariationIdMatches: count((item) => item.mappingMethod === "base_item_variation_id" && item.mappingStatus === "matched"),
       exactSkuMatches: count((item) => item.mappingMethod === "exact_sku" && item.mappingStatus === "matched"),
       idConflicts: count((item) => item.mappingStatus === "id_conflict"),
       unmappedItems: count((item) => item.mappingStatus === "unmapped"),
