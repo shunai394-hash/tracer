@@ -96,7 +96,6 @@ export async function GET(request: Request) {
             .eq("channel", "base")
             .eq("external_product_id", baseItemId)
             .eq("external_variant_id", baseVariationId)
-            .eq("status", "published")
             .maybeSingle();
           if (listingError) throw new Error("base_item_mapping_read_failed:" + listingError.message);
           let listing = directListing;
