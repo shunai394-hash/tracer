@@ -223,7 +223,9 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       if (best && best.missing.length === 0) {
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
-          status: "pending",
+          // A healthy, already-live grouped BASE item must remain published so
+          // variation_id order matching continues to work after each safety scan.
+          status: listing.status === "published" ? "published" : "pending",
           last_synced_at: checkedAt,
           updated_at: checkedAt,
           last_error: null,
@@ -244,16 +246,43 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
         const itemId = String(listing.external_product_id);
-        await editBaseItem({
-          itemId, title, detail,
-          price: Math.min(100_000_000, Math.max(50, Math.round(Number(price?.selling_price) || 50))),
-          stock: 0, visible: false,
-        });
-        const readback = await getBaseItemDetail(itemId);
-        const hidden = readback.visible === false || readback.visible === 0 || readback.visible === "0";
-        const stock = Number(readback.stock);
-        if (!hidden || !Number.isFinite(stock) || stock !== 0) {
-          throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+        const externalVariationId = String(listing.external_variant_id ?? "");
+        const isGroupedVariation = Boolean(externalVariationId && externalVariationId !== itemId);
+        if (isGroupedVariation) {
+          const currentItem = await getBaseItemDetail(itemId);
+          const currentVariations = Array.isArray(currentItem.variations)
+            ? currentItem.variations.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+            : [];
+          const currentVariation = currentVariations.find((value) => String(value.variation_id ?? "") === externalVariationId);
+          if (!currentVariation) throw new Error("base_unpublish_variation_not_found:" + externalVariationId);
+          await editBaseItem({
+            itemId,
+            variations: [{
+              id: externalVariationId,
+              name: String(currentVariation.variation ?? ""),
+              stock: 0,
+              identifier: currentVariation.variation_identifier == null ? undefined : String(currentVariation.variation_identifier),
+            }],
+          });
+          const readback = await getBaseItemDetail(itemId);
+          const updatedVariation = (Array.isArray(readback.variations) ? readback.variations : [])
+            .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+            .find((value) => String(value.variation_id ?? "") === externalVariationId);
+          if (!updatedVariation || Number(updatedVariation.variation_stock) !== 0) {
+            throw new Error("base_unpublish_variation_stock_readback_mismatch:" + externalVariationId);
+          }
+        } else {
+          await editBaseItem({
+            itemId, title, detail,
+            price: Math.min(100_000_000, Math.max(50, Math.round(Number(price?.selling_price) || 50))),
+            stock: 0, visible: false,
+          });
+          const readback = await getBaseItemDetail(itemId);
+          const hidden = readback.visible === false || readback.visible === 0 || readback.visible === "0";
+          const stock = Number(readback.stock);
+          if (!hidden || !Number.isFinite(stock) || stock !== 0) {
+            throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+          }
         }
       } else {
         const productId = toShopifyGid("Product", String(listing.external_product_id));
