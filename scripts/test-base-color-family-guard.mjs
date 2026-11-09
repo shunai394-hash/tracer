@@ -28,10 +28,32 @@ assert.deepEqual(
   ["cj-blue", "cj-red"],
   "different supplier namespaces must never be grouped as one color family",
 );
-assert.equal(BASE_VARIATION_IMAGE_BINDING, "unsupported");
+assert.equal(BASE_VARIATION_IMAGE_BINDING, "item_gallery_only");
 const baseClient = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
-assert.doesNotMatch(baseClient, /variation_image|variationImage/);
+assert.match(baseClient, /variation\[\$\{index\}\]/, "BASE item creation must support exact color variations");
+assert.match(baseClient, /variation_id\[\$\{index\}\]/, "BASE item edits must retain exact variation IDs");
 const imageInput = baseClient.slice(baseClient.indexOf("export async function addBaseItemImage"));
 assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
+const migration = readFileSync(new URL("../app/api/internal/base-color-family-migrate/route.ts", import.meta.url), "utf8");
+assert.match(migration, /variantImageIdentityVerified !== true/, "unverified supplier images must block BASE color migration");
+assert.match(migration, /offer\.tracking_supported !== true/, "supplier tracking must be verified before BASE publication");
+assert.doesNotMatch(migration, /colorImageVerified !== true/, "the importer-populated exact variant image identity is the publication gate");
+assert.match(migration, /identifier: variant\.shopifySku/, "BASE variation identifiers must match the canonical channel SKU");
+assert.match(migration, /imageSourceStem/, "Shopify image identity must match the exact CJ source image filename when source metafields are absent");
+assert.match(migration, /\[variant\.sku, variant\.shopifySku\]\.includes/, "Shopify variant identity must match the canonical or exact channel SKU");
+assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs must remain mapped for historical orders");
+assert.match(migration, /base_color_family_legacy_alias_identity_collision/, "ambiguous legacy BASE item aliases must stop migration");
+const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+assert.match(orderRoute, /external_variant_id/);
+assert.match(orderRoute, /channel_listing_external_aliases/);
+assert.match(orderRoute, /item\.variation_id/);
+assert.doesNotMatch(orderRoute.slice(orderRoute.indexOf("const { data: directListing"), orderRoute.indexOf("let listing = directListing")), /\.eq\("status", "published"\)/, "historical paid orders must still map after a listing is hidden");
+const commercePublisher = readFileSync(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
+assert.match(commercePublisher, /status: listing\.status === "published" \? "published" : "pending"/, "healthy grouped BASE listings must remain orderable");
+assert.match(commercePublisher, /base_unpublish_variation_stock_readback_mismatch/, "a stale color must zero only its exact BASE variation");
+assert.match(commercePublisher, /base_unfulfillable_variation_stock_readback_mismatch/, "an unfulfillable color must not hide its sibling variations");
+assert.match(commercePublisher, /base_color_family_shared_price_mismatch/, "shared BASE price must be identical across all colors");
+assert.match(commercePublisher, /base_color_family_variant_identity_mismatch/, "stock sync must preserve exact BASE variation IDs");
+assert.match(commercePublisher, /state\.external_variant_id !== state\.external_product_id/, "scheduled BASE sync must revisit grouped color variants");
 console.log("BASE color-family publication guard: 4 scenarios passed");
