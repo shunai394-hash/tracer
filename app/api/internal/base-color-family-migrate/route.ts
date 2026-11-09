@@ -42,6 +42,10 @@ function validHttps(value: unknown): value is string {
   try { return new URL(value).protocol === "https:"; } catch { return false; }
 }
 
+function baseSafeText(value: unknown): string {
+  return String(value ?? "").replace(/\\p{Extended_Pictographic}/gu, "").trim();
+}
+
 function isVisible(value: unknown): boolean {
   return value === true || value === 1 || value === "1";
 }
@@ -238,8 +242,8 @@ export async function POST(request: Request) {
       };
     });
     const totalStock = variationInputs.reduce((sum, variation) => sum + variation.stock, 0);
-    const title = String(product.title_ja ?? "").trim();
-    const detail = String(product.description_ja ?? "").trim() || title;
+    const title = baseSafeText(product.title_ja);
+    const detail = baseSafeText(product.description_ja) || title;
     if (!title) throw new Error("base_color_family_title_missing");
 
     if (!itemId) {
