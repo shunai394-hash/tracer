@@ -98,13 +98,14 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
   // BASE represents a color family as one item with many variations. Expand
   // each variation into its own audit row so item_id alone never selects a
   // sibling color from the same parent.
-  const expandedItems = snapshotItems.flatMap((item) => {
+  type ExpandedBaseItem = { item: Record<string, unknown>; variation: Record<string, unknown> | null };
+  const expandedItems: ExpandedBaseItem[] = snapshotItems.flatMap((item): ExpandedBaseItem[] => {
     const variations = Array.isArray(item.variations)
       ? item.variations.filter((value): value is Record<string, unknown> =>
           Boolean(value) && typeof value === "object" && !Array.isArray(value))
       : [];
     return variations.length
-      ? variations.map((variation) => ({ item, variation }))
+      ? variations.map((variation): ExpandedBaseItem => ({ item, variation }))
       : [{ item, variation: null }];
   });
 
