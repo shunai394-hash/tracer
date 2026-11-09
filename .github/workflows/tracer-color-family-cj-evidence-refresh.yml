@@ -1,0 +1,71 @@
+name: TRACER exact CJ color-family evidence refresh (15 variants)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-color-family-cj-evidence-refresh.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  refresh:
+    if: contains(github.event.head_commit.message, 'run exact 15 CJ color-family variant re-verification after deployment')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout commit history for production ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for this production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-descendant-of=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production does not contain this commit; refusing supplier API calls."
+          exit 1
+
+      - name: Reverify only the 15 exact color-family variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          AUTH="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          VARIANTS="2608270931501633200,2608270931501633201,2608270931501633202,2608270931501633203,2608270931501633204,2611030217291630600,2611030217291630601,2611030217291630602,2611030217291630603,2611030217291630604,2610130254321622300,2610130254321622301,2610130254321622302,2610130254321622303,2610130254321622304"
+          code="$(curl -sS -o reverify.json -w "%{http_code}" --max-time 260 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/commerce-cj-import?variantIds=$VARIANTS" || true)"
+          echo "Targeted CJ import HTTP $code"
+          python3 - <<PY
+          import json,sys
+          try:
+              d=json.load(open("reverify.json"))
+          except Exception:
+              print("Importer returned no valid JSON")
+              sys.exit(1)
+          print(json.dumps({k:d.get(k) for k in ("ok","error","query","page","fxRate","fxSource","stats","skipped","reason")},ensure_ascii=False,indent=2))
+          if not (200 <= int("$code") < 300) or d.get("ok") is False:
+              sys.exit(1)
+          PY
+          {
+            echo "## Exact CJ color-family evidence refresh"
+            echo
+            echo "- Scope: 15 exact supplier variant IDs across three color families."
+            echo "- No product publication, unpublication, BASE/Shopify listing changes, supplier orders, or payments."
+            echo
+            echo '### Importer response'
+            cat reverify.json
+          } >> "$GITHUB_STEP_SUMMARY"
