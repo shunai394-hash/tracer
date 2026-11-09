@@ -28,6 +28,8 @@ assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuanti
 const defaultAdoption = executor.slice(executor.indexOf("AdoptTracerDefaultColorVariant"), executor.indexOf("// Re-read after adopting"));
 assert.doesNotMatch(defaultAdoption, /inventoryQuantities/, "existing default variants must not receive create-only inventoryQuantities");
 assert.match(defaultAdoption, /setShopifyVariantInventory/, "existing default variant inventory must be set with inventorySetQuantities");
+assert.match(defaultAdoption, /reference: `tracer:\/\/color-family\/\$\{supplierProductId\}\/\$\{expectedDefault\.supplierVariantId\}\/\$\{adoptedVariantId\}`/, "default inventory idempotency identity must include its target Shopify variant");
+assert.match(executor, /reference: `tracer:\/\/color-family\/\$\{supplierProductId\}\/\$\{variant\.supplierVariantId\}\/\$\{current\.id\}`/, "repair inventory idempotency identity must include its target Shopify variant");
 assert.match(executor, /shopify_color_family_verification_variant_count_failed/, "final readback must verify exact variant count");
 assert.match(executor, /shopify_color_family_verification_inventory_failed/, "final readback must verify inventory");
 assert.match(executor, /shopify_color_family_verification_image_failed/, "final readback must verify image presence");

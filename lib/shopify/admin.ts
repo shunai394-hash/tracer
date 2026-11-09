@@ -1041,7 +1041,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       variantId: adoptedVariantId,
       quantity: expectedDefault.inventory,
       locationId,
-      reference: `tracer://color-family/${supplierProductId}/${expectedDefault.supplierVariantId}`,
+      reference: `tracer://color-family/${supplierProductId}/${expectedDefault.supplierVariantId}/${adoptedVariantId}`,
     });
   }
 
@@ -1134,7 +1134,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         variantId: current.id,
         quantity: variant.inventory,
         locationId,
-        reference: `tracer://color-family/${supplierProductId}/${variant.supplierVariantId}`,
+        reference: `tracer://color-family/${supplierProductId}/${variant.supplierVariantId}/${current.id}`,
       });
     }
   }
