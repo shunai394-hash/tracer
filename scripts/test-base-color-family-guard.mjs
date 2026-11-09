@@ -47,6 +47,7 @@ assert.match(orderRoute, /item\.variation_id/);
 const commercePublisher = readFileSync(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
 assert.match(commercePublisher, /status: listing\.status === "published" \? "published" : "pending"/, "healthy grouped BASE listings must remain orderable");
 assert.match(commercePublisher, /base_unpublish_variation_stock_readback_mismatch/, "a stale color must zero only its exact BASE variation");
+assert.match(commercePublisher, /base_unfulfillable_variation_stock_readback_mismatch/, "an unfulfillable color must not hide its sibling variations");
 assert.match(commercePublisher, /base_color_family_shared_price_mismatch/, "shared BASE price must be identical across all colors");
 assert.match(commercePublisher, /base_color_family_variant_identity_mismatch/, "stock sync must preserve exact BASE variation IDs");
 console.log("BASE color-family publication guard: 4 scenarios passed");
