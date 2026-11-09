@@ -137,4 +137,31 @@ assert.match(workflow, /auditWriteErrorCode/);
 assert.match(workflow, /itemCount !== report\.auditRowsWritten/);
 assert.match(workflow, /evidenceComplete/);
 
+const family = reconcileBaseItems([
+  {
+    item_id: "700",
+    identifier: "TRC-PRODUCT-700",
+    title: "Color family",
+    price: 5826,
+    visible: 1,
+    variations: [
+      { variation_id: 71, variation: "レッド", variation_identifier: "TRC-AAAAAAAAAAAAAAAAAAAAAAAA" },
+      { variation_id: 72, variation: "ブルー", variation_identifier: "TRC-BBBBBBBBBBBBBBBBBBBBBBBB" },
+    ],
+  },
+], [
+  { ...listing, id: "family-red", variantId: "variant-red", externalProductId: "700", externalVariantId: "71", externalSku: "TRC-AAAAAAAAAAAAAAAAAAAAAAAA", sellingPrice: 5826 },
+  { ...listing, id: "family-blue", variantId: "variant-blue", externalProductId: "700", externalVariantId: "72", externalSku: "TRC-BBBBBBBBBBBBBBBBBBBBBBBB", sellingPrice: 5826 },
+]);
+assert.equal(family.summary.itemCount, 2);
+assert.equal(family.summary.mappedItems, 2);
+assert.equal(family.summary.exactVariationIdMatches, 2);
+assert.equal(family.summary.ambiguousItems, 0);
+assert.deepEqual(family.items.map((item) => [item.baseVariationId, item.baseVariationName, item.tracerVariantId]), [
+  ["71", "レッド", "variant-red"],
+  ["72", "ブルー", "variant-blue"],
+]);
+assert.deepEqual(family.rows.map((row) => row.external_variant_id), ["71", "72"]);
+assert.deepEqual(family.rows.map((row) => row.variant_id), ["variant-red", "variant-blue"]);
+
 console.log("BASE actual-item reconciliation evidence: ok");
