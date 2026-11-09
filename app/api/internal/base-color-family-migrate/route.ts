@@ -384,7 +384,21 @@ export async function POST(request: Request) {
       if (oldItemId === itemId) continue;
       const old = await getBaseItemDetail(oldItemId);
       if (isVisible(old.visible) || Number(old.stock) > 0) {
-        await editBaseItem({ itemId: oldItemId, stock: 0, visible: false });
+        const oldVariations = rows(old.variations);
+        if (oldVariations.length) {
+          await editBaseItem({
+            itemId: oldItemId,
+            visible: false,
+            variations: oldVariations.map((variation) => ({
+              id: String(variation.variation_id),
+              name: String(variation.variation ?? ""),
+              stock: 0,
+              identifier: variation.variation_identifier == null ? undefined : String(variation.variation_identifier),
+            })),
+          });
+        } else {
+          await editBaseItem({ itemId: oldItemId, stock: 0, visible: false });
+        }
       }
       const hidden = await getBaseItemDetail(oldItemId);
       if (isVisible(hidden.visible) || Number(hidden.stock) !== 0) {
