@@ -143,7 +143,7 @@ export async function POST(request: Request) {
         supplierVariantId,
         label,
         imageSource,
-        price: Number(price.selling_price),
+        price: Math.round(Number(price.selling_price)),
         stock: toStorefrontStockQuantity(offer.inventory, cap),
         shopifyVariantId: String(shopify.external_variant_id),
       };
