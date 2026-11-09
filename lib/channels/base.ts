@@ -465,6 +465,7 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number;
     title?: string;
     price?: number;
     amount?: number;
