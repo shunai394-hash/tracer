@@ -79,6 +79,30 @@ export async function POST(request: Request) {
     const offersByVariant = new Map((offers ?? []).map((row) => [String(row.variant_id), row]));
     const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
     const channelsByVariant = new Map((channelRows ?? []).map((row) => [String(row.variant_id), row]));
+    const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
+      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
+    if (!storeDomain) throw new Error("shopify_store_domain_missing");
+    const currentProductIds = new Set((channelRows ?? []).map((row) => String(row.external_product_id)));
+    const legacyProductIdSet = new Set<string>(FAMILY.map((item) => item.oldProductId));
+    const alreadyMigrated = (channelRows ?? []).length === FAMILY.length
+      && currentProductIds.size === 1
+      && !legacyProductIdSet.has(String([...currentProductIds][0]))
+      && FAMILY.every((item) => {
+        const row = channelsByVariant.get(item.variantId);
+        return row?.status === "published"
+          && String(row.external_sku ?? "") === item.externalSku
+          && Boolean(String(row.external_variant_id ?? ""));
+      });
+    if (alreadyMigrated) {
+      const productId = [...currentProductIds][0];
+      return NextResponse.json({
+        ok: true,
+        status: "ALREADY_MIGRATED",
+        productId,
+        productUrl: "https://" + storeDomain + "/products/" + HANDLE,
+        variantCount: FAMILY.length,
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
     const mapped = variants.map((variant) => {
       const expected = FAMILY.find((entry) =>
         entry.supplierVariantId === String(variant.source_variant_key)
@@ -137,19 +161,6 @@ export async function POST(request: Request) {
       }
       return { ...variant, inventory: snapshot.available };
     });
-
-    const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
-      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
-    if (!storeDomain) throw new Error("shopify_store_domain_missing");
-
-    // Idempotent success path: both rows already point at one published parent.
-    const currentProductIds = new Set((channelRows ?? []).map((row) => String(row.external_product_id)));
-    if (currentProductIds.size === 1 && !currentProductIds.has(FAMILY[0].oldProductId)
-      && !currentProductIds.has(FAMILY[1].oldProductId)) {
-      const productId = [...currentProductIds][0];
-      const productUrl = "https://" + storeDomain + "/products/" + HANDLE;
-      return NextResponse.json({ ok: true, status: "ALREADY_MIGRATED", productId, productUrl, variantCount: 2 });
-    }
 
     const created = await createShopifyColorFamily({
       inventoryLocationId,
