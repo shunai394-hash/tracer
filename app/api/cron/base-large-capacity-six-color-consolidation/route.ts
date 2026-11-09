@@ -202,7 +202,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "TRACER_BASE_LISTING_IDENTITY_MISMATCH" }, { status: 409 });
     }
 
-    const mappingResults = [];
+    const mappingResults: Array<{ color: string; variationId: string; listingId: string }> = [];
     for (const target of TARGETS) {
       const variation = variationRows.find((row) =>
         String(row.variation ?? "") === target.color
