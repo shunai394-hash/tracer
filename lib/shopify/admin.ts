@@ -669,7 +669,15 @@ async function setShopifyVariantInventoryAttempt(input: { variantId: string; qua
   // The idempotency key must cover every input Shopify treats as part of this mutation.
   // currentAvailable changes after a successful write; omitting it reuses the same key
   // with different changeFromQuantity values on the next sync and triggers a conflict.
-  const idempotencyKey = crypto.createHash("sha256").update(`${referenceDocumentUri}:${level.location.id}:${quantity}:${currentAvailable}`).digest("hex").slice(0, 64);
+  const idempotencyKey = crypto.createHash("sha256").update(JSON.stringify({
+    referenceDocumentUri,
+    inventoryItemId: variant.inventoryItem.id,
+    locationId: level.location.id,
+    name: "available",
+    reason: "correction",
+    quantity,
+    changeFromQuantity: currentAvailable,
+  })).digest("hex").slice(0, 64);
 
   let result: {
     inventorySetQuantities: {

@@ -25,6 +25,7 @@ assert.doesNotMatch(executor, /fileDelete\(fileIds: \$fileIds\)/, "color migrati
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
 assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");
+assert.match(source, /inventoryItemId: variant\.inventoryItem\.id,[\s\S]*locationId: level\.location\.id,[\s\S]*changeFromQuantity: currentAvailable/, "inventory idempotency identity must cover every inventorySetQuantities input, including the inventory item ID");
 const defaultAdoption = executor.slice(executor.indexOf("AdoptTracerDefaultColorVariant"), executor.indexOf("// Re-read after adopting"));
 assert.doesNotMatch(defaultAdoption, /inventoryQuantities/, "existing default variants must not receive create-only inventoryQuantities");
 assert.match(defaultAdoption, /setShopifyVariantInventory/, "existing default variant inventory must be set with inventorySetQuantities");
