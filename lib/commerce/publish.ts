@@ -559,7 +559,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       const latest = new Map<string, { currency: string; selling_price: number }>();
       for (const row of familyPrices ?? []) {
         const id = String(row.variant_id);
-        if (!latest.has(id)) latest.set(id, { currency: String(row.currency), selling_price: Number(row.selling_price) });
+        if (!latest.has(id)) latest.set(id, { currency: String(row.currency), selling_price: Math.round(Number(row.selling_price)) });
       }
       if (latest.size !== ids.length) return null;
       const values = [...latest.values()];
