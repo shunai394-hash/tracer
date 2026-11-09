@@ -7,6 +7,16 @@ import {
 
 export type { BaseSnapshotCheckpoint };
 
+export type BaseItemVariationInput = {
+  /** Existing BASE variation ID. Use an empty string only when creating a new variation. */
+  id?: string | number;
+  variationId?: string;
+  name: string;
+  stock: number;
+  identifier?: string;
+  barcode?: string;
+};
+
 type BaseItemInput = {
   title: string;
   identifier?: string;
@@ -14,6 +24,7 @@ type BaseItemInput = {
   price: number;
   stock?: number;
   visible?: boolean;
+  variations?: BaseItemVariationInput[];
 };
 
 type BaseItemResponse = {
@@ -231,27 +242,22 @@ async function requestBase(
 }
 
 export async function createBaseItem(input: BaseItemInput) {
-  return requestBase(
-    "/items/add",
-    new URLSearchParams({
-      title: input.title,
-      ...(input.identifier ? { identifier: input.identifier } : {}),
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-  );
+  const body = new URLSearchParams({
+    title: input.title,
+    ...(input.identifier ? { identifier: input.identifier } : {}),
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  for (const [index, variation] of (input.variations ?? []).entries()) {
+    body.set(`variation[${index}]`, variation.name);
+    body.set(`variation_stock[${index}]`, String(Math.max(0, Math.floor(variation.stock))));
+    if (variation.identifier) body.set(`variation_identifier[${index}]`, variation.identifier);
+    if (variation.barcode) body.set(`barcode[${index}]`, variation.barcode);
+  }
+  return requestBase("/items/add", body);
 }
-
-export type BaseItemVariationInput = {
-  /** Existing BASE variation ID. Use an empty string only when creating a new variation. */
-  variationId: string;
-  name: string;
-  stock: number;
-  identifier?: string;
-  barcode?: string;
-};
 
 export async function editBaseItem(input: {
   itemId: string;
@@ -269,24 +275,20 @@ export async function editBaseItem(input: {
   if (input.stock !== undefined) body.set("stock", String(Math.max(0, Math.floor(input.stock))));
   if (input.visible !== undefined) body.set("visible", input.visible ? "1" : "0");
   if (input.variations !== undefined) {
-    if (input.variations.length < 1 || input.variations.length > 100) {
-      throw new Error("BASE_VARIATION_COUNT_INVALID");
-    }
+    if (input.variations.length < 1 || input.variations.length > 100) throw new Error("BASE_VARIATION_COUNT_INVALID");
     const seenIds = new Set<string>();
     const seenSkus = new Set<string>();
     let stockTotal = 0;
     input.variations.forEach((variation, index) => {
-      const id = String(variation.variationId ?? "").trim();
+      const id = String(variation.variationId ?? variation.id ?? "").trim();
       const name = String(variation.name ?? "").trim();
       const identifier = String(variation.identifier ?? "").trim();
       const barcode = String(variation.barcode ?? "").trim();
       const quantity = Number(variation.stock);
-      if ((id && !/^\d+$/.test(id)) || !name || name.length > 255 ||
+      if ((id && !/^\\d+$/.test(id)) || !name || name.length > 255 ||
           !Number.isSafeInteger(quantity) || quantity < 0 ||
           (identifier && !/^[A-Za-z0-9_-]{1,50}$/.test(identifier)) ||
-          (barcode && barcode.length > 100)) {
-        throw new Error("BASE_VARIATION_INPUT_INVALID:" + index);
-      }
+          (barcode && barcode.length > 100)) throw new Error("BASE_VARIATION_INPUT_INVALID:" + index);
       if (id && seenIds.has(id)) throw new Error("BASE_VARIATION_ID_DUPLICATE");
       if (identifier && seenSkus.has(identifier)) throw new Error("BASE_VARIATION_IDENTIFIER_DUPLICATE");
       if (id) seenIds.add(id);
@@ -299,14 +301,11 @@ export async function editBaseItem(input: {
       if (barcode) body.set("barcode[" + index + "]", barcode);
     });
     if (!Number.isSafeInteger(stockTotal)) throw new Error("BASE_VARIATION_STOCK_TOTAL_INVALID");
-    if (input.stock !== undefined && Math.floor(input.stock) !== stockTotal) {
-      throw new Error("BASE_VARIATION_STOCK_TOTAL_MISMATCH");
-    }
+    if (input.stock !== undefined && Math.floor(input.stock) !== stockTotal) throw new Error("BASE_VARIATION_STOCK_TOTAL_MISMATCH");
     body.set("stock", String(stockTotal));
   }
   return requestBase("/items/edit", body, 3);
 }
-
 
 /** Move one existing BASE item to the first storefront position without changing price, stock, title, or visibility. */
 export async function setBaseItemListOrder(itemId: string, listOrder: number): Promise<void> {
@@ -434,6 +433,7 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number;
     title?: string;
     price?: number;
     amount?: number;

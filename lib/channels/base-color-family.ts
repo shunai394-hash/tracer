@@ -1,9 +1,9 @@
 /**
- * BASE Items API variations expose label, stock, identifier, and barcode.
- * Images belong to the item (img1–img20) and cannot be read back per variation.
- * Color families stay unpublished on BASE until that binding exists.
+ * BASE variations expose exact option IDs, labels, stock, and identifiers.
+ * Images are an item-level gallery (img1–img20), not dynamically bound to each
+ * variation. TRACER may publish verified families with the complete color gallery.
  */
-export const BASE_VARIATION_IMAGE_BINDING = "unsupported" as const;
+export const BASE_VARIATION_IMAGE_BINDING = "item_gallery_only" as const;
 
 export type BaseColorFamilyCandidate = {
   id: string;
