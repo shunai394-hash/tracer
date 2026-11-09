@@ -580,6 +580,7 @@ test("BASE order polling imports paid orders and resolves current plus aliased v
   assert.match(baseOrders, /dispatch_status === "unpaid"/);
   assert.match(baseOrders, /\.eq\("external_product_id", baseItemId\)/);
   assert.match(baseOrders, /\.eq\("external_variant_id", baseVariationId\)/);
+  assert.match(baseOrders, /item\.variation_id == null \|\| String\(item\.variation_id\)\.trim\(\) === ""/);
   assert.match(baseOrders, /channel_listing_external_aliases/);
   assert.doesNotMatch(baseOrders.slice(baseOrders.indexOf("const { data: directListing"), baseOrders.indexOf("let listing = directListing")), /\.eq\("status", "published"\)/);
   assert.match(baseOrders, /ingestPaidOrder\(/);
