@@ -281,7 +281,7 @@ export async function editBaseItem(input: {
       const identifier = String(variation.identifier ?? "").trim();
       const barcode = String(variation.barcode ?? "").trim();
       const quantity = Number(variation.stock);
-      if ((id && !/^\\d+$/.test(id)) || !name || name.length > 255 ||
+      if ((id && !/^\d+$/.test(id)) || !name || name.length > 255 ||
           !Number.isSafeInteger(quantity) || quantity < 0 ||
           (identifier && !/^[A-Za-z0-9_-]{1,50}$/.test(identifier)) ||
           (barcode && barcode.length > 100)) {
