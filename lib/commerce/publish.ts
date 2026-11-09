@@ -223,7 +223,8 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       if (best && best.missing.length === 0) {
         const checkedAt = new Date().toISOString();
         const { error: markCheckedError } = await db.from("channel_listings").update({
-          status: "pending",
+          // Keep an already-live grouped BASE item orderable during each safety scan.
+          status: listing.status === "published" ? "published" : "pending",
           last_synced_at: checkedAt,
           updated_at: checkedAt,
           last_error: null,
@@ -244,16 +245,42 @@ async function unpublishUnfulfillableListings(channel: Channel, db: ReturnType<t
       const detail = String(product?.description_ja || title);
       if (channel === "base") {
         const itemId = String(listing.external_product_id);
-        await editBaseItem({
-          itemId, title, detail,
-          price: Math.min(100_000_000, Math.max(50, Math.round(Number(price?.selling_price) || 50))),
-          stock: 0, visible: false,
-        });
-        const readback = await getBaseItemDetail(itemId);
-        const hidden = readback.visible === false || readback.visible === 0 || readback.visible === "0";
-        const stock = Number(readback.stock);
-        if (!hidden || !Number.isFinite(stock) || stock !== 0) {
-          throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+        const externalVariationId = String(listing.external_variant_id ?? "");
+        if (externalVariationId && externalVariationId !== itemId) {
+          const currentItem = await getBaseItemDetail(itemId);
+          const currentVariations = Array.isArray(currentItem.variations)
+            ? currentItem.variations.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+            : [];
+          const currentVariation = currentVariations.find((value) => String(value.variation_id ?? "") === externalVariationId);
+          if (!currentVariation) throw new Error("base_unpublish_variation_not_found:" + externalVariationId);
+          await editBaseItem({
+            itemId,
+            variations: [{
+              variationId: externalVariationId,
+              name: String(currentVariation.variation ?? ""),
+              stock: 0,
+              identifier: currentVariation.variation_identifier == null ? undefined : String(currentVariation.variation_identifier),
+            }],
+          });
+          const readback = await getBaseItemDetail(itemId);
+          const updatedVariation = (Array.isArray(readback.variations) ? readback.variations : [])
+            .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+            .find((value) => String(value.variation_id ?? "") === externalVariationId);
+          if (!updatedVariation || Number(updatedVariation.variation_stock) !== 0) {
+            throw new Error("base_unpublish_variation_stock_readback_mismatch:" + externalVariationId);
+          }
+        } else {
+          await editBaseItem({
+            itemId, title, detail,
+            price: Math.min(100_000_000, Math.max(50, Math.round(Number(price?.selling_price) || 50))),
+            stock: 0, visible: false,
+          });
+          const readback = await getBaseItemDetail(itemId);
+          const hidden = readback.visible === false || readback.visible === 0 || readback.visible === "0";
+          const stock = Number(readback.stock);
+          if (!hidden || !Number.isFinite(stock) || stock !== 0) {
+            throw new Error("base_unpublish_readback_mismatch:visible=" + String(readback.visible) + ":stock=" + String(readback.stock));
+          }
         }
       } else {
         const productId = toShopifyGid("Product", String(listing.external_product_id));
@@ -399,6 +426,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     ? sortedCandidates.filter((candidate) => {
         const state = stateByVariant.get(candidate.id);
         if (state?.status !== "published") return true;
+        if (channel === "base" && state.external_product_id && state.external_variant_id &&
+            state.external_variant_id !== state.external_product_id) return true;
         const offers = asRelationRows(candidate.supplier_offers);
         const prices = asRelationRows(candidate.commerce_prices).sort((a, b) =>
           Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
@@ -488,9 +517,9 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
         }
       }
     }
-    // Existing BASE listings are deliberately left untouched. BASE has no
-    // verified per-variation image mapping, so only prevent new family listings
-    // from being created; never hide, zero stock, or rewrite existing listings.
+    // Existing standalone BASE color pages are left untouched here. New families
+    // must use the exact-ID migration route; already-grouped items are synchronized
+    // per variation later in this function.
     if (baseColorFamilyVariantIds.size) {
       const familyIds = [...baseColorFamilyVariantIds];
       const { data: existingListings, error: existingListingsError } = await db.from("channel_listings")
@@ -504,14 +533,13 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           variantId: String(listing.variant_id),
           ok: true,
           externalId: listing.external_product_id ? String(listing.external_product_id) : undefined,
-          error: "base_color_variant_new_publication_blocked_until_image_switching_verified",
+          error: "base_color_variant_requires_verified_family_migration",
         });
       }
     }
   }
 
   for (const candidate of candidates) {
-    if (channel === "base" && baseColorFamilyVariantIds.has(candidate.id)) continue;
     const product = candidate.commerce_products;
     const validOffers = asRelationRows(candidate.supplier_offers)
       .filter((x) => {
