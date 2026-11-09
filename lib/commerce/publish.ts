@@ -428,6 +428,8 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     ? sortedCandidates.filter((candidate) => {
         const state = stateByVariant.get(candidate.id);
         if (state?.status !== "published") return true;
+        if (channel === "base" && state.external_product_id && state.external_variant_id &&
+            state.external_variant_id !== state.external_product_id) return true;
         const offers = asRelationRows(candidate.supplier_offers);
         const prices = asRelationRows(candidate.commerce_prices).sort((a, b) =>
           Date.parse(String(b.calculated_at ?? "")) - Date.parse(String(a.calculated_at ?? "")),
