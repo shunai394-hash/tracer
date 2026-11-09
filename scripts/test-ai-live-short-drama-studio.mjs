@@ -254,7 +254,10 @@ test("Fish Audio diagnostics displays the actual scanned model count field", () 
 test("Fish Audio diagnostics directly verifies each assigned character model ID", () => {
   assert.ok(diagnosticsRoute.includes("TRACER_DRAMA_CHARACTER_VOICES.map"));
   assert.ok(diagnosticsRoute.includes("resolveFishAudioModelVoice(apiKey, character.id, character.title)"));
-  assert.ok(diagnosticsRoute.includes('status: voice ? "accessible" : "not_accessible"'));
+  assert.ok(diagnosticsRoute.includes('status: voice.status === "fulfilled" && voice.value ? "accessible" : "not_accessible"'));
+  assert.ok(diagnosticsRoute.includes('fishGet(`/model/${encodeURIComponent(character.id)}`, apiKey)'));
+  assert.ok(diagnosticsRoute.includes("samples,"));
+  assert.ok(page.includes("provider.samples||[]"));
   assert.ok(diagnosticsRoute.includes("assignedCharacterVoices,"));
   assert.ok(page.includes("TRACER看板キャラクターIDの直接照合"));
   assert.ok(page.includes('character.status==="not_accessible"'));
