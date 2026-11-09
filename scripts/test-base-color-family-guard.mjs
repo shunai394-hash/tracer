@@ -28,10 +28,20 @@ assert.deepEqual(
   ["cj-blue", "cj-red"],
   "different supplier namespaces must never be grouped as one color family",
 );
-assert.equal(BASE_VARIATION_IMAGE_BINDING, "unsupported");
+assert.equal(BASE_VARIATION_IMAGE_BINDING, "item_gallery_only");
 const baseClient = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
-assert.doesNotMatch(baseClient, /variation_image|variationImage/);
+assert.match(baseClient, /variation\\[\\$\\{index\\}\\]/, "BASE item creation must support exact color variations");
+assert.match(baseClient, /variation_id\\[\\$\\{index\\}\\]/, "BASE item edits must retain exact variation IDs");
 const imageInput = baseClient.slice(baseClient.indexOf("export async function addBaseItemImage"));
 assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
+const migration = readFileSync(new URL("../app/api/internal/base-color-family-migrate/route.ts", import.meta.url), "utf8");
+assert.match(migration, /variationImageIdentityVerified !== true/, "unverified supplier images must block BASE color migration");
+assert.match(migration, /colorImageVerified !== true/, "unverified color images must block BASE color migration");
+assert.match(migration, /variation_identifier/, "BASE variation identifiers must preserve exact supplier variant IDs");
+assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs must remain mapped for historical orders");
+const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
+assert.match(orderRoute, /external_variant_id/);
+assert.match(orderRoute, /channel_listing_external_aliases/);
+assert.match(orderRoute, /item\\.variation_id/);
 console.log("BASE color-family publication guard: 4 scenarios passed");
