@@ -829,6 +829,73 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       results.push({ variantId: candidate.id, ok: false, error: "japanese_product_title_invalid" });
       continue;
     }
+
+    if (channel === "base" && baseColorFamilyVariantIds.has(candidate.id)) {
+      const familyState = stateByVariant.get(candidate.id);
+      const itemId = String(familyState?.external_product_id ?? "");
+      const variationId = String(familyState?.external_variant_id ?? "");
+      if (!familyState || !itemId || !variationId || variationId === itemId) {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_requires_verified_family_migration" });
+        continue;
+      }
+      const uniformPrice = await getUniformBaseFamilyPrice(String(product.id));
+      if (uniformPrice === null || uniformPrice !== Math.round(Number(price.selling_price))) {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_shared_price_mismatch" });
+        continue;
+      }
+      const labelMatch = String(candidate.title_ja ?? "").match(/（([^（）]+)）$/);
+      const label = labelMatch?.[1]?.trim() ?? "";
+      if (!label || !offer.supplier_variant_id) {
+        results.push({ variantId: candidate.id, ok: false, error: "base_color_family_variant_label_missing" });
+        continue;
+      }
+      try {
+        const currentItem = await getBaseItemDetail(itemId);
+        const currentVariations = Array.isArray(currentItem.variations)
+          ? currentItem.variations.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+          : [];
+        const currentVariation = currentVariations.find((value) => String(value.variation_id ?? "") === variationId);
+        if (!currentVariation || String(currentVariation.variation_identifier ?? "") !== String(offer.supplier_variant_id) ||
+            String(currentVariation.variation ?? "") !== label) {
+          throw new Error("base_color_family_variant_identity_mismatch");
+        }
+        await editBaseItem({
+          itemId,
+          price: uniformPrice,
+          variations: [{
+            variationId,
+            name: label,
+            stock: storefrontStock,
+            identifier: String(offer.supplier_variant_id),
+          }],
+        });
+        const readback = await getBaseItemDetail(itemId);
+        const updatedVariation = (Array.isArray(readback.variations) ? readback.variations : [])
+          .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+          .find((value) => String(value.variation_id ?? "") === variationId);
+        if (!updatedVariation || Number(updatedVariation.variation_stock) !== storefrontStock ||
+            Number(readback.price) !== uniformPrice) {
+          throw new Error("base_color_family_stock_price_readback_mismatch");
+        }
+        if (!(readback.visible === true || readback.visible === 1 || readback.visible === "1")) {
+          await editBaseItem({ itemId, visible: true });
+        }
+        const { error: familySaveError } = await db.from("channel_listings").update({
+          status: "published",
+          selling_price: uniformPrice,
+          external_sku: "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase(),
+          last_error: null,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("channel", "base").eq("variant_id", candidate.id);
+        if (familySaveError) throw new Error("base_color_family_listing_save_failed:" + familySaveError.message);
+        results.push({ variantId: candidate.id, ok: true, externalId: itemId, externalVariantId: variationId, expectedPrice: uniformPrice, action: "published" });
+      } catch (error) {
+        results.push({ variantId: candidate.id, ok: false, externalId: itemId, error: error instanceof Error ? error.message.slice(0, 240) : String(error) });
+      }
+      continue;
+    }
+
     const manualDescription = typeof product.metadata?.manualDescriptionJa === "string" ? product.metadata.manualDescriptionJa.trim() : "";
     const description = (manualDescription || product.description_ja || title + "。商品仕様は販売元の最新情報をご確認ください。").trim();
     // Selling price includes supplier item cost, Japan-bound freight, platform fees and target margin.
