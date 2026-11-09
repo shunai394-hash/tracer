@@ -574,11 +574,14 @@ test("Shopify paid webhook is signature-verified, idempotent, and writes canonic
   assert.match(core, /payment_status/);
 });
 
-test("BASE order polling only imports confirmed paid orders and maps published canonical listings", async () => {
+test("BASE order polling imports paid orders and resolves current plus aliased variation identities", async () => {
   const baseOrders = await readFile(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
   assert.match(baseOrders, /function isPaid\(/);
   assert.match(baseOrders, /dispatch_status === "unpaid"/);
-  assert.match(baseOrders, /status", "published"/);
+  assert.match(baseOrders, /\.eq\("external_product_id", baseItemId\)/);
+  assert.match(baseOrders, /\.eq\("external_variant_id", baseVariationId\)/);
+  assert.match(baseOrders, /channel_listing_external_aliases/);
+  assert.doesNotMatch(baseOrders.slice(baseOrders.indexOf("const { data: directListing"), baseOrders.indexOf("let listing = directListing")), /\.eq\("status", "published"\)/);
   assert.match(baseOrders, /ingestPaidOrder\(/);
   assert.match(baseOrders, /splitJapaneseAddress/);
 });
