@@ -40,6 +40,7 @@ assert.match(migration, /variationImageIdentityVerified !== true/, "unverified s
 assert.match(migration, /colorImageVerified !== true/, "unverified color images must block BASE color migration");
 assert.match(migration, /variation_identifier/, "BASE variation identifiers must preserve exact supplier variant IDs");
 assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs must remain mapped for historical orders");
+assert.match(migration, /base_color_family_legacy_alias_identity_collision/, "ambiguous legacy BASE item aliases must stop migration");
 const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
 assert.match(orderRoute, /external_variant_id/);
 assert.match(orderRoute, /channel_listing_external_aliases/);
