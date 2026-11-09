@@ -249,7 +249,7 @@ export async function POST(request: Request) {
         detail,
         price: commonPrice,
         stock: totalStock,
-        visible: isVisible(baseItem.visible),
+        visible: false,
         variations: variationInputs,
       });
       itemId = String(created.item?.item_id ?? created.item_id ?? "");
@@ -262,7 +262,7 @@ export async function POST(request: Request) {
         detail,
         price: commonPrice,
         stock: totalStock,
-        visible: false,
+        visible: isVisible(baseItem.visible),
         variations: variationInputs,
       });
       baseItem = await getBaseItemDetail(itemId);
