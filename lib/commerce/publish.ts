@@ -564,7 +564,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       if (latest.size !== ids.length) return null;
       const values = [...latest.values()];
       const common = values[0]?.selling_price;
-      if (!Number.isFinite(common) || common <= 0 ||
+      if (common === undefined || !Number.isFinite(common) || common <= 0 ||
           values.some((row) => row.currency !== "JPY" || row.selling_price !== common)) return null;
       return common;
     })();
