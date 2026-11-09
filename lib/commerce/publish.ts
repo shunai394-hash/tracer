@@ -857,11 +857,11 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
             Number(readback.price) !== uniformPrice) {
           throw new Error("base_color_family_stock_price_readback_mismatch");
         }
-        if (!isVisible(readback.visible)) await editBaseItem({ itemId, visible: true });
+        if (!(readback.visible === true || readback.visible === 1 || readback.visible === "1")) await editBaseItem({ itemId, visible: true });
         const { error: familySaveError } = await db.from("channel_listings").update({
           status: "published",
           selling_price: uniformPrice,
-          external_sku: sku,
+          external_sku: "TRC-" + candidate.id.replace(/-/g, "").slice(0, 24).toUpperCase(),
           last_error: null,
           last_synced_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
