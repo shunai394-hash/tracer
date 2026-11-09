@@ -89,16 +89,32 @@ export async function POST(request: Request) {
     }
 
     let parent = await getBaseItemDetail(PARENT_ID);
-    for (const source of sourceImages) {
-      const present = Array.from({ length: 20 }, (_, i) => imageAt(parent, i + 1)).includes(source.url);
-      if (present) continue;
+    const galleryCount = (item: BaseItem) =>
+      Array.from({ length: 20 }, (_, i) => imageAt(item, i + 1)).filter(Boolean).length;
+    if (galleryCount(parent) > TARGETS.length) {
+      return NextResponse.json({ ok: false, error: "BASE_PARENT_GALLERY_HAS_UNEXPECTED_EXTRA_IMAGES" }, { status: 409 });
+    }
+    // BASE rehosts uploaded images and returns new CDN URLs. Use the gallery
+    // count and deterministic append order for retries instead of comparing
+    // source URLs with transformed BASE URLs.
+    for (let index = 1; index < sourceImages.length; index += 1) {
+      parent = await getBaseItemDetail(PARENT_ID);
+      const currentCount = galleryCount(parent);
+      const expectedCount = index + 1;
+      if (currentCount >= expectedCount) continue;
+      if (currentCount !== index) {
+        return NextResponse.json({ ok: false, error: "BASE_PARENT_GALLERY_ORDER_UNEXPECTED" }, { status: 409 });
+      }
       const freeSlot = Array.from({ length: 20 }, (_, i) => i + 1)
         .find((slot) => !imageAt(parent, slot));
       if (!freeSlot) {
         return NextResponse.json({ ok: false, error: "BASE_PARENT_IMAGE_SLOTS_EXHAUSTED" }, { status: 409 });
       }
-      await addBaseItemImage({ itemId: PARENT_ID, imageNo: freeSlot, imageUrl: source.url });
+      await addBaseItemImage({ itemId: PARENT_ID, imageNo: freeSlot, imageUrl: sourceImages[index].url });
       parent = await getBaseItemDetail(PARENT_ID);
+      if (galleryCount(parent) !== expectedCount) {
+        return NextResponse.json({ ok: false, error: "BASE_PARENT_IMAGE_ADD_READBACK_FAILED" }, { status: 502 });
+      }
     }
 
     if (!variationsMatch(parent)) {
@@ -205,7 +221,7 @@ export async function POST(request: Request) {
         String(row.variation ?? "") === target.color
         && String(row.variation_identifier ?? "") === target.sku
         && asNumber(row.variation_stock) === COLOR_STOCK))
-      && sourceImages.every((source) => finalImages.includes(source.url));
+      && finalImages.length === TARGETS.length;
     if (!finalOk) {
       return NextResponse.json({ ok: false, error: "BASE_FINAL_READBACK_FAILED", mappings: mappingResults }, { status: 502 });
     }
