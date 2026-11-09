@@ -1,0 +1,66 @@
+name: TRACER denim two-color Shopify migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tracer-denim-two-color-shopify-migrate.yml'
+      - 'app/api/internal/shopify-denim-two-color-migrate/route.ts'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-denim-two-color-shopify-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for production deployment of this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          for attempt in $(seq 1 36); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $attempt/36: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "Production deployment did not reach this commit; refusing stale migration."
+          exit 1
+
+      - name: Migrate exact Black and Blue variants into one Shopify product
+        env:
+          BASE_ORIGIN: https://tracer-pied-alpha.vercel.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl -sS --fail-with-body --max-time 300 -X POST \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "$BASE_ORIGIN/api/internal/shopify-denim-two-color-migrate" \
+            -o shopify-denim-two-color-migration.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("shopify-denim-two-color-migration.json").read_text())
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          if data.get("ok") is not True or data.get("status") not in ("PUBLISHED","ALREADY_MIGRATED") or data.get("variantCount") != 2:
+            raise SystemExit("Shopify denim two-color migration did not pass")
+          PY
+
+      - name: Preserve migration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-denim-two-color-migration
+          path: shopify-denim-two-color-migration.json
+          if-no-files-found: error
+          retention-days: 30
