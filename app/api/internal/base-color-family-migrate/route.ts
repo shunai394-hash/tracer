@@ -189,7 +189,12 @@ export async function POST(request: Request) {
         throw new Error("base_color_family_shopify_supplier_image_identity_mismatch:" + variant.sku);
       }
       const media = actual.media.nodes.filter((node) => validHttps(node.image?.url));
-      if (media.length !== 1 || !String(media[0].alt ?? "").normalize("NFKC").endsWith(variant.label.normalize("NFKC"))) {
+      const mediaAlt = String(media[0]?.alt ?? "").normalize("NFKC").trim();
+      const normalizedLabel = variant.label.normalize("NFKC").trim();
+      const mediaAltMatchesColor = mediaAlt === normalizedLabel ||
+        mediaAlt.endsWith(" " + normalizedLabel) ||
+        mediaAlt.endsWith("　" + normalizedLabel);
+      if (media.length !== 1 || !mediaAltMatchesColor) {
         throw new Error("base_color_family_shopify_variant_media_unverified:" + variant.sku);
       }
       return { ...variant, imageUrl: media[0].image!.url };
