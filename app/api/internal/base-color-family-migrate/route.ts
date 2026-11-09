@@ -43,7 +43,7 @@ function validHttps(value: unknown): value is string {
 }
 
 function baseSafeText(value: unknown): string {
-  return String(value ?? "").replace(/\\p{Extended_Pictographic}/gu, "").trim();
+  return String(value ?? "").replace(/\p{Extended_Pictographic}/gu, "").trim();
 }
 
 function isVisible(value: unknown): boolean {
