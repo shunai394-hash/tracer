@@ -48,6 +48,15 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <button id="registerVoiceId" type="button">IDを照合してボイス登録</button>
 <p id="voiceIdStatus" class="status" role="status" aria-live="polite">未登録</p>
 </div>
+<div class="scene" id="cloneVoiceRegistration">
+<h3>音声サンプルから「美月２」を作成</h3>
+<p class="muted">受領済みの音声サンプルを選択してFish Audioの非公開TTSモデルを作成し、成功後にTRACER共通ボイス台帳へ自動登録します。12MB以下のWAV/MP3等に対応。アップロードはこのボタンを押した時だけ実行し、自動再試行はしません。</p>
+<label for="cloneVoiceTitle">登録名</label><input id="cloneVoiceTitle" maxlength="80" value="美月２">
+<label for="cloneVoiceAudio">音声サンプル</label><input id="cloneVoiceAudio" type="file" accept=".wav,.mp3,.m4a,.aac,.ogg,.webm,audio/*">
+<label><input id="cloneVoiceRights" type="checkbox" checked style="width:auto;margin-right:8px">本人の許可・利用権限を確認済み（既確認）</label>
+<button id="createCloneVoice" type="button">美月２を作成して共通登録</button>
+<p id="cloneVoiceStatus" class="status" role="status" aria-live="polite">音声ファイルを選択してください。作成後、登録済みボイス一覧に追加されます。</p>
+</div>
 
 </section>
 <section class="panel" id="bgmPanel">
@@ -365,6 +374,33 @@ $("registerVoiceId").addEventListener("click",async()=>{
   out.textContent="登録完了："+data.voice.title+"（"+data.voice.id+"）。人物の「担当ボイス」から選択できます。";
   $("loadStatus").textContent="ID登録ボイスを追加しました。";
  }catch(error){out.textContent="登録失敗："+error.message;}
+ finally{button.disabled=false;}
+});
+$("createCloneVoice").addEventListener("click",async()=>{
+ const file=$("cloneVoiceAudio").files?.[0],title=$("cloneVoiceTitle").value.trim(),out=$("cloneVoiceStatus"),button=$("createCloneVoice");
+ if(!token.value.trim()){out.textContent="先にTRACER管理トークンを入力してください。";token.focus();return;}
+ if(!file){out.textContent="音声サンプルを選択してください。";$("cloneVoiceAudio").focus();return;}
+ if(!title||title.length>80){out.textContent="登録名を80文字以内で入力してください。";return;}
+ if(!$("cloneVoiceRights").checked){out.textContent="本人の許可・利用権限を確認してください。";return;}
+ if(file.size<=0||file.size>12*1024*1024){out.textContent="音声ファイルは12MB以下にしてください。";return;}
+ const allowed=["audio/wav","audio/x-wav","audio/mpeg","audio/mp4","audio/aac","audio/ogg","audio/webm"];
+ if(file.type&&!allowed.includes(file.type.toLowerCase())){out.textContent="WAV/MP3/M4A/AAC/OGG/WebM形式を選択してください。";return;}
+ if(!confirm("「"+title+"」をFish Audioの非公開音声モデルとして作成し、TRACER共通台帳へ登録します。音声サンプルをアップロードします。続行しますか？"))return;
+ button.disabled=true;out.textContent="Fish Audioで非公開ボイスを作成中…完了まで最大約2分かかる場合があります。";
+ try{
+  const form=new FormData();form.set("title",title);form.set("description","TRACER short drama private Japanese female character voice");form.set("speakerType","adult");form.set("rightsConfirmed","true");form.set("visibility","private");form.set("audio",file,file.name);
+  const created=await fetch("/api/admin/ai-live/fish-audio/clone",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},cache:"no-store",body:form});
+  const model=await created.json().catch(()=>({}));
+  if(!created.ok||!model.ok||!model.modelId)throw new Error(model.message||model.providerDetail||model.error||"Fish Audioモデル作成に失敗しました。");
+  out.textContent="モデル作成成功（ID: "+model.modelId+"）。TRACER共通台帳へ照合・登録中…";
+  const saved=await fetch("/api/admin/ai-live/fish-audio/voices",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({id:model.modelId,title})});
+  const registered=await saved.json().catch(()=>({}));
+  if(!saved.ok||!registered.ok||!registered.voice)throw new Error("Fish Audioモデルは作成されましたが、共通台帳登録に失敗しました。モデルID: "+model.modelId+"。"+(registered.message||registered.error||""));
+  voices=voices.filter(v=>v.id!==model.modelId);voices.push({...registered.voice,source:"id_registered"});
+  refreshCharacterVoiceOptions();renderVoiceLibrary();addCharacter(title,model.modelId);
+  out.textContent="完了：美月２を作成し、TRACER共通ボイス台帳へ登録しました。モデルID: "+model.modelId+"。人物欄にも追加済みです。";
+  $("loadStatus").textContent="美月２をFish Audioで作成し、共通登録しました。";
+ }catch(error){out.textContent="未完了："+error.message;}
  finally{button.disabled=false;}
 });
 $("fishDiagnostics").addEventListener("click",async()=>{
