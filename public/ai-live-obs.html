@@ -113,7 +113,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
 (() => {
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
- let tracks=[], urls=[], baseVolume=.35, ducked=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
+ let tracks=[], urls=[], baseVolume=.35, ducked=false, autoBgmLoop=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -153,7 +153,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   if(!loaded)return;
   if(!tracks.length){setStatus('このジャンルの承認済みBGMはまだありません。権利審査後に利用できます。');return}
   const index=Math.floor(Math.random()*tracks.length);
-  playTrack(index);
+  playTrack(index,true);
  }
  async function uploadBgm(){
   const token=$('token').value.trim(), file=$('files').files?.[0];
@@ -303,11 +303,13 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    await loadBgmReviews();
   }catch(e){setStatus(e.message||'審査結果の保存に失敗しました')}
  }
- async function playTrack(index){
-  if(!tracks.length){setStatus('先にBGMを読み込んでください');return}
+ async function playTrack(index,loop=false){
+  if(!tracks.length){autoBgmLoop=false;setStatus('先にBGMを読み込んでください');return}
   const i=((index%tracks.length)+tracks.length)%tracks.length;
+  autoBgmLoop=loop;
   $('track').value=String(i);audio.src=tracks[i].url;setVolume();
-  try{await audio.play();setStatus('BGM再生中：'+tracks[i].name)}catch{setStatus('再生できません。もう一度BGM再生を押してください')}
+  audio.onended=()=>{if(autoBgmLoop&&tracks.length>1)playTrack((i+1)%tracks.length,true);else if(autoBgmLoop&&tracks.length===1)playTrack(i,true)};
+  try{await audio.play();setStatus((autoBgmLoop?'BGM自動連続再生中：':'BGM再生中：')+tracks[i].name)}catch{autoBgmLoop=false;setStatus('再生できません。もう一度BGM再生を押してください')}
  }
  async function loadProducts(){
   const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
@@ -379,7 +381,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('files').addEventListener('change',e=>addFiles(e.target.files));
  $('bgmPlay').addEventListener('click',()=>{const i=Number($('track').value);if($('track').value===''){playTrack(0)}else playTrack(i)});
  $('next').addEventListener('click',()=>playTrack(Number($('track').value||0)+1));
- $('bgmStop').addEventListener('click',()=>{audio.pause();audio.currentTime=0;setStatus('BGM停止')});
+ $('bgmStop').addEventListener('click',()=>{autoBgmLoop=false;audio.pause();audio.currentTime=0;setStatus('BGM停止')});
  $('volume').addEventListener('input',e=>{baseVolume=Number(e.target.value)/100;setVolume()});
  $('toggle').addEventListener('click',()=>{$('panel').classList.toggle('hidden');$('toggle').textContent=$('panel').classList.contains('hidden')?'操作パネルを表示':'操作パネルを隠す'});
  if(synth){loadVoices();synth.onvoiceschanged=loadVoices}
