@@ -108,6 +108,23 @@ export async function GET(request: Request) {
           : listing.status ? externalVisible === false : null,
       });
 
+      const rawVariations = Array.isArray(item.variations) ? item.variations : [];
+      const variations = rawVariations.map((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        const variation = value as Record<string, unknown>;
+        return {
+          variationId: variation.variation_id == null ? null : String(variation.variation_id),
+          name: typeof variation.variation === "string" ? variation.variation : null,
+          stock: finiteNumberOrNull(variation.variation_stock),
+          identifier: typeof variation.variation_identifier === "string" ? variation.variation_identifier : null,
+          barcode: typeof variation.barcode === "string" ? variation.barcode : null,
+        };
+      }).filter((value): value is NonNullable<typeof value> => value !== null);
+      const imageUrls = Array.from({ length: 20 }, (_, index) => {
+        const value = item[`img${index + 1}_origin`];
+        return typeof value === "string" && value.trim() ? value.trim() : null;
+      }).filter((value): value is string => value !== null);
+
       return {
         baseItemId,
         exists: true,
@@ -117,6 +134,8 @@ export async function GET(request: Request) {
           price: externalPrice,
           visible: externalVisible,
           stock: externalStock,
+          variations,
+          imageUrls,
         },
         mappedListings: mappedListings.map((listing) => ({
           ...listing,
