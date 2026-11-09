@@ -35,9 +35,9 @@ const imageInput = baseClient.slice(baseClient.indexOf("export async function ad
 assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
 const editInput = baseClient.slice(baseClient.indexOf("export async function editBaseItem"), baseClient.indexOf("export async function setBaseItemListOrder"));
-assert.match(editInput, /variation_id\\[" \\+ index \\]/);
-assert.match(editInput, /variation_stock\\[" \\+ index \\]/);
-assert.match(editInput, /variation_identifier\\[" \\+ index \\]/);
+assert.match(editInput, /variation_id\[" \+ index \]/);
+assert.match(editInput, /variation_stock\[" \+ index \]/);
+assert.match(editInput, /variation_identifier\[" \+ index \]/);
 assert.match(editInput, /BASE_VARIATION_STOCK_TOTAL_MISMATCH/);
 assert.match(editInput, /BASE_VARIATION_IDENTIFIER_DUPLICATE/);
 
