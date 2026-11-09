@@ -116,8 +116,13 @@ export async function POST(request: Request) {
       if (!price || Number(price.selling_price) <= 0 || Number(price.margin_rate) < 0.5) {
         throw new Error("color_family_margin_gate_failed:" + expected.sku);
       }
-      if (!channel || !String(channel.external_product_id ?? "").trim() ||
-          !String(channel.external_variant_id ?? "").trim() || channel.status !== "published") {
+      // A stale channel status can be "error" solely because the stored
+      // external_sku alias was generated before the exact supplier SKU was known.
+      // The source Shopify product/variant IDs are the authoritative legacy identity;
+      // they are re-read from Shopify below before any family mutation.
+      if (!channel ||
+          String(channel.external_product_id ?? "") !== expected.oldProductId ||
+          String(channel.external_variant_id ?? "") !== expected.oldVariantId) {
         throw new Error("color_family_legacy_shopify_identity_missing:" + expected.sku);
       }
       const attributes = asRecord(variant.attributes);
