@@ -842,7 +842,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       const familyState = stateByVariant.get(candidate.id);
       const itemId = String(familyState?.external_product_id ?? "");
       const variationId = String(familyState?.external_variant_id ?? "");
-      if (!itemId || !variationId || variationId === itemId || familyState?.status !== "published") {
+      if (!familyState || !itemId || !variationId || variationId === itemId) {
         results.push({ variantId: candidate.id, ok: false, error: "base_color_family_requires_verified_shared_item_variation_mapping" });
         continue;
       }
