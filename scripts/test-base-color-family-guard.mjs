@@ -31,7 +31,9 @@ assert.deepEqual(
 assert.equal(BASE_VARIATION_IMAGE_BINDING, "item_gallery_only");
 const baseClient = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
 assert.match(baseClient, /variation\[\$\{index\}\]/, "BASE item creation must support exact color variations");
-assert.match(baseClient, /variation_id\[\$\{index\}\]/, "BASE item edits must retain exact variation IDs");
+assert.match(baseClient, /variation_id\[" \+ index \+ "\]/, "BASE item edits must retain exact variation IDs");
+assert.match(baseClient, /BASE_VARIATION_STOCK_TOTAL_MISMATCH/);
+assert.match(baseClient, /BASE_VARIATION_IDENTIFIER_DUPLICATE/);
 const imageInput = baseClient.slice(baseClient.indexOf("export async function addBaseItemImage"));
 assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
