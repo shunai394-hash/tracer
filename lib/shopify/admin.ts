@@ -1291,12 +1291,19 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
 
   mediaSnapshot = await readColorFamilyMedia();
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_final_readback_missing");
+  const mediaByIdForVerification = new Map(
+    mediaSnapshot.product.media.nodes.map((media) => [media.id, media]),
+  );
   const expectedMediaIdByColor = new Map(
-    mediaSnapshot.product.media.nodes.flatMap((media) => {
-      const colorLabel = colorLabelFromMediaAlt(media.alt);
-      return media.mediaContentType === "IMAGE" && media.status === "READY" && colorLabel
-        ? [[colorLabel, media.id] as const]
-        : [];
+    mediaSnapshot.product.variants.nodes.flatMap((actual) => {
+      const expected = variants.find((variant) => variant.sku === actual.sku);
+      if (!expected) return [];
+      const attached = actual.media.nodes
+        .map((node) => mediaByIdForVerification.get(node.id))
+        .filter((media) => media?.mediaContentType === "IMAGE" &&
+          media.status === "READY" &&
+          colorLabelFromMediaAlt(media.alt) === expected.colorLabel);
+      return attached.length === 1 ? [[expected.colorLabel, attached[0].id] as const] : [];
     }),
   );
   // Remove only duplicate orphan uploads whose alt label is already attached
