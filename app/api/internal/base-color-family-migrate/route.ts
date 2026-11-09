@@ -42,6 +42,15 @@ function validHttps(value: unknown): value is string {
   try { return new URL(value).protocol === "https:"; } catch { return false; }
 }
 
+function imageSourceStem(value: string): string {
+  try {
+    const filename = new URL(value).pathname.split("/").pop() ?? "";
+    return filename.replace(/\\.[^.]+$/, "").split("_")[0].toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function baseSafeText(value: unknown): string {
   return String(value ?? "").replace(/\p{Extended_Pictographic}/gu, "").trim();
 }
@@ -134,7 +143,7 @@ export async function POST(request: Request) {
         throw new Error("base_color_family_exact_image_unverified:" + String(variant.sku ?? variantId));
       }
       const shopify = channelByKey.get("shopify:" + variantId);
-      if (!shopify || shopify.status !== "published" || !shopify.external_variant_id) {
+      if (!shopify || shopify.status !== "published" || !shopify.external_variant_id || !shopify.external_sku) {
         throw new Error("base_color_family_shopify_image_source_missing:" + String(variant.sku ?? variantId));
       }
       return {
@@ -146,6 +155,7 @@ export async function POST(request: Request) {
         price: Math.round(Number(price.selling_price)),
         stock: toStorefrontStockQuantity(offer.inventory, cap),
         shopifyVariantId: String(shopify.external_variant_id),
+        shopifySku: String(shopify.external_sku ?? ""),
       };
     });
 
@@ -179,14 +189,14 @@ export async function POST(request: Request) {
         { id: variant.shopifyVariantId },
       );
       const actual = result.productVariant;
-      if (!actual || actual.sku !== variant.sku ||
+      if (!actual || actual.sku !== variant.shopifySku ||
           !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.label)) {
         throw new Error("base_color_family_shopify_variant_identity_mismatch:" + variant.sku);
       }
       const fields = new Map(actual.metafields.nodes.map((field) => [field.key, field.value] as const));
-      if (fields.get("supplier_variant_id") !== variant.supplierVariantId ||
-          fields.get("color_image_source_url") !== variant.imageSource) {
-        throw new Error("base_color_family_shopify_supplier_image_identity_mismatch:" + variant.sku);
+      const supplierVariantMeta = fields.get("supplier_variant_id");
+      if (supplierVariantMeta && supplierVariantMeta !== variant.supplierVariantId) {
+        throw new Error("base_color_family_shopify_supplier_variant_identity_mismatch:" + variant.sku);
       }
       const media = actual.media.nodes.filter((node) => validHttps(node.image?.url));
       const mediaAlt = String(media[0]?.alt ?? "").normalize("NFKC").trim();
@@ -194,7 +204,11 @@ export async function POST(request: Request) {
       const mediaAltMatchesColor = mediaAlt === normalizedLabel ||
         mediaAlt.endsWith(" " + normalizedLabel) ||
         mediaAlt.endsWith("　" + normalizedLabel);
-      if (media.length !== 1 || !mediaAltMatchesColor) {
+      const sourceUrlMetaMatches = fields.get("color_image_source_url") === variant.imageSource;
+      const sourceFileStemMatches = media.length === 1 &&
+        imageSourceStem(variant.imageSource) === imageSourceStem(media[0].image!.url);
+      if (media.length !== 1 || !mediaAltMatchesColor ||
+          (!sourceUrlMetaMatches && !sourceFileStemMatches)) {
         throw new Error("base_color_family_shopify_variant_media_unverified:" + variant.sku);
       }
       return { ...variant, imageUrl: media[0].image!.url };
