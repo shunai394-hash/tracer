@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         { id: variant.shopifyVariantId },
       );
       const actual = result.productVariant;
-      if (!actual || actual.sku !== variant.shopifySku ||
+      if (!actual || ![variant.sku, variant.shopifySku].includes(String(actual.sku ?? "")) ||
           !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.label)) {
         throw new Error("base_color_family_shopify_variant_identity_mismatch:" + variant.sku);
       }
