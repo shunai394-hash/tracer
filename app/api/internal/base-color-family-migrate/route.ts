@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     const variantIds = variants.map((variant) => String(variant.id));
     const [{ data: offers, error: offersError }, { data: prices, error: pricesError }, { data: channelRows, error: channelError }] = await Promise.all([
       db.from("supplier_offers")
-        .select("variant_id,supplier_product_id,supplier_variant_id,source_status,ship_to,inventory,unit_cost,shipping_cost,last_checked_at")
+        .select("variant_id,supplier_product_id,supplier_variant_id,source_status,ship_to,inventory,unit_cost,shipping_cost,tracking_supported,last_checked_at")
         .eq("supplier_code", "cj").in("variant_id", variantIds),
       db.from("commerce_prices")
         .select("variant_id,currency,selling_price,expected_profit,margin_rate")
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
       if (!variant.sku || !supplierVariantId || !label ||
           !offer || String(offer.supplier_product_id) !== supplierProductId ||
           String(offer.supplier_variant_id) !== supplierVariantId ||
-          offer.source_status !== "verified" || offer.ship_to !== "JP" ||
+          offer.source_status !== "verified" || offer.ship_to !== "JP" || offer.tracking_supported !== true ||
           Number(offer.inventory) < 1 || Number(offer.unit_cost) <= 0 || Number(offer.shipping_cost) <= 0 ||
           !Number.isFinite(checkedAt) || checkedAt > now.getTime() + 5 * 60_000 ||
           now.getTime() - checkedAt > 24 * 60 * 60_000) {
