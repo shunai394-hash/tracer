@@ -50,4 +50,5 @@ assert.match(commercePublisher, /base_unpublish_variation_stock_readback_mismatc
 assert.match(commercePublisher, /base_unfulfillable_variation_stock_readback_mismatch/, "an unfulfillable color must not hide its sibling variations");
 assert.match(commercePublisher, /base_color_family_shared_price_mismatch/, "shared BASE price must be identical across all colors");
 assert.match(commercePublisher, /base_color_family_variant_identity_mismatch/, "stock sync must preserve exact BASE variation IDs");
+assert.match(commercePublisher, /state\.external_variant_id !== state\.external_product_id/, "scheduled BASE sync must revisit grouped color variants");
 console.log("BASE color-family publication guard: 4 scenarios passed");
