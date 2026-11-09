@@ -30,8 +30,8 @@ assert.deepEqual(
 );
 assert.equal(BASE_VARIATION_IMAGE_BINDING, "item_gallery_only");
 const baseClient = readFileSync(new URL("../lib/channels/base.ts", import.meta.url), "utf8");
-assert.match(baseClient, /variation\\[\\$\\{index\\}\\]/, "BASE item creation must support exact color variations");
-assert.match(baseClient, /variation_id\\[\\$\\{index\\}\\]/, "BASE item edits must retain exact variation IDs");
+assert.match(baseClient, /variation\[\$\{index\}\]/, "BASE item creation must support exact color variations");
+assert.match(baseClient, /variation_id\[\$\{index\}\]/, "BASE item edits must retain exact variation IDs");
 const imageInput = baseClient.slice(baseClient.indexOf("export async function addBaseItemImage"));
 assert.match(imageInput, /image_no/);
 assert.doesNotMatch(imageInput.slice(0, 700), /variation_id/);
@@ -43,5 +43,5 @@ assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs m
 const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
 assert.match(orderRoute, /external_variant_id/);
 assert.match(orderRoute, /channel_listing_external_aliases/);
-assert.match(orderRoute, /item\\.variation_id/);
+assert.match(orderRoute, /item\.variation_id/);
 console.log("BASE color-family publication guard: 4 scenarios passed");
