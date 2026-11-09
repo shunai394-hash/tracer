@@ -267,7 +267,7 @@ export async function POST(request: Request) {
         detail,
         price: commonPrice,
         stock: totalStock,
-        visible: isVisible(baseItem.visible),
+        visible: baseItem ? isVisible(baseItem.visible) : false,
         variations: variationInputs,
       });
       baseItem = await getBaseItemDetail(itemId);
