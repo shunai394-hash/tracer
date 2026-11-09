@@ -390,7 +390,21 @@ $("fishDiagnostics").addEventListener("click",async()=>{
   ];
   for(const model of models.matchingSoma||[])lines.push("・"+model.title+"／"+model.visibility+"／ID："+model.id);
   lines.push("", "【TRACER看板キャラクターIDの直接照合】");
-  for(const character of data.assignedCharacterVoices||[])lines.push("・"+character.title+"／"+character.id+"／"+(character.status==="accessible"?"接続可能":character.status==="not_accessible"?"Fish Audio側で参照不可":"照会エラー"));
+  for(const character of data.assignedCharacterVoices||[]){
+   lines.push("・"+character.title+"／"+character.id+"／"+(character.status==="accessible"?"接続可能":character.status==="not_accessible"?"Fish Audio側で参照不可":"照会エラー"));
+   const provider=character.provider;
+   if(!provider){lines.push("  Fish Audioモデル詳細：取得失敗");continue;}
+   lines.push("  Fish Audio登録情報："+(provider.title||"名称不明")+"／type："+(provider.type||"不明")+"／state："+(provider.state||"不明"));
+   lines.push("  説明："+(provider.description||"なし"));
+   lines.push("  言語："+(provider.languages||[]).join(", ")+"／タグ："+(provider.tags||[]).join(", "));
+   lines.push("  最終更新："+(provider.updatedAt||"不明"));
+   lines.push("  ※Fish Audioのモデル情報には声の性別を確定する項目がありません。下記の登録サンプルを実際に聴いて判定してください。");
+   for(const sample of provider.samples||[]){
+    lines.push("  サンプル："+(sample.title||"名称なし")+"／台詞："+(sample.text||"不明"));
+    if(sample.audio)lines.push("  音声URL："+sample.audio);
+   }
+   if(!(provider.samples||[]).length)lines.push("  登録サンプル：なし");
+  }
   lines.push("",data.interpretation||"");
   output.textContent=lines.join("\n");
  }catch(error){output.textContent="診断エラー："+error.message;}
