@@ -53,6 +53,7 @@ assert.match(migration, /2606090341151608200/, "migration must be pinned to the 
 assert.match(migration, /variantImageIdentityVerified !== true/, "unverified exact-variant images must block migration");
 assert.match(migration, /margin_rate\) < 0\.5/, "margin below 50 percent must block migration");
 assert.match(migration, /offer\.ship_to !== "JP"/, "non-Japan supplier offers must block migration");
+assert.match(migration, /String\(channel\.external_product_id \?\? ""\) !== expected\.oldProductId[\s\S]*String\(channel\.external_variant_id \?\? ""\) !== expected\.oldVariantId/, "legacy migration must trust exact old Shopify IDs rather than a stale channel status or SKU alias");
 assert.match(migration, /ensureShopifyProductPublished\(created\.productId\)/, "new family must be published and verified before old products are unpublished");
 assert.match(migration, /unpublishShopifyProduct\(oldProductId\)/, "only the five exact old Shopify products may be unpublished");
 assert.match(migration, /channel_listing_update_failed/, "channel listing identity must be updated after successful migration");
