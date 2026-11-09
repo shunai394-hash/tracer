@@ -21,6 +21,7 @@ type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
   id: string; source_variant_key: string; title_ja: string; sku: string | null;
+  attributes?: Record<string, unknown> | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean; metadata?: Record<string, unknown> | null };
   supplier_offers: SupplierOfferRow[] | SupplierOfferRow | null;
   commerce_prices: CommercePriceRow[] | CommercePriceRow | null;
@@ -321,7 +322,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   staleListings.unpublished += identityCleanup.unpublished;
   staleListings.failed += identityCleanup.failed;
   staleListings.errors.push(...identityCleanup.errors);
-  const candidateSelect = "id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
+  const candidateSelect = "id,source_variant_key,title_ja,sku,attributes,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
   let candidateQuery = db.from("commerce_variants")
     .select(candidateSelect)
     .eq("commerce_products.active", true);
@@ -541,7 +542,16 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       ? currentCanonicalPrice
       : undefined;
     const offer = price ? currentPriceOffer : undefined;
-    const imageUrl = safeUrl(product.image_url);
+    // Prefer the exact supplier variant image when its identity has been verified.
+    // Falling back to the parent product image for every colour caused different
+    // colour SKUs to display the same photograph on Shopify and BASE.
+    const variantAttributes = candidate.attributes && typeof candidate.attributes === "object"
+      ? candidate.attributes as Record<string, unknown>
+      : {};
+    const verifiedVariantImage = variantAttributes.variantImageIdentityVerified === true
+      ? safeUrl(variantAttributes.variantImageUrl)
+      : null;
+    const imageUrl = verifiedVariantImage ?? safeUrl(product.image_url);
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
     // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
