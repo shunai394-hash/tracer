@@ -80,7 +80,8 @@ export async function POST(request: Request) {
 
     const { data: variants, error: variantsError } = await db.from("commerce_variants")
       .select("id,product_id,source_variant_key,sku,title_ja,attributes")
-      .eq("product_id", String(product.id));
+      .eq("product_id", String(product.id))
+      .order("source_variant_key", { ascending: true });
     if (variantsError) throw new Error("base_color_family_variants_read_failed:" + variantsError.message);
     if (!variants || variants.length < 2 || variants.length > 20) throw new Error("base_color_family_variant_count_invalid");
 
