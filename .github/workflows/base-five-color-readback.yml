@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/base-five-color-readback.yml'
+      - 'app/api/cron/base-targeted-readback/route.ts'
 
 permissions:
   contents: read
