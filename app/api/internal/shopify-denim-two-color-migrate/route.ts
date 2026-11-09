@@ -16,8 +16,8 @@ const PRODUCT_ID = "73436e12-795d-4374-9863-0b94391c572e";
 const SUPPLIER_PRODUCT_ID = "1670333800435421184";
 const HANDLE = "denim-shoulder-bag-1670333800435421184";
 const FAMILY = [
-  { supplierVariantId: "1670333800619970560", variantId: "3b28034b-69f9-4659-ab73-d590cbca3950", supplierSku: "CJNS178139901AZ", colorLabel: "ブラック", oldProductId: "gid://shopify/Product/8668506619948", oldVariantId: "gid://shopify/ProductVariant/46605310820396" },
-  { supplierVariantId: "1670333800691273728", variantId: "5e7634aa-63e8-49f9-a0d7-ef28447ebb0e", supplierSku: "CJNS178139902BY", colorLabel: "ブルー", oldProductId: "gid://shopify/Product/8668506357804", oldVariantId: "gid://shopify/ProductVariant/46605310165036" },
+  { supplierVariantId: "1670333800619970560", variantId: "3b28034b-69f9-4659-ab73-d590cbca3950", supplierSku: "CJNS178139901AZ", externalSku: "TRC-3B28034B69F94659AB73D590", colorLabel: "ブラック", oldProductId: "gid://shopify/Product/8668506619948", oldVariantId: "gid://shopify/ProductVariant/46605310820396" },
+  { supplierVariantId: "1670333800691273728", variantId: "5e7634aa-63e8-49f9-a0d7-ef28447ebb0e", supplierSku: "CJNS178139902BY", externalSku: "TRC-5E7634AA63E849F9A0D7EF28", colorLabel: "ブルー", oldProductId: "gid://shopify/Product/8668506357804", oldVariantId: "gid://shopify/ProductVariant/46605310165036" },
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         canonicalVariantId: String(variant.id),
         sourceShopifyProductId: expected.oldProductId,
         sourceShopifyVariantId: expected.oldVariantId,
-        sku: expected.supplierSku,
+        sku: expected.externalSku,
         colorLabel: expected.colorLabel,
         imageUrl: String(attributes.variantImageUrl),
         colorImageVerified: true,
