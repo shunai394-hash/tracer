@@ -49,6 +49,8 @@ assert.match(html, /async function playTrack\(index,loop=false\)/);
 assert.match(html, /autoBgmLoop/);
 assert.match(html, /playTrack\(index,true\)/);
 assert.match(html, /BGM自動連続再生中/);
+assert.match(html, /audio\.loop=false/);
+assert.doesNotMatch(html, /<audio id="audio" preload="none" loop>/);
 assert.match(bgmRoute, /searchParams\.get\("genre"\)/);
 assert.match(bgmRoute, /query\.eq\("genre", genre\)/);
 assert.match(bgmRoute, /GENRES\.has\(genre\)/);
