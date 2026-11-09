@@ -1319,22 +1319,11 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       return Boolean(colorLabel && attachedColorLabels.has(colorLabel) && !attachedMediaIds.has(media.id));
     })
     .map((media) => media.id);
+  // Keep harmless unattached duplicate media. The connected Shopify app does not
+  // have write_files/delete-file permission, and deleting media is not required
+  // to consolidate or verify the exact color variants.
   if (duplicateOrphanIds.length) {
-    const deleted = await shopifyGraphQL<{
-      fileDelete: {
-        deletedFileIds: string[] | null;
-        userErrors: Array<{ field?: string[]; message: string }>;
-      };
-    }>(
-      `mutation DeleteTracerDuplicateColorMedia($fileIds: [ID!]!) {
-        fileDelete(fileIds: $fileIds) { deletedFileIds userErrors { field message } }
-      }`,
-      { fileIds: duplicateOrphanIds },
-    );
-    if (deleted.fileDelete.userErrors.length ||
-        (deleted.fileDelete.deletedFileIds ?? []).length !== duplicateOrphanIds.length) {
-      throw new Error("shopify_color_family_duplicate_media_cleanup_failed");
-    }
+    console.info("[SHOPIFY COLOR FAMILY] duplicate orphan media retained", duplicateOrphanIds.length);
   }
 
   // Final read-after-write: exact variant count, SKU, color, price, media, and

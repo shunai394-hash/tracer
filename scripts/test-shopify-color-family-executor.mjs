@@ -20,7 +20,8 @@ assert.match(executor, /const mediaByColor = \(\) =>/, "retries must reuse the i
 assert.match(executor, /colorLabelFromMediaAlt/, "legacy product-title-plus-color media alt labels must normalize to the exact color");
 assert.match(executor, /normalizedAlt === color \|\| normalizedAlt === legacyTitleColor/, "media alt matching must accept only exact known label forms");
 assert.match(executor, /attachedColorLabels\.has\(colorLabel\)/, "orphan duplicate cleanup must compare normalized color labels");
-assert.match(executor, /fileDelete\(fileIds: \$fileIds\)/, "duplicate orphan media must be cleaned without deleting attached images");
+assert.match(executor, /duplicate orphan media retained/, "migration must tolerate harmless duplicate media without write_files scope");
+assert.doesNotMatch(executor, /fileDelete\(fileIds: \$fileIds\)/, "color migration must not require file delete permission");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");
 assert.ok(executor.includes('inventoryQuantities: [{ locationId, availableQuantity: variant.inventory }]'), "variant stock must use Shopify InventoryLevelInput.availableQuantity");
