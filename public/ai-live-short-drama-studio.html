@@ -208,6 +208,31 @@ const voicePresetDefinitions=[
  {title:"美月",gender:"女性",description:"女性キャラクターボイス",modelId:"160840e5c583459d89dc5521e7f175e5"}
 ];
 const voiceSampleUrls=new Map([]);
+const voicePreviewUrls=new Map();
+const voicePreviewText="こんにちは。今日は、あなたに伝えたいことがあります。";
+function addVoicePreviewControls(card,voice){
+ if(!voice?.id)return;
+ const button=document.createElement("button");button.type="button";button.className="secondary";button.textContent="サンプル音声を生成して試聴";
+ const result=document.createElement("div");result.className="voicePreviewResult";result.setAttribute("aria-live","polite");
+ button.addEventListener("click",async()=>{
+  const adminToken=token.value.trim();if(!adminToken){result.textContent="管理トークンを入力してください。";token.focus();return;}
+  const cached=voicePreviewUrls.get(voice.id);if(cached){showVoicePreview(result,voice,cached);return;}
+  button.disabled=true;button.textContent="サンプル音声を生成中…";result.textContent="短い共通セリフをこの声で生成しています。";
+  try{
+   const response=await fetch("/api/admin/ai-live/fish-audio",{method:"POST",headers:{"Authorization":"Bearer "+adminToken,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({text:voicePreviewText,referenceId:voice.id,prosody:{speed:1}})});
+   if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.message||data.error||("サンプル生成に失敗しました（HTTP "+response.status+"）。"));}
+   const blob=await response.blob();if(!blob.size)throw new Error("音声データが空でした。");
+   const url=URL.createObjectURL(blob);voicePreviewUrls.set(voice.id,url);showVoicePreview(result,voice,url);
+  }catch(error){result.textContent=error instanceof Error?error.message:"サンプル音声を生成できませんでした。";}
+  finally{button.disabled=false;button.textContent="サンプル音声を再生・再生成";}
+ });
+ card.append(button,result);
+}
+function showVoicePreview(root,voice,url){
+ root.replaceChildren();const label=document.createElement("p");label.className="muted";label.textContent="試聴サンプル："+voicePreviewText;
+ const face=makeLipSyncFace({name:voice.title||voice.name||"ボイス"});const player=document.createElement("audio");player.controls=true;player.preload="metadata";player.style.width="100%";player.src=url;player.setAttribute("aria-label",(voice.title||voice.name||"ボイス")+"のサンプル音声");player.load();
+ if(window.TracerLipSync)window.TracerLipSync.attach(player,face.querySelector(".lipSyncMouth"));root.append(label,face,player);
+}
 function renderVoiceLibrary(){
  const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
  const registered=Array.isArray(voices)?voices:[];
@@ -223,7 +248,7 @@ function renderVoiceLibrary(){
    const sampleFace=makeLipSyncFace({name:preset.title});if(window.TracerLipSync)window.TracerLipSync.attach(player,sampleFace.querySelector(".lipSyncMouth"));
    const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,sampleFace,player);
   }
-  const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み・ID照合済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found?.id){const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+found.id;card.append(modelId);}
+  const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み・ID照合済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found?.id){const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+found.id;card.append(modelId);addVoicePreviewControls(card,found);}
   const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if(!found){const register=document.createElement("button");register.type="button";register.textContent=preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").value=preset.modelId||"";$("voiceIdStatus").textContent=preset.modelId?preset.title+"の既知IDをTRACERのFish Audioキーで照合してください。":"この役に割り当てたFish AudioモデルIDを入力してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});if(!preset.modelId)$("voiceModelId").focus();});card.append(register);}
   root.append(card);
  }
@@ -232,7 +257,13 @@ function renderVoiceLibrary(){
  const registeredHeading=document.createElement("h3");registeredHeading.style.gridColumn="1 / -1";registeredHeading.textContent="IDから登録した音声（"+idRegistered.length+"件）";root.append(registeredHeading);
  const registeredNote=document.createElement("p");registeredNote.className="muted";registeredNote.style.gridColumn="1 / -1";registeredNote.textContent="Fish AudioモデルIDで照合し、TRACER共通台帳に保存した音声です。全件ここに表示します。";root.append(registeredNote);
  for(const voice of idRegistered){
-  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId,choose);root.append(card);
+  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId);addVoicePreviewControls(card,voice);card.append(choose);root.append(card);
+ }
+ const presetNames=new Set(voicePresetDefinitions.map(item=>item.title));
+ const otherVoices=registered.filter(voice=>voice?.id&&voice.source!=="id_registered"&&!presetNames.has(String(voice.title||voice.name||"").trim()));
+ if(otherVoices.length){const otherHeading=document.createElement("h3");otherHeading.style.gridColumn="1 / -1";otherHeading.textContent="その他の日本語ボイス（"+otherVoices.length+"件）";root.append(otherHeading);}
+ for(const voice of otherVoices){
+  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title||voice.name||"名称未設定";const meta=document.createElement("p");meta.className="muted";meta.textContent=({public_licensed:"公開ライセンス音声",user_provided_clone:"許可確認済みクローン音声",private_drama_character:"ドラマ専用キャラクターボイス",private_voice_design:"架空キャラクターボイス"})[voice.source]||"TRACER利用可能ボイス";card.append(name,meta);addVoicePreviewControls(card,voice);const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title||voice.name||"登場人物",voice.id);status.textContent="「"+(voice.title||voice.name||"ボイス")+"」を登場人物に追加しました。";});card.append(choose);root.append(card);
  }
 } voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");
 let sharedVoices=d.voices;

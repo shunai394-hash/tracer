@@ -204,6 +204,18 @@ test("voice preview cards attach the shared lip-sync engine", () => {
   assert.ok(page.includes("sampleFace=makeLipSyncFace"));
   assert.ok(page.includes("window.TracerLipSync.attach(player,sampleFace.querySelector(\".lipSyncMouth\"))"));
 });
+
+test("all voice catalogue entries offer explicit on-demand sample generation and playback", () => {
+  assert.ok(page.includes("function addVoicePreviewControls(card,voice)"));
+  assert.ok(page.includes("サンプル音声を生成して試聴"));
+  assert.ok(page.includes("voicePreviewText"));
+  assert.ok(page.includes('fetch("/api/admin/ai-live/fish-audio"'));
+  assert.ok(page.includes("referenceId:voice.id"));
+  assert.ok(page.includes("URL.createObjectURL(blob)"));
+  assert.ok(page.includes("function showVoicePreview(root,voice,url)"));
+  assert.ok(page.includes("const otherVoices=registered.filter"));
+  assert.ok(page.includes("voicePreviewUrls"));
+});
 test("character reference image URLs are applied to face overlays and persisted in project data", () => {
   assert.ok(page.includes('class="cimage"'));
   assert.ok(page.includes("imageUrl:imageUrl||\"\""));
