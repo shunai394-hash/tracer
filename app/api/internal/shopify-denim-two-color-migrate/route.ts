@@ -83,10 +83,10 @@ export async function POST(request: Request) {
       .replace(/^https?:\/\//i, "").replace(/\/$/, "");
     if (!storeDomain) throw new Error("shopify_store_domain_missing");
     const currentProductIds = new Set((channelRows ?? []).map((row) => String(row.external_product_id)));
-    const oldProductIds = new Set(FAMILY.map((item) => item.oldProductId));
+    const legacyProductIdSet = new Set<string>(FAMILY.map((item) => item.oldProductId));
     const alreadyMigrated = (channelRows ?? []).length === FAMILY.length
       && currentProductIds.size === 1
-      && !oldProductIds.has([...currentProductIds][0])
+      && !legacyProductIdSet.has(String([...currentProductIds][0]))
       && FAMILY.every((item) => {
         const row = channelsByVariant.get(item.variantId);
         return row?.status === "published"
