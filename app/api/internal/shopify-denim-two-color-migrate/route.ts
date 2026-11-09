@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
     const channelsByVariant = new Map((channelRows ?? []).map((row) => [String(row.variant_id), row]));
     const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
-      .replace(/^https?:\\/\\//i, "").replace(/\\/$/, "");
+      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
     if (!storeDomain) throw new Error("shopify_store_domain_missing");
     const currentProductIds = new Set((channelRows ?? []).map((row) => String(row.external_product_id)));
     const oldProductIds = new Set(FAMILY.map((item) => item.oldProductId));
