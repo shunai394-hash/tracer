@@ -44,6 +44,7 @@ const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/ro
 assert.match(orderRoute, /external_variant_id/);
 assert.match(orderRoute, /channel_listing_external_aliases/);
 assert.match(orderRoute, /item\.variation_id/);
+assert.doesNotMatch(orderRoute.slice(orderRoute.indexOf("const { data: directListing"), orderRoute.indexOf("let listing = directListing")), /\.eq\("status", "published"\)/, "historical paid orders must still map after a listing is hidden");
 const commercePublisher = readFileSync(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
 assert.match(commercePublisher, /status: listing\.status === "published" \? "published" : "pending"/, "healthy grouped BASE listings must remain orderable");
 assert.match(commercePublisher, /base_unpublish_variation_stock_readback_mismatch/, "a stale color must zero only its exact BASE variation");
