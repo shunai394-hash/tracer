@@ -7,6 +7,14 @@ import {
 
 export type { BaseSnapshotCheckpoint };
 
+export type BaseItemVariationInput = {
+  id?: string | number;
+  name: string;
+  stock: number;
+  identifier?: string | null;
+  barcode?: string | null;
+};
+
 type BaseItemInput = {
   title: string;
   identifier?: string;
@@ -14,6 +22,7 @@ type BaseItemInput = {
   price: number;
   stock?: number;
   visible?: boolean;
+  variations?: BaseItemVariationInput[];
 };
 
 type BaseItemResponse = {
@@ -231,39 +240,50 @@ async function requestBase(
 }
 
 export async function createBaseItem(input: BaseItemInput) {
-  return requestBase(
-    "/items/add",
-    new URLSearchParams({
-      title: input.title,
-      ...(input.identifier ? { identifier: input.identifier } : {}),
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-  );
+  const body = new URLSearchParams({
+    title: input.title,
+    ...(input.identifier ? { identifier: input.identifier } : {}),
+    detail: input.detail,
+    price: String(Math.round(input.price)),
+    stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
+    visible: input.visible === false ? "0" : "1",
+  });
+  for (const [index, variation] of (input.variations ?? []).entries()) {
+    body.set(`variation[${index}]`, variation.name);
+    body.set(`variation_stock[${index}]`, String(Math.max(0, Math.floor(variation.stock))));
+    if (variation.identifier) body.set(`variation_identifier[${index}]`, variation.identifier);
+    if (variation.barcode) body.set(`barcode[${index}]`, variation.barcode);
+  }
+  return requestBase("/items/add", body);
 }
 
 export async function editBaseItem(input: {
   itemId: string;
-  title: string;
-  detail: string;
-  price: number;
+  title?: string;
+  detail?: string;
+  price?: number;
   stock?: number;
   visible?: boolean;
+  variations?: BaseItemVariationInput[];
 }) {
-  return requestBase(
-    "/items/edit",
-    new URLSearchParams({
-      item_id: input.itemId,
-      title: input.title,
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-    3,
-  );
+  const body = new URLSearchParams({ item_id: input.itemId });
+  if (input.title !== undefined) body.set("title", input.title);
+  if (input.detail !== undefined) body.set("detail", input.detail);
+  if (input.price !== undefined) body.set("price", String(Math.round(input.price)));
+  if (input.stock !== undefined) body.set("stock", String(Math.max(0, Math.floor(input.stock))));
+  if (input.visible !== undefined) body.set("visible", input.visible ? "1" : "0");
+  for (const [index, variation] of (input.variations ?? []).entries()) {
+    body.set(`variation_id[${index}]`, variation.id == null ? "" : String(variation.id));
+    body.set(`variation[${index}]`, variation.name);
+    body.set(`variation_stock[${index}]`, String(Math.max(0, Math.floor(variation.stock))));
+    if (variation.identifier !== undefined && variation.identifier !== null) {
+      body.set(`variation_identifier[${index}]`, variation.identifier);
+    }
+    if (variation.barcode !== undefined && variation.barcode !== null) {
+      body.set(`barcode[${index}]`, variation.barcode);
+    }
+  }
+  return requestBase("/items/edit", body, 3);
 }
 
 
@@ -393,6 +413,9 @@ export type BaseOrderDetail = BaseOrderSummary & {
   order_items?: Array<{
     order_item_id?: string | number;
     item_id?: string | number;
+    variation_id?: string | number | null;
+    variation?: string | null;
+    variation_identifier?: string | null;
     title?: string;
     price?: number;
     amount?: number;
