@@ -105,9 +105,13 @@ export async function POST(request: Request) {
       .select("variant_id,supplier_product_id,supplier_variant_id,inventory,unit_cost,shipping_cost,ship_to,source_status,last_checked_at")
       .eq("supplier_code", "cj").in("variant_id", VARIANTS.map((variant) => variant.variantId));
     if (offerError || !offers || offers.length !== VARIANTS.length
-      || offers.some((offer) => String(offer.supplier_product_id) !== SUPPLIER_PRODUCT_ID
-        || offer.ship_to !== "JP" || offer.source_status !== "verified"
-        || Number(offer.inventory) < 1 || Number(offer.unit_cost) <= 0 || Number(offer.shipping_cost) <= 0)) {
+      || offers.some((offer) => {
+        const target = VARIANTS.find((variant) => variant.variantId === String(offer.variant_id));
+        return !target || String(offer.supplier_product_id) !== SUPPLIER_PRODUCT_ID
+          || String(offer.supplier_variant_id) !== target.supplierVariantId
+          || offer.ship_to !== "JP" || offer.source_status !== "verified"
+          || Number(offer.inventory) < 1 || Number(offer.unit_cost) <= 0 || Number(offer.shipping_cost) <= 0;
+      })) {
       return NextResponse.json({ ok: false, error: "DENIM_BASE_SUPPLIER_GATE_FAILED" }, { status: 409 });
     }
     const checkedAt = Math.min(...offers.map((offer) => Date.parse(String(offer.last_checked_at ?? ""))));
@@ -233,7 +237,7 @@ export async function POST(request: Request) {
 
     const variationRows = variationsOf(parent);
     const parentUrl = PARENT_URL_PREFIX + parentId;
-    const mappingResults = [];
+    const mappingResults: Array<{ color: string; variationId: string; listingId: string }> = [];
     for (const variant of VARIANTS) {
       const baseVariation = variationRows.find((row) =>
         String(row.variation ?? "") === variant.color
