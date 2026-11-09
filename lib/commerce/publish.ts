@@ -677,14 +677,41 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       try {
         const fallbackPrice = Math.min(100_000_000, Math.max(50, Math.round(Number(asRelationRows(candidate.commerce_prices)[0]?.selling_price) || 50)));
         if (channel === "base") {
-          await editBaseItem({
-            itemId: String(currentState.external_product_id),
-            title,
-            detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
-            price: fallbackPrice,
-            stock: 0,
-            visible: false,
-          });
+          const itemId = String(currentState.external_product_id);
+          const variationId = String(currentState.external_variant_id ?? "");
+          if (variationId && variationId !== itemId) {
+            const currentItem = await getBaseItemDetail(itemId);
+            const currentVariations = Array.isArray(currentItem.variations)
+              ? currentItem.variations.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+              : [];
+            const currentVariation = currentVariations.find((value) => String(value.variation_id ?? "") === variationId);
+            if (!currentVariation) throw new Error("base_unfulfillable_variation_not_found:" + variationId);
+            await editBaseItem({
+              itemId,
+              variations: [{
+                id: variationId,
+                name: String(currentVariation.variation ?? ""),
+                stock: 0,
+                identifier: currentVariation.variation_identifier == null ? undefined : String(currentVariation.variation_identifier),
+              }],
+            });
+            const readback = await getBaseItemDetail(itemId);
+            const updatedVariation = (Array.isArray(readback.variations) ? readback.variations : [])
+              .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+              .find((value) => String(value.variation_id ?? "") === variationId);
+            if (!updatedVariation || Number(updatedVariation.variation_stock) !== 0) {
+              throw new Error("base_unfulfillable_variation_stock_readback_mismatch:" + variationId);
+            }
+          } else {
+            await editBaseItem({
+              itemId,
+              title,
+              detail: String(product.description_ja || title) + "\n\n仕入先の在庫・日本向け送料を確認中のため、現在購入できません。",
+              price: fallbackPrice,
+              stock: 0,
+              visible: false,
+            });
+          }
         } else {
           const productId = toShopifyGid("Product", String(currentState.external_product_id));
           if (!productId) throw new Error("shopify_product_id_missing");
