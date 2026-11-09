@@ -66,6 +66,8 @@ export async function POST(request: Request) {
   const now = new Date();
   const nowIso = now.toISOString();
   try {
+    const publicShopUrl = (await getBasePublicShopUrl()) ?? process.env.BASE_PUBLIC_SHOP_URL?.trim() ?? "";
+    if (!publicShopUrl) throw new Error("base_color_family_public_shop_url_missing");
     const { data: product, error: productError } = await db.from("commerce_products")
       .select("id,source_key,title_ja,description_ja")
       .eq("source_key", "cj:" + supplierProductId)
@@ -286,9 +288,8 @@ export async function POST(request: Request) {
       throw new Error("base_color_family_publication_readback_failed");
     }
 
-    const publicShopUrl = await getBasePublicShopUrl();
-    const publishedUrl = resolveBasePublicUrl({ item: baseItem }, itemId, publicShopUrl ?? "") ??
-      (publicShopUrl ? new URL("/items/" + itemId, publicShopUrl).toString() : null);
+    const publishedUrl = resolveBasePublicUrl({ item: baseItem }, itemId, publicShopUrl) ??
+      new URL("/items/" + itemId, publicShopUrl).toString();
     if (!publishedUrl) throw new Error("base_color_family_public_url_missing");
 
     const aliases = oldRows.flatMap((row) => {
