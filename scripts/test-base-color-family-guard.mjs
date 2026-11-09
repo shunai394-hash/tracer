@@ -40,6 +40,8 @@ assert.match(migration, /variantImageIdentityVerified !== true/, "unverified sup
 assert.match(migration, /offer\.tracking_supported !== true/, "supplier tracking must be verified before BASE publication");
 assert.match(migration, /colorImageVerified !== true/, "unverified color images must block BASE color migration");
 assert.match(migration, /variation_identifier/, "BASE variation identifiers must preserve exact supplier variant IDs");
+assert.match(migration, /imageSourceStem/, "Shopify image identity must match the exact CJ source image filename when source metafields are absent");
+assert.match(migration, /actual\.sku !== variant\.shopifySku/, "Shopify variant identity must use the exact mapped channel SKU");
 assert.match(migration, /channel_listing_external_aliases/, "old BASE item IDs must remain mapped for historical orders");
 assert.match(migration, /base_color_family_legacy_alias_identity_collision/, "ambiguous legacy BASE item aliases must stop migration");
 const orderRoute = readFileSync(new URL("../app/api/cron/commerce-base-orders/route.ts", import.meta.url), "utf8");
