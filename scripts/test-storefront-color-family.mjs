@@ -52,7 +52,7 @@ const sharedImage = groupExactColorFamilies([
 assert.equal(sharedImage.length, 2);
 assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
-assert.ok(sharedImage.every((item) => item.variants.length === 0));
+assert.ok(sharedImage.every((item) => item.variants.length === 0));\nassert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_image_ambiguous:"))));
 
 const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 0, { imageUrl: null }),
