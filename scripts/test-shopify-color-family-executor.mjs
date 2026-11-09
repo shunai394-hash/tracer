@@ -17,6 +17,9 @@ assert.match(executor, /productUpdate\(identifier: \$identifier, product: \$prod
 assert.match(executor, /originalSource: variant\.imageUrl/, "each color image must use its exact source URL");
 assert.match(executor, /productVariantAppendMedia/, "each product image must be attached to its exact variant");
 assert.match(executor, /const mediaByColor = \(\) =>/, "retries must reuse the image already attached to its exact color variant");
+assert.match(executor, /colorLabelFromMediaAlt/, "legacy product-title-plus-color media alt labels must normalize to the exact color");
+assert.match(executor, /normalizedAlt === color \|\| normalizedAlt === legacyTitleColor/, "media alt matching must accept only exact known label forms");
+assert.match(executor, /attachedColorLabels\.has\(colorLabel\)/, "orphan duplicate cleanup must compare normalized color labels");
 assert.match(executor, /fileDelete\(fileIds: \$fileIds\)/, "duplicate orphan media must be cleaned without deleting attached images");
 assert.match(executor, /key: "supplier_variant_id"/, "each color must retain its exact supplier variant identity");
 assert.match(executor, /shopify_color_family_verification_supplier_variant_id_failed/, "final readback must verify supplier variant identity");

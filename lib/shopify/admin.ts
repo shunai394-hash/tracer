@@ -1174,6 +1174,18 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   );
   let mediaSnapshot = await readColorFamilyMedia();
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_parent_missing");
+  // Older interrupted uploads used "<product title> <color>" as alt text,
+  // while newer uploads use the bare color label. Normalize only these two
+  // exact forms; never infer a color from a loose substring.
+  const colorLabelFromMediaAlt = (alt: string | null): string | null => {
+    const normalizedAlt = String(alt ?? "").trim().normalize("NFKC");
+    for (const variant of variants) {
+      const color = variant.colorLabel.trim().normalize("NFKC");
+      const legacyTitleColor = (title + " " + variant.colorLabel).trim().normalize("NFKC");
+      if (normalizedAlt === color || normalizedAlt === legacyTitleColor) return variant.colorLabel;
+    }
+    return null;
+  };
   const mediaByColor = () => {
     const images = mediaSnapshot.product!.media.nodes.filter((media) => media.mediaContentType === "IMAGE");
     const byId = new Map(images.map((media) => [media.id, media]));
@@ -1184,14 +1196,14 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       const expected = variants.find((variant) => variant.sku === actual.sku);
       if (!expected) continue;
       const attached = actual.media.nodes.map((node) => byId.get(node.id)).filter(Boolean) as (typeof images)[number][];
-      const matching = attached.filter((media) => media.alt === expected.colorLabel);
+      const matching = attached.filter((media) => colorLabelFromMediaAlt(media.alt) === expected.colorLabel);
       if (matching.length > 1) throw new Error("shopify_color_family_media_variant_ambiguous:" + expected.sku);
       if (matching.length === 1) byColor.set(expected.colorLabel, matching[0]);
       else if (attached.length) throw new Error("shopify_color_family_media_variant_conflict:" + expected.sku);
     }
     for (const expected of variants) {
       if (byColor.has(expected.colorLabel)) continue;
-      const candidates = images.filter((media) => media.alt === expected.colorLabel);
+      const candidates = images.filter((media) => colorLabelFromMediaAlt(media.alt) === expected.colorLabel);
       if (candidates.length > 1) throw new Error("shopify_color_family_media_alt_ambiguous:" + expected.colorLabel);
       if (candidates.length === 1) byColor.set(expected.colorLabel, candidates[0]);
     }
@@ -1280,9 +1292,12 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   mediaSnapshot = await readColorFamilyMedia();
   if (!mediaSnapshot.product) throw new Error("shopify_color_family_media_final_readback_missing");
   const expectedMediaIdByColor = new Map(
-    mediaSnapshot.product.media.nodes
-      .filter((media) => media.mediaContentType === "IMAGE" && media.alt && media.status === "READY")
-      .map((media) => [media.alt!, media.id]),
+    mediaSnapshot.product.media.nodes.flatMap((media) => {
+      const colorLabel = colorLabelFromMediaAlt(media.alt);
+      return media.mediaContentType === "IMAGE" && media.status === "READY" && colorLabel
+        ? [[colorLabel, media.id] as const]
+        : [];
+    }),
   );
   // Remove only duplicate orphan uploads whose alt label is already attached
   // to the matching variant. Never delete the single image used by a variant.
@@ -1294,12 +1309,15 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
   const attachedColorLabels = new Set(
     mediaSnapshot.product.variants.nodes.flatMap((variant) =>
       variant.media.nodes
-        .map((media) => mediaSnapshot.product!.media.nodes.find((candidate) => candidate.id === media.id)?.alt)
-        .filter((alt): alt is string => Boolean(alt)),
+        .map((media) => colorLabelFromMediaAlt(mediaSnapshot.product!.media.nodes.find((candidate) => candidate.id === media.id)?.alt ?? null))
+        .filter((label): label is string => Boolean(label)),
     ),
   );
   const duplicateOrphanIds = mediaSnapshot.product.media.nodes
-    .filter((media) => media.alt && attachedColorLabels.has(media.alt) && !attachedMediaIds.has(media.id))
+    .filter((media) => {
+      const colorLabel = colorLabelFromMediaAlt(media.alt);
+      return Boolean(colorLabel && attachedColorLabels.has(colorLabel) && !attachedMediaIds.has(media.id));
+    })
     .map((media) => media.id);
   if (duplicateOrphanIds.length) {
     const deleted = await shopifyGraphQL<{
