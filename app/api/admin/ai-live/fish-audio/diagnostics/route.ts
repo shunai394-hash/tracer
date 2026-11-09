@@ -119,10 +119,42 @@ export async function GET(request: Request) {
 
   const assignedCharacterVoices = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (character) => {
     try {
-      const voice = await resolveFishAudioModelVoice(apiKey, character.id, character.title);
-      return { title: character.title, id: character.id, accessible: Boolean(voice), status: voice ? "accessible" : "not_accessible" };
+      const [voice, detailResult] = await Promise.allSettled([
+        resolveFishAudioModelVoice(apiKey, character.id, character.title),
+        fishGet(`/model/${encodeURIComponent(character.id)}`, apiKey),
+      ]);
+      const detail = detailResult.status === "fulfilled" && detailResult.value && typeof detailResult.value === "object"
+        ? detailResult.value as Record<string, unknown>
+        : null;
+      const samples = Array.isArray(detail?.samples) ? detail.samples.slice(0, 5).flatMap((sample) => {
+        if (!sample || typeof sample !== "object") return [];
+        const item = sample as Record<string, unknown>;
+        const audio = typeof item.audio === "string" && /^https:\/\//i.test(item.audio) ? item.audio : null;
+        return [{
+          title: typeof item.title === "string" ? item.title.slice(0, 120) : null,
+          text: typeof item.text === "string" ? item.text.slice(0, 300) : null,
+          audio,
+        }];
+      }) : [];
+      return {
+        title: character.title,
+        id: character.id,
+        accessible: voice.status === "fulfilled" && Boolean(voice.value),
+        status: voice.status === "fulfilled" && voice.value ? "accessible" : "not_accessible",
+        providerDetailStatus: detailResult.status === "fulfilled" ? "available" : "lookup_failed",
+        provider: detail ? {
+          title: typeof detail.title === "string" ? detail.title.slice(0, 120) : null,
+          type: typeof detail.type === "string" ? detail.type : null,
+          state: typeof detail.state === "string" ? detail.state : null,
+          description: typeof detail.description === "string" ? detail.description.slice(0, 500) : null,
+          languages: Array.isArray(detail.languages) ? detail.languages.filter((v): v is string => typeof v === "string").slice(0, 12) : [],
+          tags: Array.isArray(detail.tags) ? detail.tags.filter((v): v is string => typeof v === "string").slice(0, 20) : [],
+          updatedAt: typeof detail.updated_at === "string" ? detail.updated_at : null,
+          samples,
+        } : null,
+      };
     } catch {
-      return { title: character.title, id: character.id, accessible: false, status: "lookup_failed" };
+      return { title: character.title, id: character.id, accessible: false, status: "lookup_failed", providerDetailStatus: "lookup_failed", provider: null };
     }
   }));
 
