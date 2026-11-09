@@ -69,7 +69,9 @@ jobs:
             "error":d.get("error"),
           }
           print(json.dumps(out,ensure_ascii=False,indent=2))
-          if d.get("ok") is not True or d.get("status") != "PUBLISHED" or d.get("variationCount") != 5 or d.get("imageCount",0) < 5:
-              raise SystemExit("BASE five-color family migration failed readback")
+          if (d.get("ok") is not True or d.get("status") != "PUBLISHED" or
+              d.get("variationCount") != 5 or d.get("imageCount",0) < 5 or
+              len(d.get("oldItemsHidden") or []) != 5 or d.get("aliasesPreserved") != 5):
+              raise SystemExit("BASE five-color family migration failed full readback")
           PY
           test "$code" = "200"
