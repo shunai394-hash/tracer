@@ -87,9 +87,39 @@ export async function GET(request: Request) {
         const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
         let hasUnmappedLine = false;
         for (const item of sourceLines) {
-          const { data: listing, error: listingError } = await db.from("channel_listings")
-            .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
+          const baseItemId = String(item.item_id);
+          const baseVariationId = item.variation_id == null || String(item.variation_id).trim() === ""
+            ? baseItemId
+            : String(item.variation_id);
+          const { data: directListing, error: listingError } = await db.from("channel_listings")
+            .select("variant_id,external_sku")
+            .eq("channel", "base")
+            .eq("external_product_id", baseItemId)
+            .eq("external_variant_id", baseVariationId)
+            .eq("status", "published")
+            .maybeSingle();
           if (listingError) throw new Error("base_item_mapping_read_failed:" + listingError.message);
+          let listing = directListing;
+          if (!listing) {
+            // Preserve orders placed against retired standalone BASE items after
+            // a color family has been consolidated into one item with variations.
+            const { data: alias, error: aliasError } = await db.from("channel_listing_external_aliases")
+              .select("variant_id")
+              .eq("channel", "base")
+              .eq("external_product_id", baseItemId)
+              .eq("external_variant_id", baseVariationId)
+              .maybeSingle();
+            if (aliasError) throw new Error("base_item_alias_lookup_failed:" + aliasError.message);
+            if (alias?.variant_id) {
+              const { data: aliasedListing, error: aliasedListingError } = await db.from("channel_listings")
+                .select("variant_id,external_sku")
+                .eq("channel", "base")
+                .eq("variant_id", String(alias.variant_id))
+                .maybeSingle();
+              if (aliasedListingError) throw new Error("base_item_alias_listing_lookup_failed:" + aliasedListingError.message);
+              listing = aliasedListing;
+            }
+          }
           if (!listing) {
             // A paid line for a BASE item TRACER does not link (legacy, duplicate
             // or foreign listing) must never vanish: record it for a person to
@@ -101,10 +131,15 @@ export async function GET(request: Request) {
               entity_type: "base_order",
               entity_id: String(detail.unique_key),
               status: "needs_review",
-              detail: { baseItemId: String(item.item_id), orderItemId: String(item.order_item_id), quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))) },
+              detail: {
+                baseItemId,
+                baseVariationId,
+                orderItemId: String(item.order_item_id),
+                quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))),
+              },
             }, { onConflict: "event_key", ignoreDuplicates: true });
             if (unmappedError) throw new Error("base_unmapped_item_record_failed:" + unmappedError.message);
-            result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + String(item.item_id));
+            result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + baseItemId + ":" + baseVariationId);
             hasUnmappedLine = true;
             continue;
           }
