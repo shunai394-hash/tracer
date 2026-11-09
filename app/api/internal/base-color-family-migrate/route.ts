@@ -51,7 +51,7 @@ function isVisible(value: unknown): boolean {
 }
 
 function itemImages(item: Row): string[] {
-  return Array.from({ length: 20 }, (_, index) => String(item[`img${index + 1}_origin`] ?? "").trim())
+  return Array.from({ length: 20 }, (_, index) => String(item[`img${index + 1}_origin`] ?? item[`img${index + 1}`] ?? "").trim())
     .filter(Boolean);
 }
 
@@ -297,7 +297,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const imageSlots = Array.from({ length: 20 }, (_, index) => String(baseItem?.[`img${index + 1}_origin`] ?? "").trim());
+    const imageSlots = Array.from({ length: 20 }, (_, index) => String(baseItem?.[`img${index + 1}_origin`] ?? baseItem?.[`img${index + 1}`] ?? "").trim());
     for (const [index, variant] of shopifyImages.entries()) {
       if (imageSlots[index]) continue;
       await addBaseItemImage({ itemId, imageNo: index + 1, imageUrl: variant.imageUrl });
