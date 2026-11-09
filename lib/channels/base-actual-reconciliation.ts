@@ -122,16 +122,20 @@ export function reconcileBaseItems(snapshotItems: Record<string, unknown>[], lis
     const skuCandidates = identifier ? bySku.get(identifier.toUpperCase()) ?? [] : [];
     const candidates = variationId && variationCandidates.length > 0
       ? variationCandidates
-      : skuCandidates.length > 0
-        ? skuCandidates
-        : idCandidates;
+      : idCandidates.length === 1
+        ? idCandidates
+        : skuCandidates.length > 0
+          ? skuCandidates
+          : idCandidates;
     const mappingMethod = variationId && variationCandidates.length > 0
       ? "base_item_variation_id"
-      : skuCandidates.length > 0
-        ? "exact_sku"
-        : idCandidates.length > 0
-          ? "base_item_id"
-          : "none";
+      : idCandidates.length === 1
+        ? "base_item_id"
+        : skuCandidates.length > 0
+          ? "exact_sku"
+          : idCandidates.length > 0
+            ? "base_item_id"
+            : "none";
     const listing = candidates.length === 1 ? candidates[0] : null;
     const skuPointsToDifferentId = idCandidates.length === 0
       && skuCandidates.length === 1
