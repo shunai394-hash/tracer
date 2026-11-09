@@ -244,26 +244,67 @@ export async function createBaseItem(input: BaseItemInput) {
   );
 }
 
+export type BaseItemVariationInput = {
+  /** Existing BASE variation ID. Use an empty string only when creating a new variation. */
+  variationId: string;
+  name: string;
+  stock: number;
+  identifier?: string;
+  barcode?: string;
+};
+
 export async function editBaseItem(input: {
   itemId: string;
-  title: string;
-  detail: string;
-  price: number;
+  title?: string;
+  detail?: string;
+  price?: number;
   stock?: number;
   visible?: boolean;
+  variations?: BaseItemVariationInput[];
 }) {
-  return requestBase(
-    "/items/edit",
-    new URLSearchParams({
-      item_id: input.itemId,
-      title: input.title,
-      detail: input.detail,
-      price: String(Math.round(input.price)),
-      stock: String(Math.max(0, Math.floor(input.stock ?? 0))),
-      visible: input.visible === false ? "0" : "1",
-    }),
-    3,
-  );
+  const body = new URLSearchParams({ item_id: input.itemId });
+  if (input.title !== undefined) body.set("title", input.title);
+  if (input.detail !== undefined) body.set("detail", input.detail);
+  if (input.price !== undefined) body.set("price", String(Math.round(input.price)));
+  if (input.stock !== undefined) body.set("stock", String(Math.max(0, Math.floor(input.stock))));
+  if (input.visible !== undefined) body.set("visible", input.visible ? "1" : "0");
+  if (input.variations !== undefined) {
+    if (input.variations.length < 1 || input.variations.length > 100) {
+      throw new Error("BASE_VARIATION_COUNT_INVALID");
+    }
+    const seenIds = new Set<string>();
+    const seenSkus = new Set<string>();
+    let stockTotal = 0;
+    input.variations.forEach((variation, index) => {
+      const id = String(variation.variationId ?? "").trim();
+      const name = String(variation.name ?? "").trim();
+      const identifier = String(variation.identifier ?? "").trim();
+      const barcode = String(variation.barcode ?? "").trim();
+      const quantity = Number(variation.stock);
+      if ((id && !/^\d+$/.test(id)) || !name || name.length > 255 ||
+          !Number.isSafeInteger(quantity) || quantity < 0 ||
+          (identifier && !/^[A-Za-z0-9_-]{1,50}$/.test(identifier)) ||
+          (barcode && barcode.length > 100)) {
+        throw new Error("BASE_VARIATION_INPUT_INVALID:" + index);
+      }
+      if (id && seenIds.has(id)) throw new Error("BASE_VARIATION_ID_DUPLICATE");
+      if (identifier && seenSkus.has(identifier)) throw new Error("BASE_VARIATION_IDENTIFIER_DUPLICATE");
+      if (id) seenIds.add(id);
+      if (identifier) seenSkus.add(identifier);
+      stockTotal += quantity;
+      body.set("variation_id[" + index + "]", id);
+      body.set("variation[" + index + "]", name);
+      body.set("variation_stock[" + index + "]", String(quantity));
+      if (identifier) body.set("variation_identifier[" + index + "]", identifier);
+      if (barcode) body.set("barcode[" + index + "]", barcode);
+    });
+    if (!Number.isSafeInteger(stockTotal)) throw new Error("BASE_VARIATION_STOCK_TOTAL_INVALID");
+    if (input.stock !== undefined && Math.floor(input.stock) !== stockTotal) {
+      throw new Error("BASE_VARIATION_STOCK_TOTAL_MISMATCH");
+    }
+    body.set("stock", String(stockTotal));
+  }
+  return requestBase("/items/edit", body, 3);
 }
 
 
