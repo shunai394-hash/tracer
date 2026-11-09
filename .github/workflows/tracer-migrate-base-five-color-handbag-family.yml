@@ -1,0 +1,75 @@
+name: TRACER migrate BASE five-color handbag family
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-migrate-base-five-color-handbag-family.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-base-five-color-handbag-family
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: contains(github.event.head_commit.message, 'migrate BASE five-color handbag family')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for production to include this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            if [ "$sha" = "$GITHUB_SHA" ]; then
+              echo "Production matches workflow commit $sha"
+              exit 0
+            fi
+            if [ -n "$sha" ]; then
+              status="$(curl -sSf --max-time 20 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$sha" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' || true)"
+              echo "attempt $i: production commit=$sha compare=$status"
+              if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then exit 0; fi
+            fi
+            sleep 15
+          done
+          echo "Production has not deployed this migration route; refusing BASE writes."
+          exit 1
+
+      - name: Migrate exact five-color BASE family
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o result.json -w "%{http_code}" --max-time 600 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"supplierProductId":"2606090341151608200"}' "$BASE/api/internal/base-color-family-migrate")"
+          echo "BASE five-color family migration HTTP=$code"
+          python3 - <<'PY'
+          import json,sys
+          d=json.load(open("result.json"))
+          out={
+            "ok":d.get("ok"),
+            "status":d.get("status"),
+            "supplierProductId":d.get("supplierProductId"),
+            "itemId":d.get("itemId"),
+            "publishedUrl":d.get("publishedUrl"),
+            "variationCount":d.get("variationCount"),
+            "variations":d.get("variations"),
+            "imageCount":d.get("imageCount"),
+            "oldItemsHidden":d.get("oldItemsHidden"),
+            "aliasesPreserved":d.get("aliasesPreserved"),
+            "error":d.get("error"),
+          }
+          print(json.dumps(out,ensure_ascii=False,indent=2))
+          if d.get("ok") is not True or d.get("status") != "PUBLISHED" or d.get("variationCount") != 5 or d.get("imageCount",0) < 5:
+              raise SystemExit("BASE five-color family migration failed readback")
+          PY
+          test "$code" = "200"
