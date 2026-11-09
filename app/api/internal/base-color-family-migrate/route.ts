@@ -224,8 +224,10 @@ export async function POST(request: Request) {
     }));
 
     const oldRows = (channelRows ?? []).filter((row) => row.channel === "base");
-    if (oldRows.length !== prepared.length || oldRows.some((row) => !String(row.external_product_id ?? "").trim())) {
-      throw new Error("base_color_family_legacy_base_mapping_missing");
+    const preparedVariantIds = new Set(prepared.map((variant) => variant.id));
+    if (oldRows.length > prepared.length ||
+        oldRows.some((row) => !preparedVariantIds.has(String(row.variant_id)) || !String(row.external_product_id ?? "").trim())) {
+      throw new Error("base_color_family_legacy_base_mapping_invalid");
     }
     const { data: priorAliases, error: priorAliasError } = await db.from("channel_listing_external_aliases")
       .select("variant_id,external_product_id,external_variant_id")
@@ -374,7 +376,9 @@ export async function POST(request: Request) {
 
     for (const variant of prepared) {
       const actual = readByIdentifier.get(variant.shopifySku);
-      const { error: listingUpdateError } = await db.from("channel_listings").update({
+      const { error: listingUpdateError } = await db.from("channel_listings").upsert({
+        variant_id: variant.id,
+        channel: "base",
         external_product_id: itemId,
         external_variant_id: String(actual?.variation_id),
         external_sku: variant.shopifySku,
@@ -384,7 +388,7 @@ export async function POST(request: Request) {
         last_error: null,
         last_synced_at: nowIso,
         updated_at: nowIso,
-      }).eq("channel", "base").eq("variant_id", variant.id);
+      }, { onConflict: "channel,variant_id" });
       if (listingUpdateError) throw new Error("base_color_family_listing_update_failed:" + variant.sku + ":" + listingUpdateError.message);
     }
 
