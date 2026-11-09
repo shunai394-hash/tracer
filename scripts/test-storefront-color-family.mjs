@@ -53,7 +53,7 @@ assert.equal(sharedImage.length, 2);
 assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
 assert.ok(sharedImage.every((item) => item.variants.length === 0));
-assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_image_ambiguous:"))));
+assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_image_ambiguous:"))));
 
 const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 0, { imageUrl: null }),
@@ -97,7 +97,7 @@ const distinctUrlsButUnverifiedColors = groupExactColorFamilies([
 ]).catalog;
 assert.equal(distinctUrlsButUnverifiedColors.length, 2);
 assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlocked === true));
-assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("variant_color_image_unverified:"))));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_color_image_unverified:"))));
 assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.variants.length === 0));
 
 const missingLabels = groupExactColorFamilies([
