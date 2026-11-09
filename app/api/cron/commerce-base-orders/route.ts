@@ -87,9 +87,57 @@ export async function GET(request: Request) {
         const lines: Array<{ externalLineId: string; variantId: string; sku: string; quantity: number; unitPrice: number; offerId: string }> = [];
         let hasUnmappedLine = false;
         for (const item of sourceLines) {
-          const { data: listing, error: listingError } = await db.from("channel_listings")
-            .select("variant_id,external_sku").eq("channel", "base").eq("external_product_id", String(item.item_id)).eq("status", "published").maybeSingle();
-          if (listingError) throw new Error("base_item_mapping_read_failed:" + listingError.message);
+          const baseItemId = String(item.item_id);
+          const variationId = item.variation_id == null ? "" : String(item.variation_id).trim();
+          const identifiers = [item.variation_identifier, item.item_identifier]
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean);
+          type BaseOrderListing = { variant_id: string; external_sku: string | null; external_variant_id: string | null };
+          let listing: BaseOrderListing | null = null;
+
+          // A consolidated BASE item has one item_id and multiple variation_id
+          // values. Resolve that exact pair first; never select an arbitrary
+          // color from the shared parent item.
+          if (variationId) {
+            const { data: variationRows, error: variationError } = await db.from("channel_listings")
+              .select("variant_id,external_sku,external_variant_id")
+              .eq("channel", "base").eq("external_product_id", baseItemId)
+              .eq("external_variant_id", variationId).eq("status", "published").limit(2);
+            if (variationError) throw new Error("base_item_variation_mapping_read_failed:" + variationError.message);
+            if ((variationRows ?? []).length > 1) throw new Error("base_item_variation_mapping_ambiguous:" + baseItemId + ":" + variationId);
+            if (variationRows?.[0]) listing = variationRows[0] as BaseOrderListing;
+          }
+
+          // The identifier on the order line is stable across a BASE migration.
+          // It also repairs historical orders whose old standalone item_id no
+          // longer points at the consolidated parent item.
+          if (!listing) {
+            for (const identifier of identifiers) {
+              const { data: skuRows, error: skuError } = await db.from("channel_listings")
+                .select("variant_id,external_sku,external_variant_id")
+                .eq("channel", "base").eq("external_sku", identifier)
+                .eq("status", "published").limit(2);
+              if (skuError) throw new Error("base_item_identifier_mapping_read_failed:" + skuError.message);
+              if ((skuRows ?? []).length > 1) throw new Error("base_item_identifier_mapping_ambiguous:" + identifier);
+              if (skuRows?.[0]) {
+                listing = skuRows[0] as BaseOrderListing;
+                break;
+              }
+            }
+          }
+
+          // Backward compatibility for a single-variant BASE item whose order
+          // detail contains neither variation_id nor a stable identifier.
+          if (!listing && !variationId && identifiers.length === 0) {
+            const { data: itemRows, error: itemError } = await db.from("channel_listings")
+              .select("variant_id,external_sku,external_variant_id")
+              .eq("channel", "base").eq("external_product_id", baseItemId)
+              .eq("status", "published").limit(2);
+            if (itemError) throw new Error("base_item_mapping_read_failed:" + itemError.message);
+            if ((itemRows ?? []).length > 1) throw new Error("base_item_mapping_ambiguous:" + baseItemId);
+            if (itemRows?.[0]) listing = itemRows[0] as BaseOrderListing;
+          }
+
           if (!listing) {
             // A paid line for a BASE item TRACER does not link (legacy, duplicate
             // or foreign listing) must never vanish: record it for a person to
@@ -101,10 +149,16 @@ export async function GET(request: Request) {
               entity_type: "base_order",
               entity_id: String(detail.unique_key),
               status: "needs_review",
-              detail: { baseItemId: String(item.item_id), orderItemId: String(item.order_item_id), quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))) },
+              detail: {
+                baseItemId,
+                baseVariationId: variationId || null,
+                variationIdentifier: identifiers[0] ?? null,
+                orderItemId: String(item.order_item_id),
+                quantity: Math.max(1, Math.floor(Number(item.amount ?? 1))),
+              },
             }, { onConflict: "event_key", ignoreDuplicates: true });
             if (unmappedError) throw new Error("base_unmapped_item_record_failed:" + unmappedError.message);
-            result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + String(item.item_id));
+            result.errors.push(String(summary.unique_key) + ":base_item_not_linked:" + baseItemId + (variationId ? ":" + variationId : ""));
             hasUnmappedLine = true;
             continue;
           }
