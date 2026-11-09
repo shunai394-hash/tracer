@@ -19,23 +19,26 @@ jobs:
     if: contains(github.event.head_commit.message, 'refresh CJ evidence for three color families')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout main history for deployment ancestry check
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Wait for matching production deployment
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
-          git fetch origin main --quiet
           for i in $(seq 1 24); do
             token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
             sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
-            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
-            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
-            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            if [ "$sha" = "$GITHUB_SHA" ]; then
+              echo "Production matches workflow commit $sha"
+              exit 0
+            fi
+            if [ -n "$sha" ]; then
+              status="$(curl -sSf --max-time 20 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$sha" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' || true)"
+              echo "attempt $i: production commit=$sha compare=$status"
+              if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then exit 0; fi
+            fi
             sleep 15
           done
           echo "Production deployment did not include this workflow commit; refusing supplier API calls."
