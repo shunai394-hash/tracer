@@ -1303,7 +1303,8 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
         .filter((media) => media?.mediaContentType === "IMAGE" &&
           media.status === "READY" &&
           colorLabelFromMediaAlt(media.alt) === expected.colorLabel);
-      return attached.length === 1 ? [[expected.colorLabel, attached[0].id] as const] : [];
+      const image = attached.length === 1 ? attached[0] : undefined;
+      return image ? [[expected.colorLabel, image.id] as const] : [];
     }),
   );
   // Remove only duplicate orphan uploads whose alt label is already attached
