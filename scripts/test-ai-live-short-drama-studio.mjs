@@ -116,10 +116,10 @@ test("fictional child-role voice is designed from text, saved privately, and nev
 
 
 
-test("voice library keeps only Soma and Mitsuki as fixed character presets", () => {
-  for (const name of ["蒼真","美月"]) assert.ok(page.includes('title:"'+name+'"'));
+test("voice library keeps only Renji and Mitsuki as fixed character presets", () => {
+  for (const name of ["蓮司","美月"]) assert.ok(page.includes('title:"'+name+'"'));
   assert.ok(!page.includes("凛"));
-  assert.ok(!page.includes("蓮司"));
+  assert.ok(!page.includes('{title:"蒼真",gender:"男性"'));
   assert.ok(!page.includes("rin-preview.mp3"));
   assert.ok(!page.includes("renji-preview.mp3"));
   assert.ok(page.includes('Fish Audioモデル未接続'));
