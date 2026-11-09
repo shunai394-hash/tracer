@@ -1,0 +1,71 @@
+name: TRACER refresh CJ evidence for three color families
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-refresh-cj-color-family-evidence.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-refresh-cj-color-family-evidence
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: contains(github.event.head_commit.message, 'refresh CJ evidence for three color families')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main history for deployment ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for matching production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-ancestor=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then exit 0; fi
+            sleep 15
+          done
+          echo "Production deployment did not include this workflow commit; refusing supplier API calls."
+          exit 1
+
+      - name: Refresh exact supplier product and variant evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          refresh() {
+            local pid="$1"
+            local vids="$2"
+            local code
+            code="$(curl -sS -o response.json -w "%{http_code}" --max-time 240 -H "Authorization: Bearer $token" "$BASE/api/cron/commerce-cj-import?limit=1&variantLimit=3&productIds=$pid&variantIds=$vids")"
+            echo "CJ evidence refresh product=$pid variants=$vids HTTP=$code"
+            python3 - <<'PY'
+          import json,sys
+          d=json.load(open("response.json"))
+          s=d.get("stats") or {}
+          print(json.dumps({"ok":d.get("ok"),"searched":s.get("searched"),"variants":s.get("variants"),"offers":s.get("offers"),"priced":s.get("priced"),"errors":s.get("errors")},ensure_ascii=False))
+          if d.get("ok") is not True or s.get("errors"):
+              raise SystemExit("exact CJ evidence refresh failed")
+          PY
+            test "$code" = "200" || test "$code" = "207"
+          }
+          refresh 2608270931501632200 2608270931501633200,2608270931501633201,2608270931501633202
+          refresh 2608270931501632200 2608270931501633203,2608270931501633204
+          refresh 2611030217281638700 2611030217291630600,2611030217291630601,2611030217291630602
+          refresh 2611030217281638700 2611030217291630603,2611030217291630604
+          refresh 2610130254321621100 2610130254321622300,2610130254321622301,2610130254321622302
+          refresh 2610130254321621100 2610130254321622303,2610130254321622304
