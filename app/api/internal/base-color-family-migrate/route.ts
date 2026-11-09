@@ -45,7 +45,7 @@ function validHttps(value: unknown): value is string {
 function imageSourceStem(value: string): string {
   try {
     const filename = new URL(value).pathname.split("/").pop() ?? "";
-    return filename.replace(/\\.[^.]+$/, "").split("_")[0].toLowerCase();
+    return filename.replace(/\.[^.]+$/, "").split("_")[0].toLowerCase();
   } catch {
     return "";
   }
