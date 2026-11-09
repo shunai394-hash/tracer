@@ -194,7 +194,15 @@ export async function POST(request: Request) {
     if (oldRows.length !== prepared.length || oldRows.some((row) => !String(row.external_product_id ?? "").trim())) {
       throw new Error("base_color_family_legacy_base_mapping_missing");
     }
-    const oldItemIds = [...new Set(oldRows.map((row) => String(row.external_product_id)))];
+    const { data: priorAliases, error: priorAliasError } = await db.from("channel_listing_external_aliases")
+      .select("variant_id,external_product_id")
+      .eq("channel", "base")
+      .in("variant_id", variantIds);
+    if (priorAliasError) throw new Error("base_color_family_prior_alias_read_failed:" + priorAliasError.message);
+    const oldItemIds = [...new Set([
+      ...oldRows.map((row) => String(row.external_product_id)),
+      ...(priorAliases ?? []).map((row) => String(row.external_product_id)),
+    ].filter((id) => /^\\d+$/.test(id)))];
 
     const identifier = "TRC-COLOR-FAMILY-" + supplierProductId;
     const snapshot = await fetchBaseItemsSnapshot({ itemPageLimit: 100, itemMaxPages: BASE_ITEMS_MAX_PAGES });
