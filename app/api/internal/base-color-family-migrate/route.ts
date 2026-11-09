@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       throw new Error("base_color_family_legacy_base_mapping_missing");
     }
     const { data: priorAliases, error: priorAliasError } = await db.from("channel_listing_external_aliases")
-      .select("variant_id,external_product_id")
+      .select("variant_id,external_product_id,external_variant_id")
       .eq("channel", "base")
       .in("variant_id", variantIds);
     if (priorAliasError) throw new Error("base_color_family_prior_alias_read_failed:" + priorAliasError.message);
