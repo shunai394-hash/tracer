@@ -242,7 +242,7 @@ assert.match(base, /base_hide_failed_after_catalog_validation/, "BASE hide failu
 assert.doesNotMatch(base, /title: "販売停止中の商品"/, "BASE reconciliation must never replace the buyer-facing product title with a workflow status");
 assert.match(base, /title: String\(listing\.title \?\? ""\)\.trim\(\) \|\| "商品情報確認中"/, "BASE reconciliation must preserve the existing title when a listing is hidden");
 const baseColorMigration = await readFile(new URL("../app/api/internal/base-color-family-migrate/route.ts", import.meta.url), "utf8");
-assert.match(commercePublisher, /baseColorFamilyVariantIds\.add\(id\)/, "canonical BASE publisher must identify exact supplier-product color families");
+assert.ok(commercePublisher.includes("baseColorFamilyVariantIds.add(id)"), "canonical BASE publisher must identify exact supplier-product color families");
 assert.match(commercePublisher, /base_color_family_requires_verified_shared_item_variation_mapping/, "canonical BASE publisher must reject ungrouped color variants");
 assert.match(commercePublisher, /base_color_family_shared_price_mismatch/, "canonical BASE publisher must require one shared price across grouped colors");
 assert.match(commercePublisher, /currentVariation\\.variation_identifier/, "canonical BASE publisher must verify the exact mapped variation identity");
