@@ -293,14 +293,6 @@ export async function POST(request: Request) {
     const finalImages = itemImages(baseItem);
     if (finalImages.length < prepared.length) throw new Error("base_color_family_image_gallery_readback_failed");
 
-    if (!isVisible(baseItem.visible)) {
-      await editBaseItem({ itemId, visible: true });
-    }
-    baseItem = await getBaseItemDetail(itemId);
-    if (!isVisible(baseItem.visible) || rows(baseItem.variations).length !== prepared.length) {
-      throw new Error("base_color_family_publication_readback_failed");
-    }
-
     const publishedUrl = resolveBasePublicUrl({ item: baseItem }, itemId, publicShopUrl) ??
       new URL("/items/" + itemId, publicShopUrl).toString();
     if (!publishedUrl) throw new Error("base_color_family_public_url_missing");
@@ -344,13 +336,30 @@ export async function POST(request: Request) {
         external_variant_id: String(actual?.variation_id),
         external_sku: variant.sku,
         selling_price: commonPrice,
-        status: "published",
+        status: "pending",
         published_url: publishedUrl,
         last_error: null,
         last_synced_at: nowIso,
         updated_at: nowIso,
       }).eq("channel", "base").eq("variant_id", variant.id);
       if (listingUpdateError) throw new Error("base_color_family_listing_update_failed:" + variant.sku + ":" + listingUpdateError.message);
+    }
+
+    if (!isVisible(baseItem.visible)) {
+      await editBaseItem({ itemId, visible: true });
+    }
+    baseItem = await getBaseItemDetail(itemId);
+    if (!isVisible(baseItem.visible) || rows(baseItem.variations).length !== prepared.length) {
+      throw new Error("base_color_family_publication_readback_failed");
+    }
+    for (const variant of prepared) {
+      const { error: publishedStateError } = await db.from("channel_listings").update({
+        status: "published",
+        last_error: null,
+        last_synced_at: nowIso,
+        updated_at: nowIso,
+      }).eq("channel", "base").eq("variant_id", variant.id);
+      if (publishedStateError) throw new Error("base_color_family_published_state_save_failed:" + variant.sku + ":" + publishedStateError.message);
     }
 
     const hiddenOldItems: string[] = [];
