@@ -107,7 +107,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <p class="status" id="status" role="status">準備完了。音声・BGMはボタン操作で開始します。</p>
  <small>OBSではこのページをBrowser Sourceとして追加し、幅1920・高さ1080を推奨。音声を配信に含める場合はOBSの音声設定でBrowser Source音声を有効化してください。音源は利用許諾済みのものを使用してください。</small>
 </aside>
-<audio id="audio" preload="none" loop></audio>
+<audio id="audio" preload="none"></audio>
 <script src="/tracer-lip-sync.js"></script>
 <script>
 (() => {
@@ -307,6 +307,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   if(!tracks.length){autoBgmLoop=false;setStatus('先にBGMを読み込んでください');return}
   const i=((index%tracks.length)+tracks.length)%tracks.length;
   autoBgmLoop=loop;
+  audio.loop=false;
   $('track').value=String(i);audio.src=tracks[i].url;setVolume();
   audio.onended=()=>{if(autoBgmLoop&&tracks.length>1)playTrack((i+1)%tracks.length,true);else if(autoBgmLoop&&tracks.length===1)playTrack(i,true)};
   try{await audio.play();setStatus((autoBgmLoop?'BGM自動連続再生中：':'BGM再生中：')+tracks[i].name)}catch{autoBgmLoop=false;setStatus('再生できません。もう一度BGM再生を押してください')}
