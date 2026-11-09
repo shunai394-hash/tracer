@@ -104,9 +104,9 @@ export async function POST(request: Request) {
       throw new Error("base_color_family_evidence_count_mismatch");
     }
 
-    const offersByVariant = new Map((offers ?? []).map((row) => [String(row.variant_id), row]));
-    const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
-    const channelByKey = new Map((channelRows ?? []).map((row) => [String(row.channel) + ":" + String(row.variant_id), row]));
+    const offersByVariant = new Map((offers ?? []).map((row) => [String(row.variant_id), row] as const));
+    const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row] as const));
+    const channelByKey = new Map((channelRows ?? []).map((row) => [String(row.channel) + ":" + String(row.variant_id), row] as const));
     const cap = getStorefrontStockCap();
     const prepared = variants.map((variant) => {
       const variantId = String(variant.id);
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
           !actual.selectedOptions.some((option) => option.name === "カラー" && option.value === variant.label)) {
         throw new Error("base_color_family_shopify_variant_identity_mismatch:" + variant.sku);
       }
-      const fields = new Map(actual.metafields.nodes.map((field) => [field.key, field.value]));
+      const fields = new Map(actual.metafields.nodes.map((field) => [field.key, field.value] as const));
       if (fields.get("supplier_variant_id") !== variant.supplierVariantId ||
           fields.get("color_image_source_url") !== variant.imageSource) {
         throw new Error("base_color_family_shopify_supplier_image_identity_mismatch:" + variant.sku);
@@ -214,7 +214,7 @@ export async function POST(request: Request) {
     if (snapshot.complete !== true) throw new Error("base_color_family_recovery_snapshot_incomplete");
     const matches = snapshot.items.filter((item) => String(item.identifier ?? "").trim() === identifier);
     if (matches.length > 1) throw new Error("base_color_family_base_identifier_ambiguous");
-    const expectedBySupplierId = new Map(prepared.map((variant) => [variant.supplierVariantId, variant]));
+    const expectedBySupplierId = new Map(prepared.map((variant) => [variant.supplierVariantId, variant] as const));
     let itemId = matches[0] ? String(matches[0].item_id) : "";
     let baseItem = itemId ? await getBaseItemDetail(itemId) : null;
     const existingVariations = rows(baseItem?.variations);
@@ -274,7 +274,7 @@ export async function POST(request: Request) {
     }
 
     const readVariations = rows(baseItem?.variations);
-    const readByIdentifier = new Map(readVariations.map((variation) => [String(variation.variation_identifier ?? ""), variation]));
+    const readByIdentifier = new Map(readVariations.map((variation) => [String(variation.variation_identifier ?? ""), variation] as const));
     if (readVariations.length !== prepared.length) throw new Error("base_color_family_variation_count_readback_failed");
     for (const variant of prepared) {
       const actual = readByIdentifier.get(variant.supplierVariantId);
