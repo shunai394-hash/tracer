@@ -43,32 +43,32 @@ export async function GET(request: Request) {
   try {
     const supabase = createSupabaseAdminClient();
     const storage = supabase.storage.from(BUCKET);
-    const objects: Array<{ name: string; metadata?: Record<string, unknown> | null }> = [];
-
-    for (let offset = 0; offset < MAX_TRACKS; offset += PAGE_SIZE) {
-      const { data, error } = await storage.list("", {
-        limit: PAGE_SIZE,
-        offset,
-        sortBy: { column: "name", order: "asc" },
-      });
-      if (error) throw error;
-      const page = data ?? [];
-      objects.push(...page.filter((item) => item.name.toLowerCase().endsWith(".mp3")));
-      if (page.length < PAGE_SIZE || objects.length >= MAX_TRACKS) break;
+    const requestedGenre = new URL(request.url).searchParams.get("genre");
+    const allowedGenres = new Set(["daily", "romance", "emotional", "suspense", "comedy", "action"]);
+    let query = supabase
+      .from("ai_live_bgm_rights")
+      .select("storage_object,title,genre")
+      .eq("review_status", "approved_internal")
+      .order("title", { ascending: true })
+      .limit(MAX_TRACKS);
+    if (requestedGenre && allowedGenres.has(requestedGenre)) {
+      query = query.eq("genre", requestedGenre);
     }
+    const { data: approved, error: ledgerError } = await query;
+    if (ledgerError) throw ledgerError;
 
-    const tracks = await Promise.all(objects.slice(0, MAX_TRACKS).map(async (item) => {
-      const { data: signed, error } = await storage.createSignedUrl(item.name, 60 * 60);
+    const tracks = await Promise.all((approved ?? []).map(async (item) => {
+      const { data: signed, error } = await storage.createSignedUrl(item.storage_object, 60 * 60);
       if (error) throw error;
       return {
-        name: item.name,
-        title: item.name.replace(/-[0-9a-f]{8}-[0-9a-f-]{27}\.mp3$/i, "").replace(/\.mp3$/i, ""),
-        genre: typeof item.metadata?.genre === "string" ? item.metadata.genre : "未分類",
+        name: item.storage_object,
+        title: item.title,
+        genre: item.genre,
         url: signed.signedUrl,
       };
     }));
 
-    return json({ ok: true, tracks, truncated: objects.length >= MAX_TRACKS });
+    return json({ ok: true, tracks, truncated: (approved ?? []).length >= MAX_TRACKS });
   } catch {
     return json({
       ok: false,
