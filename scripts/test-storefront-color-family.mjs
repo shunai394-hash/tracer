@@ -21,6 +21,7 @@ function member(family, index, overrides = {}) {
     sku: `SKU-${family.supplierProductId}-${index}`,
     imageUrl: `https://images.example.test/${family.supplierProductId}/${COLORS[index]}.jpg`,
     variantImageIdentityVerified: true,
+    colorImageVerified: true,
     sellingPrice: 4980 + index * 100,
     currency: "JPY",
     inventory: 10,
@@ -52,6 +53,7 @@ assert.equal(sharedImage.length, 2);
 assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
 assert.ok(sharedImage.every((item) => item.variants.length === 0));
+assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_image_ambiguous:"))));
 
 const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 0, { imageUrl: null }),
@@ -88,6 +90,16 @@ assert.equal(unverifiedImageIdentity.length, 2);
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlocked === true));
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
 
+
+const distinctUrlsButUnverifiedColors = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { colorImageVerified: false }),
+  member(FAMILIES[0], 1, { colorImageVerified: false }),
+]).catalog;
+assert.equal(distinctUrlsButUnverifiedColors.length, 2);
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlocked === true));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_color_image_unverified:"))));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.variants.length === 0));
+
 const missingLabels = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "レディース ハンドバッグ" }),
   member(FAMILIES[0], 1, { title: "レディース ハンドバッグ" }),
@@ -119,6 +131,11 @@ const cart = readFileSync(new URL("../components/shop-cart.ts", import.meta.url)
 const button = readFileSync(new URL("../components/add-to-cart-button.tsx", import.meta.url), "utf8");
 const store = readFileSync(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
 assert.match(store, /variantImageIdentityVerified: attributes\.variantImageIdentityVerified === true/);
+assert.match(store, /colorImageVerified: attributes\.colorImageVerified === true/);
+assert.match(store, /colorImageVerified: row\.color_image_verified === true/);
+
+
+
 assert.match(page, /ProductVariantSelector/);
 assert.match(page, /saleBlocked=\{listing\.colorSaleBlocked === true\}/);
 assert.match(cart, /supplierVariantId\?: string \| null/);
