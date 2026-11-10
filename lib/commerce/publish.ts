@@ -571,7 +571,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
     const offer = price ? currentPriceOffer : undefined;
     const variantAttributes = candidate.attributes && typeof candidate.attributes === "object"
       ? candidate.attributes : {};
-    const verifiedVariantImage = variantAttributes.variantImageIdentityVerified === true
+    const verifiedVariantImage = variantAttributes.variantImageIdentityVerified === true && variantAttributes.colorImageVerified === true
       ? safeUrl(variantAttributes.variantImageUrl) : null;
     const isMultiVariantCj = offer?.supplier_code === "cj" &&
       multiVariantCjProductIds.has(String(offer.supplier_product_id));
