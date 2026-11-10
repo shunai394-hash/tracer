@@ -45,7 +45,6 @@ jobs:
                 "returnedPid": r.get("returnedPid"),
                 "returnedVid": r.get("returnedVid"),
                 "returnedSku": r.get("returnedSku"),
-                "returnedName": r.get("returnedName"),
                 "exactIdentity": r.get("exactIdentity"),
                 "hasImage": r.get("hasImage"),
                 "duplicateImageWithinProduct": r.get("duplicateImageWithinProduct"),
