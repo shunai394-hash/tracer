@@ -86,9 +86,50 @@ export async function GET(request: Request) {
   if (dramaCharacterResult.status === "fulfilled") {
     dramaCharacterVoices = dramaCharacterResult.value;
   }
+
+  // Automatically add fixed drama-character IDs to the shared registry only
+  // after Fish Audio has confirmed that each model is accessible and TTS-capable.
+  // This removes the need for a separate manual ID-registration step while
+  // keeping inaccessible or unverified IDs out of the registry.
+  const missingCharacterVoices = dramaCharacterVoices.filter(
+    (voice) => !registeredVoices.some((registered) => registered.id === voice.id),
+  );
+  if (missingCharacterVoices.length > 0) {
+    const db = createSupabaseAdminClient();
+    const { error: registrationError } = await db.from("fish_audio_registered_voices").upsert(
+      missingCharacterVoices.map((voice) => ({
+        model_id: voice.id,
+        title: voice.title,
+        model_type: "tts",
+        model_state: "verified",
+        metadata: { verified_by: "fish_audio_model_api", language: "ja", source: "tracer_drama_character_voice" },
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "model_id" },
+    );
+    if (registrationError) {
+      return json({
+        ok: false,
+        error: "drama_voice_auto_registration_failed",
+        message: "Fish Audioで照合できたドラマ音声をTRACER共通台帳へ登録できませんでした。",
+      }, 503);
+    }
+    registeredVoices = [
+      ...registeredVoices,
+      ...missingCharacterVoices.map((voice) => ({
+        id: voice.id,
+        title: voice.title,
+        description: "TRACER共通登録・Fish Audio ID照合済み",
+        languages: ["ja"],
+        tags: ["Fish Audio登録モデル", "TRACER共通登録"],
+        source: "id_registered" as const,
+      })),
+    ];
+  }
+
   // Count only voices actually added to the combined catalogue. A character ID
-  // already present in the shared registry (for example 美月) belongs to that
-  // registry bucket and must not be counted again as a role-specific voice.
+  // already present in the shared registry belongs to that registry bucket
+  // and must not be counted again as a role-specific voice.
   const uniqueDramaCharacterVoices = dramaCharacterVoices.filter(
     (voice) => !registeredVoices.some((registered) => registered.id === voice.id),
   );
