@@ -1400,3 +1400,24 @@ test("channel resync preserves existing external identities and persists the exa
   assert.match(shopify, /resolveShopifyVariantIdentity\([\s\S]*?input\.sku[\s\S]*?input\.variantId/);
   assert.match(shopify, /variants: \[\{ id: variantId, price: input\.price\.toFixed\(2\)/);
 });
+
+
+test("CJ variant image resolver rejects a shared parent photo as a color-specific image", () => {
+  const parent = "https://cdn.example.test/parent.jpg";
+  const color = "https://cdn.example.test/blue.jpg";
+  assert.equal(resolveCJVariantImageUrl(
+    { vid: "vid-1", variantImage: parent },
+    { vid: "vid-1", variantImage: parent },
+    parent,
+  ), null);
+  assert.equal(resolveCJVariantImageUrl(
+    { vid: "vid-1", variantImage: null },
+    { vid: "vid-1", variantImage: parent },
+    parent,
+  ), null);
+  assert.equal(resolveCJVariantImageUrl(
+    { vid: "vid-1", variantImage: color },
+    { vid: "vid-1", variantImage: parent },
+    parent,
+  ), color);
+});

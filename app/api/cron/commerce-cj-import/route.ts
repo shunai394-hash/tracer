@@ -883,9 +883,18 @@ export async function GET(request: Request) {
               continue;
             }
             const supplierProductId = String(exactVariant.productId).trim();
-            // queryByVid is authoritative for identity and price; some CJ responses omit variantImage.
-            // The parent-scoped row is safe as an image fallback only because it was fetched for this exact VID.
-            const exactVariantImageUrl = resolveCJVariantImageUrl(exactVariant, variant);
+            const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
+            if (!canonicalDetail) {
+              stats.skipped++;
+              stats.errors.push("canonical_supplier_product_detail_missing:" + supplierProductId);
+              continue;
+            }
+            // Reject parent-level photos as color-specific evidence; only a distinct exact-VID image may pass.
+            const exactVariantImageUrl = resolveCJVariantImageUrl(
+              exactVariant,
+              variant,
+              canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
+            );
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               recordSkip("canonical_supplier_variant_price_unresolved");
@@ -893,12 +902,6 @@ export async function GET(request: Request) {
               stats.errors.push(reason + ":" + supplierProductId + ":" + exactVariant.vid);
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, reason, { catalogProductId: candidate.id, supplierProductId, variantId: exactVariant.vid });
               if (logError) stats.errors.push("exclusion_log:" + logError.slice(0, 80));
-              continue;
-            }
-            const canonicalDetail = supplierProductId === candidate.id ? detail : await getCJProductDetail(supplierProductId);
-            if (!canonicalDetail) {
-              stats.skipped++;
-              stats.errors.push("canonical_supplier_product_detail_missing:" + supplierProductId);
               continue;
             }
             // CJ enforces one request per second per account. Do not issue stock and freight
