@@ -20,7 +20,7 @@ const ALWAYS_ON_SALE_VARIANT_IDS = new Set(["1ae04dd1-a228-43b7-b003-3a2fb75da98
 type SupplierOfferRow = { id: string; supplier_code: string; supplier_product_id: string; supplier_variant_id: string; supplier_url: string | null; currency: string; unit_cost: number; shipping_cost: number; raw_data: Record<string, unknown> | null; inventory: number; ship_to: string; tracking_supported: boolean; source_status: string; last_checked_at: string | null };
 type CommercePriceRow = { supplier_offer_id: string; calculated_at: string; currency: string; selling_price: number; expected_profit: number; fee_amount: number; margin_rate: number };
 type Candidate = {
-  id: string; source_variant_key: string; title_ja: string; sku: string | null;
+  id: string; source_variant_key: string; title_ja: string; sku: string | null; attributes?: Record<string, unknown> | null;
   commerce_products: { id: string; source_key: string; title_ja: string; description_ja: string; image_url: string | null; active: boolean; metadata?: Record<string, unknown> | null };
   supplier_offers: SupplierOfferRow[] | SupplierOfferRow | null;
   commerce_prices: CommercePriceRow[] | CommercePriceRow | null;
@@ -321,7 +321,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
   staleListings.unpublished += identityCleanup.unpublished;
   staleListings.failed += identityCleanup.failed;
   staleListings.errors.push(...identityCleanup.errors);
-  const candidateSelect = "id,source_variant_key,title_ja,sku,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
+  const candidateSelect = "id,source_variant_key,title_ja,sku,attributes,commerce_products!inner(id,source_key,title_ja,description_ja,image_url,active,metadata),supplier_offers(id,supplier_code,supplier_product_id,supplier_variant_id,supplier_url,currency,unit_cost,shipping_cost,raw_data,inventory,ship_to,tracking_supported,source_status,last_checked_at),commerce_prices(supplier_offer_id,calculated_at,currency,selling_price,expected_profit,fee_amount,margin_rate)";
   let candidateQuery = db.from("commerce_variants")
     .select(candidateSelect)
     .eq("commerce_products.active", true);
@@ -360,6 +360,34 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       seenCandidateIds.add(candidate.id);
       return true;
     });
+  // Resolve complete supplier families, not just the bounded candidate batch.
+  // This prevents a multi-colour CJ family from falling back to one shared parent image.
+  const cjSupplierProductIds = [...new Set(allCandidates.flatMap((candidate) =>
+    asRelationRows(candidate.supplier_offers)
+      .filter((offer) => String(offer.supplier_code ?? "").toLowerCase() === "cj")
+      .map((offer) => String(offer.supplier_product_id ?? "").trim())
+      .filter(Boolean),
+  ))];
+  const multiVariantCjProductIds = new Set<string>();
+  for (let offset = 0; offset < cjSupplierProductIds.length; offset += 100) {
+    const ids = cjSupplierProductIds.slice(offset, offset + 100);
+    const { data: familyRows, error: familyError } = await db.from("supplier_offers")
+      .select("supplier_code,supplier_product_id,supplier_variant_id")
+      .eq("supplier_code", "cj")
+      .in("supplier_product_id", ids);
+    if (familyError) throw new Error("cj_variant_image_family_lookup_failed:" + familyError.message);
+    const variantsByProduct = new Map<string, Set<string>>();
+    for (const row of familyRows ?? []) {
+      const productId = String(row.supplier_product_id ?? "").trim();
+      const variantId = String(row.supplier_variant_id ?? "").trim();
+      if (!productId || !variantId) continue;
+      if (!variantsByProduct.has(productId)) variantsByProduct.set(productId, new Set());
+      variantsByProduct.get(productId)!.add(variantId);
+    }
+    for (const [productId, variantIds] of variantsByProduct) {
+      if (variantIds.size > 1) multiVariantCjProductIds.add(productId);
+    }
+  }
   // PostgREST GET URLs can exceed gateway limits when .in() contains the
   // entire 1,000-row candidate batch. Read listing state in small bounded chunks.
   const candidateVariantIds = [...new Set(allCandidates.map((row) => row.id))];
@@ -541,7 +569,15 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       ? currentCanonicalPrice
       : undefined;
     const offer = price ? currentPriceOffer : undefined;
-    const imageUrl = safeUrl(product.image_url);
+    const variantAttributes = candidate.attributes && typeof candidate.attributes === "object"
+      ? candidate.attributes : {};
+    const verifiedVariantImage = variantAttributes.variantImageIdentityVerified === true
+      ? safeUrl(variantAttributes.variantImageUrl) : null;
+    const isMultiVariantCj = offer?.supplier_code === "cj" &&
+      multiVariantCjProductIds.has(String(offer.supplier_product_id));
+    // Never reuse a parent image for a multi-colour CJ product. If the exact
+    // variant image is not identity-verified, hold the listing instead.
+    const imageUrl = verifiedVariantImage ?? (isMultiVariantCj ? null : safeUrl(product.image_url));
     const sourceTitle = typeof product.metadata?.sourceTitle === "string" ? product.metadata.sourceTitle : typeof product.metadata?.source_title === "string" ? product.metadata.source_title : typeof product.metadata?.originalTitle === "string" ? product.metadata.originalTitle : null;
     const localizedSourceTitle = sourceTitle ? localizeProductTitle(sourceTitle) : null;
     // Japanese text alone is not enough: category placeholders such as "ヘアケアアイテム"
@@ -676,7 +712,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
       continue;
     }
     if (!offer || !price || !imageUrl || Number(price.selling_price) <= 0 || Number(price.expected_profit) < 2500) {
-      results.push({ variantId: candidate.id, ok: false, error: !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) ? "minimum_listing_price_below_2500_or_unknown" : !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? "image_url_invalid" : "price_not_profitable" });
+      results.push({ variantId: candidate.id, ok: false, error: !isMinimumListingPriceEligible(currentCanonicalPrice?.selling_price) ? "minimum_listing_price_below_2500_or_unknown" : !offer ? "supplier_offer_missing_or_cost_unknown" : !imageUrl ? (isMultiVariantCj ? "variant_image_identity_unverified" : "image_url_invalid") : "price_not_profitable" });
       continue;
     }
     // Never manufacture storefront inventory. A listing can remain visible, but it is
