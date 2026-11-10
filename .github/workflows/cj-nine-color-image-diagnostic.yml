@@ -1,0 +1,41 @@
+name: CJ nine-color image diagnostic
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cj-nine-color-image-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run read-only CJ exact-VID diagnostic
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const audience = "https://tracer-pied-alpha.vercel.app";
+            const token = await core.getIDToken(audience);
+            const response = await fetch(
+              "https://tracer-pied-alpha.vercel.app/api/internal/cj-nine-color-image-diagnostic",
+              {
+                method: "POST",
+                headers: { authorization: `Bearer ${token}` },
+              },
+            );
+            const body = await response.text();
+            core.summary
+              .addHeading("CJ nine-color image diagnostic")
+              .addRaw(`HTTP status: ${response.status}\n\n`)
+              .addCodeBlock(body, "json");
+            await core.summary.write();
+            if (!response.ok && response.status !== 207) {
+              core.setFailed(`Diagnostic request failed: HTTP ${response.status}`);
+            }
