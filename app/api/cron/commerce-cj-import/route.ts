@@ -1062,7 +1062,8 @@ export async function GET(request: Request) {
             // Mirror only live-verified exact CJ product+variant evidence into the internal supply catalog.
             // Estimated freight, compliance-blocked products, missing images, and zero-cost shipping
             // are deliberately excluded; this is not a marketplace identity link or publish action.
-            const internalImageUrl = canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null);
+            // Never persist a parent-product image as a child variant image. The exact VID image is the only safe image for a color choice.
+            const internalImageUrl = exactVariantImageUrl;
             if (!complianceBlockReason && stock !== null && stock > 0 && shipping !== null && !shippingWasEstimated
               && cost > 0 && shipping > 0 && internalImageUrl) {
               try {
