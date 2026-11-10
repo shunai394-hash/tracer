@@ -1,3 +1,4 @@
+# Triggered diagnostic revision: 2026-11-11
 name: CJ nine-color image diagnostic
 
 on:
@@ -33,7 +34,7 @@ jobs:
             const body = await response.text();
             core.summary
               .addHeading("CJ nine-color image diagnostic")
-              .addRaw(`HTTP status: ${response.status}\n\n`)
+              .addRaw(`HTTP status: ${response.status}\\n\\n`)
               .addCodeBlock(body, "json");
             await core.summary.write();
             if (!response.ok && response.status !== 207) {
