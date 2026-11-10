@@ -12,7 +12,15 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const PAGE_SIZE = 100;
 const MAX_TRACKS = 1000;
 const ALLOWED_TYPES = new Set(["audio/mpeg", "audio/mp3"]);
-const GENRES = new Set(["日常・会話", "恋愛", "感動・余韻", "サスペンス", "コメディ", "アクション・場面転換", "未分類"]);
+const GENRES = new Set(["daily", "romance", "emotional", "suspense", "comedy", "action", "未分類"]);
+const LEGACY_GENRES: Record<string, string> = {
+  "日常・会話": "daily",
+  "恋愛": "romance",
+  "感動・余韻": "emotional",
+  "サスペンス": "suspense",
+  "コメディ": "comedy",
+  "アクション・場面転換": "action",
+};
 
 function authorizedAdminToken(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
@@ -97,7 +105,7 @@ export async function POST(request: Request) {
     }
 
     const requestedGenre = String(form.get("genre") || "未分類");
-    const genre = GENRES.has(requestedGenre) ? requestedGenre : "未分類";
+    const genre = GENRES.has(requestedGenre) ? requestedGenre : LEGACY_GENRES[requestedGenre] ?? "未分類";
     const safeBase = file.name.normalize("NFKC")
       .replace(/\.mp3$/i, "")
       .replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-")
