@@ -885,7 +885,11 @@ export async function GET(request: Request) {
             const supplierProductId = String(exactVariant.productId).trim();
             // queryByVid is authoritative for identity and price; some CJ responses omit variantImage.
             // The parent-scoped row is safe as an image fallback only because it was fetched for this exact VID.
-            const exactVariantImageUrl = resolveCJVariantImageUrl(exactVariant, variant);
+            const exactVariantImageUrl = resolveCJVariantImageUrl(
+              exactVariant,
+              variant,
+              canonicalDetail.imageUrl ?? (supplierProductId === candidate.id ? candidate.imageUrl : null),
+            );
             const cost = Number(exactVariant.sellPrice);
             if (!Number.isFinite(cost) || cost <= 0) {
               recordSkip("canonical_supplier_variant_price_unresolved");
