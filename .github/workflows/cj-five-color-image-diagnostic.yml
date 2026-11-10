@@ -1,4 +1,4 @@
-name: CJ five-color variant image diagnostic
+name: CJ 11-product exact-VID image diagnostic
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: cj-five-color-image-diagnostic
+  group: cj-11-product-image-diagnostic
   cancel-in-progress: false
 
 jobs:
@@ -30,19 +30,24 @@ jobs:
           out = {
             "ok": d.get("ok"),
             "readOnly": d.get("readOnly"),
-            "expectedProductId": d.get("expectedProductId"),
+            "targetProductCount": d.get("targetProductCount"),
             "checked": d.get("checked"),
             "imageCount": d.get("imageCount"),
+            "missingImageCount": d.get("missingImageCount"),
+            "duplicateImageVariantCount": d.get("duplicateImageVariantCount"),
             "exactIdentityCount": d.get("exactIdentityCount"),
             "results": [
               {
-                "color": r.get("color"),
+                "pid": r.get("pid"),
+                "variantName": r.get("variantName"),
                 "vid": r.get("vid"),
                 "expectedSku": r.get("expectedSku"),
+                "returnedPid": r.get("returnedPid"),
+                "returnedVid": r.get("returnedVid"),
                 "returnedSku": r.get("returnedSku"),
-                "returnedName": r.get("returnedName"),
                 "exactIdentity": r.get("exactIdentity"),
                 "hasImage": r.get("hasImage"),
+                "duplicateImageWithinProduct": r.get("duplicateImageWithinProduct"),
                 "imageUrl": r.get("imageUrl"),
                 "error": r.get("error"),
               }
