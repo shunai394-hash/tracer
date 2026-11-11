@@ -64,6 +64,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <p class="muted">BGM音源（MP3）を複数選択して登録できます。音源は非公開Storageに保存し、台詞音声の生成とは独立して管理します。</p>
 <div class="grid">
 <div><label for="bgmFiles">MP3音源（複数選択可・1曲10MB以下）</label><input id="bgmFiles" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple></div>
+<div><label><input id="bgmRightsConfirmed" type="checkbox" style="width:auto;margin-right:8px">この音源は自作、またはドラマ制作・配信・商用利用の許諾を得ています</label><p class="muted">確認できない音源は登録しないでください。</p></div>
 <div><label for="bgmGenre">登録ジャンル</label><select id="bgmGenre"><option value="日常・会話">日常・会話</option><option value="恋愛">恋愛</option><option value="感動・余韻">感動・余韻</option><option value="サスペンス">サスペンス</option><option value="コメディ">コメディ</option><option value="アクション・場面転換">アクション・場面転換</option><option value="未分類" selected>未分類</option></select></div>
 </div>
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
@@ -369,6 +370,7 @@ async function uploadBgmFiles(){
  const files=Array.from($("bgmFiles").files||[]);
  if(!files.length){$("bgmStatus").textContent="MP3ファイルを選択してください。";return;}
  if(!token.value.trim()){$("bgmStatus").textContent="管理トークンを入力してください。";return;}
+ if(!$("bgmRightsConfirmed").checked){$("bgmStatus").textContent="自作または利用許諾済みであることを確認してから登録してください。";return;}
  const invalid=files.filter(f=>!f.name.toLowerCase().endsWith(".mp3")||f.size>10*1024*1024||f.size===0);
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
@@ -390,6 +392,9 @@ async function uploadBgmFiles(){
     const detail=await uploaded.text().catch(()=> "");
     errors.push(file.name+"：Storageアップロード失敗（HTTP "+uploaded.status+" / "+detail.slice(0,240)+"）");continue;
    }
+   const completed=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers,body:JSON.stringify({action:"complete",objectName:prepared.track?.name||prepared.upload.path,title:prepared.track?.title||file.name.replace(/\\.mp3$/i,""),genre:$("bgmGenre").value,rightsConfirmed:true}),cache:"no-store"});
+   const completion=await completed.json().catch(()=>null);
+   if(!completed.ok||!completion?.ok){errors.push(file.name+"：アップロード後の台帳登録に失敗（"+(completion?.message||completion?.detail||completion?.error||("HTTP "+completed.status))+"）。音源ファイルはStorageに残っています。");continue;}
    done++;
   }
   if(done>0) $("bgmFiles").value="";
