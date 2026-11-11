@@ -70,12 +70,19 @@ const differentProducts = groupExactColorFamilies([
 ]).catalog.filter((item) => !item.colorSaleBlocked);
 assert.equal(differentProducts.length, 2);
 
-const conflict = groupExactColorFamilies([
+// Exact supplier-parent identity groups variants even when legacy imports
+// created different internal product rows. Order identity stays on each choice.
+const legacySeparateProductRows = groupExactColorFamilies([
   member(FAMILIES[0], 0),
   member(FAMILIES[0], 1, { productId: "11111111-1111-4111-8111-111111111111" }),
 ]).catalog;
-assert.equal(conflict.every((item) => item.colorSaleBlocked), true);
-assert.ok(conflict.every((item) => item.variants.length === 0));
+assert.equal(legacySeparateProductRows.length, 1);
+assert.equal(legacySeparateProductRows[0].colorSaleBlocked, false);
+assert.equal(legacySeparateProductRows[0].variants.length, 2);
+assert.deepEqual(
+  new Set(legacySeparateProductRows[0].variants.map((variant) => variant.id)),
+  new Set([member(FAMILIES[0], 0).id, member(FAMILIES[0], 1).id]),
+);
 
 const proteinId = "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
 const protein = groupExactColorFamilies([
