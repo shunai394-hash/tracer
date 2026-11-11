@@ -98,7 +98,10 @@ export async function POST(request: Request) {
     // Supabase Storage object keys must be ASCII-safe. Keep the original title
     // as UTF-8 base64url (up to 96 bytes) so Japanese names remain readable in
     // the library while the actual object key contains only URL-safe characters.
-    const encodedTitle = Buffer.from(displayTitle, "utf8").subarray(0, 96).toString("base64url") || "bgm";
+    const titleBytes = Buffer.from(displayTitle, "utf8");
+    let titleByteLength = Math.min(titleBytes.length, 96);
+    while (titleByteLength > 0 && (titleBytes[titleByteLength] & 0xc0) === 0x80) titleByteLength--;
+    const encodedTitle = titleBytes.subarray(0, titleByteLength).toString("base64url") || "bgm";
     const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
     const objectName = genrePrefix + "--" + encodedTitle + "--" + randomUUID() + ".mp3";
     const supabase = createSupabaseAdminClient();
