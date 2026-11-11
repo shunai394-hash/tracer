@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { getObservedUsdToJpyRate } from "@/lib/intelligence/fx";
-import { recalculatePrice } from "@/lib/commerce/core";
+import { MIN_EXPECTED_PROFIT_JPY, recalculatePrice } from "@/lib/commerce/core";
 import { syncCommerceListings } from "@/lib/commerce/publish";
 
 export const runtime = "nodejs";
@@ -122,14 +122,14 @@ export async function GET(request: Request) {
   const candidates = [...oneOfferPerVariant.values()]
     .filter((offer) => {
       const price = priceByVariant.get(String(offer.variant_id));
-      return !price || Number(price.expected_profit) <= 0 || Number(price.margin_rate) < targetMarginRate || String(price.supplier_offer_id) !== String(offer.id) ||
+      return !price || Number(price.expected_profit) < MIN_EXPECTED_PROFIT_JPY || Number(price.margin_rate) < targetMarginRate || String(price.supplier_offer_id) !== String(offer.id) ||
         String(price.calculated_at ?? "") < String(offer.updated_at ?? "");
     })
     .sort((a, b) => {
       const ap = priceByVariant.get(String(a.variant_id));
       const bp = priceByVariant.get(String(b.variant_id));
-      const aNeedsPrice = !ap || Number(ap.expected_profit) <= 0 || Number(ap.margin_rate) < targetMarginRate || String(ap.supplier_offer_id) !== String(a.id);
-      const bNeedsPrice = !bp || Number(bp.expected_profit) <= 0 || Number(bp.margin_rate) < targetMarginRate || String(bp.supplier_offer_id) !== String(b.id);
+      const aNeedsPrice = !ap || Number(ap.expected_profit) < MIN_EXPECTED_PROFIT_JPY || Number(ap.margin_rate) < targetMarginRate || String(ap.supplier_offer_id) !== String(a.id);
+      const bNeedsPrice = !bp || Number(bp.expected_profit) < MIN_EXPECTED_PROFIT_JPY || Number(bp.margin_rate) < targetMarginRate || String(bp.supplier_offer_id) !== String(b.id);
       if (aNeedsPrice !== bNeedsPrice) return aNeedsPrice ? -1 : 1;
       return String(ap?.calculated_at ?? a.updated_at ?? "").localeCompare(String(bp?.calculated_at ?? b.updated_at ?? ""));
     })
