@@ -368,20 +368,22 @@ async function loadBgm(){
 async function uploadBgmFiles(){
  const files=Array.from($("bgmFiles").files||[]);
  if(!files.length){$("bgmStatus").textContent="MP3ファイルを選択してください。";return;}
- if(!token.value.trim()){ $("bgmStatus").textContent="管理トークンを入力してください。";return; }
+ if(!token.value.trim()){$("bgmStatus").textContent="管理トークンを入力してください。";return;}
  const invalid=files.filter(f=>!f.name.toLowerCase().endsWith(".mp3")||f.size>10*1024*1024||f.size===0);
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
   for(const file of files){
-   $("bgmStatus").textContent="登録中 "+(done+1)+"/"+files.length+"："+file.name;
+   $("bgmStatus").textContent="登録中 "+(done+errors.length+1)+"/"+files.length+"："+file.name;
    const form=new FormData();form.append("file",file);form.append("genre",$("bgmGenre").value);
    const r=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
    const d=await r.json().catch(()=>null);
-   if(!r.ok||!d?.ok)errors.push(file.name+"："+(d?.message||d?.error||"登録失敗"));else done++;
+   if(!r.ok||!d?.ok)errors.push(file.name+"："+(d?.message||d?.error||"登録失敗")+"（HTTP "+r.status+(d?.detail?" / "+d.detail:"")+"）");else done++;
   }
-  $("bgmStatus").textContent="登録完了 "+done+"/"+files.length+"曲"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
-  $("bgmFiles").value="";await loadBgm();
+  if(done>0)$("bgmFiles").value="";
+  const summary="登録結果："+done+"/"+files.length+"曲 成功"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
+  await loadBgm();
+  $("bgmStatus").textContent=summary;
  }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
