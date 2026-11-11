@@ -142,7 +142,7 @@ test("BGM library is private, authenticated, paginated, and MP3 size bounded", (
   assert.ok(bgmRoute.includes("MAX_TRACKS = 1000"));
   assert.ok(bgmRoute.includes("await authorize(request)"));
   assert.ok(bgmRoute.includes("createSignedUrl"));
-  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(bgmRoute.includes('"audio/mpeg"'));
 });
 
 test("finished drama mix combines dialogue with loopable BGM and fade automation", () => {
@@ -273,4 +273,17 @@ test("Fish Audio diagnostics directly verifies each assigned character model ID"
   assert.ok(diagnosticsRoute.includes("assignedCharacterVoices,"));
   assert.ok(page.includes("TRACER看板キャラクターIDの直接照合"));
   assert.ok(page.includes('character.status==="not_accessible"'));
+});
+
+test("BGM uploads use an authenticated signed-URL preparation step and bypass Vercel body limits", () => {
+  assert.ok(bgmRoute.includes('body.action !== "prepare"'));
+  assert.ok(bgmRoute.includes("createSignedUploadUrl(objectName"));
+  assert.ok(bgmRoute.includes("MAX_FILE_BYTES"));
+  assert.ok(!bgmRoute.includes("request.formData()"));
+  assert.ok(!bgmRoute.includes("file.arrayBuffer()"));
+  assert.ok(page.includes('action:"prepare"'));
+  assert.ok(page.includes('method:"PUT"'));
+  assert.ok(page.includes("preparedData.upload.url"));
+  assert.ok(page.includes("/api/admin/ai-live/short-drama/bgm/register-existing"));
+  assert.ok(!page.includes('form.append("file",file,file.name)'));
 });
