@@ -6,7 +6,7 @@ import { listLicensedJapaneseVoices } from "@/lib/ai-live/fish-audio-public-voic
 import { getConsentedCustomJapaneseVoices } from "@/lib/ai-live/fish-audio-consented-custom-voices";
 import { listPrivateDramaChildVoices } from "@/lib/ai-live/fish-audio-private-drama-voices";
 import { listPrivateDramaCloneVoices } from "@/lib/ai-live/fish-audio-private-drama-clone-voices";
-import { listTracerDramaCharacterVoices, resolveFishAudioModelVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
+import { FishAudioModelLookupError, listTracerDramaCharacterVoices, resolveFishAudioModelVoice } from "@/lib/ai-live/fish-audio-drama-character-voices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

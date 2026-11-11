@@ -2,6 +2,21 @@ import type { FishAudioPublicVoice } from "@/lib/ai-live/fish-audio-public-voice
 
 const MODEL_URL = "https://api.fish.audio/model";
 
+export type FishAudioModelLookupErrorCode =
+  | "fish_audio_api_key_rejected"
+  | "fish_audio_model_forbidden"
+  | "fish_audio_model_not_found"
+  | "fish_audio_model_response_mismatch"
+  | "fish_audio_model_not_tts"
+  | "fish_audio_model_failed";
+
+export class FishAudioModelLookupError extends Error {
+  constructor(readonly code: FishAudioModelLookupErrorCode) {
+    super(code);
+    this.name = "FishAudioModelLookupError";
+  }
+}
+
 /** Exact Fish Audio model IDs assigned by the account owner to drama characters. */
 export const TRACER_DRAMA_CHARACTER_VOICES = [
   { id: "7478a76f38974bd2afa89c1bbe6831c7", title: "蒼真", gender: "男性" },
@@ -9,26 +24,38 @@ export const TRACER_DRAMA_CHARACTER_VOICES = [
 ] as const;
 
 /**
- * Resolve the explicitly assigned IDs directly.
- * Do not rely on the first page of /model?self=true: accounts with more than
- * 100 models can have valid character models omitted from that page.
+ * Resolve an explicitly assigned ID and preserve Fish Audio's response category.
+ * A 404 can also mean the model is private or hidden from this API credential.
  */
 export async function resolveFishAudioModelVoice(apiKey: string, modelId: string, title: string): Promise<FishAudioPublicVoice | null> {
   if (!/^[a-zA-Z0-9_-]{8,128}$/.test(modelId) || !title.trim() || title.trim().length > 60) return null;
-  const response = await fetch(`${MODEL_URL}/${encodeURIComponent(modelId)}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(10_000) });
-  if (response.status === 404 || response.status === 403) return null;
+  const response = await fetch(`${MODEL_URL}/${encodeURIComponent(modelId)}`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status === 401) throw new FishAudioModelLookupError("fish_audio_api_key_rejected");
+  if (response.status === 403) throw new FishAudioModelLookupError("fish_audio_model_forbidden");
+  if (response.status === 404) throw new FishAudioModelLookupError("fish_audio_model_not_found");
   if (!response.ok) throw new Error("fish_audio_model_lookup_unavailable");
   const model: unknown = await response.json();
-  if (!model || typeof model !== "object") return null;
+  if (!model || typeof model !== "object") throw new FishAudioModelLookupError("fish_audio_model_response_mismatch");
   const record = model as Record<string, unknown>;
-  if (record._id !== modelId || record.type !== "tts" || record.state === "failed") return null;
+  if (record._id !== modelId) throw new FishAudioModelLookupError("fish_audio_model_response_mismatch");
+  if (record.type !== "tts") throw new FishAudioModelLookupError("fish_audio_model_not_tts");
+  if (record.state === "failed") throw new FishAudioModelLookupError("fish_audio_model_failed");
   return { id: modelId, title: title.trim(), description: "Fish Audio登録モデル・ID照合済み", languages: ["ja"], tags: ["Fish Audio登録モデル", "ID登録"] };
 }
 
 export async function listTracerDramaCharacterVoices(apiKey: string): Promise<FishAudioPublicVoice[]> {
   const results: Array<FishAudioPublicVoice | null> = await Promise.all(TRACER_DRAMA_CHARACTER_VOICES.map(async (preset): Promise<FishAudioPublicVoice | null> => {
-    const resolved = await resolveFishAudioModelVoice(apiKey, preset.id, preset.title);
-    return resolved ? { ...resolved, description: `${preset.gender}・TRACERショートドラマ登録ボイス`, tags: ["TRACERドラマ", preset.gender, "登録済みモデル"] } : null;
+    try {
+      const resolved = await resolveFishAudioModelVoice(apiKey, preset.id, preset.title);
+      return resolved ? { ...resolved, description: `${preset.gender}・TRACERショートドラマ登録ボイス`, tags: ["TRACERドラマ", preset.gender, "登録済みモデル"] } : null;
+    } catch {
+      // Keep one unavailable character from suppressing the other verified voices.
+      return null;
+    }
   }));
   return results.filter((voice) => voice !== null) as FishAudioPublicVoice[];
 }
