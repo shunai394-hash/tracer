@@ -68,23 +68,15 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const storageObject = typeof body.storageObject === "string" ? body.storageObject.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 160) : "";
-    const composer = typeof body.composer === "string" ? body.composer.trim().slice(0, 160) : "";
-    const licenseName = typeof body.licenseName === "string" ? body.licenseName.trim().slice(0, 160) : "";
-    const evidenceNote = typeof body.evidenceNote === "string" ? body.evidenceNote.trim().slice(0, 4000) : "";
     const genre = typeof body.genre === "string" ? body.genre : "daily";
+    const rightsConfirmed = body.rightsConfirmed === true;
     const attributionRequired = body.attributionRequired === true;
     const attributionText = typeof body.attributionText === "string" ? body.attributionText.trim().slice(0, 1000) : "";
     if (!storageObject || storageObject.includes("/") || !storageObject.toLowerCase().endsWith(".mp3")) {
       return json({ ok: false, error: "invalid_storage_object" }, 400);
     }
-    if (!title || !composer || !licenseName || !evidenceNote ||
-        !validHttpUrl(body.sourceUrl) || !validHttpUrl(body.licenseUrl) ||
-        (body.creatorTermsUrl && !validHttpUrl(body.creatorTermsUrl))) {
-      return json({ ok: false, error: "rights_metadata_required" }, 400);
-    }
-    if (body.commercialUseAllowed !== true || body.platformUseAllowed !== true) {
-      return json({ ok: false, error: "internal_stream_permissions_not_confirmed" }, 400);
-    }
+    if (!title) return json({ ok: false, error: "title_required" }, 400);
+    if (!rightsConfirmed) return json({ ok: false, error: "rights_confirmation_required", message: "配信利用権限の確認が必要です。" }, 400);
     if (!GENRES.has(genre)) return json({ ok: false, error: "invalid_genre" }, 400);
     if (attributionRequired && !attributionText) return json({ ok: false, error: "attribution_text_required" }, 400);
 
@@ -99,10 +91,10 @@ export async function POST(request: Request) {
     const { data, error } = await db.from("ai_live_bgm_rights").insert({
       storage_object: storageObject,
       title,
-      composer,
-      source_url: String(body.sourceUrl).trim(),
-      license_name: licenseName,
-      license_url: String(body.licenseUrl).trim(),
+      composer: "管理者アップロード（権利確認済み）",
+      source_url: "admin-upload://local-file",
+      license_name: "管理者による配信利用権限確認",
+      license_url: "admin-attestation://confirmed",
       license_checked_at: new Date().toISOString(),
       license_scope: "internal_stream",
       commercial_use_allowed: true,
@@ -111,9 +103,11 @@ export async function POST(request: Request) {
       end_user_use_allowed: false,
       attribution_required: attributionRequired,
       attribution_text: attributionRequired ? attributionText : null,
-      creator_terms_url: typeof body.creatorTermsUrl === "string" && body.creatorTermsUrl.trim() ? body.creatorTermsUrl.trim() : null,
-      evidence_note: evidenceNote,
-      review_status: "pending",
+      creator_terms_url: null,
+      evidence_note: "管理者が登録時に商用配信およびTRACER内での利用権限を確認。",
+      review_status: "approved_internal",
+      reviewed_by: "admin-upload-confirmation",
+      reviewed_at: new Date().toISOString(),
       genre,
     }).select("id,storage_object,title,genre,review_status").single();
     if (error) {
