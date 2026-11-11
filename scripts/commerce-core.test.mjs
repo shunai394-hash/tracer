@@ -454,6 +454,7 @@ test("both channels use the shared capped storefront quantity and Japanese title
 
 test("TRACER storefront displays published canonical Shopify listings without enabling local auto-ordering", async () => {
   const store = await readFile(new URL("../lib/shop/store.ts", import.meta.url), "utf8");
+  const importer = await readFile(new URL("../app/api/cron/commerce-cj-import/route.ts", import.meta.url), "utf8");
   const productPage = await readFile(new URL("../app/shop/[slug]/page.tsx", import.meta.url), "utf8");
   const variantSelector = await readFile(new URL("../components/product-variant-selector.tsx", import.meta.url), "utf8");
   assert.match(store, /async function loadCanonicalCommerceListings/);
@@ -747,6 +748,7 @@ test("CJ variant image evidence is persisted for exact storefront color grouping
   assert.ok(core.includes("variantImageIdentityVerified: input.attributes?.variantImageIdentityVerified === true"));
   assert.ok(!core.includes("variantImageIdentityVerified: Boolean(input.variantImageUrl)"), "a URL alone must not certify exact supplier-variant image identity");
   assert.ok(core.includes("variantImageUrl: input.variantImageUrl"));
+  assert.ok(importer.includes("variantImageIdentityVerified: Boolean(exactVariantImageUrl)"), "CJ importer must explicitly attest image URLs resolved against the exact supplier VID");
   assert.ok(store.includes("variantImageIdentityVerified: attributes.variantImageIdentityVerified === true"));
   assert.ok(store.includes("attributes.variantImageUrl"));
 });
