@@ -79,7 +79,7 @@ export async function upsertSupplierOffer(input: {
   const { data: variant, error: variantError } = await supabase.from("commerce_variants").upsert({
     product_id: product.id, source_variant_key: required(input.sourceVariantKey, "source_variant_key"),
     title_ja: input.variantTitleJa ?? "標準", sku: input.sku ?? null,
-    attributes: { ...(input.attributes ?? {}), ...(input.variantImageUrl ? { variantImageUrl: input.variantImageUrl } : {}), variantImageIdentityVerified: Boolean(input.variantImageUrl), colorImageVerified: input.attributes?.colorImageVerified === true },
+    attributes: { ...(input.attributes ?? {}), ...(input.variantImageUrl ? { variantImageUrl: input.variantImageUrl } : {}), variantImageIdentityVerified: input.attributes?.variantImageIdentityVerified === true, colorImageVerified: input.attributes?.colorImageVerified === true },
     updated_at: new Date().toISOString()
   }, { onConflict: "product_id,source_variant_key" }).select("id").single();
   if (variantError || !variant) throw new Error("variant_upsert_failed:" + (variantError?.message ?? "no_row"));
