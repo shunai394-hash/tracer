@@ -1,0 +1,64 @@
+name: TRACER refresh CJ evidence for nine-color family
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tracer-refresh-cj-nine-color-family.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-refresh-cj-nine-color-family
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Wait for matching production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "Production is not serving this exact commit; refusing CJ API calls."
+          exit 1
+
+      - name: Refresh all nine exact CJ variants in sequential batches
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          AUTH="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          refresh() {
+            local vids="$1"
+            local code
+            code="$(curl -sS -o response.json -w "%{http_code}" --max-time 260 -H "Authorization: Bearer $AUTH" "$BASE/api/cron/commerce-cj-import?limit=1&variantLimit=3&productIds=1739211543297925120&variantIds=$vids")"
+            echo "CJ refresh variants=$vids HTTP=$code"
+            python3 - "$code" <<'PY'
+          import json,sys
+          code=int(sys.argv[1])
+          d=json.load(open("response.json"))
+          s=d.get("stats") or {}
+          print(json.dumps({"ok":d.get("ok"),"stats":s,"errors":d.get("errors")},ensure_ascii=False))
+          if code not in (200,207) or d.get("ok") is not True or s.get("errors"):
+              raise SystemExit("CJ evidence refresh failed")
+          if int(s.get("variants",0)) < 1:
+              raise SystemExit("No exact variants were refreshed")
+          PY
+            cat response.json >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          }
+          refresh "1739211543398588416,1739211543495057408,1739211543574749184"
+          refresh "1739211543658635264,1739211543914487808,1739211543994179584"
+          refresh "1739211544103231488,1739211544191311872,1739211544279392256"
