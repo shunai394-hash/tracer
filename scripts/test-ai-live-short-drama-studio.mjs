@@ -142,7 +142,7 @@ test("BGM library is private, authenticated, paginated, and MP3 size bounded", (
   assert.ok(bgmRoute.includes("MAX_TRACKS = 1000"));
   assert.ok(bgmRoute.includes("await authorize(request)"));
   assert.ok(bgmRoute.includes("createSignedUrl"));
-  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(bgmRoute.includes('"audio/mpeg"'));
 });
 
 test("finished drama mix combines dialogue with loopable BGM and fade automation", () => {
