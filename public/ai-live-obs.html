@@ -54,6 +54,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <div class="actions"><button class="primary" id="speak">読み上げ開始</button><button id="stop">音声停止</button></div>
  <label for="voice">Fish Audio 日本語ボイス</label><select id="voice"><option value="">ボイス一覧を読み込んでください</option></select><button id="loadVoices" type="button">許諾済み音声を読み込む</button>
  <label for="products">紹介する商品（TRACER読み取り専用）</label><select id="products"><option value="">商品情報を読み込んでください</option></select><div class="actions"><button id="loadProducts" type="button">商品情報を読み込む</button><button id="applyProduct" type="button">紹介文を台本に反映</button></div>
+ <label for="rotationInterval">商品紹介の間隔（秒）</label><input id="rotationInterval" type="number" min="15" max="180" step="5" value="45">
+ <div class="actions"><button class="primary" id="autoLiveStart" type="button">商品紹介を自動開始</button><button id="autoLiveStop" type="button" disabled>自動紹介を停止</button></div>
  <label for="token">管理トークン（BGM・音声・商品情報の読込時）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
  <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
  <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
@@ -114,6 +116,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
  let tracks=[], urls=[], baseVolume=.35, ducked=false, autoBgmLoop=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
+ let autoLiveActive=false, autoLiveIndex=0, autoLiveTimer=null, autoLiveDelayResolve=null, finishCurrentSpeech=null;
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -323,7 +326,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    const select=$('products');select.innerHTML='<option value="">紹介する商品を選択</option>';
    for(const p of products){const o=document.createElement('option');o.value=p.id;o.textContent=p.title+' — '+new Intl.NumberFormat('ja-JP').format(p.sellingPrice)+'円';select.appendChild(o)}
    setStatus(products.length+'件の商品情報を読み込みました（読み取り専用）');
-  }catch(e){setStatus(e.message||'商品情報の取得に失敗しました')}finally{$('loadProducts').disabled=false}
+   return products.length>0;
+  }catch(e){setStatus(e.message||'商品情報の取得に失敗しました');return false}finally{$('loadProducts').disabled=false}
  }
  function applyProduct(){
   const product=products.find(p=>p.id===$('products').value);
@@ -347,13 +351,14 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    setStatus(fishVoices.length+'件の音声候補を読み込みました');
   }catch(e){setStatus(e.message||'音声一覧の取得に失敗しました')}finally{$('loadVoices').disabled=false}
  }
- async function speak(){
-  const text=$('script').value.trim(), token=$('token').value.trim(), referenceId=$('voice').value;
-  if(!text){setStatus('読み上げテキストを入力してください');return}
-  if(!token){setStatus('管理トークンを入力してください');return}
-  if(!referenceId){setStatus('Fish Audioの音声を選択してください');return}
-  if(text.length>1200){setStatus('読み上げは1,200文字以内にしてください');return}
+ async function playSpeech(text){
+  const token=$('token').value.trim(), referenceId=$('voice').value;
+  if(!text){setStatus('読み上げテキストがありません');return false}
+  if(!token){setStatus('管理トークンを入力してください');return false}
+  if(!referenceId){setStatus('Fish Audioの音声を選択してください');return false}
+  if(text.length>1200){setStatus('読み上げは1,200文字以内にしてください');return false}
   $('speak').disabled=true;
+  if(finishCurrentSpeech)finishCurrentSpeech(false);
   if(speechAudio){speechAudio.pause();speechAudio=null}
   if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
   if(synth)synth.cancel();
@@ -363,17 +368,90 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
    const type=r.headers.get('content-type')||'';
    if(!r.ok||!type.toLowerCase().includes('audio/')){const d=await r.json().catch(()=>null);throw new Error(d?.message||d?.error||'Fish Audio音声生成に失敗しました')}
    const blob=await r.blob();speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
-   if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus('Fish Audio読み上げ中（リップシンク）')};
-   speechAudio.onended=()=>{$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus('待機中')};
-   speechAudio.onerror=()=>{$('avatar').classList.remove('talking');$('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');ducked=false;setVolume();$('speak').disabled=false;setStatus('音声再生に失敗しました')};
-   await speechAudio.play();
-  }catch(e){$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;setStatus(e.message||'音声生成に失敗しました')}
+   if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));
+   return await new Promise(resolve=>{
+    let finished=false;
+    const finish=ok=>{
+     if(finished)return;finished=true;
+     if(finishCurrentSpeech===finish)finishCurrentSpeech=null;
+     $('avatar').classList.remove('talking');
+     $('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');
+     ducked=false;setVolume();$('speak').disabled=false;
+     if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
+     speechAudio=null;
+     if(!autoLiveActive)setStatus(ok?'待機中':'音声再生を停止しました');
+     resolve(ok);
+    };
+    finishCurrentSpeech=finish;
+    speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus(autoLiveActive?'商品を自動紹介中':'Fish Audio読み上げ中（リップシンク）')};
+    speechAudio.onended=()=>finish(true);
+    speechAudio.onerror=()=>{setStatus('音声再生に失敗しました');finish(false)};
+    speechAudio.play().catch(()=>{setStatus('音声を再生できません。OBS Browser Sourceの音声設定を確認してください');finish(false)});
+   });
+  }catch(e){
+   $('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;
+   if(!autoLiveActive)setStatus(e.message||'音声生成に失敗しました');
+   return false;
+  }
+ }
+ async function speak(){return playSpeech($('script').value.trim())}
+ function waitForNextProduct(seconds){
+  return new Promise(resolve=>{
+   autoLiveDelayResolve=resolve;
+   autoLiveTimer=setTimeout(()=>{autoLiveTimer=null;autoLiveDelayResolve=null;resolve()},seconds*1000);
+  });
+ }
+ function stopAutoLive(){
+  autoLiveActive=false;
+  if(autoLiveTimer){clearTimeout(autoLiveTimer);autoLiveTimer=null}
+  if(autoLiveDelayResolve){const resolve=autoLiveDelayResolve;autoLiveDelayResolve=null;resolve()}
+  if(finishCurrentSpeech)finishCurrentSpeech(false);
+  if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}
+  $('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true;
+  $('avatar').classList.remove('talking');ducked=false;setVolume();
+  if(synth)synth.cancel();
+  setStatus('商品自動紹介を停止しました');
+ }
+ function productScript(product){
+  const price=new Intl.NumberFormat('ja-JP').format(product.sellingPrice);
+  const description=(product.description||'詳細は商品ページをご確認ください。').replace(/\\s+/g,' ').trim();
+  const text='本日のおすすめ商品をご紹介します。'+product.title+'。価格は'+price+'円です。'+description+' 気になった方は商品ページをご覧ください。';
+  return text.slice(0,1200);
+ }
+ async function startAutoLive(){
+  if(autoLiveActive)return;
+  const token=$('token').value.trim(), voice=$('voice').value;
+  if(!token){setStatus('管理トークンを入力してください');return}
+  if(!voice){setStatus('先にFish Audioの日本語ボイスを選択してください');return}
+  if(!products.length){const loaded=await loadProducts();if(!loaded){setStatus('自動紹介できる販売中商品がありません');return}}
+  if(!products.length){setStatus('自動紹介できる販売中商品がありません');return}
+  const interval=Number($('rotationInterval').value);
+  if(!Number.isInteger(interval)||interval<15||interval>180){setStatus('商品紹介の間隔は15〜180秒で指定してください');return}
+  autoLiveActive=true;$('autoLiveStart').disabled=true;$('autoLiveStop').disabled=false;
+  setStatus(products.length+'件の商品を順番に自動紹介します');
+  while(autoLiveActive){
+   const product=products[autoLiveIndex%products.length];
+   autoLiveIndex=(autoLiveIndex+1)%products.length;
+   $('products').value=product.id;
+   const text=productScript(product);
+   $('script').value=text;
+   $('caption').textContent=product.title+'　'+new Intl.NumberFormat('ja-JP').format(product.sellingPrice)+'円';
+   setStatus('商品を紹介中：'+product.title);
+   const played=await playSpeech(text);
+   if(!autoLiveActive)break;
+   if(!played){stopAutoLive();break}
+   setStatus('次の商品まで待機中：'+product.title);
+   await waitForNextProduct(interval);
+  }
+  if(!autoLiveActive){$('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true}
  }
  $('speak').addEventListener('click',speak);
  $('loadVoices').addEventListener('click',loadFishVoices);
  $('loadProducts').addEventListener('click',loadProducts);
  $('applyProduct').addEventListener('click',applyProduct);
- $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
+ $('autoLiveStart').addEventListener('click',startAutoLive);
+ $('autoLiveStop').addEventListener('click',stopAutoLive);
+ $('stop').addEventListener('click',()=>{if(autoLiveActive)stopAutoLive();else{if(synth)synth.cancel();if(finishCurrentSpeech)finishCurrentSpeech(false);if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')}});
  $('bgmUpload').addEventListener('click',uploadBgm);
  $('bgmReviewLoad').addEventListener('click',loadBgmReviews);
  $('bgmExistingLoad').addEventListener('click',loadExistingBgm);
