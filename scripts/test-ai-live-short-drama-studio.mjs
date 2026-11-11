@@ -140,6 +140,9 @@ test("BGM library is private, authenticated, lists Storage pages, and bounds MP3
   assert.ok(!page.includes("register-existing"));
   assert.ok(page.includes('body:file'));
   assert.ok(page.includes('"Content-Type":file.type||"audio/mpeg"'));
+  assert.ok(page.includes('await selectBgm(true)'));
+  assert.ok(page.includes('async function selectBgm(autoplay=false)'));
+  assert.ok(page.includes('await bgmPreview.play()'));
   assert.ok(page.includes('method:"PUT"'));
   assert.ok(bgmRoute.includes('const BUCKET = "tracer-drama-bgm"'));
   assert.ok(bgmRoute.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
