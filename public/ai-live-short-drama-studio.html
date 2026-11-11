@@ -371,12 +371,13 @@ bgmPreview.addEventListener("canplay",()=>{
 function renderBgmTracks(){
  const host=$("bgmTracks");host.replaceChildren();
  if(!bgmTracks.length){host.textContent="登録済みBGMはありません。";return;}
- for(const track of bgmTracks){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=track.title+" ／ "+(track.genre||"未分類");const play=document.createElement("button");play.type="button";play.className="secondary";play.textContent="この曲を試聴";play.addEventListener("click",()=>{bgmSelect.value=track.name;selectBgm();});item.append(title,play);host.append(item);}
+ for(const track of bgmTracks){const item=document.createElement("div");item.className="scene";const title=document.createElement("strong");title.textContent=track.title+" ／ "+(track.genre||"未分類");const play=document.createElement("button");play.type="button";play.className="secondary";play.textContent="この曲を試聴";play.addEventListener("click",async()=>{bgmSelect.value=track.name;await selectBgm(true);});item.append(title,play);host.append(item);}
 }
-function selectBgm(){
+async function selectBgm(autoplay=false){
  const track=bgmTracks.find(x=>x.name===bgmSelect.value);
  if(!track){bgmPreview.pause();bgmPreview.removeAttribute("src");bgmPreview.load();return;}
- bgmPreview.src=track.url;bgmPreview.volume=Number($("bgmVolume").value)/100;bgmPreview.loop=$("bgmLoop").checked;bgmPreview.load();
+ bgmPreview.pause();bgmPreview.src=track.url;bgmPreview.volume=Number($("bgmVolume").value)/100;bgmPreview.loop=$("bgmLoop").checked;bgmPreview.load();
+ if(autoplay){$("bgmStatus").textContent="試聴を開始しています："+track.title;try{await bgmPreview.play();$("bgmStatus").textContent="再生中："+track.title;}catch(error){$("bgmStatus").textContent="試聴を開始できません："+(error?.message||"ブラウザーが再生を拒否しました")+"。下のプレーヤーの再生ボタンを押してください。";}}
 }
 async function loadBgm(){
  if(!token.value.trim()){ $("bgmStatus").textContent="管理トークンを入力してください。";return; }
