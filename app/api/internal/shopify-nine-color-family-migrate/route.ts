@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
@@ -6,6 +7,7 @@ import {
   createShopifyColorFamily,
   ensureShopifyProductPublished,
   readShopifyVariantInventorySnapshot,
+  shopifyGraphQL,
   unpublishShopifyProduct,
 } from "@/lib/shopify/admin";
 
@@ -95,8 +97,61 @@ export async function POST(request: Request) {
     const offersByVariant = new Map((offers ?? []).map((row) => [String(row.variant_id), row]));
     const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
     const channelsByVariant = new Map((channelRows ?? []).map((row) => [String(row.variant_id), row]));
-    const images = new Set<string>();
 
+    // Retries accept only exact old IDs or the existing tagged family + exact SKU IDs.
+    const familyKey = createHash("sha256").update(["cj", SUPPLIER_PRODUCT_ID].join(":")).digest("hex").slice(0, 24);
+    const familyTag = "TRACER_COLOR_FAMILY_" + familyKey;
+    const existingFamily = await shopifyGraphQL<{
+      products: { nodes: Array<{
+        id: string;
+        status: string;
+        tags: string[];
+        metafields: { nodes: Array<{ namespace: string; key: string; value: string }> };
+        variants: { nodes: Array<{ id: string; sku: string | null }> };
+      }> };
+    }>(
+      `query ReadExistingTracerNineColorFamily($query: String!) {
+        products(first: 10, query: $query) {
+          nodes {
+            id status tags
+            metafields(first: 10, namespace: "tracer") { nodes { namespace key value } }
+            variants(first: 100) { nodes { id sku } }
+          }
+        }
+      }`,
+      { query: "tag:" + familyTag },
+    );
+    if (existingFamily.products.nodes.length > 1) throw new Error("color_family_existing_parent_ambiguous");
+    const existingParent = existingFamily.products.nodes[0] ?? null;
+    const existingVariantsBySku = new Map<string, string>();
+    if (existingParent) {
+      const fields = new Map(existingParent.metafields.nodes.map((field) => [field.key, field.value]));
+      if (!existingParent.tags.includes(familyTag) ||
+          fields.get("supplier_code") !== "cj" ||
+          fields.get("supplier_product_id") !== SUPPLIER_PRODUCT_ID ||
+          fields.get("canonical_product_id") !== String(product.id) ||
+          !["DRAFT", "ACTIVE"].includes(existingParent.status)) {
+        throw new Error("color_family_existing_parent_identity_mismatch");
+      }
+      for (const variant of existingParent.variants.nodes) {
+        if (!variant.sku) continue;
+        if (existingVariantsBySku.has(variant.sku)) throw new Error("color_family_existing_parent_sku_ambiguous:" + variant.sku);
+        existingVariantsBySku.set(variant.sku, variant.id);
+      }
+    }
+    for (const expected of FAMILY) {
+      const canonical = variants.find((row) => String(row.source_variant_key ?? "") === expected.vid);
+      const channel = canonical ? channelsByVariant.get(String(canonical.id)) : null;
+      if (!channel) throw new Error("color_family_channel_identity_missing:" + expected.sku);
+      const currentProductId = String(channel.external_product_id ?? "");
+      const currentVariantId = String(channel.external_variant_id ?? "");
+      const original = currentProductId === expected.oldProductId && currentVariantId === expected.oldVariantId;
+      const migrated = Boolean(existingParent && currentProductId === existingParent.id &&
+        currentVariantId === existingVariantsBySku.get(expected.sku));
+      if (!original && !migrated) throw new Error("color_family_channel_identity_conflict:" + expected.sku);
+    }
+
+    const images = new Set<string>();
     const mapped = variants.map((variant) => {
       const vid = String(variant.source_variant_key ?? "");
       const expected = expectedByVid.get(vid);
@@ -126,12 +181,7 @@ export async function POST(request: Request) {
           Number(price.margin_rate) < 0.5) {
         throw new Error("color_family_profit_gate_failed:" + expected.sku);
       }
-      if (!channel ||
-          (String(channel.external_product_id ?? "") !== expected.oldProductId &&
-            !String(channel.external_product_id ?? "").startsWith("gid://shopify/Product/")) ||
-          !String(channel.external_variant_id ?? "").startsWith("gid://shopify/ProductVariant/")) {
-        throw new Error("color_family_legacy_shopify_identity_missing:" + expected.sku);
-      }
+      if (!channel) throw new Error("color_family_legacy_shopify_identity_missing:" + expected.sku);
       const attributes = asRecord(variant.attributes);
       const imageUrl = attributes.variantImageUrl;
       if (attributes.variantImageIdentityVerified !== true ||
