@@ -4,6 +4,10 @@ name: TRACER CJ import once
 # Does not place orders and does not change the importer.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tracer-cj-import-once.yml
 
 permissions:
   contents: read
