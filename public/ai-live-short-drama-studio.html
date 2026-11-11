@@ -403,7 +403,7 @@ async function uploadBgmFiles(){
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
   const headers={"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"};
-  const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"未分類"};
+  const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"daily"};
   for(const file of files){
    const label=(done+errors.length+1)+"/"+files.length+"："+file.name;
    $("bgmStatus").textContent="Storageへ直接アップロードする準備中 "+label;
