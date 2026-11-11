@@ -402,24 +402,32 @@ async function uploadBgmFiles(){
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
+  const headers={"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"};
+  const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"未分類"};
   for(const file of files){
-   $("bgmStatus").textContent="アップロード準備中 "+(done+errors.length+1)+"/"+files.length+"："+file.name;
-   const headers={"Authorization":"Bearer "+token.value.trim()};
-   const form=new FormData();form.append("file",file,file.name);form.append("genre",$("bgmGenre").value);
-   const uploaded=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers,body:form,cache:"no-store"});
-   const uploadedData=await uploaded.json().catch(()=>({}));
-   if(!uploaded.ok||!uploadedData.ok||!uploadedData.track?.name){errors.push(file.name+"：Storage保存失敗（HTTP "+uploaded.status+" / "+(uploadedData.message||uploadedData.detail||uploadedData.error||"応答不正")+"）");continue;}
-   const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"daily"};
-   const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:uploadedData.track.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
-   const registeredData=await registered.json().catch(()=>({}));
-   if(!registered.ok||!registeredData.ok){errors.push(file.name+"：アップロード済み・権利台帳登録失敗（HTTP "+registered.status+" / "+(registeredData.error||"応答不正")+"）。Storageには非公開で残っています。");continue;}
-   done++;
+   const label=(done+errors.length+1)+"/"+files.length+"："+file.name;
+   $("bgmStatus").textContent="Storageへ直接アップロードする準備中 "+label;
+   try{
+    // Request a signed Storage upload URL. Do not proxy multi-megabyte audio through a Vercel Function.
+    const prepared=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers,body:JSON.stringify({action:"prepare",fileName:file.name,size:file.size,contentType:file.type||"audio/mpeg",genre:$("bgmGenre").value}),cache:"no-store"});
+    const preparedData=await prepared.json().catch(()=>({}));
+    if(!prepared.ok||!preparedData.ok||!preparedData.upload?.url||!preparedData.track?.name)throw new Error("アップロード準備失敗（HTTP "+prepared.status+" / "+(preparedData.message||preparedData.detail||preparedData.error||"応答不正")+"）");
+    $("bgmStatus").textContent="音源をStorageへ直接送信中 "+label;
+    const uploaded=await fetch(preparedData.upload.url,{method:"PUT",headers:{"Content-Type":"audio/mpeg","x-upsert":"false"},body:file,cache:"no-store"});
+    if(!uploaded.ok){const detail=await uploaded.text().catch(()=>"");throw new Error("Storage保存失敗（HTTP "+uploaded.status+" / "+detail.slice(0,180)+"）");}
+    $("bgmStatus").textContent="権利台帳へ登録中 "+label;
+    const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:preparedData.track.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
+    const registeredData=await registered.json().catch(()=>({}));
+    if(!registered.ok||!registeredData.ok)throw new Error("音源保存済み・権利台帳登録失敗（HTTP "+registered.status+" / "+(registeredData.message||registeredData.error||"応答不正")+"）");
+    done++;
+   }catch(error){errors.push(file.name+"："+(error instanceof Error?error.message:String(error)));}
   }
-  if(done>0) $("bgmFiles").value="";
-  const summary="権利台帳への仮登録結果："+done+"/"+files.length+"曲"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
+  if(done>0)$("bgmFiles").value="";
+  const summary="権利台帳への仮登録結果："+done+"/"+files.length+"曲"+(errors.length+"\n失敗：\n"+errors.join("\n"):"");
   await loadBgm();
   $("bgmStatus").textContent=summary+"\n※登録した音源は権利審査待ち（pending）です。承認されるまで再生ライブラリには表示されません。現在の承認済み登録数："+bgmTracks.length+"曲";
- }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
+ }catch(e){$("bgmStatus").textContent="登録処理エラー："+(e instanceof Error?e.message:String(e));}
+ finally{$("uploadBgm").disabled=false;}
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
 $("refreshBgm").addEventListener("click",loadBgm);
