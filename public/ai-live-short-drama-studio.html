@@ -76,6 +76,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </div>
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
 <p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してライブラリを読み込んでください。</p>
+<p class="muted">アップロードした曲の審査・承認は <a href="/ai-live-obs.html" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">BGM権利審査・OBS連携ページ</a> で行います。承認前の曲は再生一覧に表示されません。</p>
 <div class="grid">
 <div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
 <div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
@@ -419,7 +420,7 @@ async function uploadBgmFiles(){
     errors.push(file.name+"：Storageアップロード失敗（HTTP "+uploaded.status+" / "+detail.slice(0,240)+"）");continue;
    }
    const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"daily"};
-   const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:prepared.track?.name,title:file.name.replace(/\\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
+   const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:prepared.track?.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
    const registeredData=await registered.json().catch(()=>({}));
    if(!registered.ok||!registeredData.ok){errors.push(file.name+"：アップロード済み・権利台帳登録失敗（HTTP "+registered.status+" / "+(registeredData.error||"応答不正")+"）。Storageには非公開で残っています。");continue;}
    done++;
