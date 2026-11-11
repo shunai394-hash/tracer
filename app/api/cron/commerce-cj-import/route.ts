@@ -1036,7 +1036,7 @@ export async function GET(request: Request) {
               variantTitleJa: title + japaneseVariantSuffix(exactVariant.nameEn),
               sku: exactVariant.sku,
               variantImageUrl: exactVariantImageUrl,
-              attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn },
+              attributes: { barcode: exactVariant.barcode, supplierVariantName: exactVariant.nameEn, variantImageIdentityVerified: Boolean(exactVariantImageUrl) },
               offer: {
                 supplierCode: "cj", supplierProductId,
                 supplierVariantId: exactVariant.vid, supplierUrl: "https://cjdropshipping.com/product/" + encodeURIComponent(supplierProductId),
