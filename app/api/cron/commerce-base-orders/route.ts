@@ -48,16 +48,20 @@ export async function GET(request: Request) {
   const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, scanOffsets: [] as number[], errors: [] as string[] };
   const cronStartedAt = Date.now();
   let cronRunId: string | null = null;
-  const { data: cronRun, error: cronRunInsertError } = await db.from("cron_runs").insert({
-    job_name: "commerce-base-orders",
-    status: "running",
-    metadata: { actor: "vercel-cron", phase: "starting" },
-  }).select("id").single();
-  if (cronRunInsertError) {
-    // Observability must never prevent paid-order ingestion.
-    console.warn("[TRACER BASE ORDER POLL RUN LOG START FAILED]", cronRunInsertError.message);
-  } else {
-    cronRunId = String(cronRun.id);
+  try {
+    const { data: cronRun, error: cronRunInsertError } = await db.from("cron_runs").insert({
+      job_name: "commerce-base-orders",
+      status: "running",
+      metadata: { actor: "vercel-cron", phase: "starting" },
+    }).select("id").single();
+    if (cronRunInsertError) {
+      // Observability must never prevent paid-order ingestion.
+      console.warn("[TRACER BASE ORDER POLL RUN LOG START FAILED]", cronRunInsertError.message);
+    } else {
+      cronRunId = String(cronRun.id);
+    }
+  } catch (error) {
+    console.warn("[TRACER BASE ORDER POLL RUN LOG START FAILED]", error instanceof Error ? error.message : String(error));
   }
   try {
     // Always scan the newest page, then rotate through older pages so paid
