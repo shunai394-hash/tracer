@@ -111,10 +111,13 @@ export async function GET(request: Request) {
               .maybeSingle();
             if (aliasError) throw new Error("base_item_alias_lookup_failed:" + aliasError.message);
             if (alias?.variant_id) {
+              // A retired BASE item can still have a paid order after its
+              // replacement listing is pending/unpublished. The exact alias
+              // identifies the canonical variant; publication state must not
+              // discard a paid historical order.
               const { data: aliasedListing, error: aliasedListingError } = await db.from("channel_listings")
                 .select("variant_id,external_sku")
                 .eq("channel", "base")
-                .eq("status", "published")
                 .eq("variant_id", String(alias.variant_id))
                 .maybeSingle();
               if (aliasedListingError) throw new Error("base_item_alias_listing_lookup_failed:" + aliasedListingError.message);
