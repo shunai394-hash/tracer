@@ -360,6 +360,14 @@ $("mixExport").addEventListener("click",createDramaMix);
 $("mixBgmVolume").addEventListener("input",()=>{$("mixBgmVolumeValue").textContent=$("mixBgmVolume").value+"%";});
 const bgmSelect=$("bgmSelect"), bgmPreview=$("bgmPreview");
 let bgmTracks=[];
+bgmPreview.addEventListener("error",()=>{
+ const code=bgmPreview.error?.code;
+ const reason=({1:"再生が中断されました",2:"音源の読み込みに失敗しました",3:"音源データをMP3として解析できません",4:"この音源形式またはURLに対応していません"})[code]||"音源を再生できません";
+ $("bgmStatus").textContent="試聴エラー："+reason+"。古い登録データの場合は、修正版で再登録してください。";
+});
+bgmPreview.addEventListener("canplay",()=>{
+ $("bgmStatus").textContent="試聴準備完了："+(bgmTracks.find(x=>x.name===bgmSelect.value)?.title||"BGM");
+});
 function renderBgmTracks(){
  const host=$("bgmTracks");host.replaceChildren();
  if(!bgmTracks.length){host.textContent="登録済みBGMはありません。";return;}
@@ -400,10 +408,9 @@ async function uploadBgmFiles(){
     const data=await prepared.json().catch(()=>({}));
     if(!prepared.ok||!data.ok||!data.upload?.url)throw new Error("署名URL発行失敗（HTTP "+prepared.status+" / "+(data.message||data.detail||data.error||"応答不正")+"）");
     $("bgmStatus").textContent="Supabase Storageへ直接アップロード中 "+label;
-    const uploadBody=new FormData();
-    uploadBody.append("cacheControl","3600");
-    uploadBody.append("",file);
-    const uploaded=await fetch(data.upload.url,{method:"PUT",headers:{"x-upsert":"false"},body:uploadBody,cache:"no-store"});
+    // Supabase signed-upload endpoints expect the raw file bytes, not multipart/form-data.
+    // Multipart bodies are stored verbatim and cannot be decoded by the browser audio player.
+    const uploaded=await fetch(data.upload.url,{method:"PUT",headers:{"x-upsert":"false","Content-Type":file.type||"audio/mpeg"},body:file,cache:"no-store"});
     if(!uploaded.ok){const detail=await uploaded.text().catch(()=> "");throw new Error("Storage保存失敗（HTTP "+uploaded.status+" / "+detail.slice(0,180)+"）");}
     done++;
    }catch(error){errors.push(file.name+"："+(error instanceof Error?error.message:String(error)));}
