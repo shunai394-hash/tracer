@@ -58,8 +58,15 @@ export async function GET(request: Request) {
       const [prefix, ...rest] = item.name.split("--");
       const genre = GENRE_LABELS[prefix] ? prefix : "未分類";
       if (normalizedGenre && normalizedGenre !== "未分類" && genre !== normalizedGenre) return null;
-      const base = rest.join("--").replace(/\.mp3$/i, "").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}$/i, "");
-      const title = base.replace(/-/g, " ") || item.name;
+      const encodedTitle = rest.length >= 2 ? rest[0] : "";
+      let title = "";
+      if (/^(?:[a-f0-9]{2})+$/i.test(encodedTitle)) {
+        try { title = Buffer.from(encodedTitle, "hex").toString("utf8"); } catch { title = ""; }
+      }
+      if (!title) {
+        const base = rest.join("--").replace(/\.mp3$/i, "").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}$/i, "");
+        title = base.replace(/-/g, " ") || item.name;
+      }
       const { data: signed, error: signedError } = await storage.createSignedUrl(item.name, 60 * 60);
       if (signedError) throw signedError;
       return { name: item.name, title, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類", url: signed.signedUrl, createdAt: item.created_at ?? null };
@@ -87,16 +94,24 @@ export async function POST(request: Request) {
     if (mimeType && !ALLOWED_TYPES.has(mimeType)) return json({ ok: false, error: "mp3_only", message: "MP3形式のファイルを選択してください。" }, 415);
     const requestedGenre = String(body.genre || "未分類");
     const genre = GENRES[requestedGenre] ?? "未分類";
-    const safeBase = fileName.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+    const displayTitle = fileName.normalize("NFKC").replace(/\.mp3$/i, "").trim() || "bgm";
+    // Supabase Storage object keys must be ASCII-safe. Keep the original title
+    // as UTF-8 hex (up to 96 bytes) so Japanese names remain readable in
+    // the library while the actual object key contains only ASCII characters.
+    // Hex also avoids delimiter collisions in the object-key format.
+    const titleBytes = Buffer.from(displayTitle, "utf8");
+    let titleByteLength = Math.min(titleBytes.length, 96);
+    while (titleByteLength > 0 && (titleBytes[titleByteLength] & 0xc0) === 0x80) titleByteLength--;
+    const encodedTitle = titleBytes.subarray(0, titleByteLength).toString("hex") || "62676d";
     const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
-    const objectName = genrePrefix + "--" + safeBase + "-" + randomUUID() + ".mp3";
+    const objectName = genrePrefix + "--" + encodedTitle + "--" + randomUUID() + ".mp3";
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(objectName, { upsert: false });
     if (error) throw error;
     const { url } = getSupabasePublicConfig();
     const uploadUrl = new URL(data.signedUrl, url).toString();
     console.info("[DRAMA BGM SIGNED UPLOAD CREATED]", { object: objectName, bytes: size, genre });
-    return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
+    return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: displayTitle, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[DRAMA BGM UPLOAD PREPARE FAILED]", { detail });
