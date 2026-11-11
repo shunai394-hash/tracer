@@ -2,6 +2,10 @@ name: CJ 11-product exact-VID image diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cj-five-color-image-diagnostic.yml
 
 permissions:
   contents: read
