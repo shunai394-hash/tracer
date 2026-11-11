@@ -82,7 +82,7 @@ export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      const body = await request.json() as { action?: string; fileName?: string; size?: number; contentType?: string; genre?: string };
+      const body = await request.json() as { action?: string; fileName?: string; size?: number; contentType?: string; genre?: string; objectName?: string; title?: string; rightsConfirmed?: boolean };
       if (body.action === "complete") {
         const objectName = String(body.objectName ?? "");
         const title = String(body.title ?? "").trim().slice(0, 100);
