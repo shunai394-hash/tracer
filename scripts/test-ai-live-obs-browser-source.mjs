@@ -81,3 +81,9 @@ assert.match(html, /\/api\/admin\/ai-live\/products\?limit=20/);
 assert.match(html, /waitForNextProduct\(interval\)/);
 assert.match(html, /autoLiveActive/);
 assert.match(html, /商品紹介の間隔は15〜180秒/);
+
+assert.match(html, /id="productLink"/);
+assert.match(html, /product\.productUrl/);
+assert.match(html, /const refreshed=await loadProducts\(\)/);
+assert.match(html, /if\(!ok&&speechAudio\)\{speechAudio\.pause\(\)/);
+assert.match(html, /speechRequestController\.abort\(\)/);
