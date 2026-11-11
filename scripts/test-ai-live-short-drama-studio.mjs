@@ -128,7 +128,7 @@ test("voice library keeps only Soma and Mitsuki as fixed character presets", () 
   assert.doesNotMatch(page, /id="cloneAudio"|id="cloneRights"|id="registerClone"/);
 });
 
-test("BGM library is private, authenticated, paginated, and MP3 size bounded", () => {
+test("BGM library is private, authenticated, reads Storage pages, and MP3 size bounded", () => {
   assert.ok(page.includes('id="bgmPanel"'));
   assert.ok(page.includes('id="bgmFiles"'));
   assert.ok(page.includes('id="uploadBgm"'));
@@ -139,10 +139,13 @@ test("BGM library is private, authenticated, paginated, and MP3 size bounded", (
   assert.ok(bgmRoute.includes('const BUCKET = "tracer-drama-bgm"'));
   assert.ok(bgmRoute.includes("MAX_FILE_BYTES = 10 * 1024 * 1024"));
   assert.ok(bgmRoute.includes("PAGE_SIZE = 100"));
+  assert.ok(bgmRoute.includes("offset += PAGE_SIZE"));
+  assert.ok(bgmRoute.includes("createSignedUploadUrl"));
   assert.ok(bgmRoute.includes("MAX_TRACKS = 1000"));
   assert.ok(bgmRoute.includes("await authorize(request)"));
   assert.ok(bgmRoute.includes("createSignedUrl"));
-  assert.ok(bgmRoute.includes('contentType: "audio/mpeg"'));
+  assert.ok(page.includes('uploadBody.append("",file)'));
+  assert.ok(page.includes('method:"PUT"'));
 });
 
 test("finished drama mix combines dialogue with loopable BGM and fade automation", () => {
