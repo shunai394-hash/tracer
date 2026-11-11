@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     if (mimeType && !ALLOWED_TYPES.has(mimeType)) return json({ ok: false, error: "mp3_only", message: "MP3形式のファイルを選択してください。" }, 415);
     const requestedGenre = String(body.genre || "未分類");
     const genre = GENRES[requestedGenre] ?? "未分類";
-    const safeBase = fileName.normalize("NFKC").replace(/\\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+    const safeBase = fileName.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
     const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
     const objectName = genrePrefix + "--" + safeBase + "-" + randomUUID() + ".mp3";
     const supabase = createSupabaseAdminClient();
