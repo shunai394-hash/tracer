@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       const [prefix, ...rest] = item.name.split("--");
       const genre = GENRE_LABELS[prefix] ? prefix : "未分類";
       if (normalizedGenre && normalizedGenre !== "未分類" && genre !== normalizedGenre) return null;
-      const base = rest.join("--").replace(".mp3").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}$/i, "");
+      const base = rest.join("--").replace(/\.mp3$/i, "").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}$/i, "");
       const title = base.replace(/-/g, " ") || item.name;
       const { data: signed, error: signedError } = await storage.createSignedUrl(item.name, 60 * 60);
       if (signedError) throw signedError;
@@ -95,7 +95,8 @@ export async function POST(request: Request) {
       const uploadUrl = new URL(data.signedUrl, url).toString();
       console.info("[DRAMA BGM SIGNED UPLOAD CREATED]", { object: objectName, bytes: size, genre });
       return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
-    }  } catch (error) {
+    }
+  } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[DRAMA BGM UPLOAD PREPARE FAILED]", { detail });
     return json({ ok: false, error: "bgm_upload_prepare_failed", message: "Storageへのアップロード準備に失敗しました。", detail: detail.slice(0, 300) }, 503);
