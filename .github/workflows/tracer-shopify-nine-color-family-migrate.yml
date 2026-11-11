@@ -1,0 +1,80 @@
+name: TRACER migrate exact nine-color Shopify family
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tracer-shopify-nine-color-family-migrate.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tracer-shopify-nine-color-family-1739211543297925120
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run exact nine-color Shopify family migration after deployment')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout commit history for production ancestry check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait until production contains this reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          git fetch origin main --quiet
+          for i in $(seq 1 24); do
+            token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+            sha="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("deployment") or {}).get("commitSha") or "")' || true)"
+            echo "attempt $i: production commit=$sha expected-or-descendant-of=$GITHUB_SHA"
+            if [ "$sha" = "$GITHUB_SHA" ]; then exit 0; fi
+            if [ -n "$sha" ] && git cat-file -e "$sha^{commit}" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$sha"; then
+              echo "Production contains this reviewed migration."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Production does not contain this commit; refusing Shopify writes."
+          exit 1
+
+      - name: Migrate exact nine-variant family to one Shopify product
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          AUTH="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o migration.json -w "%{http_code}" --max-time 300 -X POST -H "Authorization: Bearer $AUTH" "$BASE/api/internal/shopify-nine-color-family-migrate" || true)"
+          echo "Shopify nine-color migration HTTP $code"
+          python3 - <<'PY'
+          import json,sys
+          try:
+              data=json.load(open("migration.json"))
+          except Exception:
+              print("migration response was not JSON")
+              raise SystemExit(1)
+          summary={
+              "ok":data.get("ok"),
+              "status":data.get("status"),
+              "supplierProductId":data.get("supplierProductId"),
+              "shopifyProductId":data.get("productId"),
+              "productUrl":data.get("productUrl"),
+              "variantCount":data.get("variantCount"),
+              "oldProductsUnpublished":len(data.get("oldProductsUnpublished") or []),
+              "aliasesPreserved":data.get("aliasesPreserved"),
+              "basePublication":data.get("basePublication"),
+              "error":data.get("error"),
+          }
+          print(json.dumps(summary,ensure_ascii=False,indent=2))
+          if data.get("ok") is not True or data.get("status") != "PUBLISHED" or data.get("variantCount") != 9:
+              raise SystemExit(1)
+          PY
+          if [ "$code" != "200" ]; then exit 1; fi
