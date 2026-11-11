@@ -165,8 +165,9 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
 }
 
 /**
- * Collapse listings that share one canonical product and one exact supplier
- * product id. Title similarity never creates a family. A family with image-only
+ * Collapse listings that share one exact supplier parent product id, even when
+ * legacy channel imports assigned separate internal product IDs to each variant.
+ * Title similarity never creates a family. A family with image-only
  * evidence gaps stays as separate existing listings until distinct exact-variant image
  * identities are verified; other identity, SKU, price, or stock failures fail closed.
  */
@@ -177,7 +178,6 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
   const requireSku = options.requireSku !== false;
   const singles: Array<ColorFamilyView<T>> = [];
   const byFamily = new Map<string, T[]>();
-  const productIdsBySupplier = new Map<string, Set<string>>();
 
   for (const member of members) {
     const identity = supplierIdentity(member);
@@ -185,25 +185,15 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       singles.push(single(member));
       continue;
     }
-    const supplierKey = JSON.stringify([identity.supplier, identity.supplierProductId]);
-    const productIds = productIdsBySupplier.get(supplierKey) ?? new Set<string>();
-    productIds.add(identity.productId);
-    productIdsBySupplier.set(supplierKey, productIds);
-    const familyKey = JSON.stringify([identity.supplier, identity.productId, identity.supplierProductId]);
+    // Supplier-native parent identity is authoritative for a color family.
+    // Legacy imports may have created one internal product row per color; do not
+    // split an exact CJ parent back into separate storefront cards for that reason.
+    const familyKey = JSON.stringify([identity.supplier, identity.supplierProductId]);
     byFamily.set(familyKey, [...(byFamily.get(familyKey) ?? []), member]);
   }
 
   const catalog = [...singles];
-  for (const [familyKey, group] of byFamily) {
-    const parsed = JSON.parse(familyKey) as [string, string, string];
-    const supplierKey = JSON.stringify([parsed[0], parsed[2]]);
-    const conflicted = (productIdsBySupplier.get(supplierKey)?.size ?? 0) > 1;
-    if (conflicted) {
-      for (const member of group) {
-        catalog.push(single(member, ["supplier_product_id_conflict:" + member.supplierProductId]));
-      }
-      continue;
-    }
+  for (const group of byFamily.values()) {
     if (group.length === 1) {
       catalog.push(single(group[0]));
       continue;
