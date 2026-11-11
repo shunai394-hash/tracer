@@ -279,7 +279,8 @@ test("BGM uploads use an authenticated signed-URL preparation step and bypass Ve
   assert.ok(bgmRoute.includes('body.action !== "prepare"'));
   assert.ok(bgmRoute.includes("createSignedUploadUrl(objectName"));
   assert.ok(bgmRoute.includes("MAX_FILE_BYTES"));
-  assert.doesNotMatch(bgmRoute, /request\\.formData\\(\\)|file\\.arrayBuffer\\(\\)/);
+  assert.ok(!bgmRoute.includes("request.formData()"));
+  assert.ok(!bgmRoute.includes("file.arrayBuffer()"));
   assert.ok(page.includes('action:"prepare"'));
   assert.ok(page.includes('method:"PUT"'));
   assert.ok(page.includes("preparedData.upload.url"));
