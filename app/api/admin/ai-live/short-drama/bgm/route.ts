@@ -83,6 +83,52 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const body = await request.json() as { action?: string; fileName?: string; size?: number; contentType?: string; genre?: string };
+      if (body.action === "complete") {
+        const objectName = String(body.objectName ?? "");
+        const title = String(body.title ?? "").trim().slice(0, 100);
+        const requestedGenre = String(body.genre || "未分類");
+        const genre = GENRES[requestedGenre] ?? "未分類";
+        if (!body.rightsConfirmed) {
+          return json({ ok: false, error: "rights_confirmation_required", message: "自作または利用許諾済みであることを確認してください。" }, 400);
+        }
+        if (!objectName || objectName.includes("/") || !objectName.toLowerCase().endsWith(".mp3") || !title) {
+          return json({ ok: false, error: "bgm_metadata_invalid" }, 400);
+        }
+        const supabase = createSupabaseAdminClient();
+        const storage = supabase.storage.from(BUCKET);
+        const { data: existing, error: existingError } = await supabase
+          .from("ai_live_bgm_rights")
+          .select("id,storage_object,title,genre,review_status")
+          .eq("storage_object", objectName)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (existing) return json({ ok: true, track: { name: existing.storage_object, title: existing.title, genre: existing.genre, reviewStatus: existing.review_status }, alreadyRegistered: true });
+        const { data: objects, error: objectError } = await storage.list("", { search: objectName, limit: 10 });
+        if (objectError) throw objectError;
+        if (!(objects ?? []).some((item) => item.name === objectName)) {
+          return json({ ok: false, error: "uploaded_object_not_found", message: "Storage上にアップロード済み音源を確認できません。" }, 409);
+        }
+        const { error: insertError } = await supabase.from("ai_live_bgm_rights").insert({
+          storage_object: objectName,
+          title,
+          composer: "ユーザー登録音源",
+          genre,
+          license_name: "管理者申告：自作または利用許諾済み",
+          license_checked_at: new Date().toISOString(),
+          license_scope: "TRACER内のドラマ制作・配信・商用利用",
+          commercial_use_allowed: true,
+          platform_use_allowed: true,
+          redistribution_allowed: false,
+          end_user_use_allowed: true,
+          attribution_required: false,
+          evidence_note: "BGM登録画面で管理者が自作または利用許諾済みであることを確認して登録。",
+          review_status: "approved_internal",
+          reviewed_by: "TRACER_ADMIN",
+          reviewed_at: new Date().toISOString(),
+        });
+        if (insertError) throw insertError;
+        return json({ ok: true, track: { name: objectName, title, genre, reviewStatus: "approved_internal" } }, 201);
+      }
       if (body.action !== "prepare") return json({ ok: false, error: "unsupported_action" }, 400);
       const fileName = String(body.fileName ?? "");
       const size = Number(body.size ?? 0);
