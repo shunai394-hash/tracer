@@ -400,7 +400,10 @@ async function uploadBgmFiles(){
     const data=await prepared.json().catch(()=>({}));
     if(!prepared.ok||!data.ok||!data.upload?.url)throw new Error("署名URL発行失敗（HTTP "+prepared.status+" / "+(data.message||data.detail||data.error||"応答不正")+"）");
     $("bgmStatus").textContent="Supabase Storageへ直接アップロード中 "+label;
-    const uploaded=await fetch(data.upload.url,{method:"PUT",headers:{"Content-Type":"audio/mpeg","x-upsert":"false"},body:file,cache:"no-store"});
+    const uploadBody=new FormData();
+    uploadBody.append("cacheControl","3600");
+    uploadBody.append("",file);
+    const uploaded=await fetch(data.upload.url,{method:"PUT",headers:{"x-upsert":"false"},body:uploadBody,cache:"no-store"});
     if(!uploaded.ok){const detail=await uploaded.text().catch(()=> "");throw new Error("Storage保存失敗（HTTP "+uploaded.status+" / "+detail.slice(0,180)+"）");}
     done++;
    }catch(error){errors.push(file.name+"："+(error instanceof Error?error.message:String(error)));}
