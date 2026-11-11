@@ -413,7 +413,7 @@ async function uploadBgmFiles(){
     const preparedData=await prepared.json().catch(()=>({}));
     if(!prepared.ok||!preparedData.ok||!preparedData.upload?.url||!preparedData.track?.name)throw new Error("アップロード準備失敗（HTTP "+prepared.status+" / "+(preparedData.message||preparedData.detail||preparedData.error||"応答不正")+"）");
     $("bgmStatus").textContent="音源をStorageへ直接送信中 "+label;
-    const uploaded=await fetch(preparedData.upload.url,{method:"PUT",headers:{"Content-Type":"audio/mpeg","x-upsert":"false"},body:file,cache:"no-store"});
+    const uploadBody=new FormData();uploadBody.append("cacheControl","3600");uploadBody.append("",file);\n    const uploaded=await fetch(preparedData.upload.url,{method:"PUT",headers:{"x-upsert":"false"},body:uploadBody,cache:"no-store"});
     if(!uploaded.ok){const detail=await uploaded.text().catch(()=>"");throw new Error("Storage保存失敗（HTTP "+uploaded.status+" / "+detail.slice(0,180)+"）");}
     $("bgmStatus").textContent="権利台帳へ登録中 "+label;
     const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:preparedData.track.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
