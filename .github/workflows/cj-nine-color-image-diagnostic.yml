@@ -32,6 +32,8 @@ jobs:
               },
             );
             const body = await response.text();
+            core.info(`CJ_DIAGNOSTIC_HTTP=${response.status}`);
+            core.info(`CJ_DIAGNOSTIC_BODY=${body}`);
             core.summary
               .addHeading("CJ nine-color image diagnostic")
                .addRaw(`HTTP status: ${response.status}\n\n`)
