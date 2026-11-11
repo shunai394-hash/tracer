@@ -60,8 +60,8 @@ export async function GET(request: Request) {
       if (normalizedGenre && normalizedGenre !== "未分類" && genre !== normalizedGenre) return null;
       const encodedTitle = rest.length >= 2 ? rest[0] : "";
       let title = "";
-      if (/^[A-Za-z0-9_-]+$/.test(encodedTitle)) {
-        try { title = Buffer.from(encodedTitle, "base64url").toString("utf8"); } catch { title = ""; }
+      if (/^(?:[a-f0-9]{2})+$/i.test(encodedTitle)) {
+        try { title = Buffer.from(encodedTitle, "hex").toString("utf8"); } catch { title = ""; }
       }
       if (!title) {
         const base = rest.join("--").replace(/\.mp3$/i, "").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}$/i, "");
@@ -96,12 +96,13 @@ export async function POST(request: Request) {
     const genre = GENRES[requestedGenre] ?? "未分類";
     const displayTitle = fileName.normalize("NFKC").replace(/\.mp3$/i, "").trim() || "bgm";
     // Supabase Storage object keys must be ASCII-safe. Keep the original title
-    // as UTF-8 base64url (up to 96 bytes) so Japanese names remain readable in
-    // the library while the actual object key contains only URL-safe characters.
+    // as UTF-8 hex (up to 96 bytes) so Japanese names remain readable in
+    // the library while the actual object key contains only ASCII characters.
+    // Hex also avoids delimiter collisions in the object-key format.
     const titleBytes = Buffer.from(displayTitle, "utf8");
     let titleByteLength = Math.min(titleBytes.length, 96);
     while (titleByteLength > 0 && (titleBytes[titleByteLength] & 0xc0) === 0x80) titleByteLength--;
-    const encodedTitle = titleBytes.subarray(0, titleByteLength).toString("base64url") || "bgm";
+    const encodedTitle = titleBytes.subarray(0, titleByteLength).toString("hex") || "62676d";
     const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
     const objectName = genrePrefix + "--" + encodedTitle + "--" + randomUUID() + ".mp3";
     const supabase = createSupabaseAdminClient();
