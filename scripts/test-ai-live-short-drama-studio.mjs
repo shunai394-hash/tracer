@@ -288,7 +288,7 @@ test("BGM uploads use an authenticated signed-URL preparation step and bypass Ve
   assert.ok(!bgmRoute.includes("file.arrayBuffer()"));
   assert.ok(page.includes('action:"prepare"'));
   assert.ok(page.includes('method:"PUT"'));
-  assert.ok(page.includes("preparedData.upload.url"));
-  assert.ok(page.includes("/api/admin/ai-live/short-drama/bgm/register-existing"));
+  assert.ok(page.includes("data.upload.url"));
+  assert.ok(!page.includes("/api/admin/ai-live/short-drama/bgm/register-existing"));
   assert.ok(!page.includes('form.append("file",file,file.name)'));
 });
