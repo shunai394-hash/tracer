@@ -73,7 +73,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
 <div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
 </div>
-<div class="grid"><div><label><input id="bgmLoop" type="checkbox" checked style="width:auto;margin-right:8px">ループ再生</label></div><div><audio id="bgmPreview" controls preload="none" style="width:100%;margin-top:8px"></audio></div></div>
+<div class="grid"><div><label><input id="bgmLoop" type="checkbox" style="width:auto;margin-right:8px">ループ再生（初期設定OFF）</label></div><div><audio id="bgmPreview" controls preload="none" style="width:100%;margin-top:8px"></audio><button id="stopBgmPreview" type="button" class="secondary" style="margin-top:8px">試聴を停止</button></div></div>
 <p class="muted">ここでの試聴設定はプレビュー専用です。脚本や台詞音声には自動で合成・書き出しされません。</p>
 <div id="bgmTracks" class="muted"></div>
 </section>
@@ -427,6 +427,7 @@ $("refreshBgm").addEventListener("click",loadBgm);
 bgmSelect.addEventListener("change",selectBgm);
 $("bgmVolume").addEventListener("input",()=>{$("bgmVolumeValue").textContent=$("bgmVolume").value+"%";bgmPreview.volume=Number($("bgmVolume").value)/100;});
 $("bgmLoop").addEventListener("change",()=>bgmPreview.loop=$("bgmLoop").checked);
+$("stopBgmPreview").addEventListener("click",()=>{bgmPreview.pause();bgmPreview.currentTime=0;$("bgmStatus").textContent="試聴を停止しました。";});
 token.addEventListener("change",loadBgm);
 $("registerVoiceId").addEventListener("click",async()=>{
  const id=$("voiceModelId").value.trim(),title=$("voiceModelTitle").value.trim(),button=$("registerVoiceId"),out=$("voiceIdStatus");
