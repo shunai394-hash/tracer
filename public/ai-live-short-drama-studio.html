@@ -25,21 +25,21 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 </header>
 <section class="panel">
 <h2>接続・作品設定</h2>
-<label for="token">TRACER管理トークン</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
+<label for="token">TRACER管理トークン</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN"><p class="muted">非公開の共通ボイス台帳・BGM台帳を取得するための管理者認証です。トークンはこの画面のメモリ内だけで使用し、ブラウザー保存はしません。入力後に一括読み込みします。</p>
 <div class="grid">
 <div><label for="title">作品タイトル</label><input id="title" maxlength="100" value="ショートドラマ"></div>
 <div><label for="episodeNumber">話数</label><input id="episodeNumber" type="number" min="1" max="999" value="1"></div>
 <div><label for="genre">ジャンル</label><select id="genre"><option>日常・ヒューマン</option><option>恋愛</option><option>ミステリー</option><option>コメディ</option><option>ファンタジー</option><option>サスペンス</option></select></div>
 </div>
-<button id="load" class="secondary" type="button">利用可能な日本語ボイスを読み込む</button>
+<button id="load" class="secondary" type="button">登録済み音声・承認済みBGMを一括読み込み</button>
 <p id="loadStatus" class="muted">ボイス一覧の取得のみ。音声生成は行いません。</p>
 <button id="fishDiagnostics" class="secondary" type="button">Fish Audioアカウントを読み取り診断</button>
 <pre id="fishDiagnosticsResult" class="status" role="status" aria-live="polite">残高・契約枠・登録済みモデルを確認します。音声生成や課金は行いません。</pre>
 </section>
 <section class="panel" id="voiceLibraryPanel">
 <h2>日本語ボイス一覧</h2>
-<p class="muted">固定キャラクターは蒼真・美月です。IDから登録した音声は、読み込み後に下の専用一覧へ全件表示します。</p>
-<div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">ボイス一覧を読み込み中…</p></div><label for="lipSyncGain">口の開き具合 <span id="lipSyncGainValue">42%</span></label><input id="lipSyncGain" type="range" min="10" max="100" value="42"><p class="muted">無音では口を閉じ、最大開口を控えめにします。試聴・セリフ再生に共通で反映します。</p>
+<p class="muted">ここにはFish Audioの純正音声だけでなく、TRACER共通台帳に登録済みのID音声・クローン音声も表示します。管理トークンで接続するまでは、非公開音声を取得できません。</p>
+<div id="voiceLibrary" class="grid" aria-live="polite"><p class="muted">未接続：登録済み音声はまだ取得していません。上の管理トークンを入力して「登録済み音声・承認済みBGMを一括読み込み」を押してください。</p></div><label for="lipSyncGain">口の開き具合 <span id="lipSyncGainValue">42%</span></label><input id="lipSyncGain" type="range" min="10" max="100" value="42"><p class="muted">無音では口を閉じ、最大開口を控えめにします。試聴・セリフ再生に共通で反映します。</p>
 <div class="scene" id="voiceIdRegistration">
 <h3>Fish AudioモデルIDから登録</h3>
 <p class="muted">Fish AudioのモデルIDと表示名を入力して登録します。登録時にTRACERのAPIキーでモデルの存在・TTS対応・アクセス権を照合します。登録内容はTRACER共通台帳に保存され、別の端末・ブラウザーからも同じ一覧を利用できます。</p>
@@ -75,7 +75,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div style="grid-column:1/-1"><label><input id="bgmCommercialRights" type="checkbox" style="width:auto;margin-right:8px">商用利用・配信利用の権利を確認済み</label><label><input id="bgmPlatformRights" type="checkbox" style="width:auto;margin-right:8px">このTRACER内での配信利用を許可されている</label></div>
 </div>
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
-<p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してライブラリを読み込んでください。</p>
+<p id="bgmStatus" class="status" role="status" aria-live="polite">未接続：承認済みBGMライブラリはまだ取得していません。音声と同じ管理トークンで一括読み込みできます。</p>
 <p class="muted">アップロードした曲の審査・承認は <a href="/ai-live-obs.html" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">BGM権利審査・OBS連携ページ</a> で行います。承認前の曲は再生一覧に表示されません。</p>
 <div class="grid">
 <div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
@@ -517,7 +517,7 @@ $("fishDiagnostics").addEventListener("click",async()=>{
  }catch(error){output.textContent="診断エラー："+error.message;}
  finally{button.disabled=false;}
 });
-renderVoiceLibrary();$("load").addEventListener("click",loadVoices);token.addEventListener("change",loadVoices);token.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();loadVoices();}});
+renderVoiceLibrary();const loadAllLibraries=()=>{loadVoices();loadBgm();};$("load").addEventListener("click",loadAllLibraries);token.addEventListener("change",loadAllLibraries);token.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();loadAllLibraries();}});
 const childDialog=$("childVoiceDialog");$("createChildVoice").addEventListener("click",()=>{if(!token.value.trim()){status.textContent="管理トークンを入力してください。";token.focus();return;}if(typeof childDialog.showModal==="function")childDialog.showModal();else childDialog.setAttribute("open","");});$("cancelChildVoice").addEventListener("click",()=>childDialog.close());$("childVoiceForm").addEventListener("submit",async(event)=>{event.preventDefault();if(!token.value.trim()){status.textContent="管理トークンを入力してください。";childDialog.close();return;}const title=$("childVoiceTitle").value.trim(),tone=$("childVoiceTone").value,personality=$("childVoicePersonality").value.trim(),referenceText=$("childVoiceSample").value.trim();if(!title||!referenceText){status.textContent="役名と試作セリフを入力してください。";return;}if(!confirm("「"+title+"」の架空ボイスを作成します。Fish Audioの音声設計・モデル登録料金が発生する場合があります。続行しますか？"))return;const button=$("submitChildVoice");button.disabled=true;$("createChildVoice").disabled=true;$("loadStatus").textContent="架空の子供役ボイスを設計中です。完了まで最大約2分かかる場合があります…";status.textContent="Fish Audioで子供役ボイスを作成中…";try{const instruction="Create a completely fictional Japanese child-character voice for a short drama. Age-appropriate youthful childlike vocal quality; "+tone+". Personality and acting direction: "+personality+". Natural conversational Japanese, clear articulation, emotionally expressive but believable, consistent timbre. Do not imitate or resemble any real person, celebrity, child, or existing character.";const r=await fetch("/api/admin/ai-live/fish-audio/child-voice-design",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({instruction,referenceText,title})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||"子供役ボイスを作成できませんでした");const register=await fetch("/api/admin/ai-live/fish-audio/voices",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({id:d.modelId,title})});const registered=await register.json().catch(()=>({}));if(!register.ok||!registered.ok)throw new Error(registered.message||"声は設計されましたが、TRACER共通台帳への登録に失敗しました。モデルID: "+d.modelId);voices=voices.filter(v=>v.id!==d.modelId);voices.push({...registered.voice,source:"id_registered"});refreshCharacterVoiceOptions();renderVoiceLibrary();addCharacter(title,d.modelId);childDialog.close();$("loadStatus").textContent="「"+title+"」を作成し、共通ボイス台帳に登録しました。人物欄に追加済みです。";status.textContent="子供役ボイスの作成・登録が完了しました。";}catch(e){$("loadStatus").textContent=e.message;status.textContent=e.message;}finally{button.disabled=false;$("createChildVoice").disabled=false;}});
 $("addCharacter").addEventListener("click",()=>addCharacter("登場人物"+(characterRows.length+1)));
 $("addLine").addEventListener("click",()=>addLine());
