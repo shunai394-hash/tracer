@@ -14,6 +14,7 @@ const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-vo
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
 const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
+const bgmRegisterRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/register-existing/route.ts", "utf8");
 
 test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("担当ボイス"));
@@ -273,6 +274,18 @@ test("Fish Audio diagnostics directly verifies each assigned character model ID"
   assert.ok(diagnosticsRoute.includes("assignedCharacterVoices,"));
   assert.ok(page.includes("TRACER看板キャラクターIDの直接照合"));
   assert.ok(page.includes('character.status==="not_accessible"'));
+});
+
+test("BGM registration needs only an MP3 and one admin rights confirmation", () => {
+  assert.ok(page.includes("これらの音源を自分の商用配信・TRACER内の配信で利用する権限があることを確認"));
+  assert.ok(page.includes("rightsConfirmed:true"));
+  for (const field of ["bgmComposer","bgmSourceUrl","bgmLicenseName","bgmLicenseUrl","bgmEvidenceNote","bgmCommercialRights","bgmPlatformRights"]) {
+    assert.ok(!page.includes('id="'+field+'"'));
+  }
+  assert.ok(bgmRegisterRoute.includes("rightsConfirmed === true"));
+  assert.ok(bgmRegisterRoute.includes('review_status: "approved_internal"'));
+  assert.ok(bgmRegisterRoute.includes('reviewed_by: "admin-upload-confirmation"'));
+  assert.ok(!bgmRegisterRoute.includes("rights_metadata_required"));
 });
 
 test("BGM uploads use an authenticated signed-URL preparation step and bypass Vercel body limits", () => {
