@@ -87,3 +87,5 @@ assert.match(html, /product\.productUrl/);
 assert.match(html, /const refreshed=await loadProducts\(\)/);
 assert.match(html, /if\(!ok&&speechAudio\)\{speechAudio\.pause\(\)/);
 assert.match(html, /speechRequestController\.abort\(\)/);
+
+assert.match(html, /product\.sellingPrice/);
