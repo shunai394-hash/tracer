@@ -105,20 +105,22 @@ export async function POST(request: Request) {
       return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
     }
 
-    // Retain the legacy multipart path for small clients; large MP3 files use the signed direct-upload flow above.
+    // Upload through the authenticated server so browsers do not depend on Storage CORS or signed-URL behavior.
     const form = await request.formData();
     const file = form.get("file");
-    if (!(file instanceof File)) return json({ ok: false, error: "audio_file_required" }, 400);
-    if (file.size < 1 || file.size > 4 * 1024 * 1024) return json({ ok: false, error: "direct_upload_required", message: "このサイズのMP3はStorage直接アップロード方式が必要です。" }, 413);
-    if (!file.name.toLowerCase().endsWith(".mp3") || (file.type && !ALLOWED_TYPES.has(file.type.toLowerCase()))) return json({ ok: false, error: "mp3_only" }, 415);
+    if (!(file instanceof File)) return json({ ok: false, error: "audio_file_required", message: "MP3ファイルが届いていません。" }, 400);
+    if (file.size < 1 || file.size > MAX_FILE_BYTES) return json({ ok: false, error: "audio_file_size_invalid", message: "MP3は1曲10MB以下にしてください。", maxBytes: MAX_FILE_BYTES }, 413);
+    if (!file.name.toLowerCase().endsWith(".mp3") || (file.type && !ALLOWED_TYPES.has(file.type.toLowerCase()))) return json({ ok: false, error: "mp3_only", message: "MP3形式のファイルを選択してください。" }, 415);
     const requestedGenre = String(form.get("genre") || "未分類");
     const genre = GENRES[requestedGenre] ?? "未分類";
     const safeBase = file.name.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+    const objectName = (genre === "未分類" ? "uncategorized" : genre) + "--" + safeBase + "-" + randomUUID() + ".mp3";
     const bytes = new Uint8Array(await file.arrayBuffer());
     const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.storage.from(BUCKET).upload(safeBase + "-" + randomUUID() + ".mp3", bytes, { contentType: "audio/mpeg", upsert: false, metadata: { genre } });
+    const { error } = await supabase.storage.from(BUCKET).upload(objectName, bytes, { contentType: "audio/mpeg", upsert: false, metadata: { genre } });
     if (error) throw error;
-    return json({ ok: true, legacyUpload: true }, 201);
+    console.info("[DRAMA BGM UPLOAD STORED]", { object: objectName, bytes: file.size, genre });
+    return json({ ok: true, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[DRAMA BGM UPLOAD PREPARE FAILED]", { detail });
