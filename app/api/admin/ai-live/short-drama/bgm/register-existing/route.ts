@@ -31,16 +31,6 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
-function validHttpUrl(value: unknown): value is string {
-  if (typeof value !== "string" || !value.trim()) return false;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-
 export async function GET(request: Request) {
   const authError = await authorize(request);
   if (authError) return authError;
