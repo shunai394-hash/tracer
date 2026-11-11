@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabasePublicConfig } from "@/lib/config/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
         if (normalizedGenre && normalizedGenre !== "未分類" && genre !== normalizedGenre) continue;
         const { data: signed, error: signedError } = await storage.createSignedUrl(item.name, 60 * 60);
         if (signedError) throw signedError;
-        const title = item.name.replace(/-[0-9a-f]{8}-[0-9a-f-]{27}\.mp3$/i, "").replace(/\.mp3$/i, "").replace(/-/g, " ");
+        const title = item.name.replace(/^(daily|romance|emotional|suspense|comedy|action|uncategorized)--/i, "").replace(/-[0-9a-f]{8}-[0-9a-f-]{27}\.mp3$/i, "").replace(/\.mp3$/i, "").replace(/-/g, " ");
         tracks.push({
           name: item.name,
           title,
@@ -97,8 +98,8 @@ export async function POST(request: Request) {
       if (mimeType && !ALLOWED_TYPES.has(mimeType)) return json({ ok: false, error: "mp3_only" }, 415);
       const requestedGenre = String(body.genre || "未分類");
       const genre = GENRES[requestedGenre] ?? "未分類";
-      const safeBase = fileName.normalize("NFKC").replace(/\\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
-      const genrePrefix = Object.entries(GENRE_LABELS).find(([key, label]) => key === genre || label === requestedGenre)?.[0] ?? "uncategorized";
+      const safeBase = fileName.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+      const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
       const objectName = genrePrefix + "--" + safeBase + "-" + randomUUID() + ".mp3";
       const supabase = createSupabaseAdminClient();
       const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(objectName, { upsert: false });
@@ -117,7 +118,7 @@ export async function POST(request: Request) {
     if (!file.name.toLowerCase().endsWith(".mp3") || (file.type && !ALLOWED_TYPES.has(file.type.toLowerCase()))) return json({ ok: false, error: "mp3_only" }, 415);
     const requestedGenre = String(form.get("genre") || "未分類");
     const genre = GENRES[requestedGenre] ?? "未分類";
-    const safeBase = file.name.normalize("NFKC").replace(/\\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+    const safeBase = file.name.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
     const bytes = new Uint8Array(await file.arrayBuffer());
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase.storage.from(BUCKET).upload(safeBase + "-" + randomUUID() + ".mp3", bytes, { contentType: "audio/mpeg", upsert: false, metadata: { genre } });
