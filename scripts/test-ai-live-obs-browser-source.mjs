@@ -71,3 +71,13 @@ assert.match(html, /TikTokコメントと配信先は未接続/);
 assert.doesNotMatch(html, /rtmp:\/\//i);
 assert.doesNotMatch(html, /streamKey\s*:/i);
 console.log("AI Live OBS browser source contract checks passed");
+
+assert.match(html, /商品紹介を自動開始/);
+assert.match(html, /自動紹介を停止/);
+assert.match(html, /async function startAutoLive/);
+assert.match(html, /async function playSpeech/);
+assert.match(html, /function productScript/);
+assert.match(html, /\/api\/admin\/ai-live\/products\?limit=20/);
+assert.match(html, /waitForNextProduct\(interval\)/);
+assert.match(html, /autoLiveActive/);
+assert.match(html, /商品紹介の間隔は15〜180秒/);
