@@ -66,9 +66,17 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div><label for="bgmFiles">MP3音源（複数選択可・1曲10MB以下）</label><input id="bgmFiles" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple></div>
 <div><label for="bgmGenre">登録ジャンル</label><select id="bgmGenre"><option value="日常・会話">日常・会話</option><option value="恋愛">恋愛</option><option value="感動・余韻">感動・余韻</option><option value="サスペンス">サスペンス</option><option value="コメディ">コメディ</option><option value="アクション・場面転換">アクション・場面転換</option><option value="未分類" selected>未分類</option></select></div>
 </div>
+<div class="grid">
+<div><label for="bgmComposer">作曲者・権利者</label><input id="bgmComposer" maxlength="160" placeholder="作曲者名／自分の制作名"></div>
+<div><label for="bgmSourceUrl">音源の入手元・作品URL</label><input id="bgmSourceUrl" type="url" placeholder="https://..." required></div>
+<div><label for="bgmLicenseName">ライセンス名</label><input id="bgmLicenseName" maxlength="160" placeholder="例：自作・全権利保有／利用許諾名"></div>
+<div><label for="bgmLicenseUrl">ライセンス・利用条件URL</label><input id="bgmLicenseUrl" type="url" placeholder="https://..." required></div>
+<div style="grid-column:1/-1"><label for="bgmEvidenceNote">権利確認メモ</label><textarea id="bgmEvidenceNote" maxlength="4000" placeholder="制作経緯、購入・許諾情報、商用配信とプラットフォーム利用が可能な根拠を記入"></textarea></div>
+<div style="grid-column:1/-1"><label><input id="bgmCommercialRights" type="checkbox" style="width:auto;margin-right:8px">商用利用・配信利用の権利を確認済み</label><label><input id="bgmPlatformRights" type="checkbox" style="width:auto;margin-right:8px">このTRACER内での配信利用を許可されている</label></div>
+</div>
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
-<p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してBGMライブラリを読み込んでください。</p>
-<p class="muted">登録したMP3はすぐにBGM一覧へ追加されます。自分で制作した音源、または利用許諾を得た音源を使用してください。</p>
+<p id="bgmStatus" class="status" role="status" aria-live="polite">未接続：承認済みBGMライブラリはまだ取得していません。音声と同じ管理トークンで一括読み込みできます。</p>
+<p class="muted">アップロードした曲の審査・承認は <a href="/ai-live-obs.html" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">BGM権利審査・OBS連携ページ</a> で行います。承認前の曲は再生一覧に表示されません。</p>
 <div class="grid">
 <div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
 <div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
@@ -387,27 +395,37 @@ async function uploadBgmFiles(){
  const files=Array.from($("bgmFiles").files||[]);
  if(!files.length){$("bgmStatus").textContent="MP3ファイルを選択してください。";return;}
  if(!token.value.trim()){$("bgmStatus").textContent="管理トークンを入力してください。";return;}
+ const rights={composer:$("bgmComposer").value.trim(),sourceUrl:$("bgmSourceUrl").value.trim(),licenseName:$("bgmLicenseName").value.trim(),licenseUrl:$("bgmLicenseUrl").value.trim(),evidenceNote:$("bgmEvidenceNote").value.trim(),commercialUseAllowed:$("bgmCommercialRights").checked,platformUseAllowed:$("bgmPlatformRights").checked};
+ if(!rights.composer||!rights.sourceUrl||!rights.licenseName||!rights.licenseUrl||!rights.evidenceNote||!rights.commercialUseAllowed||!rights.platformUseAllowed){$("bgmStatus").textContent="登録前に作曲者・入手元URL・ライセンス名・利用条件URL・権利確認メモを入力し、商用利用と配信利用の権利を確認してください。";return;}
+ try{if(!["http:","https:"].includes(new URL(rights.sourceUrl).protocol)||!["http:","https:"].includes(new URL(rights.licenseUrl).protocol))throw new Error();}catch{$("bgmStatus").textContent="入手元URLとライセンスURLは有効なHTTP/HTTPS URLを入力してください。";return;}
  const invalid=files.filter(f=>!f.name.toLowerCase().endsWith(".mp3")||f.size>10*1024*1024||f.size===0);
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
   const headers={"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"};
+  const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"未分類"};
   for(const file of files){
    const label=(done+errors.length+1)+"/"+files.length+"："+file.name;
+   $("bgmStatus").textContent="Storageへ直接アップロードする準備中 "+label;
    try{
-    $("bgmStatus").textContent="アップロード準備中 "+label;
+    // Request a signed Storage upload URL. Do not proxy multi-megabyte audio through a Vercel Function.
     const prepared=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers,body:JSON.stringify({action:"prepare",fileName:file.name,size:file.size,contentType:file.type||"audio/mpeg",genre:$("bgmGenre").value}),cache:"no-store"});
     const preparedData=await prepared.json().catch(()=>({}));
-    if(!prepared.ok||!preparedData.ok||!preparedData.upload?.url)throw new Error("アップロード準備失敗（HTTP "+prepared.status+" / "+(preparedData.message||preparedData.detail||preparedData.error||"応答不正")+"）");
-    $("bgmStatus").textContent="Storageへ直接アップロード中 "+label;
+    if(!prepared.ok||!preparedData.ok||!preparedData.upload?.url||!preparedData.track?.name)throw new Error("アップロード準備失敗（HTTP "+prepared.status+" / "+(preparedData.message||preparedData.detail||preparedData.error||"応答不正")+"）");
+    $("bgmStatus").textContent="音源をStorageへ直接送信中 "+label;
     const uploaded=await fetch(preparedData.upload.url,{method:"PUT",headers:{"Content-Type":"audio/mpeg","x-upsert":"false"},body:file,cache:"no-store"});
     if(!uploaded.ok){const detail=await uploaded.text().catch(()=>"");throw new Error("Storage保存失敗（HTTP "+uploaded.status+" / "+detail.slice(0,180)+"）");}
+    $("bgmStatus").textContent="権利台帳へ登録中 "+label;
+    const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:preparedData.track.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
+    const registeredData=await registered.json().catch(()=>({}));
+    if(!registered.ok||!registeredData.ok)throw new Error("音源保存済み・権利台帳登録失敗（HTTP "+registered.status+" / "+(registeredData.message||registeredData.error||"応答不正")+"）");
     done++;
    }catch(error){errors.push(file.name+"："+(error instanceof Error?error.message:String(error)));}
   }
   if(done>0)$("bgmFiles").value="";
+  const summary="権利台帳への仮登録結果："+done+"/"+files.length+"曲"+(errors.length+"\n失敗：\n"+errors.join("\n"):"");
   await loadBgm();
-  $("bgmStatus").textContent="BGM登録結果："+done+"/"+files.length+"曲"+(errors.length?"\n失敗：\n"+errors.join("\n"):"")+"\n登録した曲はBGM一覧からすぐに選択・試聴できます。";
+  $("bgmStatus").textContent=summary+"\n※登録した音源は権利審査待ち（pending）です。承認されるまで再生ライブラリには表示されません。現在の承認済み登録数："+bgmTracks.length+"曲";
  }catch(e){$("bgmStatus").textContent="登録処理エラー："+(e instanceof Error?e.message:String(e));}
  finally{$("uploadBgm").disabled=false;}
 }
