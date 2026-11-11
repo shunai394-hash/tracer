@@ -80,47 +80,27 @@ export async function POST(request: Request) {
   const authError = await authorize(request);
   if (authError) return authError;
   try {
-    const contentType = request.headers.get("content-type") ?? "";
-    if (contentType.includes("application/json")) {
-      const body = await request.json() as { action?: string; fileName?: string; size?: number; contentType?: string; genre?: string };
-      if (body.action !== "prepare") return json({ ok: false, error: "unsupported_action" }, 400);
-      const fileName = String(body.fileName ?? "");
-      const size = Number(body.size ?? 0);
-      const mimeType = String(body.contentType ?? "").toLowerCase();
-      if (!fileName.toLowerCase().endsWith(".mp3") || !Number.isFinite(size) || size < 1 || size > MAX_FILE_BYTES) {
-        return json({ ok: false, error: "audio_file_size_or_name_invalid", maxBytes: MAX_FILE_BYTES }, 400);
-      }
-      if (mimeType && !ALLOWED_TYPES.has(mimeType)) return json({ ok: false, error: "mp3_only" }, 415);
-      const requestedGenre = String(body.genre || "未分類");
-      const genre = GENRES[requestedGenre] ?? "未分類";
-      const safeBase = fileName.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
-      const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
-      const objectName = genrePrefix + "--" + safeBase + "-" + randomUUID() + ".mp3";
-      const supabase = createSupabaseAdminClient();
-      const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(objectName, { upsert: false });
-      if (error) throw error;
-      const { url } = getSupabasePublicConfig();
-      const uploadUrl = new URL(data.signedUrl, url).toString();
-      console.info("[DRAMA BGM SIGNED UPLOAD CREATED]", { object: objectName, bytes: size, genre });
-      return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
+    const body = await request.json() as { action?: string; fileName?: string; size?: number; contentType?: string; genre?: string };
+    if (body.action !== "prepare") return json({ ok: false, error: "unsupported_action" }, 400);
+    const fileName = String(body.fileName ?? "").trim();
+    const size = Number(body.size ?? 0);
+    const mimeType = String(body.contentType ?? "").toLowerCase();
+    if (!fileName.toLowerCase().endsWith(".mp3") || !Number.isSafeInteger(size) || size < 1 || size > MAX_FILE_BYTES) {
+      return json({ ok: false, error: "audio_file_size_or_name_invalid", message: "MP3は1曲10MB以下にしてください。", maxBytes: MAX_FILE_BYTES }, 400);
     }
-
-    // Upload through the authenticated server so browsers do not depend on Storage CORS or signed-URL behavior.
-    const form = await request.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) return json({ ok: false, error: "audio_file_required", message: "MP3ファイルが届いていません。" }, 400);
-    if (file.size < 1 || file.size > MAX_FILE_BYTES) return json({ ok: false, error: "audio_file_size_invalid", message: "MP3は1曲10MB以下にしてください。", maxBytes: MAX_FILE_BYTES }, 413);
-    if (!file.name.toLowerCase().endsWith(".mp3") || (file.type && !ALLOWED_TYPES.has(file.type.toLowerCase()))) return json({ ok: false, error: "mp3_only", message: "MP3形式のファイルを選択してください。" }, 415);
-    const requestedGenre = String(form.get("genre") || "未分類");
+    if (mimeType && !ALLOWED_TYPES.has(mimeType)) return json({ ok: false, error: "mp3_only", message: "MP3形式のファイルを選択してください。" }, 415);
+    const requestedGenre = String(body.genre || "未分類");
     const genre = GENRES[requestedGenre] ?? "未分類";
-    const safeBase = file.name.normalize("NFKC").replace(/\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
-    const objectName = (genre === "未分類" ? "uncategorized" : genre) + "--" + safeBase + "-" + randomUUID() + ".mp3";
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const safeBase = fileName.normalize("NFKC").replace(/\\.mp3$/i, "").replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "bgm";
+    const genrePrefix = genre === "未分類" ? "uncategorized" : genre;
+    const objectName = genrePrefix + "--" + safeBase + "-" + randomUUID() + ".mp3";
     const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.storage.from(BUCKET).upload(objectName, bytes, { contentType: "audio/mpeg", upsert: false, metadata: { genre } });
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(objectName, { upsert: false });
     if (error) throw error;
-    console.info("[DRAMA BGM UPLOAD STORED]", { object: objectName, bytes: file.size, genre });
-    return json({ ok: true, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
+    const { url } = getSupabasePublicConfig();
+    const uploadUrl = new URL(data.signedUrl, url).toString();
+    console.info("[DRAMA BGM SIGNED UPLOAD CREATED]", { object: objectName, bytes: size, genre });
+    return json({ ok: true, upload: { url: uploadUrl, token: data.token, path: data.path }, track: { name: objectName, title: safeBase, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類" } }, 201);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[DRAMA BGM UPLOAD PREPARE FAILED]", { detail });
