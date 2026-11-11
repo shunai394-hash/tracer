@@ -374,16 +374,28 @@ async function uploadBgmFiles(){
  $("uploadBgm").disabled=true;let done=0;const errors=[];
  try{
   for(const file of files){
-   $("bgmStatus").textContent="登録中 "+(done+errors.length+1)+"/"+files.length+"："+file.name;
-   const form=new FormData();form.append("file",file);form.append("genre",$("bgmGenre").value);
-   const r=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers:{"Authorization":"Bearer "+token.value.trim()},body:form,cache:"no-store"});
-   const d=await r.json().catch(()=>null);
-   if(!r.ok||!d?.ok)errors.push(file.name+"："+(d?.message||d?.error||"登録失敗")+"（HTTP "+r.status+(d?.detail?" / "+d.detail:"")+"）");else done++;
+   $("bgmStatus").textContent="アップロード準備中 "+(done+errors.length+1)+"/"+files.length+"："+file.name;
+   const headers={"Authorization":"Bearer "+token.value.trim(),"Content-Type":"application/json"};
+   const prepare=await fetch("/api/admin/ai-live/short-drama/bgm",{method:"POST",headers,body:JSON.stringify({action:"prepare",fileName:file.name,size:file.size,contentType:file.type,genre:$("bgmGenre").value}),cache:"no-store"});
+   const prepared=await prepare.json().catch(()=>null);
+   if(!prepare.ok||!prepared?.ok||!prepared?.upload?.url){errors.push(file.name+"：アップロード準備失敗（HTTP "+prepare.status+" / "+(prepared?.detail||prepared?.message||prepared?.error||"応答不正")+")");continue;}
+   $("bgmStatus").textContent="Storageへ直接アップロード中 "+(done+errors.length+1)+"/"+files.length+"："+file.name;
+   let uploaded;
+   try{
+    uploaded=await fetch(prepared.upload.url,{method:"PUT",headers:{"Content-Type":"audio/mpeg"},body:file,cache:"no-store"});
+   }catch(uploadError){
+    errors.push(file.name+"：Storageへの直接送信に失敗（"+(uploadError?.message||"通信/CORSエラー")+"）");continue;
+   }
+   if(!uploaded.ok){
+    const detail=await uploaded.text().catch(()=> "");
+    errors.push(file.name+"：Storageアップロード失敗（HTTP "+uploaded.status+" / "+detail.slice(0,240)+"）");continue;
+   }
+   done++;
   }
-  if(done>0)$("bgmFiles").value="";
+  if(done>0) $("bgmFiles").value="";
   const summary="登録結果："+done+"/"+files.length+"曲 成功"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
   await loadBgm();
-  $("bgmStatus").textContent=summary;
+  $("bgmStatus").textContent=summary+"\n現在の登録数："+bgmTracks.length+"曲";
  }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
