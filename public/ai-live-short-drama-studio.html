@@ -66,8 +66,17 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <div><label for="bgmFiles">MP3音源（複数選択可・1曲10MB以下）</label><input id="bgmFiles" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple></div>
 <div><label for="bgmGenre">登録ジャンル</label><select id="bgmGenre"><option value="日常・会話">日常・会話</option><option value="恋愛">恋愛</option><option value="感動・余韻">感動・余韻</option><option value="サスペンス">サスペンス</option><option value="コメディ">コメディ</option><option value="アクション・場面転換">アクション・場面転換</option><option value="未分類" selected>未分類</option></select></div>
 </div>
+<div class="grid">
+<div><label for="bgmComposer">作曲者・権利者</label><input id="bgmComposer" maxlength="160" placeholder="作曲者名／自分の制作名"></div>
+<div><label for="bgmSourceUrl">音源の入手元・作品URL</label><input id="bgmSourceUrl" type="url" placeholder="https://..." required></div>
+<div><label for="bgmLicenseName">ライセンス名</label><input id="bgmLicenseName" maxlength="160" placeholder="例：自作・全権利保有／利用許諾名"></div>
+<div><label for="bgmLicenseUrl">ライセンス・利用条件URL</label><input id="bgmLicenseUrl" type="url" placeholder="https://..." required></div>
+<div style="grid-column:1/-1"><label for="bgmEvidenceNote">権利確認メモ</label><textarea id="bgmEvidenceNote" maxlength="4000" placeholder="制作経緯、購入・許諾情報、商用配信とプラットフォーム利用が可能な根拠を記入"></textarea></div>
+<div style="grid-column:1/-1"><label><input id="bgmCommercialRights" type="checkbox" style="width:auto;margin-right:8px">商用利用・配信利用の権利を確認済み</label><label><input id="bgmPlatformRights" type="checkbox" style="width:auto;margin-right:8px">このTRACER内での配信利用を許可されている</label></div>
+</div>
 <div class="grid"><button id="uploadBgm" type="button">選択したMP3を登録</button><button id="refreshBgm" class="secondary" type="button">ライブラリを更新</button></div>
 <p id="bgmStatus" class="status" role="status" aria-live="polite">管理トークンを入力してライブラリを読み込んでください。</p>
+<p class="muted">アップロードした曲の審査・承認は <a href="/ai-live-obs.html" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">BGM権利審査・OBS連携ページ</a> で行います。承認前の曲は再生一覧に表示されません。</p>
 <div class="grid">
 <div><label for="bgmSelect">再生するBGM</label><select id="bgmSelect"><option value="">BGMを選択</option></select></div>
 <div><label for="bgmVolume">BGM音量 <span id="bgmVolumeValue">35%</span></label><input id="bgmVolume" type="range" min="0" max="100" value="35"></div>
@@ -150,7 +159,7 @@ function addCharacter(name="登場人物",voiceId="",imageUrl="",mouthX=50,mouth
  el.querySelector(".remove").addEventListener("click",()=>{characterRows=characterRows.filter(x=>x.id!==id);el.remove();refreshLineCharacters();});
  characters.append(el);refreshLineCharacters();
 }
-function refreshCharacterVoiceOptions(){document.querySelectorAll(".scene .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.innerHTML=optionList(value);select.value=value;});refreshLineVoiceNotes();}
+function refreshCharacterVoiceOptions(){document.querySelectorAll("#characters .cvoice").forEach((select)=>{const row=characterRows.find(c=>c.id===select.closest(".scene").dataset.id);const value=row?.voiceId||"";select.disabled=false;select.innerHTML=optionList(value);select.value=value;});refreshLineVoiceNotes();}
 function refreshLineVoiceNotes(){document.querySelectorAll(".line").forEach(el=>{const row=lineRows.find(item=>item.id===el.dataset.id);const character=row&&characterRows.find(c=>c.id===row.speakerId);const voice=character&&voices.find(v=>v.id===character.voiceId);const note=el.querySelector(".voiceNote");if(note)note.textContent=character?(character.name+" ／ "+(voice?.title||"未登録ボイス")+" ／ モデルID: "+(character.voiceId||"未設定")):"担当者未設定";});}
 function refreshLineCharacters(){document.querySelectorAll(".line").forEach(el=>{const select=el.querySelector(".speaker");const val=select.value;select.innerHTML=characterRows.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name||"名前未設定")+'</option>').join("");if(characterRows.some(c=>c.id===val))select.value=val;});refreshLineVoiceNotes();}
 function addLine(text="セリフを入力してください",speakerId=characterRows[0]?.id||"",emotion="自然",pace="標準",pause="通常"){
@@ -233,11 +242,28 @@ function showVoicePreview(root,voice,url){
  const face=makeLipSyncFace({name:voice.title||voice.name||"ボイス"});const player=document.createElement("audio");player.controls=true;player.preload="metadata";player.style.width="100%";player.src=url;player.setAttribute("aria-label",(voice.title||voice.name||"ボイス")+"のサンプル音声");player.load();
  if(window.TracerLipSync)window.TracerLipSync.attach(player,face.querySelector(".lipSyncMouth"));root.append(label,face,player);
 }
+function addVoiceAssignmentControl(card,voice){
+ const wrap=document.createElement("div");wrap.className="grid";wrap.style.marginTop="8px";
+ const target=document.createElement("select");target.setAttribute("aria-label","担当ボイスを設定する人物");
+ function refreshTargets(){const selected=target.value;target.replaceChildren();for(const character of characterRows)target.add(new Option(character.name||"名前未設定",character.id));if(characterRows.some(character=>character.id===selected))target.value=selected;}
+ refreshTargets();
+ const assign=document.createElement("button");assign.type="button";assign.className="secondary";assign.textContent="選択した人物にこの声を設定";
+ assign.addEventListener("click",()=>{
+  const character=characterRows.find(item=>item.id===target.value);if(!character){status.textContent="設定先の人物を選択してください。";return;}
+  character.voiceId=voice.id;
+  const row=characters.querySelector('.scene[data-id="'+character.id+'"]');
+  const select=row?.querySelector(".cvoice");
+  if(select){select.disabled=false;select.innerHTML=optionList(voice.id);select.value=voice.id;}
+  refreshLineVoiceNotes();
+  status.textContent="「"+(voice.title||voice.name||"登録ボイス")+"」を「"+character.name+"」の担当ボイスに設定しました。";
+ });
+ wrap.append(target,assign);card.append(wrap);
+}
 function renderVoiceLibrary(){
  const root=$("voiceLibrary");if(!root)return;root.replaceChildren();
  const registered=Array.isArray(voices)?voices:[];
  for(const preset of voicePresetDefinitions){
-  const found=registered.find(v=>v.source==="id_registered"&&String(v.title||"").trim()===preset.title)||registered.find(v=>v.source!=="id_registered"&&(String(v.title||"").trim()===preset.title||String(v.name||"").trim()===preset.title));
+  const found=(preset.modelId?registered.find(v=>v.id===preset.modelId):null)||registered.find(v=>v.source==="id_registered"&&String(v.title||"").trim()===preset.title)||registered.find(v=>v.source!=="id_registered"&&(String(v.title||"").trim()===preset.title||String(v.name||"").trim()===preset.title));
   const card=document.createElement("div");card.className="scene";
   const name=document.createElement("strong");name.textContent=preset.title+"（"+preset.gender+"）";
   const description=document.createElement("p");description.className="muted";description.textContent=preset.description;
@@ -249,7 +275,7 @@ function renderVoiceLibrary(){
    const sampleLabel=document.createElement("p");sampleLabel.className="muted";sampleLabel.textContent="試聴音声";card.append(sampleLabel,sampleFace,player);
   }
   const state=document.createElement("p");state.className="muted";state.textContent=found?"Fish Audioモデル登録済み・ID照合済み":"Fish Audioモデル未接続（一覧表示のみ）";card.append(state);if(found?.id){const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+found.id;card.append(modelId);addVoicePreviewControls(card,found);}
-  const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if(!found){const register=document.createElement("button");register.type="button";register.textContent=preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").value=preset.modelId||"";$("voiceIdStatus").textContent=preset.modelId?preset.title+"の既知IDをTRACERのFish Audioキーで照合してください。":"この役に割り当てたFish AudioモデルIDを入力してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});if(!preset.modelId)$("voiceModelId").focus();});card.append(register);}
+  if(found?.id)addVoiceAssignmentControl(card,found);const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.disabled=!found||!found.id;choose.addEventListener("click",()=>{addCharacter(preset.title,found.id);status.textContent="「"+preset.title+"」を登場人物に追加しました。";});card.append(choose);if(!found){const register=document.createElement("button");register.type="button";register.textContent=preset.modelId?"Fish Audio IDを照合して接続":"Fish AudioモデルIDを登録";register.addEventListener("click",()=>{$("voiceModelTitle").value=preset.title;$("voiceModelId").value=preset.modelId||"";$("voiceIdStatus").textContent=preset.modelId?preset.title+"の既知IDをTRACERのFish Audioキーで照合してください。":"この役に割り当てたFish AudioモデルIDを入力してください。";$("voiceIdRegistration").scrollIntoView({behavior:"smooth",block:"center"});if(!preset.modelId)$("voiceModelId").focus();});card.append(register);}
   root.append(card);
  }
  const idRegistered=registered.filter(v=>v.source==="id_registered");
@@ -257,13 +283,13 @@ function renderVoiceLibrary(){
  const registeredHeading=document.createElement("h3");registeredHeading.style.gridColumn="1 / -1";registeredHeading.textContent="IDから登録した音声（"+idRegistered.length+"件）";root.append(registeredHeading);
  const registeredNote=document.createElement("p");registeredNote.className="muted";registeredNote.style.gridColumn="1 / -1";registeredNote.textContent="Fish AudioモデルIDで照合し、TRACER共通台帳に保存した音声です。全件ここに表示します。";root.append(registeredNote);
  for(const voice of idRegistered){
-  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId);addVoicePreviewControls(card,voice);card.append(choose);root.append(card);
+  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId);addVoicePreviewControls(card,voice);addVoiceAssignmentControl(card,voice);card.append(choose);root.append(card);
  }
  const presetNames=new Set(voicePresetDefinitions.map(item=>item.title));
  const otherVoices=registered.filter(voice=>voice?.id&&voice.source!=="id_registered"&&!presetNames.has(String(voice.title||voice.name||"").trim()));
  if(otherVoices.length){const otherHeading=document.createElement("h3");otherHeading.style.gridColumn="1 / -1";otherHeading.textContent="その他の日本語ボイス（"+otherVoices.length+"件）";root.append(otherHeading);}
  for(const voice of otherVoices){
-  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title||voice.name||"名称未設定";const meta=document.createElement("p");meta.className="muted";meta.textContent=({public_licensed:"公開ライセンス音声",user_provided_clone:"許可確認済みクローン音声",private_drama_character:"ドラマ専用キャラクターボイス",private_voice_design:"架空キャラクターボイス"})[voice.source]||"TRACER利用可能ボイス";card.append(name,meta);addVoicePreviewControls(card,voice);const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title||voice.name||"登場人物",voice.id);status.textContent="「"+(voice.title||voice.name||"ボイス")+"」を登場人物に追加しました。";});card.append(choose);root.append(card);
+  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title||voice.name||"名称未設定";const meta=document.createElement("p");meta.className="muted";meta.textContent=({public_licensed:"公開ライセンス音声",user_provided_clone:"許可確認済みクローン音声",private_drama_character:"ドラマ専用キャラクターボイス",private_voice_design:"架空キャラクターボイス"})[voice.source]||"TRACER利用可能ボイス";card.append(name,meta);addVoicePreviewControls(card,voice);addVoiceAssignmentControl(card,voice);const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title||voice.name||"登場人物",voice.id);status.textContent="「"+(voice.title||voice.name||"ボイス")+"」を登場人物に追加しました。";});card.append(choose);root.append(card);
  }
 } voiceLoadInFlight=false,lastVoiceToken="";async function loadVoices(){const value=token.value.trim();if(!value){$("loadStatus").textContent="管理トークンを入力すると、利用可能な日本語ボイスを自動取得します。";return;}if(voiceLoadInFlight)return;voiceLoadInFlight=true;$("load").disabled=true;$("loadStatus").textContent="Fish Audioの日本語ボイスを取得中…";try{const r=await fetch("/api/admin/ai-live/fish-audio/voices",{headers:{"Authorization":"Bearer "+value},cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.message||d.error||("ボイス一覧を取得できません（HTTP "+r.status+"）。管理トークンとFish Audio接続を確認してください。"));if(!Array.isArray(d.voices))throw new Error("ボイス一覧の形式が正しくありません。");
 let sharedVoices=d.voices;
@@ -369,6 +395,9 @@ async function uploadBgmFiles(){
  const files=Array.from($("bgmFiles").files||[]);
  if(!files.length){$("bgmStatus").textContent="MP3ファイルを選択してください。";return;}
  if(!token.value.trim()){$("bgmStatus").textContent="管理トークンを入力してください。";return;}
+ const rights={composer:$("bgmComposer").value.trim(),sourceUrl:$("bgmSourceUrl").value.trim(),licenseName:$("bgmLicenseName").value.trim(),licenseUrl:$("bgmLicenseUrl").value.trim(),evidenceNote:$("bgmEvidenceNote").value.trim(),commercialUseAllowed:$("bgmCommercialRights").checked,platformUseAllowed:$("bgmPlatformRights").checked};
+ if(!rights.composer||!rights.sourceUrl||!rights.licenseName||!rights.licenseUrl||!rights.evidenceNote||!rights.commercialUseAllowed||!rights.platformUseAllowed){$("bgmStatus").textContent="登録前に作曲者・入手元URL・ライセンス名・利用条件URL・権利確認メモを入力し、商用利用と配信利用の権利を確認してください。";return;}
+ try{if(!["http:","https:"].includes(new URL(rights.sourceUrl).protocol)||!["http:","https:"].includes(new URL(rights.licenseUrl).protocol))throw new Error();}catch{$("bgmStatus").textContent="入手元URLとライセンスURLは有効なHTTP/HTTPS URLを入力してください。";return;}
  const invalid=files.filter(f=>!f.name.toLowerCase().endsWith(".mp3")||f.size>10*1024*1024||f.size===0);
  if(invalid.length){$("bgmStatus").textContent="登録できないファイル："+invalid.map(f=>f.name).join("、")+"（MP3・10MB以下が必要）";return;}
  $("uploadBgm").disabled=true;let done=0;const errors=[];
@@ -390,12 +419,16 @@ async function uploadBgmFiles(){
     const detail=await uploaded.text().catch(()=> "");
     errors.push(file.name+"：Storageアップロード失敗（HTTP "+uploaded.status+" / "+detail.slice(0,240)+"）");continue;
    }
+   const genreMap={"日常・会話":"daily","恋愛":"romance","感動・余韻":"emotional","サスペンス":"suspense","コメディ":"comedy","アクション・場面転換":"action","未分類":"daily"};
+   const registered=await fetch("/api/admin/ai-live/short-drama/bgm/register-existing",{method:"POST",headers,body:JSON.stringify({storageObject:prepared.track?.name,title:file.name.replace(/\.mp3$/i,""),composer:rights.composer,sourceUrl:rights.sourceUrl,licenseName:rights.licenseName,licenseUrl:rights.licenseUrl,evidenceNote:rights.evidenceNote,genre:genreMap[$("bgmGenre").value]||"daily",commercialUseAllowed:true,platformUseAllowed:true}),cache:"no-store"});
+   const registeredData=await registered.json().catch(()=>({}));
+   if(!registered.ok||!registeredData.ok){errors.push(file.name+"：アップロード済み・権利台帳登録失敗（HTTP "+registered.status+" / "+(registeredData.error||"応答不正")+"）。Storageには非公開で残っています。");continue;}
    done++;
   }
   if(done>0) $("bgmFiles").value="";
-  const summary="登録結果："+done+"/"+files.length+"曲 成功"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
+  const summary="権利台帳への仮登録結果："+done+"/"+files.length+"曲"+(errors.length?"\n失敗：\n"+errors.join("\n"):"");
   await loadBgm();
-  $("bgmStatus").textContent=summary+"\n現在の登録数："+bgmTracks.length+"曲";
+  $("bgmStatus").textContent=summary+"\n※登録した音源は権利審査待ち（pending）です。承認されるまで再生ライブラリには表示されません。現在の承認済み登録数："+bgmTracks.length+"曲";
  }catch(e){$("bgmStatus").textContent="登録処理エラー："+e.message;}finally{$("uploadBgm").disabled=false;}
 }
 $("uploadBgm").addEventListener("click",uploadBgmFiles);
