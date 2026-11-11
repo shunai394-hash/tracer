@@ -46,6 +46,19 @@ export async function GET(request: Request) {
   if (!isBaseConfigured()) return NextResponse.json({ ok: false, error: "base_oauth_not_configured" }, { status: 503 });
   const db = createSupabaseAdminClient();
   const result = { checked: 0, paid: 0, imported: 0, duplicate: 0, ignored: 0, failed: 0, unmappedItems: 0, scanOffsets: [] as number[], errors: [] as string[] };
+  const cronStartedAt = Date.now();
+  let cronRunId: string | null = null;
+  const { data: cronRun, error: cronRunInsertError } = await db.from("cron_runs").insert({
+    job_name: "commerce-base-orders",
+    status: "running",
+    metadata: { actor: "vercel-cron", phase: "starting" },
+  }).select("id").single();
+  if (cronRunInsertError) {
+    // Observability must never prevent paid-order ingestion.
+    console.warn("[TRACER BASE ORDER POLL RUN LOG START FAILED]", cronRunInsertError.message);
+  } else {
+    cronRunId = String(cronRun.id);
+  }
   try {
     // Always scan the newest page, then rotate through older pages so paid
     // orders beyond the first 50 cannot starve forever.
@@ -226,8 +239,43 @@ export async function GET(request: Request) {
       orderWindow: { startOrdered, endOrdered },
       summaryCounts: { recent: recentSummaries.length, rotating: rotatingSummaries.length },
     });
+    if (cronRunId) {
+      const { error: cronRunUpdateError } = await db.from("cron_runs").update({
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - cronStartedAt,
+        processed: result.imported,
+        failed: result.failed + result.unmappedItems,
+        status: healthy ? "succeeded" : "failed",
+        error: result.errors.length ? result.errors.slice(0, 20).join(" | ").slice(0, 1800) : null,
+        metadata: {
+          actor: "vercel-cron",
+          checked: result.checked,
+          paid: result.paid,
+          imported: result.imported,
+          duplicate: result.duplicate,
+          ignored: result.ignored,
+          unmappedItems: result.unmappedItems,
+          scanOffsets: result.scanOffsets,
+          nextScanOffset: nextOffset,
+          orderWindow: { startOrdered, endOrdered },
+        },
+      }).eq("id", cronRunId);
+      if (cronRunUpdateError) console.warn("[TRACER BASE ORDER POLL RUN LOG FINISH FAILED]", cronRunUpdateError.message);
+    }
     return NextResponse.json({ ok: healthy, channel: "base", nextScanOffset: nextOffset, ...result }, { status: healthy ? 200 : 207 });
   } catch (error) {
+    if (cronRunId) {
+      const { error: cronRunUpdateError } = await db.from("cron_runs").update({
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - cronStartedAt,
+        processed: result.imported,
+        failed: Math.max(1, result.failed),
+        status: "failed",
+        error: (error instanceof Error ? error.message : String(error)).slice(0, 1800),
+        metadata: { actor: "vercel-cron", checked: result.checked, paid: result.paid, imported: result.imported, errors: result.errors.slice(0, 20) },
+      }).eq("id", cronRunId);
+      if (cronRunUpdateError) console.warn("[TRACER BASE ORDER POLL RUN LOG ERROR UPDATE FAILED]", cronRunUpdateError.message);
+    }
     console.error("[TRACER BASE ORDER POLL FAILED]", {
       checked: result.checked, paid: result.paid, imported: result.imported,
       failed: result.failed, error: error instanceof Error ? error.message : String(error),
