@@ -64,3 +64,51 @@ jobs:
             exit 1
           fi
           python3 -c 'import json,sys; d=json.load(open("diagnostic.json")); sys.exit(0 if d.get("ok") is True and d.get("readOnly") is True else 1)'
+
+      - name: Build visual contact sheets for exact CJ variant images
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages pillow
+          python3 - <<'PY'
+          import csv, io, json, os, urllib.request
+          from collections import defaultdict
+          from PIL import Image, ImageDraw, ImageOps
+          data = json.load(open("diagnostic.json", encoding="utf-8"))
+          os.makedirs("contact-sheets/images", exist_ok=True)
+          groups = defaultdict(list)
+          with open("contact-sheets/variant-image-map.csv", "w", newline="", encoding="utf-8-sig") as f:
+              w = csv.writer(f)
+              w.writerow(["supplier_product_id","variant_name","vid","sku","image_url"])
+              for row in data["results"]:
+                  if not row.get("exactIdentity") or not row.get("imageUrl"):
+                      raise SystemExit("unverified_identity_or_missing_image:" + str(row.get("vid")))
+                  req = urllib.request.Request(row["imageUrl"], headers={"User-Agent":"Mozilla/5.0 TRACER-CJ-image-audit"})
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      payload = response.read()
+                  image = Image.open(io.BytesIO(payload)).convert("RGB")
+                  image.save(f"contact-sheets/images/{row['pid']}_{row['vid']}.jpg", quality=88)
+                  groups[row["pid"]].append((row, image.copy()))
+                  w.writerow([row["pid"],row["variantName"],row["vid"],row["expectedSku"],row["imageUrl"]])
+          for pid, items in groups.items():
+              cell_w, cell_h, cols = 280, 285, 3
+              rows = (len(items) + cols - 1) // cols
+              sheet = Image.new("RGB", (cols*cell_w, rows*cell_h), "white")
+              draw = ImageDraw.Draw(sheet)
+              for index, (row, image) in enumerate(items):
+                  x, y = (index % cols)*cell_w, (index // cols)*cell_h
+                  thumb = ImageOps.contain(image, (cell_w-24, 220))
+                  sheet.paste(thumb, (x+(cell_w-thumb.width)//2, y+8+(220-thumb.height)//2))
+                  draw.text((x+8,y+235), str(row["variantName"])[:36], fill="black")
+                  draw.text((x+8,y+253), str(row["expectedSku"])[:38], fill="black")
+                  draw.text((x+8,y+270), "VID " + str(row["vid"]), fill="black")
+              sheet.save(f"contact-sheets/{pid}.jpg", quality=90)
+          print(json.dumps({"products":len(groups),"images":sum(map(len,groups.values())),"contactSheets":[f"{pid}.jpg" for pid in sorted(groups)]},ensure_ascii=False))
+          PY
+
+      - name: Upload CJ variant image contact sheets
+        uses: actions/upload-artifact@v4
+        with:
+          name: cj-11-product-color-image-contact-sheets
+          path: contact-sheets/
+          retention-days: 1
