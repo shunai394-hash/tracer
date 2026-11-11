@@ -116,7 +116,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
  let tracks=[], urls=[], baseVolume=.35, ducked=false, autoBgmLoop=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
- let autoLiveActive=false, autoLiveIndex=0, autoLiveTimer=null, autoLiveDelayResolve=null, finishCurrentSpeech=null;
+ let autoLiveActive=false, autoLiveIndex=0, autoLiveTimer=null, autoLiveDelayResolve=null, finishCurrentSpeech=null, speechRequestController=null;
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -353,6 +353,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  }
  async function playSpeech(text){
   const token=$('token').value.trim(), referenceId=$('voice').value;
+  if(speechRequestController)speechRequestController.abort();
+  const requestController=new AbortController();speechRequestController=requestController;
   if(!text){setStatus('読み上げテキストがありません');return false}
   if(!token){setStatus('管理トークンを入力してください');return false}
   if(!referenceId){setStatus('Fish Audioの音声を選択してください');return false}
@@ -364,16 +366,17 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   if(synth)synth.cancel();
   ducked=true;setVolume();$('caption').textContent=text;setStatus('Fish Audioで音声を生成中…');
   try{
-   const r=await fetch('/api/admin/ai-live/fish-audio',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({text,referenceId})});
+   const r=await fetch('/api/admin/ai-live/fish-audio',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',signal:requestController.signal,body:JSON.stringify({text,referenceId})});
    const type=r.headers.get('content-type')||'';
    if(!r.ok||!type.toLowerCase().includes('audio/')){const d=await r.json().catch(()=>null);throw new Error(d?.message||d?.error||'Fish Audio音声生成に失敗しました')}
-   const blob=await r.blob();speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
+   const blob=await r.blob();if(requestController.signal.aborted)return false;speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
    if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));
    return await new Promise(resolve=>{
     let finished=false;
     const finish=ok=>{
      if(finished)return;finished=true;
      if(finishCurrentSpeech===finish)finishCurrentSpeech=null;
+     if(speechRequestController===requestController)speechRequestController=null;
      if(!ok&&speechAudio){speechAudio.pause();speechAudio.currentTime=0}
      $('avatar').classList.remove('talking');
      $('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');
@@ -390,6 +393,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
     speechAudio.play().catch(()=>{setStatus('音声を再生できません。OBS Browser Sourceの音声設定を確認してください');finish(false)});
    });
   }catch(e){
+   if(speechRequestController===requestController)speechRequestController=null;
    $('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;
    if(!autoLiveActive)setStatus(e.message||'音声生成に失敗しました');
    return false;
@@ -404,6 +408,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  }
  function stopAutoLive(){
   autoLiveActive=false;
+  if(speechRequestController){speechRequestController.abort();speechRequestController=null}
   if(autoLiveTimer){clearTimeout(autoLiveTimer);autoLiveTimer=null}
   if(autoLiveDelayResolve){const resolve=autoLiveDelayResolve;autoLiveDelayResolve=null;resolve()}
   if(finishCurrentSpeech)finishCurrentSpeech(false);
@@ -415,7 +420,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  }
  function productScript(product){
   const price=new Intl.NumberFormat('ja-JP').format(product.sellingPrice);
-  const description=(product.description||'詳細は商品ページをご確認ください。').replace(/\\s+/g,' ').trim();
+  const description=(product.description||'詳細は商品ページをご確認ください。').replace(/\s+/g,' ').trim();
   const text='本日のおすすめ商品をご紹介します。'+product.title+'。価格は'+price+'円です。'+description+' 気になった方は商品ページをご覧ください。';
   return text.slice(0,1200);
  }
