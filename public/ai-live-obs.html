@@ -19,6 +19,7 @@ body{display:grid;grid-template-rows:1fr auto; padding:28px; gap:18px}
 .eye.l{left:26%}.eye.r{right:26%}
 .mouth{position:absolute;left:50%;top:72%;transform:translateX(-50%) scaleY(calc(1 + var(--lip-open,0)));transform-origin:center top;width:18%;height:8%;border-radius:0 0 20px 20px;background:#842d3d;transition:transform .035s linear}
 .caption{max-width:min(72vw,1050px);margin-bottom:2%;padding:20px 26px;border-radius:18px;background:#080d18d9;border:1px solid #ffffff38;box-shadow:0 10px 35px #0008;font-size:clamp(22px,3vw,42px);font-weight:700;line-height:1.4;text-shadow:0 2px 3px #000}
+.product-link{display:block;margin-top:8px;font-size:clamp(12px,1.3vw,18px);font-weight:500;overflow-wrap:anywhere;color:#bfdbfe;text-shadow:0 1px 3px #000}
 .lower{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .brand{padding:9px 14px;border-radius:9px;background:#111827d9;border:1px solid #ffffff38;font-size:14px;letter-spacing:.08em}
 #state{font-size:13px;color:#d1d5db;text-shadow:0 1px 3px #000}
@@ -42,7 +43,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  <div class="avatar" id="avatar" aria-label="TRACER AI presenter">
   <div class="body"></div><div class="head"><div class="hair"></div><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div>
  </div>
- <div class="caption" id="caption" aria-live="polite">TRACER AI LIVE</div>
+ <div><div class="caption" id="caption" aria-live="polite">TRACER AI LIVE</div><a class="product-link" id="productLink" target="_blank" rel="noopener noreferrer"></a></div>
 </div>
 <div class="lower"><span class="brand">TRACER AI LIVE</span><span id="state">待機中</span></div>
 <button id="toggle" type="button">操作パネル</button>
@@ -336,6 +337,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   const description=product.description?product.description:'詳細は商品ページをご確認ください。';
   $('script').value=product.title+'。価格は'+price+'円です。'+description;
   $('caption').textContent=product.title+'　'+price+'円';
+  $('productLink').href=product.productUrl||'#';$('productLink').textContent=product.productUrl||'';
   setStatus('商品情報を紹介台本に反映しました');
  }
  async function loadFishVoices(){
@@ -380,7 +382,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
      if(!ok&&speechAudio){speechAudio.pause();speechAudio.currentTime=0}
      $('avatar').classList.remove('talking');
      $('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');
-     ducked=false;setVolume();$('speak').disabled=false;
+     ducked=false;setVolume();$('speak').disabled=autoLiveActive;
      if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
      speechAudio=null;
      if(!autoLiveActive)setStatus(ok?'待機中':'音声再生を停止しました');
@@ -413,7 +415,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   if(autoLiveDelayResolve){const resolve=autoLiveDelayResolve;autoLiveDelayResolve=null;resolve()}
   if(finishCurrentSpeech)finishCurrentSpeech(false);
   if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}
-  $('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true;
+  $('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true;$('speak').disabled=false;
   $('avatar').classList.remove('talking');ducked=false;setVolume();
   if(synth)synth.cancel();
   setStatus('商品自動紹介を停止しました');
@@ -436,12 +438,18 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
   autoLiveActive=true;$('autoLiveStart').disabled=true;$('autoLiveStop').disabled=false;
   setStatus(products.length+'件の商品を順番に自動紹介します');
   while(autoLiveActive){
-   const product=products[autoLiveIndex%products.length];
-   autoLiveIndex=(autoLiveIndex+1)%products.length;
+   if(autoLiveIndex>=products.length){
+    const refreshed=await loadProducts();
+    if(!autoLiveActive)break;
+    if(!refreshed){stopAutoLive();setStatus('販売可能な商品がなくなったため自動紹介を停止しました');break}
+    autoLiveIndex=0;
+   }
+   const product=products[autoLiveIndex++];
    $('products').value=product.id;
    const text=productScript(product);
    $('script').value=text;
    $('caption').textContent=product.title+'　'+new Intl.NumberFormat('ja-JP').format(product.sellingPrice)+'円';
+   $('productLink').href=product.productUrl||'#';$('productLink').textContent=product.productUrl||'';
    setStatus('商品を紹介中：'+product.title);
    const played=await playSpeech(text);
    if(!autoLiveActive)break;
