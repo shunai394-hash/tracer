@@ -43,13 +43,18 @@ export async function GET(request: Request) {
     const storage = supabase.storage.from(BUCKET);
     const requestedGenre = new URL(request.url).searchParams.get("genre");
     const normalizedGenre = requestedGenre ? (GENRES[requestedGenre] ?? requestedGenre) : undefined;
-    const { data: objects, error } = await storage.list("", {
-      limit: MAX_TRACKS,
-      offset: 0,
-      sortBy: { column: "name", order: "asc" },
-    });
-    if (error) throw error;
-    const mp3s = (objects ?? []).filter((item) => item.name.toLowerCase().endsWith(".mp3"));
+    const objects: Array<{ name: string; created_at?: string | null }> = [];
+    for (let offset = 0; offset < MAX_TRACKS; offset += PAGE_SIZE) {
+      const { data: page, error } = await storage.list("", {
+        limit: PAGE_SIZE,
+        offset,
+        sortBy: { column: "name", order: "asc" },
+      });
+      if (error) throw error;
+      objects.push(...(page ?? []));
+      if (!page || page.length < PAGE_SIZE) break;
+    }
+    const mp3s = objects.filter((item) => item.name.toLowerCase().endsWith(".mp3"));
     const tracks = (await Promise.all(mp3s.map(async (item) => {
       const [prefix, ...rest] = item.name.split("--");
       const genre = GENRE_LABELS[prefix] ? prefix : "未分類";
@@ -61,7 +66,7 @@ export async function GET(request: Request) {
       return { name: item.name, title, genre, genreLabel: GENRE_LABELS[genre] ?? "未分類", url: signed.signedUrl, createdAt: item.created_at ?? null };
     }))).filter((track): track is NonNullable<typeof track> => track !== null);
     tracks.sort((a, b) => a.title.localeCompare(b.title, "ja"));
-    return json({ ok: true, tracks, truncated: mp3s.length >= MAX_TRACKS });
+    return json({ ok: true, tracks, truncated: objects.length >= MAX_TRACKS });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[DRAMA BGM LIBRARY FAILED]", detail);
