@@ -8,6 +8,9 @@ const executor = source.slice(start);
 
 assert.match(executor, /SHOPIFY_COLOR_FAMILY_EXECUTION_ENABLED !== "1"/, "live execution must be opt-in");
 assert.match(executor, /status: "DRAFT"/, "new family product must stay draft");
+assert.match(executor, /before\.product\.status !== "DRAFT"[\s\S]*shopify_color_family_existing_parent_not_draft/, "an existing published family must fail before any retry writes");
+assert.match(executor, /refreshed\.product\.status !== "DRAFT"/, "draft-only status must remain true after variant writes");
+assert.match(executor, /product\.status !== "DRAFT"/, "final verification must reject a published family");
 assert.match(executor, /productVariantsBulkUpdate/, "pre-created first option variant must be adopted, not duplicated");
 assert.match(executor, /shopify_color_family_default_variant_color_mismatch/, "unexpected default color must fail closed");
 assert.match(executor, /productVariantsBulkCreate/, "remaining color variants must be created in bulk");
