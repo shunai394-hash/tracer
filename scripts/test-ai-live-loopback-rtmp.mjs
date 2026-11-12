@@ -86,7 +86,7 @@ try {
   assert.ok(outputBytes > 10_000, "loopback RTMP receiver did not write media data");
   const streams = execFileSync("ffprobe", [
     "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", receivedFile,
-  ], { encoding: "utf8" }).trim().split(/\\r?\\n/).sort();
+  ], { encoding: "utf8" }).trim().split(/\r?\n/).sort();
   assert.deepEqual(streams, ["audio", "video"]);
   console.log("AI live loopback RTMP publish/receive round-trip passed", { outputBytes, streams });
 } finally {
