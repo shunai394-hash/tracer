@@ -132,7 +132,7 @@ function haltChildren() {
 
 function stopReasonFor(errorCode) {
   if (errorCode === "inventory_unverified") return "inventory_unverified";
-  if (errorCode === "speech_provider_failed" || errorCode === "media_spawn_failed" || errorCode === "media_exited") {
+  if (errorCode === "speech_provider_failed" || errorCode === "media_spawn_failed" || errorCode === "media_exited" || errorCode === "media_unavailable" || errorCode === "media_output_not_started") {
     return "speech_provider_failed";
   }
   return "stale_product_facts";
