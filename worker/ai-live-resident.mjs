@@ -431,14 +431,17 @@ async function waitForMediaStart(child, noteOutput) {
 }
 
 function mediaConfiguration(job) {
-  const segment = job?.segments?.[0];
-  const voiceId = typeof segment?.voiceId === "string" ? segment.voiceId : "";
+  const segments = Array.isArray(job?.segments) ? job.segments : [];
+  if (segments.length < 1 || segments.length > 20) return { ok: false, errorCode: "invalid_segments" };
+  const voiceSegments = segments.filter((segment) => typeof segment?.voiceId === "string" && segment.voiceId.length > 0);
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
   const speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
   const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
   const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
-  if (voiceId) {
-    if (!apiKey || !segment?.scriptText || !isRegisteredResidentVoice(voiceId)) {
+  if (voiceSegments.length > 0) {
+    if (voiceSegments.length !== segments.length || !apiKey || segments.some((segment) =>
+      !segment?.scriptText || !isRegisteredResidentVoice(segment.voiceId)
+    )) {
       return { ok: false, errorCode: "speech_provider_failed" };
     }
   } else if (!speechPath || !existsSync(speechPath)) {
@@ -458,22 +461,36 @@ async function startMedia(job) {
   if (!configured.ok) return configured;
   const loopback = residentLoopbackTarget(process.env.TRACER_AI_LIVE_OBS_LOOPBACK_URL);
   if (!loopback.ok) return { ok: false, errorCode: loopback.errorCode };
-  const segment = job.segments?.[0];
-  const voiceId = segment?.voiceId;
+  const segments = job.segments;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
+  const voiceMode = segments.some((segment) => typeof segment.voiceId === "string" && segment.voiceId.length > 0);
+  let speechPaths = [];
   let speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
-  if (voiceId) {
-    const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
-    if (!spoken.ok) return { ok: false, errorCode: "speech_provider_failed" };
-    speechPath = join(stateDir, "speech.mp3");
-    writeFileSync(speechPath, spoken.bytes);
+  if (voiceMode) {
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const spoken = await synthesizeRegisteredVoice({
+        voiceId: segment.voiceId,
+        text: segment.scriptText,
+        apiKey,
+      });
+      if (!spoken.ok) return { ok: false, errorCode: "speech_provider_failed" };
+      const segmentPath = join(stateDir, `speech-${String(index + 1).padStart(2, "0")}.mp3`);
+      writeFileSync(segmentPath, spoken.bytes);
+      speechPaths.push(segmentPath);
+    }
+    speechPath = speechPaths[0];
+  } else {
+    speechPaths = [speechPath];
   }
   const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO.trim();
   const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH.trim();
   const outputPath = join(stateDir, "introduction.mp4");
   // Never accept a previous session's file as proof that this FFmpeg process is producing media.
   rmSync(outputPath, { force: true });
-  const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath, loopbackUrl: loopback.url });
+  const plan = buildResidentFfmpegArgs({
+    avatarVideo, bgmPath, speechPath, speechPaths, outputPath, loopbackUrl: loopback.url,
+  });
   if (!plan.ok) return { ok: false, errorCode: plan.errorCode };
   const script = process.env.TRACER_AI_LIVE_FFMPEG_SCRIPT?.trim() || "";
   const command = script ? process.execPath : (process.env.TRACER_AI_LIVE_FFMPEG_BIN?.trim() || "ffmpeg");
