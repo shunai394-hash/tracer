@@ -6,7 +6,7 @@
  */
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import net from "node:net";
 import { join } from "node:path";
 import { destinationApprovalView, openDestinationSocket } from "../lib/ai-live/destination-gate.ts";
@@ -42,18 +42,56 @@ function pidAlive(pid) {
   }
 }
 
-if (existsSync(lockPath)) {
+function duplicateWorkerExit() {
+  writeSync(1, JSON.stringify({ ok: false, errorCode: "duplicate_worker", publicBroadcast: false }) + "\n");
+  process.exit(2);
+}
+
+function createExclusiveLock() {
+  let fd;
   try {
-    const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    if (pidAlive(lock.pid) && lock.pid !== process.pid) {
-      writeSync(1, JSON.stringify({ ok: false, errorCode: "duplicate_worker", publicBroadcast: false }) + "\n");
-      process.exit(2);
+    fd = openSync(lockPath, "wx", 0o600);
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    let stale = false;
+    try {
+      const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+      stale = !pidAlive(lock.pid);
+    } catch {
+      stale = true;
     }
-  } catch {
-    // A broken lock belongs to a dead process and can be replaced.
+    if (!stale) duplicateWorkerExit();
+    const stalePath = `${lockPath}.stale-${process.pid}`;
+    try {
+      renameSync(lockPath, stalePath);
+      rmSync(stalePath, { force: true });
+    } catch (renameError) {
+      if (renameError?.code !== "ENOENT") {
+        try {
+          fd = openSync(lockPath, "wx", 0o600);
+        } catch (retryError) {
+          if (retryError?.code === "EEXIST") duplicateWorkerExit();
+          throw retryError;
+        }
+      }
+    }
+    if (fd === undefined) {
+      try {
+        fd = openSync(lockPath, "wx", 0o600);
+      } catch (retryError) {
+        if (retryError?.code === "EEXIST") duplicateWorkerExit();
+        throw retryError;
+      }
+    }
+  }
+  try {
+    writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+  } finally {
+    closeSync(fd);
   }
 }
-writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+
+createExclusiveLock();
 
 const session = new ResidentSession();
 try {
@@ -66,7 +104,13 @@ if (session.health.state === "live" || session.health.state === "reconnecting") 
 }
 
 function persist() {
-  writeFileSync(statePath, JSON.stringify(session.snapshot()));
+  const temporaryPath = `${statePath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporaryPath, JSON.stringify(session.snapshot()), { mode: 0o600 });
+    renameSync(temporaryPath, statePath);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
 }
 
 function haltChildren() {
@@ -213,7 +257,13 @@ async function verifyIntroduction(job, nowMs) {
   } catch {
     return { ok: false, errorCode: "inventory_unverified" };
   }
-  if (!catalog.configured) return { ok: true, skipped: true };
+  if (!catalog.configured) {
+    const localLoopbackOverride = job.destination === "loopback"
+      && process.env.TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK === "1";
+    return localLoopbackOverride
+      ? { ok: true, skipped: true }
+      : { ok: false, errorCode: "inventory_unverified" };
+  }
   if (catalog.errorCode) return { ok: false, errorCode: catalog.errorCode };
   for (const segment of job.segments || []) {
     if (typeof segment.sellingPrice !== "number" || typeof segment.inventory !== "number" || typeof segment.supplierFingerprint !== "string") {
