@@ -518,8 +518,8 @@ try {
   assert.equal(health.body.productFacts.valid, null);
   assert.equal(health.body.destinationApproval.rtmpAllowed, false);
   const readyProbe = await request(authReady.port, "/ready");
-  assert.equal(readyProbe.status, 200);
-  assert.equal(readyProbe.body.ready, true);
+  assert.equal(readyProbe.status, 503);
+  assert.equal(readyProbe.body.ready, false);
   assert.equal(readyProbe.body.session.state, "idle");
   const leaked = JSON.stringify({ health: health.body, ready: readyProbe.body, wrong: wrong.body, output: authWorker.read(), state: readFileSync(join(authDir, "state.json"), "utf8") });
   assert.equal(leaked.includes(adminToken), false);
@@ -975,6 +975,7 @@ for (const missingName of ["TRACER_AI_LIVE_BGM_PATH", "TRACER_AI_LIVE_AVATAR_VID
 assetCatalog.close();
 
 const silentDir = mkdtempSync(join(tmpdir(), "tracer-silent-media-"));
+writeFileSync(join(silentDir, "introduction.mp4"), "stale previous session output");
 const silentCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
 const silentWorker = startWorker(silentDir, {
   TRACER_AI_LIVE_PRODUCTS_URL: silentCatalog.url,
