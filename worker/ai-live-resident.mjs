@@ -287,30 +287,48 @@ async function verifyIntroduction(job, nowMs) {
 async function startMedia(job) {
   if (process.env.TRACER_AI_LIVE_MEDIA_HOLD === "1") {
     spawnHoldChild();
-    return;
+    return { ok: true };
   }
   const segment = job.segments?.[0];
   const voiceId = segment?.voiceId;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
   let speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
-  if (voiceId && apiKey && segment?.scriptText) {
-    const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
-    if (!spoken.ok) {
-      session.stop(job.streamId, "speech_provider_failed", new Date().toISOString(), "speech_provider_failed");
-      haltChildren();
-      return;
+  if (voiceId) {
+    if (!apiKey || !segment?.scriptText || !isRegisteredResidentVoice(voiceId)) {
+      return { ok: false, errorCode: "speech_provider_failed" };
     }
+    const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
+    if (!spoken.ok) return { ok: false, errorCode: "speech_provider_failed" };
     speechPath = join(stateDir, "speech.mp3");
     writeFileSync(speechPath, spoken.bytes);
   }
   const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
   const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
-  if (!avatarVideo || !bgmPath || !speechPath) return;
-  if (!existsSync(avatarVideo) || !existsSync(bgmPath) || !existsSync(speechPath)) return;
+  if (!avatarVideo || !bgmPath || !speechPath) return { ok: false, errorCode: "media_unavailable" };
+  if (![avatarVideo, bgmPath, speechPath].every((path) => existsSync(path))) {
+    return { ok: false, errorCode: "media_unavailable" };
+  }
   const outputPath = join(stateDir, "introduction.mp4");
   const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
-  if (!plan.ok) return;
-  spawnFfmpeg(plan.args);
+  if (!plan.ok) return { ok: false, errorCode: plan.errorCode };
+  const child = spawnFfmpeg(plan.args);
+  if (!child.pid) return { ok: false, errorCode: "media_start_failed" };
+  const spawned = await new Promise((resolve) => {
+    child.once("spawn", () => resolve(true));
+    child.once("error", () => resolve(false));
+  });
+  if (!spawned) {
+    killProcessTree(child.pid);
+    return { ok: false, errorCode: "media_start_failed" };
+  }
+  child.once("exit", (code) => {
+    if (code !== 0 && session.health.streamId === job.streamId && session.health.state === "live") {
+      session.stop(job.streamId, "media_process_failed", new Date().toISOString(), "media_process_failed");
+      haltChildren();
+      persist();
+    }
+  });
+  return { ok: true };
 }
 
 let closing = false;
@@ -380,7 +398,15 @@ const server = createServer(async (request, response) => {
           return;
         } else {
           session.setProductFacts({ valid: true, reason: null });
-          await startMedia(body);
+          const media = await startMedia(body);
+          if (!media.ok) {
+            session.setProductFacts({ valid: false, reason: media.errorCode });
+            const stopped = session.stop(String(body.streamId || ""), media.errorCode, now, media.errorCode);
+            haltChildren();
+            persist();
+            send(response, 409, { ok: false, errorCode: media.errorCode, health: view(stopped.health) });
+            return;
+          }
         }
       }
       persist();
