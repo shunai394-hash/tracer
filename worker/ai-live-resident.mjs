@@ -380,24 +380,24 @@ function spawnHoldChild() {
   child.once("exit", () => mediaChildren.delete(child));
 }
 
-async function waitForMediaStart(child, noteOutput) {
-  await new Promise((resolve) => {
+async function waitForMediaStart(child, noteOutput, timeoutMs = 10_000) {
+  return new Promise((resolve) => {
     let settled = false;
-    const finish = () => {
+    const finish = (ready) => {
       if (settled) return;
       settled = true;
-      resolve();
+      clearInterval(poll);
+      clearTimeout(timeout);
+      resolve(ready);
     };
-    child.once("error", finish);
-    child.once("exit", finish);
     const poll = setInterval(() => {
       noteOutput();
-      if (session.health.mediaReady || session.health.state === "failed") finish();
+      if (session.health.mediaReady) finish(true);
+      else if (session.health.state === "failed") finish(false);
     }, 40);
-    setTimeout(() => {
-      clearInterval(poll);
-      finish();
-    }, 500);
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    child.once("error", () => finish(false));
+    child.once("exit", () => finish(session.health.mediaReady === true));
   });
 }
 
@@ -411,7 +411,10 @@ async function startMedia(job) {
   const voiceId = segment?.voiceId;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
   let speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
-  if (voiceId && apiKey && segment?.scriptText) {
+  if (voiceId) {
+    if (!apiKey || !segment?.scriptText || !isRegisteredResidentVoice(voiceId)) {
+      return { ok: false, errorCode: "speech_provider_failed" };
+    }
     const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
     if (!spoken.ok) return { ok: false, errorCode: "speech_provider_failed" };
     speechPath = join(stateDir, "speech.mp3");
@@ -419,8 +422,10 @@ async function startMedia(job) {
   }
   const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
   const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
-  if (!avatarVideo || !bgmPath || !speechPath) return { ok: true, attempted: false };
-  if (!existsSync(avatarVideo) || !existsSync(bgmPath) || !existsSync(speechPath)) return { ok: true, attempted: false };
+  if (!avatarVideo || !bgmPath || !speechPath) return { ok: false, errorCode: "media_unavailable" };
+  if (![avatarVideo, bgmPath, speechPath].every((path) => existsSync(path))) {
+    return { ok: false, errorCode: "media_unavailable" };
+  }
   const outputPath = join(stateDir, "introduction.mp4");
   const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
   if (!plan.ok) return { ok: false, errorCode: "media_spawn_failed" };
@@ -429,8 +434,11 @@ async function startMedia(job) {
   const args = script ? [script, ...plan.args] : plan.args;
   const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   const noteOutput = watchMedia(child, outputPath);
-  await waitForMediaStart(child, noteOutput);
-  if (session.health.state === "failed") return { ok: false, errorCode: session.health.errorCode || "media_spawn_failed" };
+  const ready = await waitForMediaStart(child, noteOutput);
+  if (!ready || session.health.mediaReady !== true) {
+    if (session.health.state !== "failed") failForMedia("media_output_not_started");
+    return { ok: false, errorCode: session.health.errorCode || "media_output_not_started" };
+  }
   return { ok: true, attempted: true };
 }
 
