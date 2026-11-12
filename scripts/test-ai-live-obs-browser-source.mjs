@@ -52,8 +52,8 @@ assert.match(html, /BGM自動連続再生中/);
 assert.match(html, /audio\.loop=false/);
 assert.doesNotMatch(html, /<audio id="audio" preload="none" loop>/);
 assert.match(bgmRoute, /searchParams\.get\("genre"\)/);
-assert.match(bgmRoute, /query\.eq\("genre", genre\)/);
-assert.match(bgmRoute, /GENRES\.has\(genre\)/);
+assert.match(bgmRoute, /GENRES\[requestedGenre\]/);
+assert.match(bgmRoute, /genre !== normalizedGenre/);
 assert.match(html, /商用利用と配信利用の許可を確認してください/);
 
 

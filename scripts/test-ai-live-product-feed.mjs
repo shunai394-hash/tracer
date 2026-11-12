@@ -5,14 +5,20 @@ const route = await readFile(
   new URL("../app/api/admin/ai-live/products/route.ts", import.meta.url),
   "utf8",
 );
+const products = await readFile(
+  new URL("../lib/ai-live/sellable-products.ts", import.meta.url),
+  "utf8",
+);
 
 // The feed accepts a timing-safe admin token or the existing automation auth, and stays read-only.
 assert.match(route, /timingSafeEqual/);
 assert.match(route, /authorizedAdminToken\(request\)/);
 assert.match(route, /requireAutomationAuth\(request\)/);
+assert.match(route, /listSellableAiLiveProducts/);
 assert.match(route, /export async function GET/);
 assert.match(route, /readOnly: true/);
 assert.doesNotMatch(route, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
+assert.doesNotMatch(products, /\.insert\(|\.upsert\(|\.update\(|\.delete\(/);
 
 // Only approved, sale-ready product records can reach the avatar.
 for (const gate of [
@@ -27,7 +33,7 @@ for (const gate of [
   /hasJapaneseText\(row\.description\)/,
   /row\.base_publication_status === "published"/,
   /row\.productUrl !== null/,
-]) assert.match(route, gate);
+]) assert.match(products, gate);
 
 // Cap response size and avoid leaking sensitive commerce/supplier fields.
 assert.match(route, /Math\.min\(20/);
@@ -41,9 +47,12 @@ for (const forbidden of [
   "service_role_key",
   "tracking_number",
   "shop_orders",
-]) assert.doesNotMatch(route, new RegExp(forbidden, "i"));
+]) {
+  assert.doesNotMatch(route, new RegExp(forbidden, "i"));
+  assert.doesNotMatch(products, new RegExp(forbidden, "i"));
+}
 
-assert.match(route, /sellingPrice:/);
-assert.match(route, /productUrl:/);
-assert.match(route, /inStock: true/);
+assert.match(products, /sellingPrice:/);
+assert.match(products, /productUrl:/);
+assert.match(products, /inStock: true/);
 console.log("AI-live product feed safety contract: 23 assertions passed");
