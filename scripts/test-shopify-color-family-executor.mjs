@@ -52,6 +52,10 @@ assert.match(source, /status: product\.status as "DRAFT" \| "ACTIVE"/, "migratio
 const migration = readFileSync(new URL("../app/api/internal/shopify-five-color-family-migrate/route.ts", import.meta.url), "utf8");
 assert.match(migration, /2606090341151608200/, "migration must be pinned to the exact supplier product");
 assert.match(migration, /variantImageIdentityVerified !== true/, "unverified exact-variant images must block migration");
+assert.match(migration, /attributes\.colorImageVerified !== true/, "migration must require pre-existing visual color confirmation");
+assert.match(migration, /colorImageVerified: attributes\.colorImageVerified === true/, "migration must pass through, not manufacture, visual confirmation");
+assert.doesNotMatch(migration, /colorImageVerified:\s*true/, "migration must never self-certify a color image");
+assert.doesNotMatch(migration, /nextAttributes[\s\S]*colorImageVerified/, "migration must not write its own visual-verification flag");
 assert.match(migration, /margin_rate\) < 0\.5/, "margin below 50 percent must block migration");
 assert.match(migration, /offer\.ship_to !== "JP"/, "non-Japan supplier offers must block migration");
 assert.match(migration, /String\(channel\.external_product_id \?\? ""\) !== expected\.oldProductId[\s\S]*String\(channel\.external_variant_id \?\? ""\) !== expected\.oldVariantId/, "legacy migration must trust exact old Shopify IDs rather than a stale channel status or SKU alias");
