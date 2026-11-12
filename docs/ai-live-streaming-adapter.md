@@ -60,9 +60,13 @@ speech generation, and browser-side drama/BGM mixdown remain separate systems.
 
 `worker/ai-live-resident.mjs` is the long-running process. It listens on `127.0.0.1` only, keeps a pid lock so a second process exits, and writes `state.json` in `TRACER_AI_LIVE_STATE_DIR`.
 
+- `POST /start`, `POST /stop`, and `POST /reconnect` require the worker admin token from the environment or Secret Manager. The token is not written to logs, `state.json`, or responses.
+- `GET /health` reports that the process is up and separately reports session state, product-fact validity, and destination approval. `GET /ready` is 200 only while idle, or while a loopback session has valid product facts.
 - `POST /start` with `destination: "loopback"` starts the local session. `publicBroadcast` stays false.
 - `POST /reconnect` counts a bounded reconnect. After three recoveries the session fails closed.
-- `POST /stop` and `SIGTERM` stop the session and remove the lock.
+- `POST /stop` and `SIGTERM` stop the session, terminate child processes, and remove the lock.
+- When `maxRuntimeSeconds` is reached, the worker stops processing and terminates child processes.
+- The container build and host procedure are in `docs/ai-live-resident-deploy.md`. Vercel Functions do not run this process or FFmpeg.
 - If the process is killed, the next start reads the saved session and reconnects once.
 - `destination: "youtube"` returns `youtube_approval_required`. `destination: "tiktok"` returns `tiktok_approval_required`. Neither opens a socket to the platform.
 - Jobs that contain an RTMP URL, stream key, or token field are rejected and not written to the state file.

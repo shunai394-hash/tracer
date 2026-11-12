@@ -29,7 +29,7 @@ function hasJapaneseText(value: unknown): value is string {
 export async function listSellableAiLiveProducts(
   db: SupabaseClient,
   limit: number,
-): Promise<Array<AiLiveProductCard & { updatedAt: string | null }>> {
+): Promise<Array<AiLiveProductCard & { updatedAt: string | null; inventory: number }>> {
   const { data, error } = await db
     .from("shop_listings")
     .select(
@@ -62,13 +62,14 @@ export async function listSellableAiLiveProducts(
       const productUrl = row.base_item_id && row.base_publication_status === "published"
         ? `https://tracer.base.ec/items/${encodeURIComponent(String(row.base_item_id))}`
         : null;
-      const card: AiLiveProductCard & { updatedAt: string | null } = {
+      const card: AiLiveProductCard & { updatedAt: string | null; inventory: number } = {
         id: String(row.id),
         title: String(row.title).trim(),
         description: hasJapaneseText(row.description) ? row.description.trim() : null,
         sellingPrice: Number(row.selling_price),
         currency: typeof row.currency === "string" && row.currency.trim() ? row.currency : "JPY",
         inStock: true,
+        inventory: Number(row.inventory),
         productUrl: productUrl ?? "",
         imageUrl: httpsUrl(row.image_url),
         updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,

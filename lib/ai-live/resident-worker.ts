@@ -19,9 +19,15 @@ export type ResidentState =
   | "stopped"
   | "failed";
 
+export type ResidentProductFacts = {
+  valid: boolean | null;
+  reason: string | null;
+};
+
 export type ResidentHealth = {
   ok: true;
   publicBroadcast: false;
+  process: "running";
   streamId: string | null;
   state: ResidentState;
   destination: "loopback" | "youtube" | "tiktok" | null;
@@ -32,6 +38,8 @@ export type ResidentHealth = {
   stopReason: string | null;
   errorCode: string | null;
   maxRuntimeSeconds: number | null;
+  productFacts: ResidentProductFacts;
+  childPids: number[];
 };
 
 export type ResidentJob = {
@@ -45,6 +53,10 @@ export type ResidentJob = {
     scriptText: string;
     factsVersion: string;
     factsVerifiedAt: string;
+    sellingPrice?: number;
+    inventory?: number;
+    supplierFingerprint?: string;
+    voiceId?: string;
   }>;
 };
 
@@ -52,10 +64,20 @@ export type ResidentResult =
   | { ok: true; health: ResidentHealth; idempotent?: boolean }
   | { ok: false; errorCode: string; health: ResidentHealth };
 
+function emptyProductFacts(): ResidentProductFacts {
+  return { valid: null, reason: null };
+}
+
+function childPidsFrom(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((pid): pid is number => Number.isInteger(pid) && Number(pid) > 0).slice(0, 20);
+}
+
 function emptyHealth(): ResidentHealth {
   return {
     ok: true,
     publicBroadcast: false,
+    process: "running",
     streamId: null,
     state: "idle",
     destination: null,
@@ -66,6 +88,8 @@ function emptyHealth(): ResidentHealth {
     stopReason: null,
     errorCode: null,
     maxRuntimeSeconds: null,
+    productFacts: emptyProductFacts(),
+    childPids: [],
   };
 }
 
@@ -115,7 +139,31 @@ export function validateResidentJob(input: unknown, nowMs: number): { ok: true; 
     if (!Number.isFinite(verifiedAt) || verifiedAt > nowMs + 60_000 || nowMs - verifiedAt > FACT_MAX_AGE_MS) {
       return { ok: false, errorCode: "stale_product_facts" };
     }
-    parsed.push({ id, productId, scriptText, factsVersion, factsVerifiedAt });
+    const sellingPrice = segment.sellingPrice;
+    const inventory = segment.inventory;
+    const supplierFingerprint = segment.supplierFingerprint;
+    const voiceId = segment.voiceId;
+    if (sellingPrice !== undefined && (typeof sellingPrice !== "number" || !Number.isFinite(sellingPrice) || sellingPrice <= 0)) {
+      return { ok: false, errorCode: "invalid_segments" };
+    }
+    if (inventory !== undefined && (!Number.isInteger(inventory) || Number(inventory) <= 0)) return { ok: false, errorCode: "invalid_segments" };
+    if (supplierFingerprint !== undefined && (typeof supplierFingerprint !== "string" || !/^[a-f0-9]{32}$/.test(supplierFingerprint))) {
+      return { ok: false, errorCode: "invalid_segments" };
+    }
+    if (voiceId !== undefined && (typeof voiceId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(voiceId))) {
+      return { ok: false, errorCode: "invalid_segments" };
+    }
+    parsed.push({
+      id,
+      productId,
+      scriptText,
+      factsVersion,
+      factsVerifiedAt,
+      ...(typeof sellingPrice === "number" ? { sellingPrice } : {}),
+      ...(typeof inventory === "number" ? { inventory } : {}),
+      ...(typeof supplierFingerprint === "string" ? { supplierFingerprint } : {}),
+      ...(typeof voiceId === "string" ? { voiceId } : {}),
+    });
   }
   return {
     ok: true,
@@ -133,7 +181,13 @@ export class ResidentSession {
   health: ResidentHealth = emptyHealth();
 
   snapshot(): ResidentHealth {
-    return { ...this.health, publicBroadcast: false };
+    return {
+      ...this.health,
+      publicBroadcast: false,
+      process: "running",
+      productFacts: { ...this.health.productFacts },
+      childPids: [...this.health.childPids],
+    };
   }
 
   restore(saved: ResidentHealth | null): void {
@@ -145,7 +199,33 @@ export class ResidentSession {
       this.health = emptyHealth();
       return;
     }
-    this.health = { ...saved, ok: true, publicBroadcast: false, errorCode: null };
+    this.health = {
+      ...emptyHealth(),
+      ...saved,
+      ok: true,
+      publicBroadcast: false,
+      process: "running",
+      errorCode: null,
+      productFacts: saved.productFacts?.valid === true || saved.productFacts?.valid === false || saved.productFacts?.reason
+        ? { valid: saved.productFacts.valid ?? null, reason: saved.productFacts.reason ?? null }
+        : emptyProductFacts(),
+      childPids: childPidsFrom(saved.childPids),
+    };
+  }
+
+  setProductFacts(facts: ResidentProductFacts): void {
+    this.health.productFacts = { valid: facts.valid, reason: facts.reason };
+  }
+
+  trackChild(pid: number): void {
+    if (!Number.isInteger(pid) || pid <= 0 || this.health.childPids.includes(pid)) return;
+    this.health.childPids = [...this.health.childPids, pid].slice(-20);
+  }
+
+  clearChildren(): number[] {
+    const pids = this.health.childPids;
+    this.health.childPids = [];
+    return pids;
   }
 
   start(input: unknown, nowIso: string): ResidentResult {
@@ -179,7 +259,7 @@ export class ResidentSession {
     return { ok: true, health: this.snapshot() };
   }
 
-  stop(streamId: string, reason: string, nowIso: string): ResidentResult {
+  stop(streamId: string, reason: string, nowIso: string, errorCode: string | null = null): ResidentResult {
     if (!this.health.streamId || this.health.streamId !== streamId) {
       return { ok: false, errorCode: "stream_not_found", health: this.snapshot() };
     }
@@ -189,6 +269,7 @@ export class ResidentSession {
     this.health.state = "stopping";
     this.health.state = "stopped";
     this.health.stopReason = reason || "operator_requested";
+    this.health.errorCode = errorCode;
     this.health.lastHeartbeatAt = nowIso;
     this.health.currentSegmentId = null;
     return { ok: true, health: this.snapshot() };

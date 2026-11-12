@@ -1,10 +1,23 @@
 /**
  * Long-running AI live worker. Bind is loopback only.
- * YouTube and TikTok are refused. The process does not open RTMP and does not print secrets.
+ * YouTube and TikTok are refused until that destination is officially approved
+ * and a usable secret is present. The process does not print secrets.
+ * Do not run this file inside a Vercel Function.
  */
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import net from "node:net";
 import { join } from "node:path";
+import { destinationApprovalView, openDestinationSocket } from "../lib/ai-live/destination-gate.ts";
+import { compareProductFacts } from "../lib/ai-live/product-facts-check.ts";
+import { readBearer, resolveWorkerAdminToken, tokensMatch } from "../lib/ai-live/resident-auth.ts";
+import {
+  buildResidentFfmpegArgs,
+  isRegisteredResidentVoice,
+  synthesizeRegisteredVoice,
+} from "../lib/ai-live/resident-media.ts";
+import { killProcessTree } from "../lib/ai-live/resident-process.ts";
 import { ResidentSession } from "../lib/ai-live/resident-worker.ts";
 
 const stateDir = process.env.TRACER_AI_LIVE_STATE_DIR || "";
@@ -17,6 +30,7 @@ mkdirSync(stateDir, { recursive: true });
 const lockPath = join(stateDir, "worker.lock");
 const statePath = join(stateDir, "state.json");
 const portPath = join(stateDir, "port.json");
+const adminToken = await resolveWorkerAdminToken(process.env);
 
 function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -54,7 +68,48 @@ if (session.health.state === "live" || session.health.state === "reconnecting") 
 function persist() {
   writeFileSync(statePath, JSON.stringify(session.snapshot()));
 }
+
+function haltChildren() {
+  for (const pid of session.clearChildren()) killProcessTree(pid);
+}
+
+function applyRuntimeLimit(nowMs) {
+  const before = session.health.errorCode;
+  session.expire(nowMs);
+  if (session.health.errorCode === "max_runtime_reached" && before !== "max_runtime_reached") {
+    haltChildren();
+  }
+}
+
+applyRuntimeLimit(Date.now());
+if ((session.health.state === "live" || session.health.state === "reconnecting") && process.env.TRACER_AI_LIVE_MEDIA_HOLD === "1") {
+  haltChildren();
+  spawnHoldChild();
+}
 persist();
+
+function spawnHoldChild() {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);"], {
+    stdio: "ignore",
+    windowsHide: true,
+    detached: true,
+  });
+  child.unref();
+  if (child.pid) session.trackChild(child.pid);
+}
+
+function spawnFfmpeg(args) {
+  const child = spawn("ffmpeg", args, { stdio: "ignore", windowsHide: true });
+  if (child.pid) session.trackChild(child.pid);
+  return child;
+}
+
+function view(health) {
+  return {
+    ...health,
+    destinationApproval: destinationApprovalView(health.destination, process.env),
+  };
+}
 
 function send(response, status, body) {
   const payload = JSON.stringify(body);
@@ -84,10 +139,135 @@ function readBody(request) {
   });
 }
 
+function requireControl(request, response) {
+  if (!adminToken) {
+    request.resume();
+    send(response, 503, { ok: false, errorCode: "admin_auth_unavailable", publicBroadcast: false });
+    return false;
+  }
+  if (!tokensMatch(adminToken, readBearer(request.headers.authorization))) {
+    request.resume();
+    send(response, 401, { ok: false, errorCode: "unauthorized", publicBroadcast: false });
+    return false;
+  }
+  return true;
+}
+
+function connectApproved(host, port) {
+  const socket = net.connect({ host, port });
+  socket.unref();
+  return socket;
+}
+
+function readyDecision(health) {
+  const approval = destinationApprovalView(health.destination, process.env);
+  const sessionReady = health.state === "idle"
+    || (health.state === "live" && health.destination === "loopback" && health.productFacts.valid === true);
+  return {
+    ready: health.process === "running" && sessionReady,
+    process: health.process,
+    session: { state: health.state, streamId: health.streamId },
+    productFacts: { valid: health.productFacts.valid, reason: health.productFacts.reason },
+    destinationApproval: approval,
+  };
+}
+
+async function loadSellableProducts() {
+  const url = process.env.TRACER_AI_LIVE_PRODUCTS_URL?.trim() || "";
+  if (!url) return { configured: false, products: [] };
+  const headers = { Accept: "application/json" };
+  const productsToken = process.env.TRACER_AI_LIVE_PRODUCTS_TOKEN?.trim();
+  if (productsToken) headers.Authorization = `Bearer ${productsToken}`;
+  const response = await fetch(url, {
+    method: "GET",
+    headers,
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) return { configured: true, errorCode: "inventory_unverified", products: [] };
+  const body = await response.json();
+  if (!body || body.readOnly !== true || !Array.isArray(body.products)) {
+    return { configured: true, errorCode: "inventory_unverified", products: [] };
+  }
+  return { configured: true, products: body.products };
+}
+
+function factFromProduct(product) {
+  if (!product || typeof product !== "object") return null;
+  return {
+    id: String(product.id || ""),
+    sellingPrice: Number(product.sellingPrice),
+    inventory: Number(product.inventory),
+    inStock: product.inStock === true,
+    updatedAt: typeof product.updatedAt === "string" ? product.updatedAt : "",
+    supplierConfirmed: product.supplierConfirmed === true,
+    supplierFingerprint: typeof product.supplierFingerprint === "string" ? product.supplierFingerprint : null,
+  };
+}
+
+async function verifyIntroduction(job, nowMs) {
+  let catalog;
+  try {
+    catalog = await loadSellableProducts();
+  } catch {
+    return { ok: false, errorCode: "inventory_unverified" };
+  }
+  if (!catalog.configured) return { ok: true, skipped: true };
+  if (catalog.errorCode) return { ok: false, errorCode: catalog.errorCode };
+  for (const segment of job.segments || []) {
+    if (typeof segment.sellingPrice !== "number" || typeof segment.inventory !== "number" || typeof segment.supplierFingerprint !== "string") {
+      return { ok: false, errorCode: "stale_product_facts" };
+    }
+    const actual = catalog.products.map(factFromProduct).find((item) => item && item.id === segment.productId) || null;
+    const compared = compareProductFacts({
+      productId: segment.productId,
+      sellingPrice: segment.sellingPrice,
+      inventory: segment.inventory,
+      supplierFingerprint: segment.supplierFingerprint,
+    }, actual, nowMs);
+    if (!compared.ok) return compared;
+    if (segment.voiceId && !isRegisteredResidentVoice(segment.voiceId)) {
+      return { ok: false, errorCode: "speech_provider_failed" };
+    }
+  }
+  return { ok: true, skipped: false };
+}
+
+async function startMedia(job) {
+  if (process.env.TRACER_AI_LIVE_MEDIA_HOLD === "1") {
+    spawnHoldChild();
+    return;
+  }
+  const segment = job.segments?.[0];
+  const voiceId = segment?.voiceId;
+  const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
+  let speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
+  if (voiceId && apiKey && segment?.scriptText) {
+    const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
+    if (!spoken.ok) {
+      session.stop(job.streamId, "speech_provider_failed", new Date().toISOString(), "speech_provider_failed");
+      haltChildren();
+      return;
+    }
+    speechPath = join(stateDir, "speech.mp3");
+    writeFileSync(speechPath, spoken.bytes);
+  }
+  const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
+  const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
+  if (!avatarVideo || !bgmPath || !speechPath) return;
+  if (!existsSync(avatarVideo) || !existsSync(bgmPath) || !existsSync(speechPath)) return;
+  const outputPath = join(stateDir, "introduction.mp4");
+  const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
+  if (!plan.ok) return;
+  spawnFfmpeg(plan.args);
+}
+
 let closing = false;
 function shutdown(reason) {
   if (closing) return;
   closing = true;
+  haltChildren();
   if (session.health.state === "live" || session.health.state === "starting" || session.health.state === "reconnecting") {
     session.stop(session.health.streamId, reason, new Date().toISOString());
   }
@@ -101,23 +281,74 @@ function shutdown(reason) {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", "http://127.0.0.1");
-    if (request.method === "GET" && url.pathname === "/health") {
-      session.expire(Date.now());
+    if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/ready")) {
+      applyRuntimeLimit(Date.now());
       persist();
-      send(response, 200, session.snapshot());
+      const health = view(session.snapshot());
+      if (url.pathname === "/health") {
+        send(response, 200, health);
+        return;
+      }
+      const decision = readyDecision(session.snapshot());
+      send(response, decision.ready ? 200 : 503, {
+        ok: decision.ready,
+        ready: decision.ready,
+        publicBroadcast: false,
+        process: decision.process,
+        session: decision.session,
+        productFacts: decision.productFacts,
+        destinationApproval: decision.destinationApproval,
+      });
       return;
     }
     if (request.method !== "POST") {
       send(response, 404, { ok: false, errorCode: "not_found", publicBroadcast: false });
       return;
     }
+    if (!requireControl(request, response)) return;
     const raw = await readBody(request);
     const body = raw ? JSON.parse(raw) : {};
     const now = new Date().toISOString();
+    if (url.pathname === "/start") {
+      const gate = body?.destination === "youtube" || body?.destination === "tiktok"
+        ? openDestinationSocket({ destination: body.destination, env: process.env, connectImpl: connectApproved })
+        : { opened: false, socket: null };
+      const result = session.start(body, now);
+      if (gate.opened && gate.socket && session.health.state !== "live") gate.socket.destroy?.();
+      if (result.ok && result.health.state === "live" && !result.idempotent) {
+        const facts = await verifyIntroduction(body, Date.parse(now));
+        if (facts.skipped) {
+          session.setProductFacts({ valid: null, reason: "not_configured" });
+          await startMedia(body);
+        }
+        else if (!facts.ok) {
+          session.setProductFacts({ valid: false, reason: facts.errorCode });
+          const stopped = session.stop(String(body.streamId || ""), facts.errorCode === "inventory_unverified" ? "inventory_unverified" : "stale_product_facts", now, facts.errorCode);
+          haltChildren();
+          persist();
+          send(response, 409, { ok: false, errorCode: facts.errorCode, health: view(stopped.health) });
+          return;
+        } else {
+          session.setProductFacts({ valid: true, reason: null });
+          await startMedia(body);
+        }
+      }
+      persist();
+      const introductionStopped = result.ok && session.health.state === "stopped" && Boolean(session.health.errorCode);
+      const accepted = result.ok && !introductionStopped;
+      send(response, accepted ? 200 : 409, {
+        ok: accepted,
+        ...(accepted ? {} : { errorCode: introductionStopped ? session.health.errorCode : result.errorCode }),
+        ...(result.idempotent ? { idempotent: true } : {}),
+        health: view(session.snapshot()),
+      });
+      return;
+    }
     let result;
-    if (url.pathname === "/start") result = session.start(body, now);
-    else if (url.pathname === "/stop") result = session.stop(String(body.streamId || ""), String(body.reason || "operator_requested"), now);
-    else if (url.pathname === "/reconnect") result = session.reconnect(now);
+    if (url.pathname === "/stop") {
+      result = session.stop(String(body.streamId || ""), String(body.reason || "operator_requested"), now);
+      if (result.ok) haltChildren();
+    } else if (url.pathname === "/reconnect") result = session.reconnect(now);
     else if (url.pathname === "/shutdown") {
       send(response, 200, { ok: true, publicBroadcast: false, state: "stopped" });
       shutdown("worker_shutdown");
@@ -127,14 +358,16 @@ const server = createServer(async (request, response) => {
       return;
     }
     persist();
-    send(response, result.ok ? 200 : 409, result);
+    send(response, result.ok ? 200 : 409, { ...result, health: view(result.health) });
   } catch (error) {
     const code = error?.code === "body_too_large" ? "body_too_large" : "invalid_json";
     send(response, 400, { ok: false, errorCode: code, publicBroadcast: false });
   }
 });
 
-server.listen(0, "127.0.0.1", () => {
+const requestedPort = Number(process.env.TRACER_AI_LIVE_PORT || 0);
+const listenPort = Number.isInteger(requestedPort) && requestedPort >= 0 && requestedPort <= 65535 ? requestedPort : 0;
+server.listen(listenPort, "127.0.0.1", () => {
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
   writeFileSync(portPath, JSON.stringify({ port, host: "127.0.0.1" }));
@@ -144,6 +377,6 @@ server.listen(0, "127.0.0.1", () => {
 process.on("SIGTERM", () => shutdown("worker_shutdown"));
 process.on("SIGINT", () => shutdown("worker_shutdown"));
 setInterval(() => {
-  session.expire(Date.now());
+  applyRuntimeLimit(Date.now());
   persist();
 }, 5_000).unref();
