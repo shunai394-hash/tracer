@@ -5,7 +5,7 @@ import { ingestPaidOrder } from "@/lib/commerce/core";
 
 export const runtime = "nodejs";
 
-type ShopifyLine = { id?: string | number; sku?: string | null; quantity?: number; price?: string | number; title?: string };
+type ShopifyLine = { id?: string | number; variant_id?: string | number | null; sku?: string | null; quantity?: number; price?: string | number; title?: string };
 function isTracerManagedSku(value: unknown): boolean {
   const sku = String(value ?? "").trim().toUpperCase();
   return sku.startsWith("TRC-") || sku.startsWith("CJ-");
@@ -65,13 +65,39 @@ export async function POST(request: Request) {
       if (!line.id || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
         throw new Error("invalid_tracer_line_item");
       }
-      // Prefer the exact SKU saved by the publisher. Older Shopify listings may
-      // still carry TRC-<supplier_variant_id> or CJ-<supplier_variant_id>; resolve only through an exact,
-      // verified supplier-offer identity, never by title or partial SKU.
-      const exact = await db.from("channel_listings")
-        .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
-      if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
-      let listingRows = exact.data ?? [];
+      // Resolve the Shopify variant identity first. Historical aliases are
+      // retained after color-family consolidation and must resolve to the same
+      // canonical commerce variant as the current listing.
+      let listingRows: Array<{ variant_id: string }> = [];
+      const rawShopifyVariantId = String(line.variant_id ?? "").trim();
+      if (rawShopifyVariantId) {
+        const numericShopifyVariantId = rawShopifyVariantId.replace(/^gid:\/\/shopify\/ProductVariant\//, "");
+        const candidateIds = [...new Set([
+          rawShopifyVariantId,
+          numericShopifyVariantId,
+          "gid://shopify/ProductVariant/" + numericShopifyVariantId
+        ])];
+        const currentByVariant = await db.from("channel_listings")
+          .select("variant_id").eq("channel", "shopify")
+          .in("external_variant_id", candidateIds);
+        if (currentByVariant.error) throw new Error("tracer_variant_mapping_read_failed:" + currentByVariant.error.message);
+        listingRows = currentByVariant.data ?? [];
+        if (listingRows.length === 0) {
+          const aliasByVariant = await db.from("channel_listing_external_aliases")
+            .select("variant_id").eq("channel", "shopify")
+            .in("external_variant_id", candidateIds);
+          if (aliasByVariant.error) throw new Error("tracer_variant_alias_lookup_failed:" + aliasByVariant.error.message);
+          listingRows = aliasByVariant.data ?? [];
+        }
+      }
+      // SKU is a compatibility fallback only when the exact Shopify variant ID
+      // has no current listing or historical alias. Never use title matching.
+      if (listingRows.length === 0) {
+        const exact = await db.from("channel_listings")
+          .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
+        if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
+        listingRows = exact.data ?? [];
+      }
       let legacyOfferId: string | null = null;
       if (listingRows.length === 0 && isTracerManagedSku(sku)) {
         const normalizedSku = sku.toUpperCase();
