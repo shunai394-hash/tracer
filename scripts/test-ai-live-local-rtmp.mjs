@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { buildLocalRtmpArgs, runLocalRtmpSmokeTest, validateLocalRtmpUrl } from "../worker/local-rtmp-smoke-publisher.mjs";
+for (const url of ["rtmp://localhost:1935/live/test","rtmp://127.0.0.1:1935/live/test","rtmp://127.0.0.2:1935/live/test","rtmp://[::1]:1935/live/test"]) assert.equal(validateLocalRtmpUrl(url),new URL(url).toString());
+for (const url of ["rtmp://youtube.example:1935/live/key","rtmps://localhost:1935/live/test","rtmp://192.168.1.2:1935/live/test","rtmp://user:secret@localhost:1935/live/test","https://localhost:1935/live/test"]) assert.throws(()=>validateLocalRtmpUrl(url));
+assert.throws(()=>buildLocalRtmpArgs("rtmp://localhost:1935/live/test",0));
+assert.throws(()=>buildLocalRtmpArgs("rtmp://localhost:1935/live/test",121));
+const args=buildLocalRtmpArgs("rtmp://localhost:1935/live/test",7);
+assert.ok(args.includes("testsrc2=size=1280x720:rate=30"));
+assert.ok(args.includes("sine=frequency=440:sample_rate=48000"));
+assert.equal(args.at(-1),"rtmp://localhost:1935/live/test");
+const fakeSpawn=(_command,received)=>{assert.ok(received.includes("-f"));const child=new EventEmitter();child.kill=()=>true;queueMicrotask(()=>child.emit("close",0,null));return child;};
+assert.deepEqual(await runLocalRtmpSmokeTest({url:"rtmp://127.0.0.1:1935/live/test",durationSeconds:2,spawnImpl:fakeSpawn}),{ok:true,destination:"loopback",durationSeconds:2,exitCode:0,signal:null});
+assert.throws(()=>runLocalRtmpSmokeTest({url:"rtmp://example.com:1935/live/key",spawnImpl:fakeSpawn}),/loopback/);
+console.log("AI-live local RTMP publisher safety and lifecycle tests passed");
