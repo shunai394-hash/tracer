@@ -69,4 +69,12 @@ test("paid-order webhook resolves legacy TRC supplier-variant SKUs only by exact
   assert.match(paidWebhook, /\.eq\("source_status", "verified"\)/);
   assert.match(paidWebhook, /tracer_sku_mapping_ambiguous/);
   assert.match(paidWebhook, /tracer_sku_mapping_missing/);
+  assert.match(paidWebhook, /variant_id\?: string \| number \| null/,
+    "paid webhook must retain Shopify's exact variant ID");
+  assert.match(paidWebhook, /from\("channel_listing_external_aliases"\)/,
+    "paid webhook must resolve retired Shopify variants through explicit aliases");
+  assert.match(paidWebhook, /\.in\("external_variant_id", candidateIds\)/,
+    "variant alias lookup must use exact normalized Shopify variant identifiers");
+  assert.match(paidWebhook, /tracer_variant_alias_lookup_failed/,
+    "alias lookup failures must stop order ingestion");
 });
