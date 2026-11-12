@@ -240,7 +240,7 @@ function readyDecision(health) {
     && health.destination === "loopback"
     && health.productFacts.valid === true
     && health.mediaReady === true;
-  const sessionReady = !startLock && (health.state === "idle" || liveReady);
+  const sessionReady = !startLock && liveReady;
   return {
     ready: health.process === "running" && sessionReady,
     process: health.process,
@@ -404,9 +404,9 @@ function watchMedia(child, outputPath) {
 }
 
 function mediaStartTimeoutMs() {
-  const requested = Number(process.env.TRACER_AI_LIVE_MEDIA_START_TIMEOUT_MS || 500);
-  if (!Number.isFinite(requested)) return 500;
-  return Math.min(5000, Math.max(50, Math.floor(requested)));
+  const requested = Number(process.env.TRACER_AI_LIVE_MEDIA_START_TIMEOUT_MS || 10_000);
+  if (!Number.isFinite(requested)) return 10_000;
+  return Math.min(15_000, Math.max(50, Math.floor(requested)));
 }
 
 async function waitForMediaStart(child, noteOutput) {
@@ -468,6 +468,8 @@ async function startMedia(job) {
   const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO.trim();
   const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH.trim();
   const outputPath = join(stateDir, "introduction.mp4");
+  // Never accept a previous session's file as proof that this FFmpeg process is producing media.
+  rmSync(outputPath, { force: true });
   const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
   if (!plan.ok) return { ok: false, errorCode: "media_spawn_failed" };
   const script = process.env.TRACER_AI_LIVE_FFMPEG_SCRIPT?.trim() || "";
