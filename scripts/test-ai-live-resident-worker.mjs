@@ -96,6 +96,7 @@ function startWorker(stateDir, extraEnv = {}) {
       TMP: process.env.TMP,
       TRACER_AI_LIVE_STATE_DIR: stateDir,
       TRACER_AI_LIVE_ADMIN_TOKEN: adminToken,
+      TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK: "1",
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -373,6 +374,28 @@ try {
   rmSync(authDir, { recursive: true, force: true });
 }
 
+const failClosedDir = mkdtempSync(join(tmpdir(), "tracer-resident-fail-closed-"));
+const failClosedWorker = startWorker(failClosedDir, { TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK: "0" });
+try {
+  const failClosedReady = await waitFor(() => {
+    const portFile = join(failClosedDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "fail-closed worker did not listen");
+  const blocked = await request(failClosedReady.port, "/start", { ...job, streamId: "missing-facts-session" });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.body.errorCode, "inventory_unverified");
+  assert.equal(blocked.body.health.state, "stopped");
+  assert.equal(blocked.body.health.productFacts.valid, false);
+  const notReady = await request(failClosedReady.port, "/ready");
+  assert.equal(notReady.status, 503);
+  await request(failClosedReady.port, "/shutdown", {});
+  await waitFor(() => (hasExited(failClosedWorker.child) ? true : null), "fail-closed worker did not shut down");
+} finally {
+  if (failClosedWorker.child.exitCode === null) forceStop(failClosedWorker.child);
+  rmSync(failClosedDir, { recursive: true, force: true });
+}
+
 const fingerprint = "b".repeat(32);
 const freshProduct = {
   id: "bag-1",
@@ -531,6 +554,9 @@ const source = readFileSync(new URL("../worker/ai-live-resident.mjs", import.met
 const dockerfile = readFileSync(new URL("../worker/Dockerfile", import.meta.url), "utf8");
 const deployDoc = readFileSync(new URL("../docs/ai-live-resident-deploy.md", import.meta.url), "utf8");
 assert.match(source, /127\.0\.0\.1/);
+assert.match(source, /openSync\\(lockPath, "wx"/);
+assert.match(source, /renameSync\\(temporaryPath, statePath\\)/);
+assert.match(source, /TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK/);
 assert.match(source, /\/ready/);
 assert.match(source, /openDestinationSocket/);
 assert.match(source, /haltChildren/);
