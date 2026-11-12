@@ -258,6 +258,90 @@ export class ResidentSession {
     this.health.mediaReady = ready === true;
   }
 
+  /**
+   * Records a rejected start without ever entering live.
+   * The session is stopped so callers can see the reason.
+   */
+  recordRejection(input: unknown, nowIso: string, errorCode: string): ResidentResult {
+    const validated = validateResidentJob(input, Date.parse(nowIso));
+    if (!validated.ok) return { ok: false, errorCode: validated.errorCode, health: this.snapshot() };
+    const active = this.health.state === "starting" || this.health.state === "live" || this.health.state === "reconnecting";
+    if (active && this.health.streamId !== validated.job.streamId) {
+      return { ok: false, errorCode: "duplicate_stream", health: this.snapshot() };
+    }
+    if (active && this.health.state !== "starting") {
+      return this.stop(validated.job.streamId, errorCode, nowIso, errorCode);
+    }
+    this.health = {
+      ...emptyHealth(),
+      streamId: validated.job.streamId,
+      destination: validated.job.destination,
+      state: "stopped",
+      startedAt: nowIso,
+      lastHeartbeatAt: nowIso,
+      currentSegmentId: null,
+      stopReason: errorCode,
+      errorCode,
+      maxRuntimeSeconds: validated.job.maxRuntimeSeconds,
+      productFacts: { valid: false, reason: errorCode },
+      mediaReady: false,
+    };
+    return { ok: false, errorCode, health: this.snapshot() };
+  }
+
+  /**
+   * Enters starting only after product facts have already been verified.
+   * Loopback stays in starting until commitLive().
+   */
+  beginStart(input: unknown, nowIso: string, expectations: ResidentFactExpectation[]): ResidentResult {
+    const active = this.health.state === "starting" || this.health.state === "live" || this.health.state === "reconnecting";
+    const validated = validateResidentJob(input, Date.parse(nowIso));
+    if (!validated.ok) return { ok: false, errorCode: validated.errorCode, health: this.snapshot() };
+    if (active && this.health.streamId === validated.job.streamId) {
+      if (this.health.state === "starting") return { ok: false, errorCode: "start_in_progress", health: this.snapshot() };
+      this.health.lastHeartbeatAt = nowIso;
+      return { ok: true, health: this.snapshot(), idempotent: true };
+    }
+    if (active) return { ok: false, errorCode: "duplicate_stream", health: this.snapshot() };
+    const stored = factExpectationsFrom(expectations);
+    if (stored.length < 1 || stored.length !== expectations.length) {
+      return { ok: false, errorCode: "stale_product_facts", health: this.snapshot() };
+    }
+    this.health = {
+      ...emptyHealth(),
+      streamId: validated.job.streamId,
+      destination: validated.job.destination,
+      state: "starting",
+      startedAt: nowIso,
+      lastHeartbeatAt: nowIso,
+      currentSegmentId: validated.job.segments[0]?.id ?? null,
+      maxRuntimeSeconds: validated.job.maxRuntimeSeconds,
+      productFacts: { valid: true, reason: null },
+      factExpectations: stored,
+      mediaReady: false,
+    };
+    if (validated.job.destination !== "loopback") {
+      this.health.state = "failed";
+      this.health.errorCode = validated.job.destination === "youtube" ? "youtube_approval_required" : "tiktok_approval_required";
+      this.health.stopReason = "stream_destination_rejected";
+      this.health.productFacts = { valid: false, reason: this.health.errorCode };
+      return { ok: false, errorCode: this.health.errorCode, health: this.snapshot() };
+    }
+    return { ok: true, health: this.snapshot() };
+  }
+
+  /** Moves starting to live only when verified facts and running media are both present. */
+  commitLive(nowIso: string): ResidentResult {
+    if (this.health.state !== "starting") return { ok: false, errorCode: "not_starting", health: this.snapshot() };
+    if (this.health.destination !== "loopback" || this.health.productFacts.valid !== true || this.health.factExpectations.length < 1 || this.health.mediaReady !== true) {
+      return { ok: false, errorCode: "media_not_ready", health: this.snapshot() };
+    }
+    this.health.state = "live";
+    this.health.lastHeartbeatAt = nowIso;
+    this.health.errorCode = null;
+    return { ok: true, health: this.snapshot() };
+  }
+
   trackChild(pid: number): void {
     if (!Number.isInteger(pid) || pid <= 0 || this.health.childPids.includes(pid)) return;
     this.health.childPids = [...this.health.childPids, pid].slice(-20);

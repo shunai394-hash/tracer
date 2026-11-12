@@ -175,9 +175,9 @@ function liveSegments(overrides = {}) {
 
 function startCatalog(choose) {
   const seen = [];
-  const server = createServer((catalogRequest, catalogResponse) => {
+  const server = createServer(async (catalogRequest, catalogResponse) => {
     seen.push({ method: catalogRequest.method || "", authorization: catalogRequest.headers.authorization || "" });
-    const choice = choose(catalogRequest);
+    const choice = await choose(catalogRequest);
     if (choice.hang) return;
     const status = choice.status || 200;
     const payload = JSON.stringify(choice.body || {
@@ -206,27 +206,41 @@ function startCatalog(choose) {
   });
 }
 
+const mediaRoot = mkdtempSync(join(tmpdir(), "tracer-media-fixture-"));
+writeFileSync(join(mediaRoot, "avatar.mp4"), "avatar");
+writeFileSync(join(mediaRoot, "bed.mp3"), "bed");
+writeFileSync(join(mediaRoot, "speech.mp3"), "speech");
+const runningScript = join(mediaRoot, "running.mjs");
+writeFileSync(runningScript, "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv.at(-1), 'frame'); setInterval(() => {}, 1000);\n");
+const silentScript = join(mediaRoot, "silent.mjs");
+writeFileSync(silentScript, "setInterval(() => {}, 1000);\n");
+const mediaEnv = {
+  TRACER_AI_LIVE_AVATAR_VIDEO: join(mediaRoot, "avatar.mp4"),
+  TRACER_AI_LIVE_BGM_PATH: join(mediaRoot, "bed.mp3"),
+  TRACER_AI_LIVE_SPEECH_PATH: join(mediaRoot, "speech.mp3"),
+  TRACER_AI_LIVE_FFMPEG_SCRIPT: runningScript,
+};
 const catalog = await startCatalog(() => ({ products: [sellableRecord()] }));
 const productsEnv = {
   TRACER_AI_LIVE_PRODUCTS_URL: catalog.url,
   TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  ...mediaEnv,
 };
 const liveJob = { ...job, segments: liveSegments() };
-const lifecycleMediaDir = mkdtempSync(join(tmpdir(), "tracer-lifecycle-media-"));
-writeFileSync(join(lifecycleMediaDir, "avatar.mp4"), "avatar");
-writeFileSync(join(lifecycleMediaDir, "bed.mp3"), "bed");
-writeFileSync(join(lifecycleMediaDir, "speech.mp3"), "speech");
-const lifecycleOutputScript = join(lifecycleMediaDir, "output.mjs");
-writeFileSync(lifecycleOutputScript, `import { writeFileSync } from "node:fs"; writeFileSync(process.argv.at(-1), "frame"); setInterval(() => {}, 1000);\\n`);
-const lifecycleEnv = {
-  ...productsEnv,
-  TRACER_AI_LIVE_AVATAR_VIDEO: join(lifecycleMediaDir, "avatar.mp4"),
-  TRACER_AI_LIVE_BGM_PATH: join(lifecycleMediaDir, "bed.mp3"),
-  TRACER_AI_LIVE_SPEECH_PATH: join(lifecycleMediaDir, "speech.mp3"),
-  TRACER_AI_LIVE_FFMPEG_SCRIPT: lifecycleOutputScript,
-};
+const staged = new ResidentSession();
+const begun = staged.beginStart(liveJob, new Date().toISOString(), [{
+  productId: "bag-1",
+  sellingPrice: 12800,
+  inventory: 2,
+  supplierFingerprint: fingerprint,
+}]);
+assert.equal(begun.ok, true);
+assert.equal(begun.health.state, "starting");
+assert.equal(begun.health.mediaReady, false);
+staged.setMediaReady(true);
+assert.equal(staged.commitLive(new Date().toISOString()).health.state, "live");
 const dir = mkdtempSync(join(tmpdir(), "tracer-resident-"));
-const first = startWorker(dir, lifecycleEnv);
+const first = startWorker(dir, productsEnv);
 try {
   const ready = await waitFor(() => {
     const portFile = join(dir, "port.json");
@@ -243,11 +257,14 @@ try {
   assert.equal(live.body.health.publicBroadcast, false);
   assert.equal(live.body.health.process, "running");
   assert.equal(live.body.health.productFacts.valid, true);
+  assert.equal(live.body.health.mediaReady, true);
+  assert.equal(pidAlive(live.body.health.childPids[0]), true);
   assert.equal(live.body.health.publicBroadcast, false);
   assert.equal(live.body.health.destinationApproval.rtmpAllowed, false);
   const same = await request(ready.port, "/start", liveJob);
   assert.equal(same.status, 200);
   assert.equal(same.body.idempotent, true);
+  assert.equal(same.body.health.childPids.length, live.body.health.childPids.length);
   const other = await request(ready.port, "/start", { ...job, streamId: "other-session" });
   assert.equal(other.status, 409);
   assert.equal(other.body.errorCode, "duplicate_stream");
@@ -266,7 +283,7 @@ try {
   forceStop(first.child);
   await waitFor(() => (hasExited(first.child) ? true : null), "worker did not stop");
   rmSync(join(dir, "port.json"), { force: true });
-  const recovered = startWorker(dir, lifecycleEnv);
+  const recovered = startWorker(dir, productsEnv);
   try {
     const recoveredReady = await waitFor(() => {
       const portFile = join(dir, "port.json");
@@ -300,7 +317,6 @@ try {
   if (first.child.exitCode === null) forceStop(first.child);
   catalog.close();
   rmSync(dir, { recursive: true, force: true });
-  rmSync(lifecycleMediaDir, { recursive: true, force: true });
 }
 
 const gains = residentMixGains();
@@ -550,7 +566,7 @@ const factDir = mkdtempSync(join(tmpdir(), "tracer-resident-facts-"));
 const factWorker = startWorker(factDir, {
   TRACER_AI_LIVE_PRODUCTS_URL: `http://127.0.0.1:${factsPort}/products`,
   TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
-  TRACER_AI_LIVE_MEDIA_HOLD: "1",
+  ...mediaEnv,
 });
 let factChildPid = 0;
 try {
@@ -589,7 +605,6 @@ try {
   const staleWorker = startWorker(staleDir, {
     TRACER_AI_LIVE_PRODUCTS_URL: `http://127.0.0.1:${staleServer.address().port}/products`,
     TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
-    TRACER_AI_LIVE_MEDIA_HOLD: "1",
   });
   try {
     const staleReady = await waitFor(() => {
@@ -628,9 +643,9 @@ try {
 const runtimeCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
 const runtimeDir = mkdtempSync(join(tmpdir(), "tracer-resident-runtime-"));
 const runtimeWorker = startWorker(runtimeDir, {
-  TRACER_AI_LIVE_MEDIA_HOLD: "1",
   TRACER_AI_LIVE_PRODUCTS_URL: runtimeCatalog.url,
   TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  ...mediaEnv,
 });
 let runtimePid = 0;
 try {
@@ -651,9 +666,9 @@ try {
   writeFileSync(join(runtimeDir, "state.json"), JSON.stringify(saved));
   rmSync(join(runtimeDir, "port.json"), { force: true });
   const restarted = startWorker(runtimeDir, {
-    TRACER_AI_LIVE_MEDIA_HOLD: "1",
     TRACER_AI_LIVE_PRODUCTS_URL: runtimeCatalog.url,
     TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+    ...mediaEnv,
   });
   try {
     const restartedReady = await waitFor(() => {
@@ -881,6 +896,212 @@ mediaCatalog.close();
 platformCatalog.close();
 rmSync(mediaDir, { recursive: true, force: true });
 
+let releaseSlowCatalog;
+let slowHits = 0;
+const slowCatalog = await startCatalog(async () => {
+  slowHits += 1;
+  if (slowHits === 1) await new Promise((resolve) => { releaseSlowCatalog = resolve; });
+  return { products: [sellableRecord()] };
+});
+const slowDir = mkdtempSync(join(tmpdir(), "tracer-slow-start-"));
+const slowWorker = startWorker(slowDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: slowCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  ...mediaEnv,
+});
+try {
+  const slowReady = await waitFor(() => {
+    const portFile = join(slowDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "slow start worker did not listen");
+  const slowStart = request(slowReady.port, "/start", { ...liveJob, streamId: "slow-session" });
+  await waitFor(() => (slowHits > 0 ? true : null), "product verification did not start");
+  const [duringHealth, duringReady, secondStart] = await Promise.all([
+    request(slowReady.port, "/health"),
+    request(slowReady.port, "/ready"),
+    request(slowReady.port, "/start", { ...liveJob, streamId: "slow-session" }),
+  ]);
+  assert.notEqual(duringHealth.body.state, "live");
+  assert.equal(duringHealth.body.publicBroadcast, false);
+  assert.equal(duringReady.status, 503);
+  assert.equal(duringReady.body.ready, false);
+  assert.equal(secondStart.status, 409);
+  assert.equal(secondStart.body.errorCode, "start_in_progress");
+  releaseSlowCatalog();
+  const slowResult = await slowStart;
+  assert.equal(slowResult.status, 200);
+  assert.equal(slowResult.body.health.state, "live");
+  assert.equal(slowResult.body.health.mediaReady, true);
+  await request(slowReady.port, "/shutdown", {});
+  await waitFor(() => (hasExited(slowWorker.child) ? true : null), "slow start worker did not shut down");
+} finally {
+  if (typeof releaseSlowCatalog === "function") releaseSlowCatalog();
+  if (slowWorker.child.exitCode === null) forceStop(slowWorker.child);
+  slowCatalog.close();
+  rmSync(slowDir, { recursive: true, force: true });
+}
+
+const assetCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
+for (const missingName of ["TRACER_AI_LIVE_BGM_PATH", "TRACER_AI_LIVE_AVATAR_VIDEO"]) {
+  const missingDir = mkdtempSync(join(tmpdir(), "tracer-missing-asset-"));
+  const missingEnv = { ...mediaEnv };
+  delete missingEnv[missingName];
+  const missingWorker = startWorker(missingDir, {
+    TRACER_AI_LIVE_PRODUCTS_URL: assetCatalog.url,
+    TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+    ...missingEnv,
+  });
+  try {
+    const missingReady = await waitFor(() => {
+      const portFile = join(missingDir, "port.json");
+      if (!existsSync(portFile)) return null;
+      return JSON.parse(readFileSync(portFile, "utf8"));
+    }, "missing asset worker did not listen");
+    const missingStart = await request(missingReady.port, "/start", { ...liveJob, streamId: "missing-asset" });
+    assert.equal(missingStart.status, 409);
+    assert.equal(missingStart.body.errorCode, "media_unavailable");
+    assert.equal(missingStart.body.health.state, "failed");
+    assert.equal(missingStart.body.health.mediaReady, false);
+    const missingReadyProbe = await request(missingReady.port, "/ready");
+    assert.equal(missingReadyProbe.status, 503);
+    await request(missingReady.port, "/shutdown", {});
+    await waitFor(() => (hasExited(missingWorker.child) ? true : null), "missing asset worker did not shut down");
+  } finally {
+    if (missingWorker.child.exitCode === null) forceStop(missingWorker.child);
+    rmSync(missingDir, { recursive: true, force: true });
+  }
+}
+assetCatalog.close();
+
+const silentDir = mkdtempSync(join(tmpdir(), "tracer-silent-media-"));
+const silentCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
+const silentWorker = startWorker(silentDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: silentCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  ...mediaEnv,
+  TRACER_AI_LIVE_FFMPEG_SCRIPT: silentScript,
+  TRACER_AI_LIVE_MEDIA_START_TIMEOUT_MS: "200",
+});
+try {
+  const silentReady = await waitFor(() => {
+    const portFile = join(silentDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "silent media worker did not listen");
+  const silentStart = await request(silentReady.port, "/start", { ...liveJob, streamId: "silent-media" });
+  assert.equal(silentStart.status, 409);
+  assert.equal(silentStart.body.errorCode, "media_start_timeout");
+  assert.equal(silentStart.body.health.state, "failed");
+  assert.equal(silentStart.body.health.mediaReady, false);
+  const silentPid = silentStart.body.health.childPids[0];
+  if (silentPid) await waitFor(() => (pidAlive(silentPid) ? null : true), "timed out ffmpeg was not killed");
+  const silentReadyProbe = await request(silentReady.port, "/ready");
+  assert.equal(silentReadyProbe.status, 503);
+  await request(silentReady.port, "/shutdown", {});
+  await waitFor(() => (hasExited(silentWorker.child) ? true : null), "silent media worker did not shut down");
+} finally {
+  if (silentWorker.child.exitCode === null) forceStop(silentWorker.child);
+  silentCatalog.close();
+  rmSync(silentDir, { recursive: true, force: true });
+}
+
+const restoredDir = mkdtempSync(join(tmpdir(), "tracer-restored-unready-"));
+writeFileSync(join(restoredDir, "state.json"), JSON.stringify({
+  ok: true,
+  publicBroadcast: false,
+  process: "running",
+  streamId: "restored-session",
+  state: "live",
+  destination: "loopback",
+  startedAt: new Date().toISOString(),
+  lastHeartbeatAt: new Date().toISOString(),
+  reconnectCount: 0,
+  currentSegmentId: "segment-1",
+  stopReason: null,
+  errorCode: null,
+  maxRuntimeSeconds: 600,
+  productFacts: { valid: true, reason: null },
+  factExpectations: [{ productId: "bag-1", sellingPrice: 12800, inventory: 2, supplierFingerprint: fingerprint }],
+  mediaReady: false,
+  childPids: [],
+}));
+const restoredCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
+const restoredWorker = startWorker(restoredDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: restoredCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+});
+try {
+  const restoredReady = await waitFor(() => {
+    const portFile = join(restoredDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "restored worker did not listen");
+  const restoredHealth = await request(restoredReady.port, "/health");
+  assert.equal(restoredHealth.body.state, "stopped");
+  assert.equal(restoredHealth.body.errorCode, "worker_restarted");
+  assert.equal(restoredHealth.body.mediaReady, false);
+  const restoredProbe = await request(restoredReady.port, "/ready");
+  assert.equal(restoredProbe.status, 503);
+  assert.equal(restoredProbe.body.ready, false);
+  await request(restoredReady.port, "/shutdown", {});
+  await waitFor(() => (hasExited(restoredWorker.child) ? true : null), "restored worker did not shut down");
+} finally {
+  if (restoredWorker.child.exitCode === null) forceStop(restoredWorker.child);
+  restoredCatalog.close();
+  rmSync(restoredDir, { recursive: true, force: true });
+}
+
+let overlapMode = "good";
+let overlapReleased = false;
+const overlapWaiters = [];
+const overlapCatalog = await startCatalog(async () => {
+  if (overlapMode === "mismatch" && !overlapReleased) {
+    await new Promise((resolve) => overlapWaiters.push(resolve));
+  }
+  if (overlapMode === "mismatch") return { products: [sellableRecord({ sellingPrice: 100 })] };
+  return { products: [sellableRecord()] };
+});
+const overlapDir = mkdtempSync(join(tmpdir(), "tracer-overlap-"));
+const overlapWorker = startWorker(overlapDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: overlapCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  ...mediaEnv,
+});
+try {
+  const overlapReady = await waitFor(() => {
+    const portFile = join(overlapDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "overlap worker did not listen");
+  const overlapStart = await request(overlapReady.port, "/start", { ...liveJob, streamId: "overlap-session" });
+  assert.equal(overlapStart.status, 200);
+  overlapMode = "mismatch";
+  const overlapped = Promise.all([
+    request(overlapReady.port, "/health"),
+    request(overlapReady.port, "/health"),
+    request(overlapReady.port, "/ready"),
+  ]);
+  await waitFor(() => (overlapWaiters.length > 0 ? true : null), "overlapped reverify did not reach the catalog");
+  overlapReleased = true;
+  while (overlapWaiters.length > 0) overlapWaiters.shift()();
+  const overlapResults = await overlapped;
+  assert.equal(overlapResults[0].body.state, "stopped");
+  assert.equal(overlapResults[0].body.productFacts.valid, false);
+  assert.equal(overlapResults[2].status, 503);
+  const overlapAfter = await request(overlapReady.port, "/health");
+  assert.equal(overlapAfter.body.state, "stopped");
+  assert.equal(overlapAfter.body.productFacts.valid, false);
+  await request(overlapReady.port, "/shutdown", {});
+  await waitFor(() => (hasExited(overlapWorker.child) ? true : null), "overlap worker did not shut down");
+} finally {
+  while (overlapWaiters.length > 0) overlapWaiters.shift()();
+  if (overlapWorker.child.exitCode === null) forceStop(overlapWorker.child);
+  overlapCatalog.close();
+  rmSync(overlapDir, { recursive: true, force: true });
+}
+rmSync(mediaRoot, { recursive: true, force: true });
+
 const source = readFileSync(new URL("../worker/ai-live-resident.mjs", import.meta.url), "utf8");
 const gateSource = readFileSync(new URL("../lib/ai-live/destination-gate.ts", import.meta.url), "utf8");
 const dockerfile = readFileSync(new URL("../worker/Dockerfile", import.meta.url), "utf8");
@@ -894,6 +1115,9 @@ assert.match(source, /openDestinationSocket/);
 assert.match(source, /haltChildren/);
 assert.match(source, /product_facts_unconfigured/);
 assert.match(source, /mediaReady/);
+assert.match(source, /media_unavailable/);
+assert.match(source, /start_in_progress/);
+assert.match(source, /commitLive/);
 assert.doesNotMatch(source, /console\.log\(process\.env/);
 assert.doesNotMatch(source, /net\.connect/);
 assert.doesNotMatch(source, /rtmp:\/\//i);

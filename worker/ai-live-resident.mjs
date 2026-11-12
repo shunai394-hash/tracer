@@ -101,9 +101,16 @@ try {
   session.restore(null);
 }
 if (session.health.state === "live" || session.health.state === "reconnecting" || session.health.state === "starting") {
+  const started = Date.parse(session.health.startedAt || "");
+  const limit = session.health.maxRuntimeSeconds ?? 0;
+  const expired = Number.isFinite(started) && limit >= 30 && Date.now() >= started + limit * 1000;
   for (const pid of session.clearChildren()) killProcessTree(pid);
   const streamId = session.health.streamId;
-  if (streamId) session.stop(streamId, "worker_restarted", new Date().toISOString(), "worker_restarted");
+  if (streamId) {
+    const errorCode = expired ? "max_runtime_reached" : "worker_restarted";
+    const reason = expired ? "worker_shutdown" : "worker_restarted";
+    session.stop(streamId, reason, new Date().toISOString(), errorCode);
+  }
 }
 
 function persist() {
@@ -133,9 +140,8 @@ function haltChildren() {
 }
 
 function stopReasonFor(errorCode) {
-  if (errorCode === "inventory_unverified") return "inventory_unverified";
-  if (errorCode === "speech_provider_failed" || errorCode === "media_spawn_failed" || errorCode === "media_exited" || errorCode === "media_unavailable" || errorCode === "media_output_not_started") {
-    return "speech_provider_failed";
+  if (errorCode === "inventory_unverified" || errorCode === "speech_provider_failed" || String(errorCode).startsWith("media_")) {
+    return errorCode;
   }
   return "stale_product_facts";
 }
@@ -230,8 +236,11 @@ function requireControl(request, response) {
 }
 
 function readyDecision(health) {
-  const sessionReady = health.state === "idle"
-    || (health.state === "live" && health.destination === "loopback" && health.productFacts.valid === true);
+  const liveReady = health.state === "live"
+    && health.destination === "loopback"
+    && health.productFacts.valid === true
+    && health.mediaReady === true;
+  const sessionReady = !startLock && (health.state === "idle" || liveReady);
   return {
     ready: health.process === "running" && sessionReady,
     process: health.process,
@@ -319,15 +328,33 @@ async function verifyExpectations(expectations, nowMs) {
   return { ok: true };
 }
 
-async function reverifyLive(nowMs) {
+let startLock = false;
+let factEpoch = 0;
+let reverifyTail = Promise.resolve();
+
+function queueReverify(nowMs) {
+  const run = reverifyTail.then(() => reverifyOnce(nowMs));
+  reverifyTail = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function reverifyOnce(nowMs, options = {}) {
+  if (startLock && options.duringStart !== true) return { ok: true, deferred: true };
   if (session.health.state !== "live" && session.health.state !== "reconnecting") return { ok: true };
-  const expectations = session.health.factExpectations;
+  const epoch = factEpoch;
+  const streamId = session.health.streamId;
+  const expectations = session.health.factExpectations.map((item) => ({ ...item }));
   if (!expectations.length) {
+    factEpoch += 1;
     stopForFacts("product_facts_unconfigured");
     return { ok: false, errorCode: "product_facts_unconfigured" };
   }
   const verified = await verifyExpectations(expectations, nowMs);
+  if ((startLock && options.duringStart !== true) || factEpoch !== epoch || session.health.streamId !== streamId) return { ok: false, stale: true };
+  if (session.health.state !== "live" && session.health.state !== "reconnecting") return { ok: false, stale: true };
+  if (JSON.stringify(session.health.factExpectations) !== JSON.stringify(expectations)) return { ok: false, stale: true };
   if (!verified.ok) {
+    factEpoch += 1;
     stopForFacts(verified.errorCode);
     return verified;
   }
@@ -343,93 +370,129 @@ function outputHasStarted(outputPath) {
   }
 }
 
+function mediaProcessRunning(child) {
+  return Boolean(child) && child.exitCode === null && child.signalCode === null && pidAlive(child.pid);
+}
+
 function watchMedia(child, outputPath) {
   mediaChildren.add(child);
   if (child.pid) session.trackChild(child.pid);
-  let sawOutput = false;
   const noteOutput = () => {
-    if (sawOutput || !outputHasStarted(outputPath)) return;
-    sawOutput = true;
-    if (session.health.state === "live" || session.health.state === "reconnecting") session.setMediaReady(true);
-    persist();
+    const running = mediaProcessRunning(child);
+    const producing = running && outputHasStarted(outputPath);
+    const active = session.health.state === "live" || session.health.state === "reconnecting" || session.health.state === "starting";
+    if (producing && active) {
+      session.setMediaReady(true);
+      persist();
+      return true;
+    }
+    if (!running && active && (child.exitCode !== null || child.signalCode || !pidAlive(child.pid))) {
+      session.setMediaReady(false);
+    }
+    return false;
   };
-  child.stderr?.on("data", () => noteOutput());
-  child.stdout?.on("data", () => noteOutput());
-  const poll = setInterval(noteOutput, 50);
   child.once("error", () => {
-    clearInterval(poll);
     mediaChildren.delete(child);
     failForMedia("media_spawn_failed");
   });
   child.once("exit", (code, signal) => {
-    clearInterval(poll);
     mediaChildren.delete(child);
     if (session.health.state !== "live" && session.health.state !== "reconnecting" && session.health.state !== "starting") return;
-    if (code !== 0 || signal || !outputHasStarted(outputPath)) failForMedia("media_exited");
+    if (code !== 0 || signal || !outputHasStarted(outputPath) || !pidAlive(child.pid)) failForMedia("media_exited");
   });
   return noteOutput;
 }
 
-async function waitForMediaStart(child, noteOutput, timeoutMs = 10_000) {
+function mediaStartTimeoutMs() {
+  const requested = Number(process.env.TRACER_AI_LIVE_MEDIA_START_TIMEOUT_MS || 500);
+  if (!Number.isFinite(requested)) return 500;
+  return Math.min(5000, Math.max(50, Math.floor(requested)));
+}
+
+async function waitForMediaStart(child, noteOutput) {
+  const timeoutMs = mediaStartTimeoutMs();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (ready) => {
       if (settled) return;
       settled = true;
       clearInterval(poll);
-      clearTimeout(timeout);
-      resolve(ready);
+      resolve(ready === true);
     };
-    const poll = setInterval(() => {
-      noteOutput();
-      if (session.health.mediaReady) finish(true);
-      else if (session.health.state === "failed") finish(false);
-    }, 40);
-    const timeout = setTimeout(() => finish(false), timeoutMs);
     child.once("error", () => finish(false));
-    child.once("exit", () => finish(session.health.mediaReady === true));
+    child.once("exit", () => finish(false));
+    const poll = setInterval(() => {
+      if (session.health.state === "failed" || session.health.state === "stopped") finish(false);
+      else if (noteOutput() && mediaProcessRunning(child)) finish(true);
+    }, 40);
+    setTimeout(() => finish(session.health.mediaReady === true && mediaProcessRunning(child)), timeoutMs);
   });
 }
 
+function mediaConfiguration(job) {
+  const segment = job?.segments?.[0];
+  const voiceId = typeof segment?.voiceId === "string" ? segment.voiceId : "";
+  const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
+  const speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
+  const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
+  const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
+  if (voiceId) {
+    if (!apiKey || !segment?.scriptText || !isRegisteredResidentVoice(voiceId)) {
+      return { ok: false, errorCode: "speech_provider_failed" };
+    }
+  } else if (!speechPath || !existsSync(speechPath)) {
+    return { ok: false, errorCode: "media_unavailable" };
+  }
+  if (!avatarVideo || !existsSync(avatarVideo) || !bgmPath || !existsSync(bgmPath)) {
+    return { ok: false, errorCode: "media_unavailable" };
+  }
+  return { ok: true };
+}
+
 async function startMedia(job) {
-  if (session.health.productFacts.valid !== true) return { ok: false, errorCode: "product_facts_unconfigured" };
+  if (session.health.productFacts.valid !== true || session.health.state !== "starting") {
+    return { ok: false, errorCode: "product_facts_unconfigured" };
+  }
+  const configured = mediaConfiguration(job);
+  if (!configured.ok) return configured;
   const segment = job.segments?.[0];
   const voiceId = segment?.voiceId;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
   let speechPath = process.env.TRACER_AI_LIVE_SPEECH_PATH?.trim() || "";
   if (voiceId) {
-    if (!apiKey || !segment?.scriptText || !isRegisteredResidentVoice(voiceId)) {
-      return { ok: false, errorCode: "speech_provider_failed" };
-    }
     const spoken = await synthesizeRegisteredVoice({ voiceId, text: segment.scriptText, apiKey });
     if (!spoken.ok) return { ok: false, errorCode: "speech_provider_failed" };
     speechPath = join(stateDir, "speech.mp3");
     writeFileSync(speechPath, spoken.bytes);
   }
-  const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO?.trim() || "";
-  const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH?.trim() || "";
-  if (!avatarVideo || !bgmPath || !speechPath) return { ok: false, errorCode: "media_unavailable" };
-  if (![avatarVideo, bgmPath, speechPath].every((path) => existsSync(path))) {
-    return { ok: false, errorCode: "media_unavailable" };
-  }
+  const avatarVideo = process.env.TRACER_AI_LIVE_AVATAR_VIDEO.trim();
+  const bgmPath = process.env.TRACER_AI_LIVE_BGM_PATH.trim();
   const outputPath = join(stateDir, "introduction.mp4");
   const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
   if (!plan.ok) return { ok: false, errorCode: "media_spawn_failed" };
   const script = process.env.TRACER_AI_LIVE_FFMPEG_SCRIPT?.trim() || "";
   const command = script ? process.execPath : (process.env.TRACER_AI_LIVE_FFMPEG_BIN?.trim() || "ffmpeg");
   const args = script ? [script, ...plan.args] : plan.args;
-  const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+  const child = spawn(command, args, { stdio: "ignore", windowsHide: true, detached: true });
   const noteOutput = watchMedia(child, outputPath);
   const ready = await waitForMediaStart(child, noteOutput);
-  if (!ready || session.health.mediaReady !== true) {
-    if (session.health.state !== "failed") failForMedia("media_output_not_started");
-    return { ok: false, errorCode: session.health.errorCode || "media_output_not_started" };
+  if (!ready || !mediaProcessRunning(child) || session.health.mediaReady !== true) {
+    const errorCode = session.health.state === "failed"
+      ? (session.health.errorCode || "media_spawn_failed")
+      : "media_start_timeout";
+    failForMedia(errorCode);
+    return { ok: false, errorCode };
   }
-  return { ok: true, attempted: true };
+  return { ok: true };
 }
 
-await reverifyLive(Date.now());
+await queueReverify(Date.now());
 applyRuntimeLimit(Date.now());
+if (session.health.state === "live" || session.health.state === "reconnecting") {
+  const restoredPid = session.health.childPids.find((pid) => pidAlive(pid));
+  const restoredOutput = outputHasStarted(join(stateDir, "introduction.mp4"));
+  session.setMediaReady(Boolean(restoredPid) && restoredOutput);
+}
 persist();
 
 let closing = false;
@@ -462,7 +525,7 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/ready")) {
       applyRuntimeLimit(Date.now());
-      await reverifyLive(Date.now());
+      await queueReverify(Date.now());
       persist();
       const health = view(session.snapshot());
       if (url.pathname === "/health") {
@@ -482,63 +545,107 @@ const server = createServer(async (request, response) => {
     const body = raw ? JSON.parse(raw) : {};
     const now = new Date().toISOString();
     if (url.pathname === "/start") {
-      if (body?.destination === "youtube" || body?.destination === "tiktok") {
-        const gate = openDestinationSocket({ destination: body.destination, env: process.env });
-        if (gate.opened) {
-          rejectStart(response, "destination_adapter_not_implemented");
+      if (startLock || session.health.state === "starting") {
+        rejectStart(response, "start_in_progress");
+        return;
+      }
+      startLock = true;
+      factEpoch += 1;
+      try {
+        if (body?.destination === "youtube" || body?.destination === "tiktok") {
+          const gate = openDestinationSocket({ destination: body.destination, env: process.env });
+          if (gate.opened) {
+            rejectStart(response, "destination_adapter_not_implemented");
+            return;
+          }
+          const rejectedDestination = session.start(body, now);
+          persist();
+          send(response, 409, {
+            ok: false,
+            errorCode: rejectedDestination.errorCode || "destination_not_ready",
+            publicBroadcast: false,
+            health: view(session.snapshot()),
+          });
           return;
         }
-      }
-      if (!process.env.TRACER_AI_LIVE_PRODUCTS_URL?.trim()) {
-        rejectStart(response, "product_facts_unconfigured");
-        return;
-      }
-      const result = session.start(body, now);
-      if (!(result.ok && result.health.state === "live")) {
+        if (!process.env.TRACER_AI_LIVE_PRODUCTS_URL?.trim()) {
+          rejectStart(response, "product_facts_unconfigured");
+          return;
+        }
+        if ((session.health.state === "live" || session.health.state === "reconnecting") && session.health.streamId === body?.streamId) {
+          const again = await reverifyOnce(Date.parse(now), { duringStart: true });
+          const stillLive = again.ok === true && session.health.state === "live" && session.health.mediaReady === true;
+          persist();
+          send(response, stillLive ? 200 : 409, {
+            ok: stillLive,
+            idempotent: true,
+            ...(stillLive ? {} : { errorCode: again.errorCode || session.health.errorCode }),
+            publicBroadcast: false,
+            health: view(session.snapshot()),
+          });
+          return;
+        }
+        if (session.health.state === "live" || session.health.state === "reconnecting") {
+          persist();
+          send(response, 409, {
+            ok: false,
+            errorCode: "duplicate_stream",
+            publicBroadcast: false,
+            health: view(session.snapshot()),
+          });
+          return;
+        }
+        const parsed = expectationsFrom(body?.segments);
+        if (!parsed.ok) {
+          session.recordRejection(body, now, parsed.errorCode);
+          rejectStart(response, parsed.errorCode);
+          return;
+        }
+        const verified = await verifyExpectations(parsed.expectations, Date.parse(now));
+        if (session.health.state === "live") {
+          rejectStart(response, "start_in_progress");
+          return;
+        }
+        if (!verified.ok) {
+          session.recordRejection(body, now, verified.errorCode);
+          rejectStart(response, verified.errorCode);
+          return;
+        }
+        const begun = session.beginStart(body, now, parsed.expectations);
+        if (!begun.ok || session.health.state !== "starting") {
+          persist();
+          send(response, 409, {
+            ok: false,
+            errorCode: begun.errorCode || "not_starting",
+            publicBroadcast: false,
+            health: view(session.snapshot()),
+          });
+          return;
+        }
+        const configured = mediaConfiguration(body);
+        if (!configured.ok) {
+          failForMedia(configured.errorCode);
+          rejectStart(response, configured.errorCode);
+          return;
+        }
         persist();
-        send(response, result.ok ? 200 : 409, {
-          ok: result.ok,
-          ...(result.ok ? {} : { errorCode: result.errorCode }),
-          ...(result.idempotent ? { idempotent: true } : {}),
-          publicBroadcast: false,
-          health: view(session.snapshot()),
-        });
-        return;
-      }
-      if (result.idempotent) {
-        const again = await reverifyLive(Date.parse(now));
+        const media = await startMedia(body);
+        if (!media.ok || session.health.mediaReady !== true || session.health.state === "failed") {
+          if (session.health.state === "starting") failForMedia(media.errorCode || "media_start_timeout");
+          rejectStart(response, session.health.errorCode || media.errorCode || "media_start_timeout");
+          return;
+        }
+        const committed = session.commitLive(now);
+        if (!committed.ok || session.health.state !== "live") {
+          if (session.health.state === "starting") failForMedia(committed.errorCode || "media_not_ready");
+          rejectStart(response, committed.errorCode || "media_not_ready");
+          return;
+        }
         persist();
-        send(response, again.ok && session.health.state === "live" ? 200 : 409, {
-          ok: again.ok && session.health.state === "live",
-          idempotent: true,
-          ...(again.ok ? {} : { errorCode: again.errorCode || session.health.errorCode }),
-          publicBroadcast: false,
-          health: view(session.snapshot()),
-        });
-        return;
+        send(response, 200, { ok: true, publicBroadcast: false, health: view(session.snapshot()) });
+      } finally {
+        startLock = false;
       }
-      const parsed = expectationsFrom(body.segments);
-      if (!parsed.ok) {
-        stopForFacts(parsed.errorCode);
-        rejectStart(response, parsed.errorCode);
-        return;
-      }
-      const verified = await verifyExpectations(parsed.expectations, Date.parse(now));
-      if (!verified.ok) {
-        stopForFacts(verified.errorCode);
-        rejectStart(response, verified.errorCode);
-        return;
-      }
-      session.setFactExpectations(parsed.expectations);
-      session.setProductFacts({ valid: true, reason: null });
-      const media = await startMedia(body);
-      if (!media.ok) {
-        failForMedia(media.errorCode);
-        rejectStart(response, media.errorCode);
-        return;
-      }
-      persist();
-      send(response, 200, { ok: true, publicBroadcast: false, health: view(session.snapshot()) });
       return;
     }
     let result;
@@ -547,7 +654,7 @@ const server = createServer(async (request, response) => {
       if (result.ok) haltChildren();
     } else if (url.pathname === "/reconnect") {
       result = session.reconnect(now);
-      if (result.ok) await reverifyLive(Date.parse(now));
+      if (result.ok) await queueReverify(Date.parse(now));
     } else if (url.pathname === "/shutdown") {
       send(response, 200, { ok: true, publicBroadcast: false, state: "stopped" });
       shutdown("worker_shutdown");
@@ -586,5 +693,5 @@ process.on("SIGTERM", () => shutdown("worker_shutdown"));
 process.on("SIGINT", () => shutdown("worker_shutdown"));
 setInterval(() => {
   applyRuntimeLimit(Date.now());
-  reverifyLive(Date.now()).finally(() => persist());
+  queueReverify(Date.now()).finally(() => persist());
 }, 5_000).unref();
