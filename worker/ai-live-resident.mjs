@@ -100,8 +100,9 @@ try {
 } catch {
   session.restore(null);
 }
-if (session.health.state === "live" || session.health.state === "reconnecting") {
-  session.reconnect(new Date().toISOString());
+if (session.health.state === "live" || session.health.state === "reconnecting" || session.health.state === "starting") {
+  const streamId = session.health.streamId;
+  if (streamId) session.stop(streamId, "worker_restarted", new Date().toISOString(), "worker_restarted");
 }
 
 function persist() {
@@ -368,18 +369,6 @@ function watchMedia(child, outputPath) {
   return noteOutput;
 }
 
-function spawnHoldChild() {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);"], {
-    stdio: "ignore",
-    windowsHide: true,
-    detached: true,
-  });
-  child.unref();
-  mediaChildren.add(child);
-  if (child.pid) session.trackChild(child.pid);
-  child.once("exit", () => mediaChildren.delete(child));
-}
-
 async function waitForMediaStart(child, noteOutput, timeoutMs = 10_000) {
   return new Promise((resolve) => {
     let settled = false;
@@ -403,10 +392,6 @@ async function waitForMediaStart(child, noteOutput, timeoutMs = 10_000) {
 
 async function startMedia(job) {
   if (session.health.productFacts.valid !== true) return { ok: false, errorCode: "product_facts_unconfigured" };
-  if (process.env.TRACER_AI_LIVE_MEDIA_HOLD === "1") {
-    spawnHoldChild();
-    return { ok: true, attempted: false };
-  }
   const segment = job.segments?.[0];
   const voiceId = segment?.voiceId;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
@@ -444,10 +429,6 @@ async function startMedia(job) {
 
 await reverifyLive(Date.now());
 applyRuntimeLimit(Date.now());
-if ((session.health.state === "live" || session.health.state === "reconnecting") && process.env.TRACER_AI_LIVE_MEDIA_HOLD === "1") {
-  haltChildren();
-  spawnHoldChild();
-}
 persist();
 
 let closing = false;
