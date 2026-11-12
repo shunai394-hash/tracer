@@ -80,10 +80,12 @@ BGM の基準音量は 35% です。発話が聞こえている間だけ 0.18 �
 `POST /stop` または `SIGTERM` でセッションと子プロセスを止め、ロックを消します。最大稼働時間に達したときも状態を変えるだけで終わらせず、処理と子プロセスを止めます。
 
 
-### 現在の実装範囲（重要）
+### 実装済みのローカル連続出力と検証範囲
 
-`resident-media.ts` の FFmpeg は、音声セグメントの長さに合わせたローカルの紹介動画 `introduction.mp4` を生成します。アバター映像と BGM の入力はループしますが、音声ミックスが `duration=shortest`、出力が `-shortest` のため、音声が終わると FFmpeg も終了します。これは連続ライブ映像でも RTMP 配信でもありません。
+- resident worker はアバター映像をループし、BGM を常時ミックスしながら、音声の発話区間に合わせてサイドチェインで BGM を下げ、発話後に戻します。音声入力は `apad` で継続するため、FFmpeg は短い紹介音声の終了だけでは停止しません。
+- `TRACER_AI_LIVE_OBS_LOOPBACK_URL` を指定すると、ローカル MP4 の生成と並行して、同じ映像・音声を localhost/127.0.0.1 の RTMP 受信先へ送ります。URL はループバック以外を拒否します。
+- CI の `Test OBS loopback ingest and speech ducking` は、実際の resident worker を起動し、localhost RTMP 受信、音声のダッキングと復帰、異常終了時の fail-closed を検証します。
+- CI の `Test actual loopback RTMP publish and receive` は別途、合成テスト素材による FFmpeg の RTMP 往復を検証します。
+- これらはローカル統合テストです。Docker イメージを永続ホストへ配備した結果、OBS デスクトップでの実画面受信、YouTube/TikTok への外部配信を証明するものではありません。
 
-CI の `Test actual loopback RTMP publish and receive` は、合成テスト映像・音声を使った FFmpeg の localhost RTMP 往復テストです。resident worker の紹介動画を RTMP に接続するテストではありません。したがって、CI 成功は RTMP の基礎機能確認を意味しますが、常駐ワーカーの連続配信や YouTube/TikTok 配信の成功を意味しません。
-
-次の実装段階では、紹介動画生成と連続配信用メディアパイプラインを分離し、ローカル RTMP/HLS などの受信側で映像・音声が継続して受信できることを統合テストで確認します。外部配信先への接続は、その後に別途承認します。
+YouTube/TikTok の外部配信アダプターは引き続き未実装で、外部ソケットは開きません。`publicBroadcast` は false のままです。Docker build と永続ホストでの起動・監視、OBS 実機での受信確認は別途必要です。
