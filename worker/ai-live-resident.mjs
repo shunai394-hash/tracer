@@ -3,7 +3,7 @@
  * YouTube and TikTok are refused. The process does not open RTMP and does not print secrets.
  */
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { ResidentSession } from "../lib/ai-live/resident-worker.ts";
 
@@ -32,7 +32,7 @@ if (existsSync(lockPath)) {
   try {
     const lock = JSON.parse(readFileSync(lockPath, "utf8"));
     if (pidAlive(lock.pid) && lock.pid !== process.pid) {
-      console.log(JSON.stringify({ ok: false, errorCode: "duplicate_worker", publicBroadcast: false }));
+      writeSync(1, JSON.stringify({ ok: false, errorCode: "duplicate_worker", publicBroadcast: false }) + "\n");
       process.exit(2);
     }
   } catch {
@@ -138,7 +138,7 @@ server.listen(0, "127.0.0.1", () => {
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
   writeFileSync(portPath, JSON.stringify({ port, host: "127.0.0.1" }));
-  console.log(JSON.stringify({ ok: true, ready: true, port, host: "127.0.0.1", publicBroadcast: false }));
+  writeSync(1, JSON.stringify({ ok: true, ready: true, port, host: "127.0.0.1", publicBroadcast: false }) + "\n");
 });
 
 process.on("SIGTERM", () => shutdown("worker_shutdown"));

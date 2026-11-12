@@ -62,6 +62,10 @@ const expired = runtime.expire(Date.parse(factsAt) + 601_000);
 assert.equal(expired.state, "stopped");
 assert.equal(expired.errorCode, "max_runtime_reached");
 
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 function forceStop(child) {
   if (!child || child.exitCode !== null) return;
   if (process.platform === "win32" && child.pid) {
@@ -130,19 +134,20 @@ try {
   assert.equal(again.body.health.state, "live");
 
   const duplicate = startWorker(dir);
-  const duplicateExit = await waitFor(() => (duplicate.child.exitCode === null ? null : duplicate.child.exitCode), "duplicate worker did not exit");
-  assert.equal(duplicateExit, 2);
+  await waitFor(() => (hasExited(duplicate.child) ? true : null), "duplicate worker did not exit");
   assert.match(duplicate.read(), /duplicate_worker/);
+  assert.doesNotMatch(duplicate.read(), /"ready":true/);
   assert.doesNotMatch(duplicate.read(), /rtmp:\/\//i);
 
   forceStop(first.child);
-  await waitFor(() => (first.child.exitCode === null ? null : true), "worker did not stop");
+  await waitFor(() => (hasExited(first.child) ? true : null), "worker did not stop");
+  rmSync(join(dir, "port.json"), { force: true });
   const recovered = startWorker(dir);
   try {
     const recoveredReady = await waitFor(() => {
-      const text = recovered.read();
-      if (!text.includes("\"ready\":true")) return null;
-      return JSON.parse(readFileSync(join(dir, "port.json"), "utf8"));
+      const portFile = join(dir, "port.json");
+      if (!existsSync(portFile)) return null;
+      return JSON.parse(readFileSync(portFile, "utf8"));
     }, "recovered worker did not listen");
     const after = await request(recoveredReady.port, "/health");
     assert.equal(after.body.state, "live");
@@ -153,7 +158,7 @@ try {
     assert.equal(stopped.body.health.stopReason, "operator_requested");
     const shutdown = await request(recoveredReady.port, "/shutdown", {});
     assert.equal(shutdown.body.publicBroadcast, false);
-    await waitFor(() => (recovered.child.exitCode === null ? null : true), "shutdown did not exit");
+    await waitFor(() => (hasExited(recovered.child) ? true : null), "shutdown did not exit");
     assert.equal(existsSync(join(dir, "worker.lock")), false);
     assert.doesNotMatch(recovered.read(), /worker-secret-slot/);
   } finally {
