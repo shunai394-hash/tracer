@@ -1,5 +1,3 @@
-import net from "node:net";
-
 export type ResidentDestination = "loopback" | "youtube" | "tiktok";
 
 type Env = Record<string, string | undefined>;
@@ -56,22 +54,24 @@ export function destinationApprovalView(destination: ResidentDestination | null,
     destination,
     officiallyApproved,
     secretPresent,
-    rtmpAllowed: destination !== "loopback" && officiallyApproved && secretPresent,
+    rtmpAllowed: false,
   };
 }
 
 export type SocketConnect = (host: string, port: number) => { destroy?: () => void };
 
 /**
- * Opens a destination socket only after official approval and a usable secret.
- * Loopback and unapproved YouTube or TikTok return before connectImpl runs.
- * The stream key is never passed to connectImpl or included in the result.
+ * This revision never opens a destination socket.
+ * Approval and a secret are recorded, but the broadcast adapter is not implemented,
+ * so connectImpl is ignored for both unapproved and approved destinations.
+ * The stream key is not read into the result.
  */
 export function openDestinationSocket(input: {
   destination: ResidentDestination;
   env: Env;
   connectImpl?: SocketConnect;
-}): { opened: false; reason: string } | { opened: true; socket: { destroy?: () => void } } {
+}): { opened: false; reason: string } {
+  void input.connectImpl;
   if (input.destination === "loopback") return { opened: false, reason: "loopback_has_no_rtmp" };
   const approval = destinationApprovalView(input.destination, input.env);
   if (!approval.officiallyApproved || !approval.secretPresent) {
@@ -80,12 +80,5 @@ export function openDestinationSocket(input: {
       reason: input.destination === "youtube" ? "youtube_approval_required" : "tiktok_approval_required",
     };
   }
-  const endpoint = rtmpEndpoint(clean(input.destination === "youtube" ? input.env.YOUTUBE_RTMP_URL : input.env.TIKTOK_RTMP_URL));
-  if (!endpoint) return { opened: false, reason: "destination_not_ready" };
-  const connect = input.connectImpl ?? ((host: string, port: number) => {
-    const socket = net.connect({ host, port });
-    socket.unref();
-    return socket;
-  });
-  return { opened: true, socket: connect(endpoint.host, endpoint.port) };
+  return { opened: false, reason: "destination_adapter_not_implemented" };
 }

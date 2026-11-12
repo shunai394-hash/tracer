@@ -5,7 +5,7 @@
 ## 動かす場所
 
 - 常駐先は別の仮想マシン、またはこのリポジトリの `worker/Dockerfile` から作ったコンテナです。
-- プロセスは `127.0.0.1` だけを待ち受けます。YouTube と TikTok の未承認時に外部ソケットは開きません。
+- プロセスは `127.0.0.1` だけを待ち受けます。YouTube と TikTok は、未承認でも承認済みでも、この改訂では外部ソケットを開きません。
 - `TRACER_AI_LIVE_STATE_DIR` はリポジトリの外に取り、ワーカーのユーザーだけが読み書きできるようにします。
 
 ## イメージ
@@ -44,12 +44,14 @@ node --experimental-strip-types --no-warnings worker/ai-live-resident.mjs
 
 - `GET /health` はプロセスが応答できるかを見ます。セッションが停止していても 200 です。応答にはプロセス、セッション状態、商品事実、配信先の承認状態を分けて入れます。
 - `GET /ready` は、待受中か、loopback で商品事実が有効なときだけ 200 です。事実が未設定・古い・不一致、配信先が未承認、セッションが失敗、のときは 503 です。
-- 商品確認URLが未設定なら開始は拒否されます。`TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK=1` は隔離されたローカル試験専用で、本番環境には設定しないでください。
+- 商品確認URLが未設定なら開始は拒否されます。検証を省略して成功にする設定はありません。
 - `POST /start`、`POST /stop`、`POST /reconnect`、`POST /shutdown` は `Authorization: Bearer` が一致しないと動きません。
 
 ## 配信先
 
-YouTube は `TRACER_AI_LIVE_YOUTUBE_APPROVED=approved` かつ有効な `YOUTUBE_RTMP_URL` と `YOUTUBE_STREAM_KEY` が揃うまで、TikTok は `TRACER_AI_LIVE_TIKTOK_APPROVED=approved` かつ有効な `TIKTOK_RTMP_URL` と `TIKTOK_STREAM_KEY` が揃うまで、ソケットを開きません。承認フラグだけでは足りません。このワーカーは、その条件を満たしても配信セッションを live にはしません。実配信は別途の承認後の作業です。
+`TRACER_AI_LIVE_PRODUCTS_URL` が無い、商品 API の認証失敗、タイムアウト、取得失敗、価格・在庫・仕入先指紋の不一致、更新日時の期限切れでは `/start` を拒否します。検証できない状態では Fish Audio も FFmpeg も起動しません。
+
+YouTube と TikTok は、承認フラグと Secret が揃っていても、配信アダプターの実装と明示的な開始条件が揃うまでソケットを開きません。この改訂ではそのアダプターは未実装です。`publicBroadcast` は false のままです。実配信は行っていません。
 
 ## 音声と映像
 

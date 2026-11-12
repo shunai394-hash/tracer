@@ -8,8 +8,12 @@ export function killProcessTree(pid: number): void {
     return;
   }
   try {
-    process.kill(pid, "SIGTERM");
+    process.kill(-pid, "SIGKILL");
   } catch {
-    // The child already exited.
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // The child already exited.
+    }
   }
 }

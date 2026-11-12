@@ -17,7 +17,9 @@ export type ExpectedProductFact = {
   supplierFingerprint: string;
 };
 
-export type ProductFactResult = { ok: true } | { ok: false; errorCode: "stale_product_facts" | "inventory_unverified" | "product_facts_mismatch" };
+export type ProductFactResult =
+  | { ok: true }
+  | { ok: false; errorCode: "stale_product_facts" | "inventory_unverified" | "product_facts_mismatch" | "supplier_fingerprint_mismatch" };
 
 function sameId(left: string, right: string): boolean {
   return left === right;
@@ -33,7 +35,7 @@ export function compareProductFacts(
   actual: SellableProductFact | null,
   nowMs: number,
 ): ProductFactResult {
-  if (!actual) return { ok: false, errorCode: "inventory_unverified" };
+  if (!actual) return { ok: false, errorCode: "product_facts_mismatch" };
   const updatedAt = Date.parse(actual.updatedAt);
   if (!Number.isFinite(updatedAt) || updatedAt > nowMs + 60_000 || nowMs - updatedAt > FACT_MAX_AGE_MS) {
     return { ok: false, errorCode: "stale_product_facts" };
@@ -45,7 +47,7 @@ export function compareProductFacts(
     return { ok: false, errorCode: "inventory_unverified" };
   }
   if (actual.supplierConfirmed !== true || actual.supplierFingerprint !== expected.supplierFingerprint) {
-    return { ok: false, errorCode: "product_facts_mismatch" };
+    return { ok: false, errorCode: "supplier_fingerprint_mismatch" };
   }
   return { ok: true };
 }

@@ -24,6 +24,13 @@ export type ResidentProductFacts = {
   reason: string | null;
 };
 
+export type ResidentFactExpectation = {
+  productId: string;
+  sellingPrice: number;
+  inventory: number;
+  supplierFingerprint: string;
+};
+
 export type ResidentHealth = {
   ok: true;
   publicBroadcast: false;
@@ -39,6 +46,8 @@ export type ResidentHealth = {
   errorCode: string | null;
   maxRuntimeSeconds: number | null;
   productFacts: ResidentProductFacts;
+  factExpectations: ResidentFactExpectation[];
+  mediaReady: boolean;
   childPids: number[];
 };
 
@@ -89,8 +98,28 @@ function emptyHealth(): ResidentHealth {
     errorCode: null,
     maxRuntimeSeconds: null,
     productFacts: emptyProductFacts(),
+    factExpectations: [],
+    mediaReady: false,
     childPids: [],
   };
+}
+
+function factExpectationsFrom(value: unknown): ResidentFactExpectation[] {
+  if (!Array.isArray(value)) return [];
+  const parsed: ResidentFactExpectation[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.productId !== "string" || typeof row.sellingPrice !== "number" || !Number.isInteger(row.inventory)) continue;
+    if (typeof row.supplierFingerprint !== "string" || !/^[a-f0-9]{32}$/.test(row.supplierFingerprint)) continue;
+    parsed.push({
+      productId: row.productId,
+      sellingPrice: row.sellingPrice,
+      inventory: Number(row.inventory),
+      supplierFingerprint: row.supplierFingerprint,
+    });
+  }
+  return parsed.slice(0, 20);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,6 +215,8 @@ export class ResidentSession {
       publicBroadcast: false,
       process: "running",
       productFacts: { ...this.health.productFacts },
+      factExpectations: this.health.factExpectations.map((item) => ({ ...item })),
+      mediaReady: this.health.mediaReady === true,
       childPids: [...this.health.childPids],
     };
   }
@@ -209,12 +240,22 @@ export class ResidentSession {
       productFacts: saved.productFacts?.valid === true || saved.productFacts?.valid === false || saved.productFacts?.reason
         ? { valid: saved.productFacts.valid ?? null, reason: saved.productFacts.reason ?? null }
         : emptyProductFacts(),
+      factExpectations: factExpectationsFrom(saved.factExpectations),
+      mediaReady: false,
       childPids: childPidsFrom(saved.childPids),
     };
   }
 
   setProductFacts(facts: ResidentProductFacts): void {
     this.health.productFacts = { valid: facts.valid, reason: facts.reason };
+  }
+
+  setFactExpectations(expectations: ResidentFactExpectation[]): void {
+    this.health.factExpectations = factExpectationsFrom(expectations);
+  }
+
+  setMediaReady(ready: boolean): void {
+    this.health.mediaReady = ready === true;
   }
 
   trackChild(pid: number): void {
@@ -270,9 +311,26 @@ export class ResidentSession {
     this.health.state = "stopped";
     this.health.stopReason = reason || "operator_requested";
     this.health.errorCode = errorCode;
+    this.health.mediaReady = false;
     this.health.lastHeartbeatAt = nowIso;
     this.health.currentSegmentId = null;
     return { ok: true, health: this.snapshot() };
+  }
+
+  fail(streamId: string, reason: string, nowIso: string, errorCode: string): ResidentResult {
+    if (!this.health.streamId || this.health.streamId !== streamId) {
+      return { ok: false, errorCode: "stream_not_found", health: this.snapshot() };
+    }
+    if (this.health.state === "failed" || this.health.state === "stopped" || this.health.state === "idle") {
+      return { ok: true, health: this.snapshot(), idempotent: true };
+    }
+    this.health.state = "failed";
+    this.health.stopReason = reason;
+    this.health.errorCode = errorCode;
+    this.health.mediaReady = false;
+    this.health.lastHeartbeatAt = nowIso;
+    this.health.currentSegmentId = null;
+    return { ok: false, errorCode, health: this.snapshot() };
   }
 
   reconnect(nowIso: string): ResidentResult {
@@ -305,6 +363,7 @@ export class ResidentSession {
     this.health.state = "stopped";
     this.health.stopReason = "worker_shutdown";
     this.health.errorCode = "max_runtime_reached";
+    this.health.mediaReady = false;
     this.health.currentSegmentId = null;
     this.health.lastHeartbeatAt = new Date(nowMs).toISOString();
     return this.snapshot();

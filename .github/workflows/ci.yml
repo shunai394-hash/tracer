@@ -49,7 +49,7 @@ jobs:
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql postgresql-client
+          sudo apt-get install -y postgresql postgresql-client ffmpeg
           PG_VERSION="$(pg_lsclusters --no-header | awk 'NR == 1 { print $1 }')"
           test -n "$PG_VERSION"
           sudo pg_ctlcluster "$PG_VERSION" main start
