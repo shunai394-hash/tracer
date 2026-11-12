@@ -12,6 +12,7 @@
     "test:ai-live-program": "node --experimental-strip-types --no-warnings scripts/test-ai-live-program.mjs",
     "test:ai-live-resident-worker": "node --experimental-strip-types --no-warnings scripts/test-ai-live-resident-worker.mjs",
     "test:ai-live-loopback-rtmp": "node scripts/test-ai-live-loopback-rtmp.mjs",
+    "test:ai-live-obs-loopback": "node --experimental-strip-types --no-warnings scripts/test-ai-live-obs-loopback.mjs",
     "test:ai-live-comment-router": "node --experimental-strip-types --no-warnings scripts/test-ai-live-comment-router.mjs",
     "test:ai-live-reply-from-facts": "node --experimental-strip-types --no-warnings scripts/test-ai-live-reply-from-facts.mjs",
     "test:ai-live-local-demo": "node --experimental-strip-types --no-warnings scripts/test-ai-live-local-demo.mjs",

@@ -29,36 +29,91 @@ export function residentMixGains(): { base: number; ducked: number; duckRatio: n
   };
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
+
 /**
- * FFmpeg arguments for a local introduction: loop the avatar and BGM, duck BGM
- * under the speech file, and write a local file. A remote output is rejected.
+ * Optional OBS ingest. Only an RTMP URL on 127.0.0.1 or localhost is accepted.
+ * Anything else, including YouTube and TikTok ingest hosts, is rejected.
+ */
+export function residentLoopbackTarget(value: unknown): { ok: true; url: string | null } | { ok: false; errorCode: "media_output_rejected" } {
+  if (value == null || value === "") return { ok: true, url: null };
+  if (typeof value !== "string") return { ok: false, errorCode: "media_output_rejected" };
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: true, url: null };
+  if (/\s/.test(trimmed)) return { ok: false, errorCode: "media_output_rejected" };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { ok: false, errorCode: "media_output_rejected" };
+  }
+  const port = Number(parsed.port);
+  if (parsed.protocol !== "rtmp:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    return { ok: false, errorCode: "media_output_rejected" };
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) return { ok: false, errorCode: "media_output_rejected" };
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, errorCode: "media_output_rejected" };
+  if (!/^\/[A-Za-z0-9/_-]{1,120}$/.test(parsed.pathname)) return { ok: false, errorCode: "media_output_rejected" };
+  return { ok: true, url: trimmed };
+}
+
+/**
+ * BGM stays at the 0.35 base. While speech is present, sidechaincompress
+ * lowers it over SPEECH_DUCK_FADE_MS and releases afterward. Threshold 0.108
+ * is the full-scale calibration that settles on the 0.18 ratio; it is not a
+ * constant gain applied for the whole program.
+ */
+function residentDuckFilter(splitProgram: boolean): string {
+  const base = RESIDENT_BGM_BASE_VOLUME.toFixed(4);
+  const mixed = splitProgram ? "[amixed]" : "[a]";
+  const lines = [
+    `[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,volume=${base},aloop=loop=-1:size=2000000000[bgm]`,
+    "[2:a]apad,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,asplit=2[speech][key]",
+    `[bgm][key]sidechaincompress=threshold=0.108:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
+    `[ducked][speech]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0${mixed}`,
+  ];
+  if (splitProgram) lines.push("[amixed]asplit=2[a0][a1]");
+  return lines.join(";");
+}
+
+/**
+ * Local MP4 plus, when requested, a second output on the loopback ingest.
+ * A remote file or remote ingest URL is rejected before FFmpeg starts.
  */
 export function buildResidentFfmpegArgs(input: {
   avatarVideo: string;
   bgmPath: string;
   speechPath: string;
   outputPath: string;
-}): { ok: true; args: string[] } | { ok: false; errorCode: string } {
+  loopbackUrl?: string | null;
+}): { ok: true; args: string[] } | { ok: false; errorCode: "media_output_rejected" } {
   const paths = [input.avatarVideo, input.bgmPath, input.speechPath, input.outputPath];
   if (paths.some((value) => typeof value !== "string" || value.length < 1 || value.includes("://"))) {
     return { ok: false, errorCode: "media_output_rejected" };
   }
-  const ducked = residentMixGains().ducked.toFixed(4);
-  const filter = `[1:a]volume=${ducked},aloop=loop=-1:size=2000000000[bgm];[2:a]anull[speech];[bgm][speech]amix=inputs=2:duration=shortest:dropout_transition=0[a]`;
-  return {
-    ok: true,
-    args: [
-      "-y",
-      "-stream_loop", "-1", "-i", input.avatarVideo,
-      "-stream_loop", "-1", "-i", input.bgmPath,
-      "-i", input.speechPath,
-      "-filter_complex", filter,
-      "-map", "0:v:0",
-      "-map", "[a]",
-      "-shortest",
-      input.outputPath,
-    ],
-  };
+  const loopback = residentLoopbackTarget(input.loopbackUrl ?? null);
+  if (!loopback.ok) return loopback;
+  const encode = [
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+    "-pix_fmt", "yuv420p", "-g", "30",
+    "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+  ];
+  const args = [
+    "-y",
+    "-stream_loop", "-1", "-i", input.avatarVideo,
+    "-stream_loop", "-1", "-i", input.bgmPath,
+    "-i", input.speechPath,
+    "-filter_complex", residentDuckFilter(loopback.url !== null),
+    "-map", "0:v:0",
+    "-map", loopback.url ? "[a0]" : "[a]",
+    ...encode,
+    "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+    input.outputPath,
+  ];
+  if (loopback.url) {
+    args.push("-map", "0:v:0", "-map", "[a1]", ...encode, "-f", "flv", loopback.url);
+  }
+  return { ok: true, args };
 }
 
 export async function synthesizeRegisteredVoice(input: {

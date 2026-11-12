@@ -152,5 +152,7 @@ jobs:
         run: npm run test:ai-live-resident-worker
       - name: Test actual loopback RTMP publish and receive
         run: npm run test:ai-live-loopback-rtmp
+      - name: Test OBS loopback ingest and speech ducking
+        run: npm run test:ai-live-obs-loopback
       - run: npm run lint
       - run: npm run build

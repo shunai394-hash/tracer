@@ -15,6 +15,7 @@ import { readBearer, resolveWorkerAdminToken, tokensMatch } from "../lib/ai-live
 import {
   buildResidentFfmpegArgs,
   isRegisteredResidentVoice,
+  residentLoopbackTarget,
   synthesizeRegisteredVoice,
 } from "../lib/ai-live/resident-media.ts";
 import { killProcessTree } from "../lib/ai-live/resident-process.ts";
@@ -455,6 +456,8 @@ async function startMedia(job) {
   }
   const configured = mediaConfiguration(job);
   if (!configured.ok) return configured;
+  const loopback = residentLoopbackTarget(process.env.TRACER_AI_LIVE_OBS_LOOPBACK_URL);
+  if (!loopback.ok) return { ok: false, errorCode: loopback.errorCode };
   const segment = job.segments?.[0];
   const voiceId = segment?.voiceId;
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim() || "";
@@ -470,8 +473,8 @@ async function startMedia(job) {
   const outputPath = join(stateDir, "introduction.mp4");
   // Never accept a previous session's file as proof that this FFmpeg process is producing media.
   rmSync(outputPath, { force: true });
-  const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath });
-  if (!plan.ok) return { ok: false, errorCode: "media_spawn_failed" };
+  const plan = buildResidentFfmpegArgs({ avatarVideo, bgmPath, speechPath, outputPath, loopbackUrl: loopback.url });
+  if (!plan.ok) return { ok: false, errorCode: plan.errorCode };
   const script = process.env.TRACER_AI_LIVE_FFMPEG_SCRIPT?.trim() || "";
   const command = script ? process.execPath : (process.env.TRACER_AI_LIVE_FFMPEG_BIN?.trim() || "ffmpeg");
   const args = script ? [script, ...plan.args] : plan.args;

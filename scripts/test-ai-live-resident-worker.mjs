@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { destinationApprovalView, openDestinationSocket } from "../lib/ai-live/destination-gate.ts";
 import { compareProductFacts } from "../lib/ai-live/product-facts-check.ts";
 import { resolveWorkerAdminToken, tokensMatch, workerAuthSource } from "../lib/ai-live/resident-auth.ts";
-import { buildResidentFfmpegArgs, isRegisteredResidentVoice, residentMixGains, synthesizeRegisteredVoice } from "../lib/ai-live/resident-media.ts";
+import { buildResidentFfmpegArgs, isRegisteredResidentVoice, residentLoopbackTarget, residentMixGains, synthesizeRegisteredVoice } from "../lib/ai-live/resident-media.ts";
 import { killProcessTree } from "../lib/ai-live/resident-process.ts";
 import { SPEECH_DUCK_RATIO, speechMixVolume } from "../lib/ai-live/program.ts";
 import { ResidentSession } from "../lib/ai-live/resident-worker.ts";
@@ -351,16 +351,116 @@ const duckDb = maxVolumeDb(duckFile);
 const restoreDb = maxVolumeDb(restoreFile);
 assert.ok(duckDb < bedDb - 5, "speech ducking did not lower the BGM waveform");
 assert.ok(Math.abs(restoreDb - bedDb) < 1.5, "BGM did not return to the base waveform after speech");
-rmSync(toneDir, { recursive: true, force: true });
+const avatarFile = join(toneDir, "avatar.mp4");
+const bgmFile = join(toneDir, "speech-bed.wav");
+const speechFile = join(toneDir, "speech-bursts.wav");
+const mixedFile = join(toneDir, "mixed.mp4");
+const avatarMade = spawnSync("ffmpeg", [
+  "-y", "-hide_banner", "-loglevel", "error",
+  "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15:duration=1",
+  "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", avatarFile,
+], { encoding: "utf8" });
+assert.equal(avatarMade.status, 0, avatarMade.stderr);
+const bgmMade = spawnSync("ffmpeg", [
+  "-y", "-hide_banner", "-loglevel", "error",
+  "-f", "lavfi", "-i", "aevalsrc=0.5*sin(2*PI*150*t):s=48000:d=5",
+  "-c:a", "pcm_s16le", bgmFile,
+], { encoding: "utf8" });
+assert.equal(bgmMade.status, 0, bgmMade.stderr);
+const speechMade = spawnSync("ffmpeg", [
+  "-y", "-hide_banner", "-loglevel", "error",
+  "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=0.6",
+  "-f", "lavfi", "-i", "aevalsrc=sin(2*PI*3000*t):s=48000:d=1",
+  "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=1.2",
+  "-f", "lavfi", "-i", "aevalsrc=sin(2*PI*3000*t):s=48000:d=1",
+  "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=1.2",
+  "-filter_complex", "[0:a][1:a][2:a][3:a][4:a]concat=n=5:v=0:a=1",
+  "-c:a", "pcm_s16le", speechFile,
+], { encoding: "utf8" });
+assert.equal(speechMade.status, 0, speechMade.stderr);
 const mix = buildResidentFfmpegArgs({
-  avatarVideo: "avatar.mp4",
-  bgmPath: "bed.mp3",
-  speechPath: "speech.mp3",
-  outputPath: "introduction.mp4",
+  avatarVideo: avatarFile,
+  bgmPath: bgmFile,
+  speechPath: speechFile,
+  outputPath: mixedFile,
 });
 assert.equal(mix.ok, true);
-assert.match(mix.args.join(" "), new RegExp(`volume=${gains.ducked.toFixed(4)}`));
+const filterText = mix.args.join(" ");
+assert.match(filterText, /volume=0\.3500/);
+assert.match(filterText, /sidechaincompress=/);
+assert.match(filterText, /attack=400/);
+assert.match(filterText, /release=400/);
+assert.doesNotMatch(filterText, /volume=0\.0630/);
 assert.ok(mix.args.includes("-stream_loop"));
+assert.equal(mix.args.at(-1), mixedFile);
+const renderedArgs = [...mix.args];
+renderedArgs.splice(renderedArgs.length - 1, 0, "-t", "4.8");
+const mixed = spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", ...renderedArgs], { encoding: "utf8", timeout: 60_000 });
+assert.equal(mixed.status, 0, mixed.stderr);
+function windowMeanDb(file, start, seconds, frequency) {
+  const probe = spawnSync("ffmpeg", [
+    "-hide_banner",
+    "-ss", String(start), "-t", String(seconds), "-i", file,
+    "-af", `bandpass=f=${frequency}:width_type=h:w=24,volumedetect`,
+    "-f", "null", "-",
+  ], { encoding: "utf8" });
+  const match = `${probe.stderr}`.match(/mean_volume:\s*(-?\d+(?:\.\d+)?) dB/);
+  assert.ok(match, `no mean volume at ${start}Hz ${frequency}: ${probe.stderr}`);
+  return Number(match[1]);
+}
+const measuredBed = windowMeanDb(mixedFile, 0.15, 0.2, 150);
+const measuredFade = windowMeanDb(mixedFile, 0.62, 0.08, 150);
+const measuredDuck = windowMeanDb(mixedFile, 1.15, 0.2, 150);
+const measuredRestore = windowMeanDb(mixedFile, 2.15, 0.25, 150);
+const measuredDuckAgain = windowMeanDb(mixedFile, 3.25, 0.2, 150);
+const measuredRestoreAgain = windowMeanDb(mixedFile, 4.35, 0.2, 150);
+const measuredRatio = 10 ** ((measuredDuck - measuredBed) / 20);
+console.log(JSON.stringify({
+  mix: "ffmpeg-file",
+  bedDb: measuredBed,
+  fadeDb: measuredFade,
+  duckDb: measuredDuck,
+  restoreDb: measuredRestore,
+  duckAgainDb: measuredDuckAgain,
+  restoreAgainDb: measuredRestoreAgain,
+  duckRatio: Number(measuredRatio.toFixed(3)),
+}));
+assert.ok(measuredDuck < measuredBed - 8, `speech did not duck the mixed BGM (${measuredDuck} vs ${measuredBed})`);
+assert.ok(measuredFade < measuredBed - 1.5 && measuredFade > measuredDuck + 1.5, `duck fade was not between the bed and the floor (${measuredFade}, bed ${measuredBed}, duck ${measuredDuck})`);
+assert.ok(Math.abs(measuredRestore - measuredBed) < 2.5, `BGM did not return to 35% after speech (${measuredRestore} vs ${measuredBed})`);
+assert.ok(measuredDuckAgain < measuredBed - 8, `second speech did not duck the mixed BGM (${measuredDuckAgain} vs ${measuredBed})`);
+assert.ok(Math.abs(measuredRestoreAgain - measuredBed) < 2.5, `BGM did not return to 35% after the second speech (${measuredRestoreAgain} vs ${measuredBed})`);
+assert.ok(Math.abs(measuredRatio - 0.18) < 0.05, `ducked mix ratio ${measuredRatio} was not near 0.18`);
+assert.equal(residentLoopbackTarget(null).url, null);
+assert.equal(residentLoopbackTarget("rtmp://127.0.0.1:1935/live/obs").ok, true);
+assert.equal(residentLoopbackTarget("rtmp://localhost:1935/live/obs").ok, true);
+for (const rejected of [
+  "rtmp://a.rtmp.youtube.com/live2",
+  "rtmp://127.0.0.1.evil/live",
+  "rtmp://user@127.0.0.1:1935/live",
+  "rtmp://0.0.0.0:1935/live",
+  "rtmp://127.0.0.1/live",
+]) {
+  assert.equal(residentLoopbackTarget(rejected).ok, false, rejected);
+}
+const loopbackMix = buildResidentFfmpegArgs({
+  avatarVideo: avatarFile,
+  bgmPath: bgmFile,
+  speechPath: speechFile,
+  outputPath: mixedFile,
+  loopbackUrl: "rtmp://127.0.0.1:1935/live/obs",
+});
+assert.equal(loopbackMix.ok, true);
+assert.ok(loopbackMix.args.includes(mixedFile));
+assert.equal(loopbackMix.args.at(-1), "rtmp://127.0.0.1:1935/live/obs");
+assert.equal(buildResidentFfmpegArgs({
+  avatarVideo: avatarFile,
+  bgmPath: bgmFile,
+  speechPath: speechFile,
+  outputPath: mixedFile,
+  loopbackUrl: "rtmp://a.rtmp.youtube.com/live2",
+}).ok, false);
+rmSync(toneDir, { recursive: true, force: true });
 assert.equal(buildResidentFfmpegArgs({
   avatarVideo: "avatar.mp4",
   bgmPath: "bed.mp3",
@@ -1119,6 +1219,8 @@ assert.match(source, /mediaReady/);
 assert.match(source, /media_unavailable/);
 assert.match(source, /start_in_progress/);
 assert.match(source, /commitLive/);
+assert.match(source, /residentLoopbackTarget/);
+assert.match(source, /TRACER_AI_LIVE_OBS_LOOPBACK_URL/);
 assert.doesNotMatch(source, /console\.log\(process\.env/);
 assert.doesNotMatch(source, /net\.connect/);
 assert.doesNotMatch(source, /rtmp:\/\//i);
