@@ -11,5 +11,10 @@ WORKDIR /app
 COPY lib/ai-live ./lib/ai-live
 COPY worker/ai-live-resident.mjs ./worker/ai-live-resident.mjs
 
+# The non-root node user must be able to create the lock and state files.
+RUN mkdir -p /var/lib/tracer-ai-live \
+  && chown -R node:node /var/lib/tracer-ai-live
+ENV TRACER_AI_LIVE_STATE_DIR=/var/lib/tracer-ai-live
+
 USER node
 CMD ["node", "--experimental-strip-types", "--no-warnings", "worker/ai-live-resident.mjs"]
