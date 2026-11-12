@@ -467,6 +467,18 @@ assert.equal(buildResidentFfmpegArgs({
   speechPath: "speech.mp3",
   outputPath: "rtmp://example/live",
 }).ok, false);
+const multiSpeechPlan = buildResidentFfmpegArgs({
+  avatarVideo: "avatar.mp4",
+  bgmPath: "bed.mp3",
+  speechPath: "speech-01.mp3",
+  speechPaths: ["speech-01.mp3", "speech-02.mp3"],
+  outputPath: "multi-introduction.mp4",
+});
+assert.equal(multiSpeechPlan.ok, true);
+assert.equal(multiSpeechPlan.args.filter((arg) => arg === "-i").length, 4);
+assert.ok(multiSpeechPlan.args.includes("speech-01.mp3"));
+assert.ok(multiSpeechPlan.args.includes("speech-02.mp3"));
+assert.ok(multiSpeechPlan.args.join(" ").includes("concat=n=2:v=0:a=1"));
 const registeredVoice = "0839163163a84ce5b9919a1681ce156a";
 assert.equal(isRegisteredResidentVoice(registeredVoice), true);
 let fishCalls = 0;
@@ -946,6 +958,83 @@ try {
 } finally {
   if (outputMedia.worker.child.exitCode === null) forceStop(outputMedia.worker.child);
   rmSync(outputMedia.workerDir, { recursive: true, force: true });
+}
+
+const multiMediaDir = mkdtempSync(join(tmpdir(), "tracer-multi-segment-"));
+writeFileSync(join(multiMediaDir, "avatar.mp4"), "avatar");
+writeFileSync(join(multiMediaDir, "bed.mp3"), "bed");
+const fishCallsPath = join(multiMediaDir, "fish-calls.jsonl");
+const ffmpegArgsPath = join(multiMediaDir, "ffmpeg-args.json");
+const fishMockPath = join(multiMediaDir, "fish-mock.mjs");
+writeFileSync(fishMockPath, `
+import { appendFileSync } from "node:fs";
+globalThis.fetch = async (url, options = {}) => {
+  if (String(url) !== "https://api.fish.audio/v1/tts") throw new Error("unexpected network request");
+  const body = JSON.parse(options.body);
+  appendFileSync(process.env.TRACER_TEST_FISH_CALLS, JSON.stringify({ text: body.text, voiceId: body.reference_id }) + "\\n");
+  return new Response(Buffer.alloc(1200, 1), { status: 200, headers: { "Content-Type": "audio/mpeg" } });
+};
+`);
+const multiFfmpegPath = join(multiMediaDir, "ffmpeg-record.mjs");
+writeFileSync(multiFfmpegPath, `
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.TRACER_TEST_FFMPEG_ARGS, JSON.stringify(process.argv.slice(2)));
+writeFileSync(process.argv.at(-1), "frame");
+setInterval(() => {}, 1000);
+`);
+const multiCatalog = await startCatalog(() => ({
+  products: [sellableRecord(), sellableRecord({ id: "bag-2" })],
+}));
+const multiStateDir = mkdtempSync(join(tmpdir(), "tracer-multi-worker-"));
+const multiVoice = "0839163163a84ce5b9919a1681ce156a";
+const multiJob = {
+  ...liveJob,
+  streamId: "multi-segment-session",
+  segments: [
+    ...liveSegments({ id: "segment-1", productId: "bag-1", voiceId: multiVoice }),
+    ...liveSegments({ id: "segment-2", productId: "bag-2", voiceId: multiVoice, scriptText: "次の商品は、収納力のあるトートバッグです。価格は12,800円です。" }),
+  ],
+};
+const multiWorker = startWorker(multiStateDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: multiCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  TRACER_AI_LIVE_AVATAR_VIDEO: join(multiMediaDir, "avatar.mp4"),
+  TRACER_AI_LIVE_BGM_PATH: join(multiMediaDir, "bed.mp3"),
+  FISH_AUDIO_API_KEY: "fish-test-key",
+  NODE_OPTIONS: `--import=${fishMockPath}`,
+  TRACER_TEST_FISH_CALLS: fishCallsPath,
+  TRACER_TEST_FFMPEG_ARGS: ffmpegArgsPath,
+  TRACER_AI_LIVE_FFMPEG_SCRIPT: multiFfmpegPath,
+});
+try {
+  const ready = await waitFor(() => {
+    const portFile = join(multiStateDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "multi-segment worker did not listen");
+  const result = await request(ready.port, "/start", multiJob);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.health.state, "live");
+  assert.equal(result.body.health.mediaReady, true);
+  assert.equal(result.body.publicBroadcast, false);
+  const calls = readFileSync(fishCallsPath, "utf8").trim().split("\\n").map((line) => JSON.parse(line));
+  assert.deepEqual(calls.map((call) => call.text), multiJob.segments.map((segment) => segment.scriptText));
+  assert.deepEqual(calls.map((call) => call.voiceId), [multiVoice, multiVoice]);
+  assert.equal(existsSync(join(multiStateDir, "speech-01.mp3")), true);
+  assert.equal(existsSync(join(multiStateDir, "speech-02.mp3")), true);
+  const args = JSON.parse(readFileSync(ffmpegArgsPath, "utf8"));
+  assert.ok(args.includes(join(multiStateDir, "speech-01.mp3")));
+  assert.ok(args.includes(join(multiStateDir, "speech-02.mp3")));
+  assert.ok(args.join(" ").includes("concat=n=2:v=0:a=1"));
+  const stopped = await request(ready.port, "/stop", { streamId: multiJob.streamId, reason: "operator_requested" });
+  assert.equal(stopped.body.health.state, "stopped");
+  await request(ready.port, "/shutdown", {});
+  await waitFor(() => (hasExited(multiWorker.child) ? true : null), "multi-segment worker did not shut down");
+} finally {
+  if (multiWorker.child.exitCode === null) forceStop(multiWorker.child);
+  multiCatalog.close();
+  rmSync(multiStateDir, { recursive: true, force: true });
+  rmSync(multiMediaDir, { recursive: true, force: true });
 }
 
 const platformCatalog = await startCatalog(() => ({ products: [sellableRecord()] }));
