@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { destinationApprovalView, openDestinationSocket } from "../lib/ai-live/destination-gate.ts";
 import { compareProductFacts } from "../lib/ai-live/product-facts-check.ts";
 import { resolveWorkerAdminToken, tokensMatch, workerAuthSource } from "../lib/ai-live/resident-auth.ts";
@@ -968,11 +968,22 @@ const ffmpegArgsPath = join(multiMediaDir, "ffmpeg-args.json");
 const fishMockPath = join(multiMediaDir, "fish-mock.mjs");
 writeFileSync(fishMockPath, `
 import { appendFileSync } from "node:fs";
+const originalFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (url, options = {}) => {
-  if (String(url) !== "https://api.fish.audio/v1/tts") throw new Error("unexpected network request");
-  const body = JSON.parse(options.body);
-  appendFileSync(process.env.TRACER_TEST_FISH_CALLS, JSON.stringify({ text: body.text, voiceId: body.reference_id }) + "\\n");
-  return new Response(Buffer.alloc(1200, 1), { status: 200, headers: { "Content-Type": "audio/mpeg" } });
+  const target = String(url);
+  if (target === "https://api.fish.audio/v1/tts") {
+    const body = JSON.parse(options.body);
+    appendFileSync(process.env.TRACER_TEST_FISH_CALLS, JSON.stringify({ text: body.text, voiceId: body.reference_id }) + "\\n");
+    return new Response(Buffer.alloc(1200, 1), { status: 200, headers: { "Content-Type": "audio/mpeg" } });
+  }
+  let hostname = "";
+  try {
+    hostname = new URL(target).hostname;
+  } catch {
+    throw new Error("unexpected network request");
+  }
+  if (hostname !== "127.0.0.1" && hostname !== "localhost") throw new Error("unexpected network request");
+  return originalFetch(url, options);
 };
 `);
 const multiFfmpegPath = join(multiMediaDir, "ffmpeg-record.mjs");
@@ -1001,7 +1012,7 @@ const multiWorker = startWorker(multiStateDir, {
   TRACER_AI_LIVE_AVATAR_VIDEO: join(multiMediaDir, "avatar.mp4"),
   TRACER_AI_LIVE_BGM_PATH: join(multiMediaDir, "bed.mp3"),
   FISH_AUDIO_API_KEY: "fish-test-key",
-  NODE_OPTIONS: `--import=${fishMockPath}`,
+  NODE_OPTIONS: `--import=${pathToFileURL(fishMockPath).href}`,
   TRACER_TEST_FISH_CALLS: fishCallsPath,
   TRACER_TEST_FFMPEG_ARGS: ffmpegArgsPath,
   TRACER_AI_LIVE_FFMPEG_SCRIPT: multiFfmpegPath,
@@ -1017,7 +1028,7 @@ try {
   assert.equal(result.body.health.state, "live");
   assert.equal(result.body.health.mediaReady, true);
   assert.equal(result.body.publicBroadcast, false);
-  const calls = readFileSync(fishCallsPath, "utf8").trim().split("\\n").map((line) => JSON.parse(line));
+  const calls = readFileSync(fishCallsPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
   assert.deepEqual(calls.map((call) => call.text), multiJob.segments.map((segment) => segment.scriptText));
   assert.deepEqual(calls.map((call) => call.voiceId), [multiVoice, multiVoice]);
   assert.equal(existsSync(join(multiStateDir, "speech-01.mp3")), true);
