@@ -59,7 +59,7 @@ node --experimental-strip-types --no-warnings worker/ai-live-resident.mjs
 ## 監視
 
 - `GET /health` はプロセスが応答できるかを見ます。セッションが停止していても 200 です。応答にはプロセス、セッション状態、商品事実、配信先の承認状態を分けて入れます。
-- `GET /ready` は、開始処理中でない待受か、loopback で商品事実が有効かつメディアが稼働中のときだけ 200 です。検証中、素材不足、FFmpeg 未稼働、事実の不一致、セッション失敗では 503 です。
+- `GET /ready` は、loopback セッションで商品事実が有効かつメディアが実際に稼働中のときだけ 200 です。待機中、開始処理中、素材不足、FFmpeg 未稼働、事実の不一致、セッション失敗では 503 です。プロセスの生存確認には `/health` を使います。
 - 商品確認URLが未設定なら開始は拒否されます。検証を省略して成功にする設定はありません。
 - `POST /start`、`POST /stop`、`POST /reconnect`、`POST /shutdown` は `Authorization: Bearer` が一致しないと動きません。
 
