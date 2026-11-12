@@ -63,15 +63,28 @@ export function residentLoopbackTarget(value: unknown): { ok: true; url: string 
  * is the full-scale calibration that settles on the 0.18 ratio; it is not a
  * constant gain applied for the whole program.
  */
-function residentDuckFilter(splitProgram: boolean): string {
+function residentDuckFilter(splitProgram: boolean, speechInputCount: number): string {
   const base = RESIDENT_BGM_BASE_VOLUME.toFixed(4);
   const mixed = splitProgram ? "[amixed]" : "[a]";
   const lines = [
     `[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,volume=${base},aloop=loop=-1:size=2000000000[bgm]`,
-    "[2:a]apad,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono,asplit=2[speech][key]",
+  ];
+  if (speechInputCount > 1) {
+    const speechInputs = Array.from({ length: speechInputCount }, (_, index) => {
+      const inputIndex = index + 2;
+      const output = `[speech${index}]`;
+      lines.push(`[${inputIndex}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono${output}`);
+      return output;
+    });
+    lines.push(`${speechInputs.join("")}concat=n=${speechInputCount}:v=0:a=1[spoken]`);
+  } else {
+    lines.push("[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono[spoken]");
+  }
+  lines.push(
+    "[spoken]apad,asplit=2[speech][key]",
     `[bgm][key]sidechaincompress=threshold=0.108:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
     `[ducked][speech]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0${mixed}`,
-  ];
+  );
   if (splitProgram) lines.push("[amixed]asplit=2[a0][a1]");
   return lines.join(";");
 }
@@ -84,10 +97,15 @@ export function buildResidentFfmpegArgs(input: {
   avatarVideo: string;
   bgmPath: string;
   speechPath: string;
+  speechPaths?: string[];
   outputPath: string;
   loopbackUrl?: string | null;
 }): { ok: true; args: string[] } | { ok: false; errorCode: "media_output_rejected" } {
-  const paths = [input.avatarVideo, input.bgmPath, input.speechPath, input.outputPath];
+  const speechPaths = input.speechPaths ?? [input.speechPath];
+  if (!Array.isArray(speechPaths) || speechPaths.length < 1 || speechPaths.length > 20) {
+    return { ok: false, errorCode: "media_output_rejected" };
+  }
+  const paths = [input.avatarVideo, input.bgmPath, ...speechPaths, input.outputPath];
   if (paths.some((value) => typeof value !== "string" || value.length < 1 || value.includes("://"))) {
     return { ok: false, errorCode: "media_output_rejected" };
   }
@@ -98,12 +116,13 @@ export function buildResidentFfmpegArgs(input: {
     "-pix_fmt", "yuv420p", "-g", "30",
     "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
   ];
+  const speechInputs = speechPaths.flatMap((path) => ["-i", path]);
   const args = [
     "-y",
     "-stream_loop", "-1", "-i", input.avatarVideo,
     "-stream_loop", "-1", "-i", input.bgmPath,
-    "-i", input.speechPath,
-    "-filter_complex", residentDuckFilter(loopback.url !== null),
+    ...speechInputs,
+    "-filter_complex", residentDuckFilter(loopback.url !== null, speechPaths.length),
     "-map", "0:v:0",
     "-map", loopback.url ? "[a0]" : "[a]",
     ...encode,
