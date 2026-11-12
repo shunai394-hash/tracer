@@ -150,5 +150,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs
       - name: Test AI live resident worker
         run: npm run test:ai-live-resident-worker
+      - name: Test actual loopback RTMP publish and receive
+        run: npm run test:ai-live-loopback-rtmp
       - run: npm run lint
       - run: npm run build
