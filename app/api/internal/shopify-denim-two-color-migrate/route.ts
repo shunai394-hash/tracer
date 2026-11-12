@@ -40,7 +40,6 @@ export async function POST(request: Request) {
   if (authError) return authError;
   const db = createSupabaseAdminClient();
   const now = new Date();
-  const nowIso = now.toISOString();
 
   try {
     const { data: product, error: productError } = await db.from("commerce_products")
@@ -76,89 +75,6 @@ export async function POST(request: Request) {
     const offersByVariant = new Map((offers ?? []).map((row) => [String(row.variant_id), row]));
     const pricesByVariant = new Map((prices ?? []).map((row) => [String(row.variant_id), row]));
     const channelsByVariant = new Map((channelRows ?? []).map((row) => [String(row.variant_id), row]));
-    const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
-      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
-    if (!storeDomain) throw new Error("shopify_store_domain_missing");
-    const currentProductIds = new Set((channelRows ?? []).map((row) => String(row.external_product_id)));
-    const legacyProductIdSet = new Set<string>(FAMILY.map((item) => item.oldProductId));
-    const alreadyMigrated = (channelRows ?? []).length === FAMILY.length
-      && currentProductIds.size === 1
-      && !legacyProductIdSet.has(String([...currentProductIds][0]))
-      && FAMILY.every((item) => {
-        const row = channelsByVariant.get(item.variantId);
-        return row?.status === "published"
-          && String(row.external_sku ?? "") === item.externalSku
-          && Boolean(String(row.external_variant_id ?? ""));
-      });
-    if (alreadyMigrated) {
-      const productId = [...currentProductIds][0];
-      return NextResponse.json({
-        ok: true,
-        status: "ALREADY_MIGRATED",
-        productId,
-        productUrl: "https://" + storeDomain + "/products/" + HANDLE,
-        variantCount: FAMILY.length,
-      }, { headers: { "Cache-Control": "no-store" } });
-    }
-    const mapped = variants.map((variant) => {
-      const expected = FAMILY.find((entry) =>
-        entry.supplierVariantId === String(variant.source_variant_key)
-        && entry.variantId === String(variant.id)
-        && entry.supplierSku === String(variant.sku));
-      if (!expected) throw new Error("denim_supplier_variant_identity_mismatch");
-      const offer = offersByVariant.get(String(variant.id));
-      const price = pricesByVariant.get(String(variant.id));
-      const channel = channelsByVariant.get(String(variant.id));
-      if (!offer || String(offer.supplier_product_id) !== SUPPLIER_PRODUCT_ID
-        || String(offer.supplier_variant_id) !== expected.supplierVariantId
-        || offer.source_status !== "verified" || offer.ship_to !== "JP"
-        || Number(offer.inventory) < 1 || Number(offer.unit_cost) <= 0 || Number(offer.shipping_cost) <= 0) {
-        throw new Error("denim_supplier_offer_gate_failed:" + expected.supplierSku);
-      }
-      const checkedAt = Date.parse(String(offer.last_checked_at ?? ""));
-      if (!Number.isFinite(checkedAt) || checkedAt > now.getTime() + 300000
-        || now.getTime() - checkedAt > 24 * 60 * 60 * 1000) {
-        throw new Error("denim_supplier_offer_stale:" + expected.supplierSku);
-      }
-      if (!price || Number(price.selling_price) !== 3859 || Number(price.margin_rate) < 0.5) {
-        throw new Error("denim_margin_gate_failed:" + expected.supplierSku);
-      }
-      if (!channel || String(channel.external_product_id) !== expected.oldProductId
-        || String(channel.external_variant_id) !== expected.oldVariantId) {
-        throw new Error("denim_legacy_shopify_mapping_mismatch:" + expected.supplierSku);
-      }
-      const attributes = asRecord(variant.attributes);
-      if (attributes.variantImageIdentityVerified !== true || attributes.colorImageVerified !== true
-        || !validHttpsImage(attributes.variantImageUrl)) {
-        throw new Error("denim_color_image_not_verified:" + expected.supplierSku);
-      }
-      return {
-        supplierVariantId: expected.supplierVariantId,
-        canonicalVariantId: String(variant.id),
-        sourceShopifyProductId: expected.oldProductId,
-        sourceShopifyVariantId: expected.oldVariantId,
-        sku: expected.externalSku,
-        colorLabel: expected.colorLabel,
-        imageUrl: String(attributes.variantImageUrl),
-        colorImageVerified: true,
-        price: Number(price.selling_price),
-      };
-    });
-
-    const snapshots = await readShopifyVariantInventorySnapshot(FAMILY.map((item) => item.oldVariantId));
-    if (snapshots.length !== FAMILY.length || new Set(snapshots.map((row) => row.locationId)).size !== 1) {
-      throw new Error("denim_shopify_inventory_snapshot_invalid");
-    }
-    const inventoryByVariant = new Map(snapshots.map((row) => [row.variantId, row]));
-    const inventoryLocationId = snapshots[0].locationId;
-    const variantsForShopify = mapped.map((variant) => {
-      const snapshot = inventoryByVariant.get(variant.sourceShopifyVariantId);
-      if (!snapshot || !Number.isSafeInteger(snapshot.available) || snapshot.available < 0) {
-        throw new Error("denim_shopify_inventory_missing:" + variant.sku);
-      }
-      return { ...variant, inventory: snapshot.available };
-    });
-
     const created = await createShopifyColorFamily({
       inventoryLocationId,
       title: String(product.title_ja ?? "").trim(),

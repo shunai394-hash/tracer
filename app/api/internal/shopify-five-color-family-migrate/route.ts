@@ -49,7 +49,6 @@ export async function POST(request: Request) {
 
   const db = createSupabaseAdminClient();
   const now = new Date();
-  const nowIso = now.toISOString();
   const expectedByVid = new Map<string, (typeof FAMILY)[number]>(FAMILY.map((item) => [item.vid, item]));
 
   try {
@@ -154,9 +153,6 @@ export async function POST(request: Request) {
       return { ...variant, inventory: snapshot.available };
     });
 
-    const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
-      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
-    if (!storeDomain) throw new Error("shopify_store_domain_missing");
     const created = await createShopifyColorFamily({
       inventoryLocationId,
       title: String(product.title_ja ?? "").trim(),
