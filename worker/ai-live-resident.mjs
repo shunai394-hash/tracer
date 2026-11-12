@@ -101,6 +101,7 @@ try {
   session.restore(null);
 }
 if (session.health.state === "live" || session.health.state === "reconnecting" || session.health.state === "starting") {
+  for (const pid of session.clearChildren()) killProcessTree(pid);
   const streamId = session.health.streamId;
   if (streamId) session.stop(streamId, "worker_restarted", new Date().toISOString(), "worker_restarted");
 }
