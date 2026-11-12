@@ -554,8 +554,8 @@ const source = readFileSync(new URL("../worker/ai-live-resident.mjs", import.met
 const dockerfile = readFileSync(new URL("../worker/Dockerfile", import.meta.url), "utf8");
 const deployDoc = readFileSync(new URL("../docs/ai-live-resident-deploy.md", import.meta.url), "utf8");
 assert.match(source, /127\.0\.0\.1/);
-assert.match(source, /openSync\\(lockPath, "wx"/);
-assert.match(source, /renameSync\\(temporaryPath, statePath\\)/);
+assert.match(source, /openSync\(lockPath, "wx"/);
+assert.match(source, /renameSync\(temporaryPath, statePath\)/);
 assert.match(source, /TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK/);
 assert.match(source, /\/ready/);
 assert.match(source, /openDestinationSocket/);
