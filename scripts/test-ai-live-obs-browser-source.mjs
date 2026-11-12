@@ -52,8 +52,8 @@ assert.match(html, /BGM自動連続再生中/);
 assert.match(html, /audio\.loop=false/);
 assert.doesNotMatch(html, /<audio id="audio" preload="none" loop>/);
 assert.match(bgmRoute, /searchParams\.get\("genre"\)/);
-assert.match(bgmRoute, /query\.eq\("genre", genre\)/);
-assert.match(bgmRoute, /GENRES\.has\(genre\)/);
+assert.match(bgmRoute, /GENRES\[requestedGenre\]/);
+assert.match(bgmRoute, /genre !== normalizedGenre/);
 assert.match(html, /商用利用と配信利用の許可を確認してください/);
 
 
@@ -71,3 +71,21 @@ assert.match(html, /TikTokコメントと配信先は未接続/);
 assert.doesNotMatch(html, /rtmp:\/\//i);
 assert.doesNotMatch(html, /streamKey\s*:/i);
 console.log("AI Live OBS browser source contract checks passed");
+
+assert.match(html, /商品紹介を自動開始/);
+assert.match(html, /自動紹介を停止/);
+assert.match(html, /async function startAutoLive/);
+assert.match(html, /async function playSpeech/);
+assert.match(html, /function productScript/);
+assert.match(html, /\/api\/admin\/ai-live\/products\?limit=20/);
+assert.match(html, /waitForNextProduct\(interval\)/);
+assert.match(html, /autoLiveActive/);
+assert.match(html, /商品紹介の間隔は15〜180秒/);
+
+assert.match(html, /id="productLink"/);
+assert.match(html, /product\.productUrl/);
+assert.match(html, /const refreshed=await loadProducts\(\)/);
+assert.match(html, /if\(!ok&&speechAudio\)\{speechAudio\.pause\(\)/);
+assert.match(html, /speechRequestController\.abort\(\)/);
+
+assert.match(html, /product\.sellingPrice/);

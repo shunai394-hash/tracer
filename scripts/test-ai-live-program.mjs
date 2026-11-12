@@ -80,7 +80,7 @@ assert.doesNotMatch(runner, /console\.log\(process\.env/);
 
 const obs = readFileSync(new URL("../public/ai-live-obs.html", import.meta.url), "utf8");
 assert.match(obs, /id="productShot"/);
-assert.match(obs, /id="autoStart"/);
+assert.match(obs, /id="autoLiveStart"/);
 assert.match(obs, /data-layout/);
 assert.match(obs, /ducked\?baseVolume\*\.18:baseVolume/);
 assert.match(obs, /TikTokコメントと配信先は未接続/);

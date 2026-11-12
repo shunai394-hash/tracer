@@ -19,6 +19,12 @@ body{display:grid;grid-template-rows:1fr auto; padding:28px; gap:18px}
 .eye.l{left:26%}.eye.r{right:26%}
 .mouth{position:absolute;left:50%;top:72%;transform:translateX(-50%) scaleY(calc(1 + var(--lip-open,0)));transform-origin:center top;width:18%;height:8%;border-radius:0 0 20px 20px;background:#842d3d;transition:transform .035s linear}
 .caption{max-width:min(72vw,1050px);margin-bottom:2%;padding:20px 26px;border-radius:18px;background:#080d18d9;border:1px solid #ffffff38;box-shadow:0 10px 35px #0008;font-size:clamp(22px,3vw,42px);font-weight:700;line-height:1.4;text-shadow:0 2px 3px #000}
+.product-link{display:block;margin-top:8px;font-size:clamp(12px,1.3vw,18px);font-weight:500;overflow-wrap:anywhere;color:#bfdbfe;text-shadow:0 1px 3px #000}
+#productShot{width:min(42vw,520px);max-height:46vh;object-fit:contain;border-radius:16px;background:#11182788}
+#productShot[hidden]{display:none}
+body[data-layout="9:16"]{max-width:420px;margin:0 auto}
+body[data-layout="9:16"] .stage{flex-direction:column;align-items:center}
+body[data-layout="16:9"] .stage{flex-direction:row}
 .lower{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .brand{padding:9px 14px;border-radius:9px;background:#111827d9;border:1px solid #ffffff38;font-size:14px;letter-spacing:.08em}
 #state{font-size:13px;color:#d1d5db;text-shadow:0 1px 3px #000}
@@ -33,11 +39,7 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
 .status{min-height:20px;color:#bfdbfe!important}
 #toggle{position:fixed;right:18px;top:18px;z-index:6;width:auto;padding:8px 12px;background:#101827e8}
-#productShot{width:min(42vw,520px);max-height:46vh;object-fit:contain;border-radius:16px;background:#11182788}
-#productShot[hidden]{display:none}
-body[data-layout="9:16"]{max-width:420px;margin:0 auto}
-body[data-layout="9:16"] .stage{flex-direction:column;align-items:center}
-body[data-layout="16:9"] .stage{flex-direction:row}
+.hidden{display:none!important}
 @media(max-width:650px){body{padding:12px}.stage{gap:10px}.avatar{width:30vw}.caption{font-size:20px;padding:12px}.panel{top:54px;max-height:calc(100vh - 66px)}}
 </style>
 </head>
@@ -46,8 +48,8 @@ body[data-layout="16:9"] .stage{flex-direction:row}
  <div class="avatar" id="avatar" aria-label="TRACER AI presenter">
   <div class="body"></div><div class="head"><div class="hair"></div><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div>
  </div>
- <div class="caption" id="caption" aria-live="polite">TRACER AI LIVE</div>
  <img id="productShot" alt="" hidden>
+ <div><div class="caption" id="caption" aria-live="polite">TRACER AI LIVE</div><a class="product-link" id="productLink" target="_blank" rel="noopener noreferrer"></a></div>
 </div>
 <div class="lower"><span class="brand">TRACER AI LIVE</span><span id="state">待機中</span></div>
 <button id="toggle" type="button">操作パネル</button>
@@ -59,12 +61,12 @@ body[data-layout="16:9"] .stage{flex-direction:row}
  <div class="actions"><button class="primary" id="speak">読み上げ開始</button><button id="stop">音声停止</button></div>
  <label for="voice">Fish Audio 日本語ボイス</label><select id="voice"><option value="">ボイス一覧を読み込んでください</option></select><button id="loadVoices" type="button">許諾済み音声を読み込む</button>
  <label for="products">紹介する商品（TRACER読み取り専用）</label><select id="products"><option value="">商品情報を読み込んでください</option></select><div class="actions"><button id="loadProducts" type="button">商品情報を読み込む</button><button id="applyProduct" type="button">紹介文を台本に反映</button></div>
+ <label for="rotationInterval">商品紹介の間隔（秒）</label><input id="rotationInterval" type="number" min="15" max="180" step="5" value="45">
+ <div class="actions"><button class="primary" id="autoLiveStart" type="button">商品紹介を自動開始</button><button id="autoLiveStop" type="button" disabled>自動紹介を停止</button></div>
  <label for="layout">配信画面</label><select id="layout"><option value="16:9">YouTube 16:9</option><option value="9:16">TikTok 9:16</option></select>
- <label for="autoGap">商品の切り替え間隔（秒）</label><input id="autoGap" type="number" min="15" max="180" value="45">
- <div class="actions"><button class="primary" id="autoStart" type="button">自動紹介を開始</button><button id="autoStop" type="button">自動紹介を停止</button></div>
- <div class="actions"><button id="pauseSpeech" type="button">音声を一時停止</button><button id="resumeSpeech" type="button">音声を再開</button></div>
- <button id="checkDestinations" type="button">配信条件を確認</button>
- <p id="destinationStatus" class="status"></p>
+ <div class="actions"><button id="pauseSpeech" type="button">音声一時停止</button><button id="resumeSpeech" type="button">音声再開</button></div>
+ <button id="checkDestinations" type="button">配信先の準備状況</button>
+ <p class="status" id="destinations"></p>
  <label for="token">管理トークン（BGM・音声・商品情報の読込時）</label><input id="token" type="password" autocomplete="off" placeholder="TRACER_ADMIN_TOKEN">
  <div class="actions"><button id="load">保存済みBGMを読み込む</button><button id="bgmStop">BGM停止</button></div>
  <label for="files">ローカル音源（MP3 / WAV / OGG / M4A）</label><input id="files" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" multiple>
@@ -125,7 +127,7 @@ body[data-layout="16:9"] .stage{flex-direction:row}
  const $=id=>document.getElementById(id);
  const synth=window.speechSynthesis, audio=$('audio'), voiceSelect=$('voice');
  let tracks=[], urls=[], baseVolume=.35, ducked=false, autoBgmLoop=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
- let autoRunning=false, autoIndex=0, speechPaused=false, fadeFrame=0;
+ let autoLiveActive=false, autoLiveIndex=0, autoLiveTimer=null, autoLiveDelayResolve=null, finishCurrentSpeech=null, speechRequestController=null, fadeFrame=0, speechPaused=false;
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
  function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
  function loadVoices(){
@@ -137,7 +139,7 @@ body[data-layout="16:9"] .stage{flex-direction:row}
  function chooseVoice(){const vs=japaneseVoices();if(voiceSelect.value!==''&&vs[Number(voiceSelect.value)])return vs[Number(voiceSelect.value)];return vs.find(v=>/natural|online|nanami|google/i.test(v.name))||vs[0]||null}
  function setVolume(){audio.volume=ducked?baseVolume*.18:baseVolume;$('volumeLabel').textContent=Math.round(baseVolume*100)+'%'}
  function speechMixVolume(base,phase,elapsed){const clamped=Math.min(1,Math.max(0,Number(base)||0));const floor=clamped*.18;const t=Math.min(1,Math.max(0,(Number(elapsed)||0)/400));const s=t*t*(3-2*t);if(phase==='bed')return clamped;if(phase==='duck')return clamped+(floor-clamped)*s;return floor+(clamped-floor)*s}
- function fadeBgm(phase){cancelAnimationFrame(fadeFrame);const from=audio.volume;const to=speechMixVolume(baseVolume,phase,400);const started=performance.now();const step=(now)=>{const t=Math.min(1,(now-started)/400);audio.volume=from+(to-from)*t;if(t<1)fadeFrame=requestAnimationFrame(step)};fadeFrame=requestAnimationFrame(step)}
+ function fadeBgm(phase){cancelAnimationFrame(fadeFrame);const from=audio.volume;const to=speechMixVolume(baseVolume,phase,400);const started=performance.now();const step=(now)=>{const t=Math.min(1,(now-started)/400);audio.volume=from+(to-from)*(t*t*(3-2*t));if(t<1)fadeFrame=requestAnimationFrame(step);else audio.volume=to};fadeFrame=requestAnimationFrame(step)}
  function showProductImage(product){const img=$('productShot');img.removeAttribute('src');img.hidden=true;img.alt='';const url=product&&typeof product.imageUrl==='string'?product.imageUrl:'';let ok=false;try{const parsed=new URL(url);ok=parsed.protocol==='https:'&&parsed.hostname}catch{ok=false}if(!ok)return;img.alt=product.title||'商品画像';img.src=url;img.hidden=false}
  function renderTracks(){
   const select=$('track'), current=select.value;
@@ -338,7 +340,8 @@ body[data-layout="16:9"] .stage{flex-direction:row}
    const select=$('products');select.innerHTML='<option value="">紹介する商品を選択</option>';
    for(const p of products){const o=document.createElement('option');o.value=p.id;o.textContent=p.title+' — '+new Intl.NumberFormat('ja-JP').format(p.sellingPrice)+'円';select.appendChild(o)}
    setStatus(products.length+'件の商品情報を読み込みました（読み取り専用）');
-  }catch(e){setStatus(e.message||'商品情報の取得に失敗しました')}finally{$('loadProducts').disabled=false}
+   return products.length>0;
+  }catch(e){setStatus(e.message||'商品情報の取得に失敗しました');return false}finally{$('loadProducts').disabled=false}
  }
  function applyProduct(){
   const product=products.find(p=>p.id===$('products').value);
@@ -347,8 +350,9 @@ body[data-layout="16:9"] .stage{flex-direction:row}
   const description=product.description?product.description:'詳細は商品ページをご確認ください。';
   $('script').value=product.title+'。価格は'+price+'円です。'+description;
   $('caption').textContent=product.title+'　'+price+'円';
-  showProductImage(product);
-  setStatus('商品情報を紹介台本に反映しました');
+ $('productLink').href=product.productUrl||'#';$('productLink').textContent=product.productUrl||'';
+ showProductImage(product);
+ setStatus('商品情報を紹介台本に反映しました');
  }
  async function loadFishVoices(){
   const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
@@ -363,81 +367,171 @@ body[data-layout="16:9"] .stage{flex-direction:row}
    setStatus(fishVoices.length+'件の音声候補を読み込みました');
   }catch(e){setStatus(e.message||'音声一覧の取得に失敗しました')}finally{$('loadVoices').disabled=false}
  }
- async function speak(isRetry){
-  const text=$('script').value.trim(), token=$('token').value.trim(), referenceId=$('voice').value;
-  if(!text){setStatus('読み上げテキストを入力してください');return}
-  if(!token){setStatus('管理トークンを入力してください');return}
-  if(!referenceId){setStatus('Fish Audioの音声を選択してください');return}
-  if(text.length>1200){setStatus('読み上げは1,200文字以内にしてください');return}
+ async function playSpeech(text,isRetry=false){
+  const token=$('token').value.trim(), referenceId=$('voice').value;
+  if(speechRequestController)speechRequestController.abort();
+  const requestController=new AbortController();speechRequestController=requestController;
+  if(!text){setStatus('読み上げテキストがありません');return false}
+  if(!token){setStatus('管理トークンを入力してください');return false}
+  if(!referenceId){setStatus('Fish Audioの音声を選択してください');return false}
+  if(text.length>1200){setStatus('読み上げは1,200文字以内にしてください');return false}
   $('speak').disabled=true;
+  if(finishCurrentSpeech)finishCurrentSpeech(false);
   if(speechAudio){speechAudio.pause();speechAudio=null}
   if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
   if(synth)synth.cancel();
   ducked=true;fadeBgm('duck');$('caption').textContent=text;setStatus(isRetry?'Fish Audio音声を再試行中…':'Fish Audioで音声を生成中…');
   try{
-   const r=await fetch('/api/admin/ai-live/fish-audio',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({text,referenceId})});
+   const r=await fetch('/api/admin/ai-live/fish-audio',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',signal:requestController.signal,body:JSON.stringify({text,referenceId})});
    const type=r.headers.get('content-type')||'';
    if(!r.ok||!type.toLowerCase().includes('audio/')){const d=await r.json().catch(()=>null);throw new Error(d?.message||d?.error||'Fish Audio音声生成に失敗しました')}
-   const blob=await r.blob();speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
-   if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus('Fish Audio読み上げ中（リップシンク）')};
-   speechAudio.onended=()=>{$('avatar').classList.remove('talking');ducked=false;fadeBgm('restore');$('speak').disabled=false;speechPaused=false;setStatus('待機中');if(autoRunning)setTimeout(runAutoStep,Math.min(180,Math.max(15,Number($('autoGap').value)||45))*1000)};
-   speechAudio.onerror=()=>{$('avatar').classList.remove('talking');$('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');ducked=false;setVolume();$('speak').disabled=false;setStatus('音声再生に失敗しました')};
-   await speechAudio.play();
+   const blob=await r.blob();if(requestController.signal.aborted)return false;speechObjectUrl=URL.createObjectURL(blob);speechAudio=new Audio(speechObjectUrl);
+   if(window.TracerLipSync)window.TracerLipSync.attach(speechAudio,$('avatar').querySelector('.mouth'));
+   return await new Promise(resolve=>{
+    let finished=false;
+    const finish=ok=>{
+     if(finished)return;finished=true;
+     if(finishCurrentSpeech===finish)finishCurrentSpeech=null;
+     if(speechRequestController===requestController)speechRequestController=null;
+     if(!ok&&speechAudio){speechAudio.pause();speechAudio.currentTime=0}
+     $('avatar').classList.remove('talking');
+     $('avatar').querySelector('.mouth').style.setProperty('--lip-open','0');
+     ducked=false;fadeBgm('restore');$('speak').disabled=autoLiveActive;
+     if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}
+     speechAudio=null;
+     if(!autoLiveActive)setStatus(ok?'待機中':'音声再生を停止しました');
+     resolve(ok);
+    };
+    finishCurrentSpeech=finish;
+    speechAudio.onplay=()=>{$('avatar').classList.add('talking');setStatus(autoLiveActive?'商品を自動紹介中':'Fish Audio読み上げ中（リップシンク）')};
+    speechAudio.onended=()=>finish(true);
+    speechAudio.onerror=()=>{setStatus('音声再生に失敗しました');finish(false)};
+    speechAudio.play().catch(()=>{setStatus('音声を再生できません。OBS Browser Sourceの音声設定を確認してください');finish(false)});
+   });
   }catch(e){
-   if(!isRetry)return speak(true);
+   if(speechRequestController===requestController)speechRequestController=null;
+   if(requestController.signal.aborted){$('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;return false}
+   if(!isRetry)return playSpeech(text,true);
    if(synth){
-    const utterance=new SpeechSynthesisUtterance(text);
-    const voice=chooseVoice();
-    if(voice)utterance.voice=voice;
-    utterance.lang='ja-JP';
-    utterance.onend=()=>{$('avatar').classList.remove('talking');ducked=false;fadeBgm('restore');$('speak').disabled=false;setStatus('ブラウザ音声で読み上げました')};
-    $('avatar').classList.add('talking');
-    synth.cancel();
-    synth.speak(utterance);
-    setStatus('Fish Audioに失敗したため、ブラウザ音声で再読上げしています');
-    return;
+    setStatus('Fish Audioに続けて失敗したため、ブラウザ音声で読み上げます');
+    const spoken=await new Promise(resolve=>{
+     const utterance=new SpeechSynthesisUtterance(text);
+     utterance.lang='ja-JP';
+     const voice=chooseVoice();if(voice)utterance.voice=voice;
+     utterance.onend=()=>resolve(true);
+     utterance.onerror=()=>resolve(false);
+     $('avatar').classList.add('talking');
+     synth.speak(utterance);
+    });
+    $('avatar').classList.remove('talking');ducked=false;fadeBgm('restore');$('speak').disabled=autoLiveActive;
+    if(!autoLiveActive)setStatus(spoken?'ブラウザ音声で読み上げました':'音声生成に失敗しました');
+    return spoken;
    }
-   $('avatar').classList.remove('talking');ducked=false;fadeBgm('restore');$('speak').disabled=false;autoRunning=false;setStatus(e.message||'音声生成に失敗しました');
+   $('avatar').classList.remove('talking');ducked=false;setVolume();$('speak').disabled=false;
+   if(!autoLiveActive)setStatus(e.message||'音声生成に失敗しました');
+   return false;
   }
  }
- async function runAutoStep(){
-  if(!autoRunning)return;
+ async function speak(){return playSpeech($('script').value.trim())}
+ function waitForNextProduct(seconds){
+  return new Promise(resolve=>{
+   autoLiveDelayResolve=resolve;
+   autoLiveTimer=setTimeout(()=>{autoLiveTimer=null;autoLiveDelayResolve=null;resolve()},seconds*1000);
+  });
+ }
+ function stopAutoLive(){
+  autoLiveActive=false;
+  if(speechRequestController){speechRequestController.abort();speechRequestController=null}
+  if(autoLiveTimer){clearTimeout(autoLiveTimer);autoLiveTimer=null}
+  if(autoLiveDelayResolve){const resolve=autoLiveDelayResolve;autoLiveDelayResolve=null;resolve()}
+  if(finishCurrentSpeech)finishCurrentSpeech(false);
+  if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}
+  $('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true;$('speak').disabled=false;
+  $('avatar').classList.remove('talking');ducked=false;setVolume();
+  if(synth)synth.cancel();
+  setStatus('商品自動紹介を停止しました');
+ }
+ function productScript(product){
+  const price=new Intl.NumberFormat('ja-JP').format(product.sellingPrice);
+  const description=(product.description||'詳細は商品ページをご確認ください。').replace(/\s+/g,' ').trim();
+  const text='本日のおすすめ商品をご紹介します。'+product.title+'。価格は'+price+'円です。'+description+' 気になった方は商品ページをご覧ください。';
+  return text.slice(0,1200);
+ }
+ async function factualScript(product,index){
   const token=$('token').value.trim();
-  if(!token||!$('voice').value){autoRunning=false;setStatus('自動紹介には管理トークンとFish Audioの音声が必要です');return}
-  if(!tracks.length){autoRunning=false;setStatus('自動紹介の前に、権利確認済みのBGMを読み込んでください');return}
   try{
-   const r=await fetch('/api/admin/ai-live/session',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({action:'script',index:autoIndex})});
+   const r=await fetch('/api/admin/ai-live/session',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({action:'script',index})});
    const d=await r.json().catch(()=>null);
-   if(!r.ok||!d?.ok||d.readOnly!==true||!d.script||!d.product)throw new Error('販売可能な商品台本を取得できませんでした');
-   autoIndex=d.nextIndex;$('script').value=d.script;showProductImage(d.product);
-   const price=new Intl.NumberFormat('ja-JP').format(d.product.sellingPrice);
-   $('caption').textContent=d.product.title+'　'+price+'円';
-   await speak(false);
-  }catch(e){autoRunning=false;setStatus(e.message||'自動紹介を停止しました')}
+   if(r.ok&&d?.ok&&d.readOnly===true&&typeof d.script==='string'&&d.script.length>0&&d.script.length<=1200){
+    return {text:d.script,imageUrl:typeof d.product?.imageUrl==='string'?d.product.imageUrl:(product.imageUrl||''),title:d.product?.title||product.title,sellingPrice:Number.isFinite(d.product?.sellingPrice)?d.product.sellingPrice:product.sellingPrice,productUrl:d.product?.productUrl||product.productUrl};
+   }
+  }catch{}
+  return {text:productScript(product),imageUrl:product.imageUrl||'',title:product.title,sellingPrice:product.sellingPrice,productUrl:product.productUrl};
  }
  async function checkDestinations(){
   const token=$('token').value.trim();if(!token){setStatus('管理トークンを入力してください');return}
-  const r=await fetch('/api/admin/ai-live/session',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
-  const d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok){$('destinationStatus').textContent='配信条件を確認できませんでした';return}
-  const lines=[];
-  lines.push(d.live?'配信中':'配信は開始していません');
-  lines.push('Fish Audio: '+(d.fishAudio?.configured?'設定済み':'不足 '+((d.fishAudio?.missing||[]).join(', ')||'FISH_AUDIO_API_KEY')));
-  lines.push('YouTube: '+(d.youtube?.credentialsPresent?'認証情報はあります。エンコーダ確認まで開始しません':'不足 '+(d.youtube?.missing||[]).join(', ')));
-  lines.push('TikTok: 公式APIでは未接続。'+(d.tiktok?.steps||[]).slice(0,2).join(''));
-  $('destinationStatus').textContent=lines.join(' / ');
+  const box=$('destinations');box.textContent='配信先の準備状況を確認中…';
+  try{
+   const r=await fetch('/api/admin/ai-live/session',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok||d.live!==false)throw new Error('配信先の状態を確認できませんでした');
+   const lines=['この画面から配信は開始しません。'];
+   lines.push('YouTube: '+(d.youtube?.canStart===false?'開始不可':'状態不明')+' '+(d.youtube?.missing||[]).join(', '));
+   lines.push('TikTok: 公式APIでは未接続。'+((d.tiktok?.missing||[]).join(', ')));
+   box.textContent=lines.join(' ');
+   setStatus('配信先は未開始です');
+  }catch(e){box.textContent='';setStatus(e.message||'配信先の確認に失敗しました')}
  }
- $('speak').addEventListener('click',()=>speak(false));
+ async function startAutoLive(){
+  if(autoLiveActive)return;
+  const token=$('token').value.trim(), voice=$('voice').value;
+  if(!token){setStatus('管理トークンを入力してください');return}
+  if(!voice){setStatus('先にFish Audioの日本語ボイスを選択してください');return}
+  // Start the already-loaded BGM synchronously from the user's Start click,
+  // before any network awaits can consume the browser's user-activation window.
+  if(!tracks.length){setStatus('先に保存済みBGMを読み込み、「自動選曲」を実行してください');return}
+  if(!autoBgmLoop){const selected=Number($('track').value);const index=$('track').value!==''&&tracks[selected]?selected:Math.floor(Math.random()*tracks.length);playTrack(index,true)}
+  if(!products.length){const loaded=await loadProducts();if(!loaded){setStatus('自動紹介できる販売中商品がありません');return}}
+  if(!products.length){setStatus('自動紹介できる販売中商品がありません');return}
+  const interval=Number($('rotationInterval').value);
+  if(!Number.isInteger(interval)||interval<15||interval>180){setStatus('商品紹介の間隔は15〜180秒で指定してください');return}
+  autoLiveActive=true;$('autoLiveStart').disabled=true;$('autoLiveStop').disabled=false;
+  setStatus(products.length+'件の商品を順番に自動紹介します');
+  while(autoLiveActive){
+   if(autoLiveIndex>=products.length){
+    const refreshed=await loadProducts();
+    if(!autoLiveActive)break;
+    if(!refreshed){stopAutoLive();setStatus('販売可能な商品がなくなったため自動紹介を停止しました');break}
+    autoLiveIndex=0;
+   }
+   const product=products[autoLiveIndex++];
+   $('products').value=product.id;
+   const spoken=await factualScript(product,autoLiveIndex-1);
+   const text=spoken.text||productScript(product);
+   $('script').value=text;
+   $('caption').textContent=spoken.title+'　'+new Intl.NumberFormat('ja-JP').format(spoken.sellingPrice)+'円';
+   $('productLink').href=spoken.productUrl||'#';$('productLink').textContent=spoken.productUrl||'';
+   showProductImage({imageUrl:spoken.imageUrl,title:spoken.title});
+   setStatus('商品を紹介中：'+product.title);
+   const played=await playSpeech(text);
+   if(!autoLiveActive)break;
+   if(!played){stopAutoLive();break}
+   setStatus('次の商品まで待機中：'+product.title);
+   await waitForNextProduct(interval);
+  }
+  if(!autoLiveActive){$('autoLiveStart').disabled=false;$('autoLiveStop').disabled=true}
+ }
+ $('speak').addEventListener('click',speak);
  $('loadVoices').addEventListener('click',loadFishVoices);
  $('loadProducts').addEventListener('click',loadProducts);
  $('applyProduct').addEventListener('click',applyProduct);
- $('autoStart').addEventListener('click',()=>{autoRunning=true;autoIndex=0;runAutoStep()});
- $('autoStop').addEventListener('click',()=>{autoRunning=false;setStatus('自動紹介を停止しました')});
- $('pauseSpeech').addEventListener('click',()=>{if(speechAudio){speechAudio.pause();speechPaused=true;ducked=false;fadeBgm('restore');setStatus('音声を一時停止しました')}});
+ $('autoLiveStart').addEventListener('click',startAutoLive);
+ $('autoLiveStop').addEventListener('click',stopAutoLive);
+ $('pauseSpeech').addEventListener('click',()=>{if(speechAudio&&!speechPaused){speechAudio.pause();speechPaused=true;ducked=false;fadeBgm('restore');setStatus('音声を一時停止しました')}});
  $('resumeSpeech').addEventListener('click',()=>{if(speechAudio&&speechPaused){speechPaused=false;ducked=true;fadeBgm('duck');speechAudio.play().catch(()=>setStatus('音声を再開できませんでした'))}});
- $('checkDestinations').addEventListener('click',()=>checkDestinations().catch(()=>setStatus('配信条件を確認できませんでした')));
+ $('checkDestinations').addEventListener('click',checkDestinations);
  $('layout').addEventListener('change',()=>{document.body.dataset.layout=$('layout').value});
- $('stop').addEventListener('click',()=>{if(synth)synth.cancel();if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')});
+ $('stop').addEventListener('click',()=>{if(autoLiveActive)stopAutoLive();else{if(speechRequestController){speechRequestController.abort();speechRequestController=null}if(synth)synth.cancel();if(finishCurrentSpeech)finishCurrentSpeech(false);if(speechAudio){speechAudio.pause();speechAudio.currentTime=0}if(speechObjectUrl){URL.revokeObjectURL(speechObjectUrl);speechObjectUrl=null}$('speak').disabled=false;$('avatar').classList.remove('talking');ducked=false;setVolume();setStatus('音声停止')}});
  $('bgmUpload').addEventListener('click',uploadBgm);
  $('bgmReviewLoad').addEventListener('click',loadBgmReviews);
  $('bgmExistingLoad').addEventListener('click',loadExistingBgm);
