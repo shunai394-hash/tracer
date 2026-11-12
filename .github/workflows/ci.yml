@@ -156,5 +156,9 @@ jobs:
         run: npm run test:ai-live-loopback-rtmp
       - name: Test OBS loopback ingest and speech ducking
         run: npm run test:ai-live-obs-loopback
+      - name: Test localhost HLS relay without claiming OBS playback
+        run: npm run test:ai-live-obs-local-relay
+      - name: Record whether OBS Studio is installed
+        run: npm run test:ai-live-obs-studio-presence
       - run: npm run lint
       - run: npm run build

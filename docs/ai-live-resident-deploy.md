@@ -73,7 +73,7 @@ YouTube と TikTok は、承認フラグと Secret が揃っていても、配�
 
 BGM の基準音量は 35% です。発話が聞こえている間だけ 0.18 の比率まで約 400ms で滑らかに下げ、発話が終わると同じ速さで 35% に戻します。発話が複数回あるときはその都度繰り返します。固定の下げっぱなしは使いません。商品検証が終わるまでセッションは live になりません。登録済みの Fish Audio 音声か音声ファイル、BGM、アバター映像が揃い、FFmpeg が出力を始めて稼働しているときだけ live かつ ready です。素材が無い開始は `media_unavailable` で拒否します。最大稼働時間、停止、再起動では、その子プロセスを終了します。
 
-ローカルの MP4 は残します。`TRACER_AI_LIVE_OBS_LOOPBACK_URL` があるときだけ、同じ映像と音声をもう一本、127.0.0.1 または localhost の RTMP に出します。OBS はその URL をメディアソースとして受け取れます。それ以外のホスト、ユーザー情報付きの URL、YouTube、TikTok は拒否し、FFmpeg を起動しません。外部公開はこの設定では行いません。
+ローカルの MP4 は残します。`TRACER_AI_LIVE_OBS_LOOPBACK_URL` があるときだけ、同じ映像と音声をもう一本、127.0.0.1 または localhost の RTMP に出します。OBS Studio 自体はその URL の待受にはなりません。再生手順は `docs/ai-live-obs-studio-local.md` です。それ以外のホスト、ユーザー情報付きの URL、YouTube、TikTok は拒否し、FFmpeg を起動しません。外部公開はこの設定では行いません。
 
 ## 停止
 
@@ -84,8 +84,8 @@ BGM の基準音量は 35% です。発話が聞こえている間だけ 0.18 �
 
 - resident worker はアバター映像をループし、BGM を常時ミックスしながら、音声の発話区間に合わせてサイドチェインで BGM を下げ、発話後に戻します。音声入力は `apad` で継続するため、FFmpeg は短い紹介音声の終了だけでは停止しません。
 - `TRACER_AI_LIVE_OBS_LOOPBACK_URL` を指定すると、ローカル MP4 の生成と並行して、同じ映像・音声を localhost/127.0.0.1 の RTMP 受信先へ送ります。URL はループバック以外を拒否します。
-- CI の `Test OBS loopback ingest and speech ducking` は、実際の resident worker を起動し、localhost RTMP 受信、音声のダッキングと復帰、異常終了時の fail-closed を検証します。
+- CI の `Test OBS loopback ingest and speech ducking` は、実際の resident worker を起動し、localhost RTMP 受信、音声のダッキングと復帰、異常終了時の fail-closed を検証します。受信側は FFmpeg です。
 - CI の `Test actual loopback RTMP publish and receive` は別途、合成テスト素材による FFmpeg の RTMP 往復を検証します。
-- これらはローカル統合テストです。Docker イメージを永続ホストへ配備した結果、OBS デスクトップでの実画面受信、YouTube/TikTok への外部配信を証明するものではありません。
+- これらはローカル統合テストです。FFmpeg 同士の受信テストは OBS Studio の再生確認にはしないでください。OBS の手順と未確認項目は `docs/ai-live-obs-studio-local.md` にあります。Docker イメージを永続ホストへ配備した結果や、YouTube/TikTok への外部配信を証明するものではありません。
 
 YouTube/TikTok の外部配信アダプターは引き続き未実装で、外部ソケットは開きません。`publicBroadcast` は false のままです。Docker build と永続ホストでの起動・監視、OBS 実機での受信確認は別途必要です。
