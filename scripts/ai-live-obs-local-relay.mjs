@@ -6,7 +6,7 @@
 import { createServer as createNetServer } from "node:net";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -118,5 +118,16 @@ function shutdown() {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 ffmpeg.once("exit", () => {
+  try {
+    if (existsSync(playlist)) {
+      const text = readFileSync(playlist, "utf8");
+      if (!text.includes("#EXT-X-ENDLIST")) {
+        writeFileSync(playlist, `${text.replace(/\s*$/, "")}\n#EXT-X-ENDLIST\n`);
+      }
+    }
+  } catch {
+    // The playlist stays as FFmpeg left it. The HTTP server still binds to loopback only.
+  }
+  setTimeout(() => server.close(), 5000).unref();
   if (ffmpegError) console.error(ffmpegError.slice(-500));
 });

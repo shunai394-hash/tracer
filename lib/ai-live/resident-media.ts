@@ -116,11 +116,11 @@ export function buildResidentFfmpegArgs(input: {
     "-pix_fmt", "yuv420p", "-g", "30",
     "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
   ];
-  const speechInputs = speechPaths.flatMap((path) => ["-i", path]);
+  const speechInputs = speechPaths.flatMap((path) => ["-re", "-i", path]);
   const args = [
     "-y",
-    "-stream_loop", "-1", "-i", input.avatarVideo,
-    "-stream_loop", "-1", "-i", input.bgmPath,
+    "-re", "-stream_loop", "-1", "-i", input.avatarVideo,
+    "-re", "-stream_loop", "-1", "-i", input.bgmPath,
     ...speechInputs,
     "-filter_complex", residentDuckFilter(loopback.url !== null, speechPaths.length),
     "-map", "0:v:0",
