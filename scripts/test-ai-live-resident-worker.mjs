@@ -742,6 +742,29 @@ async function startMediaWorker(extraEnv) {
   return { workerDir, worker, ready };
 }
 
+const missingAssetsDir = mkdtempSync(join(tmpdir(), "tracer-media-assets-missing-"));
+const missingAssetsWorker = startWorker(missingAssetsDir, {
+  TRACER_AI_LIVE_PRODUCTS_URL: mediaCatalog.url,
+  TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+});
+try {
+  const ready = await waitFor(() => {
+    const portFile = join(missingAssetsDir, "port.json");
+    if (!existsSync(portFile)) return null;
+    return JSON.parse(readFileSync(portFile, "utf8"));
+  }, "missing-assets worker did not listen");
+  const result = await request(ready.port, "/start", { ...liveJob, streamId: "media-assets-missing" });
+  assert.equal(result.status, 409);
+  assert.equal(result.body.errorCode, "media_unavailable");
+  assert.equal(result.body.health.state, "failed");
+  assert.equal(result.body.health.mediaReady, false);
+  await request(ready.port, "/shutdown", {});
+  await waitFor(() => (hasExited(missingAssetsWorker.child) ? true : null), "missing-assets worker did not shut down");
+} finally {
+  if (missingAssetsWorker.child.exitCode === null) forceStop(missingAssetsWorker.child);
+  rmSync(missingAssetsDir, { recursive: true, force: true });
+}
+
 const missingMedia = await startMediaWorker({ TRACER_AI_LIVE_FFMPEG_BIN: join(mediaDir, "missing-ffmpeg") });
 try {
   const missingResult = await request(missingMedia.ready.port, "/start", { ...liveJob, streamId: "media-missing" });
