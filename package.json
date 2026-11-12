@@ -69,7 +69,8 @@
     "test:shopify-color-family-plan": "node --experimental-strip-types --no-warnings scripts/test-shopify-color-family-plan.mjs",
     "test:base-color-family-guard": "node --experimental-strip-types --no-warnings scripts/test-base-color-family-guard.mjs",
     "test:shopify-color-family-executor": "node scripts/test-shopify-color-family-executor.mjs",
-    "test:storefront-color-family": "node --experimental-strip-types --no-warnings scripts/test-storefront-color-family.mjs"
+    "test:storefront-color-family": "node --experimental-strip-types --no-warnings scripts/test-storefront-color-family.mjs",
+    "test:ai-live-local-rtmp": "node scripts/test-ai-live-local-rtmp.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
