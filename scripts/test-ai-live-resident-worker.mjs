@@ -448,6 +448,48 @@ try {
   assert.equal(readyLive.status, 200);
   assert.equal(readyLive.body.productFacts.valid, true);
   assert.deepEqual(methods, ["GET"]);
+  const unconfiguredDir = mkdtempSync(join(tmpdir(), "tracer-resident-unconfigured-"));
+  const unconfiguredWorker = startWorker(unconfiguredDir);
+  try {
+    const unconfiguredReady = await waitFor(() => {
+      const portFile = join(unconfiguredDir, "port.json");
+      if (!existsSync(portFile)) return null;
+      return JSON.parse(readFileSync(portFile, "utf8"));
+    }, "unconfigured worker did not listen");
+    const denied = await request(unconfiguredReady.port, "/start", factJob);
+    assert.equal(denied.status, 409);
+    assert.equal(denied.body.errorCode, "inventory_unverified");
+    assert.equal(denied.body.health.state, "stopped");
+    await request(unconfiguredReady.port, "/shutdown", {});
+    await waitFor(() => (hasExited(unconfiguredWorker.child) ? true : null), "unconfigured worker did not shut down");
+  } finally {
+    if (unconfiguredWorker.child.exitCode === null) forceStop(unconfiguredWorker.child);
+    rmSync(unconfiguredDir, { recursive: true, force: true });
+  }
+
+  const noMediaDir = mkdtempSync(join(tmpdir(), "tracer-resident-no-media-"));
+  const noMediaWorker = startWorker(noMediaDir, {
+    TRACER_AI_LIVE_PRODUCTS_URL: `http://127.0.0.1:${factsPort}/products`,
+    TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
+  });
+  try {
+    const noMediaReady = await waitFor(() => {
+      const portFile = join(noMediaDir, "port.json");
+      if (!existsSync(portFile)) return null;
+      return JSON.parse(readFileSync(portFile, "utf8"));
+    }, "no-media worker did not listen");
+    const denied = await request(noMediaReady.port, "/start", { ...factJob, streamId: "no-media-session" });
+    assert.equal(denied.status, 409);
+    assert.equal(denied.body.errorCode, "media_unavailable");
+    assert.equal(denied.body.health.state, "stopped");
+    assert.equal(denied.body.health.productFacts.valid, false);
+    await request(noMediaReady.port, "/shutdown", {});
+    await waitFor(() => (hasExited(noMediaWorker.child) ? true : null), "no-media worker did not shut down");
+  } finally {
+    if (noMediaWorker.child.exitCode === null) forceStop(noMediaWorker.child);
+    rmSync(noMediaDir, { recursive: true, force: true });
+  }
+
   factChildPid = introduced.body.health.childPids[0];
   assert.equal(pidAlive(factChildPid), true);
   const stopped = await request(factReady.port, "/stop", { streamId: factJob.streamId, reason: "operator_requested" });
