@@ -43,7 +43,8 @@ node --experimental-strip-types --no-warnings worker/ai-live-resident.mjs
 ## 監視
 
 - `GET /health` はプロセスが応答できるかを見ます。セッションが停止していても 200 です。応答にはプロセス、セッション状態、商品事実、配信先の承認状態を分けて入れます。
-- `GET /ready` は、待受中か、loopback で商品事実が有効なときだけ 200 です。事実が古い、配信先が未承認、セッションが失敗、のときは 503 です。
+- `GET /ready` は、待受中か、loopback で商品事実が有効なときだけ 200 です。事実が未設定・古い・不一致、配信先が未承認、セッションが失敗、のときは 503 です。
+- 商品確認URLが未設定なら開始は拒否されます。`TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK=1` は隔離されたローカル試験専用で、本番環境には設定しないでください。
 - `POST /start`、`POST /stop`、`POST /reconnect`、`POST /shutdown` は `Authorization: Bearer` が一致しないと動きません。
 
 ## 配信先
