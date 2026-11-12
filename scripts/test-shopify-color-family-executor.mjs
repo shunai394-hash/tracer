@@ -55,8 +55,18 @@ assert.match(migration, /variantImageIdentityVerified !== true/, "unverified exa
 assert.match(migration, /margin_rate\) < 0\.5/, "margin below 50 percent must block migration");
 assert.match(migration, /offer\.ship_to !== "JP"/, "non-Japan supplier offers must block migration");
 assert.match(migration, /String\(channel\.external_product_id \?\? ""\) !== expected\.oldProductId[\s\S]*String\(channel\.external_variant_id \?\? ""\) !== expected\.oldVariantId/, "legacy migration must trust exact old Shopify IDs rather than a stale channel status or SKU alias");
-assert.match(migration, /ensureShopifyProductPublished\(created\.productId\)/, "new family must be published and verified before old products are unpublished");
-assert.match(migration, /unpublishShopifyProduct\(oldProductId\)/, "only the five exact old Shopify products may be unpublished");
-assert.match(migration, /channel_listing_update_failed/, "channel listing identity must be updated after successful migration");
+assert.match(migration, /status: "DRAFT_READY"/, "migration must stop after creating a verified draft");
+assert.match(migration, /oldProductsChanged: false/, "legacy Shopify products must remain untouched during draft preparation");
+assert.match(migration, /channelListingsChanged: false/, "channel listing identity must remain unchanged until explicit cutover");
+assert.match(migration, /publicationRequiredForCutover: true/, "publication must be a separate explicit cutover step");
+assert.doesNotMatch(migration, /activateShopifyProduct|ensureShopifyProductPublished|unpublishShopifyProduct|\.from\("channel_listings"\)\.update/, "draft preparation must not activate, unpublish, or remap live listings");
+
+const nineColorMigration = readFileSync(new URL("../app/api/internal/shopify-nine-color-family-migrate/route.ts", import.meta.url), "utf8");
+assert.match(nineColorMigration, /1739211543297925120/, "nine-color migration must remain pinned to the exact supplier product");
+assert.match(nineColorMigration, /status: "DRAFT_READY"/, "nine-color migration must stop after creating a verified draft");
+assert.match(nineColorMigration, /oldProductsChanged: false/, "nine-color legacy Shopify products must remain published");
+assert.match(nineColorMigration, /channelListingsChanged: false/, "nine-color channel mappings must remain unchanged until explicit cutover");
+assert.match(nineColorMigration, /publicationRequiredForCutover: true/, "nine-color publication must require a separate explicit cutover");
+assert.doesNotMatch(nineColorMigration, /activateShopifyProduct|ensureShopifyProductPublished|unpublishShopifyProduct|\.from\("channel_listings"\)\.update/, "nine-color draft preparation must not activate, unpublish, or remap live listings");
 
 console.log("Shopify color-family executor safety contract: migration and identity assertions passed");
