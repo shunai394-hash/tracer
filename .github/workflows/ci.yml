@@ -18,6 +18,8 @@ jobs:
       CJ_API_KEY: ci-cj-key
     steps:
       - uses: actions/checkout@v4
+      - name: Build resident AI live worker container
+        run: docker build -f worker/Dockerfile -t tracer-ai-live-worker:ci .
       - uses: actions/setup-node@v4
         with:
           node-version: 24
