@@ -6,7 +6,8 @@
 
 - 常駐先は別の仮想マシン、またはこのリポジトリの `worker/Dockerfile` から作ったコンテナです。
 - プロセスは `127.0.0.1` だけを待ち受けます。YouTube と TikTok は、未承認でも承認済みでも、この改訂では外部ソケットを開きません。
-- `TRACER_AI_LIVE_STATE_DIR` はリポジトリの外に取り、ワーカーのユーザーだけが読み書きできるようにします。
+- 状態ディレクトリは `/var/lib/tracer-ai-live` です。Dockerfile はこの場所を `node` ユーザーが書き込めるように作成し、`TRACER_AI_LIVE_STATE_DIR` の既定値に設定します。
+- 永続ボリュームを `/var/lib/tracer-ai-live` にマウントしてください。ホストの bind mount を使う場合は、ホスト側ディレクトリを UID/GID `1000:1000`（コンテナ内 `node`）所有にしてから起動します。状態ディレクトリを一時領域に置くと、再起動後の状態・ロック管理が不安定になります。
 
 ## イメージ
 
@@ -16,7 +17,18 @@
 docker build -f worker/Dockerfile -t tracer-ai-live-worker .
 ```
 
-イメージには FFmpeg を入れます。Next.js のビルド成果物は入れません。
+イメージには FFmpeg を入れます。Next.js のビルド成果物は入れません。コンテナは非 root の `node` ユーザーで起動します。
+
+## メディア素材
+
+アバター動画と BGM はイメージに焼き込まず、読み取り専用ボリュームとしてコンテナにマウントします。コンテナ内の例は `/opt/tracer-ai-live/media/avatar.mp4` と `/opt/tracer-ai-live/media/bgm.mp3` です。`node` ユーザーが読み取れる権限を付けてください。
+
+- `TRACER_AI_LIVE_AVATAR_VIDEO=/opt/tracer-ai-live/media/avatar.mp4`
+- `TRACER_AI_LIVE_BGM_PATH=/opt/tracer-ai-live/media/bgm.mp3`
+- Fish Audio の登録済み音声IDを使う場合は `FISH_AUDIO_API_KEY` をシークレット注入し、セッションの `voiceId` を指定します。
+- 音声ファイルを使う場合は `TRACER_AI_LIVE_SPEECH_PATH` にコンテナ内の読み取り可能なファイルパスを指定します。
+
+素材ファイルはこのリポジトリには含まれません。実際のファイルをマウントし、存在と読み取り権限を確認してから開始してください。
 
 ## 秘密情報
 
@@ -27,18 +39,22 @@ docker build -f worker/Dockerfile -t tracer-ai-live-worker .
 
 商品事実の読み取り先は `TRACER_AI_LIVE_PRODUCTS_URL`（`GET /api/admin/ai-live/products`）と、その読み取り専用トークン `TRACER_AI_LIVE_PRODUCTS_TOKEN` です。ワーカーはこのURLへ GET 以外を送りません。
 
-トークン、ストリームキー、RTMP URL、Fish Audio の API キーは、ログ、`state.json`、`/health`、`/ready`、エラー応答に出してはいけません。
+`FISH_AUDIO_API_KEY`、管理トークン、商品APIトークンは Secret Manager などから実行時に注入します。値を Dockerfile、イメージ、Git、起動引数に書かないでください。トークン、ストリームキー、RTMP URL、Fish Audio の API キーは、ログ、`state.json`、`/health`、`/ready`、エラー応答に出してはいけません。
 
 ## 起動例
 
 ```bash
-export TRACER_AI_LIVE_STATE_DIR=/var/lib/tracer-ai-live
 export TRACER_AI_LIVE_PORT=8787
+export TRACER_AI_LIVE_PRODUCTS_URL=https://<tracer-host>/api/admin/ai-live/products
+export TRACER_AI_LIVE_PRODUCTS_TOKEN
 export TRACER_AI_LIVE_ADMIN_TOKEN
+export TRACER_AI_LIVE_AVATAR_VIDEO=/opt/tracer-ai-live/media/avatar.mp4
+export TRACER_AI_LIVE_BGM_PATH=/opt/tracer-ai-live/media/bgm.mp3
+export FISH_AUDIO_API_KEY
 node --experimental-strip-types --no-warnings worker/ai-live-resident.mjs
 ```
 
-コンテナでは同じ環境変数を渡し、状態ディレクトリをボリュームにします。待受はコンテナ内の `127.0.0.1` です。公開ポートへは出しません。
+コンテナでは環境変数をシークレット機構から渡し、状態ディレクトリを永続ボリュームにします。メディア素材は読み取り専用でマウントします。待受はコンテナ内の `127.0.0.1` です。公開ポートへは出しません。Docker の `-p` でポートを公開しないでください。監視プロセスを置く場合もコンテナ内から loopback にアクセスさせます。
 
 ## 監視
 
