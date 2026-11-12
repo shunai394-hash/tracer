@@ -149,7 +149,7 @@ function killWorkerOnly(child) {
 }
 
 const dir = mkdtempSync(join(tmpdir(), "tracer-resident-"));
-const first = startWorker(dir);
+const first = startWorker(dir, { TRACER_AI_LIVE_MEDIA_HOLD: "1", TRACER_AI_LIVE_ALLOW_UNVERIFIED_LOOPBACK: "1" });
 try {
   const ready = await waitFor(() => {
     const portFile = join(dir, "port.json");
