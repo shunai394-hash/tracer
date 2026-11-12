@@ -61,4 +61,12 @@ assert.match(migration, /channelListingsChanged: false/, "channel listing identi
 assert.match(migration, /publicationRequiredForCutover: true/, "publication must be a separate explicit cutover step");
 assert.doesNotMatch(migration, /activateShopifyProduct|ensureShopifyProductPublished|unpublishShopifyProduct|\.from\("channel_listings"\)\.update/, "draft preparation must not activate, unpublish, or remap live listings");
 
+const nineColorMigration = readFileSync(new URL("../app/api/internal/shopify-nine-color-family-migrate/route.ts", import.meta.url), "utf8");
+assert.match(nineColorMigration, /1739211543297925120/, "nine-color migration must remain pinned to the exact supplier product");
+assert.match(nineColorMigration, /status: "DRAFT_READY"/, "nine-color migration must stop after creating a verified draft");
+assert.match(nineColorMigration, /oldProductsChanged: false/, "nine-color legacy Shopify products must remain published");
+assert.match(nineColorMigration, /channelListingsChanged: false/, "nine-color channel mappings must remain unchanged until explicit cutover");
+assert.match(nineColorMigration, /publicationRequiredForCutover: true/, "nine-color publication must require a separate explicit cutover");
+assert.doesNotMatch(nineColorMigration, /activateShopifyProduct|ensureShopifyProductPublished|unpublishShopifyProduct|\.from\("channel_listings"\)\.update/, "nine-color draft preparation must not activate, unpublish, or remap live listings");
+
 console.log("Shopify color-family executor safety contract: migration and identity assertions passed");
