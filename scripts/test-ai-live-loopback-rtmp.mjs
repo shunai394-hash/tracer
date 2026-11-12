@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
+import { once } from "node:events";
 import { createServer } from "node:net";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,10 @@ function reserveLoopbackPort() {
       server.close((error) => error ? reject(error) : resolve(address.port));
     });
   });
+}
+
+async function waitForSpawn(child, label) {
+  try { await once(child, "spawn"); } catch { throw new Error(`${label}_spawn_failed`); }
 }
 
 function waitForExit(child, label, timeoutMs = 12_000) {
@@ -48,6 +53,7 @@ const url = `rtmp://127.0.0.1:${port}/live/roundtrip`;
 const stateDir = mkdtempSync(join(tmpdir(), "tracer-ai-live-rtmp-"));
 const receivedFile = join(stateDir, "received.flv");
 let receiver;
+let publisher;
 
 try {
   receiver = spawn("ffmpeg", [
@@ -57,10 +63,12 @@ try {
     "-t", "2", "-c", "copy", "-f", "flv", receivedFile,
   ], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  assert.equal(receiver.exitCode, null, "loopback RTMP receiver exited before publisher connected");
+  await waitForSpawn(receiver, "loopback_rtmp_receiver");
+  const receiverDone = waitForExit(receiver, "loopback_rtmp_receiver");
+  receiverDone.catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 350));
 
-  const publisher = spawn("ffmpeg", [
+  publisher = spawn("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-re",
     "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15",
     "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
@@ -71,10 +79,8 @@ try {
     "-f", "flv", url,
   ], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
 
-  await Promise.all([
-    waitForExit(receiver, "loopback_rtmp_receiver"),
-    waitForExit(publisher, "loopback_rtmp_publisher"),
-  ]);
+  await waitForSpawn(publisher, "loopback_rtmp_publisher");
+  await Promise.all([receiverDone, waitForExit(publisher, "loopback_rtmp_publisher")]);
 
   const outputBytes = statSync(receivedFile).size;
   assert.ok(outputBytes > 10_000, "loopback RTMP receiver did not write media data");
@@ -85,5 +91,6 @@ try {
   console.log("AI live loopback RTMP publish/receive round-trip passed", { outputBytes, streams });
 } finally {
   if (receiver && receiver.exitCode === null) receiver.kill("SIGKILL");
+  if (publisher && publisher.exitCode === null) publisher.kill("SIGKILL");
   rmSync(stateDir, { recursive: true, force: true });
 }
