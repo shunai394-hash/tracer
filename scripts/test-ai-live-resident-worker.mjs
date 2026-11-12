@@ -212,8 +212,21 @@ const productsEnv = {
   TRACER_AI_LIVE_PRODUCTS_TOKEN: productsToken,
 };
 const liveJob = { ...job, segments: liveSegments() };
+const lifecycleMediaDir = mkdtempSync(join(tmpdir(), "tracer-lifecycle-media-"));
+writeFileSync(join(lifecycleMediaDir, "avatar.mp4"), "avatar");
+writeFileSync(join(lifecycleMediaDir, "bed.mp3"), "bed");
+writeFileSync(join(lifecycleMediaDir, "speech.mp3"), "speech");
+const lifecycleOutputScript = join(lifecycleMediaDir, "output.mjs");
+writeFileSync(lifecycleOutputScript, `import { writeFileSync } from "node:fs"; writeFileSync(process.argv.at(-1), "frame"); setInterval(() => {}, 1000);\\n`);
+const lifecycleEnv = {
+  ...productsEnv,
+  TRACER_AI_LIVE_AVATAR_VIDEO: join(lifecycleMediaDir, "avatar.mp4"),
+  TRACER_AI_LIVE_BGM_PATH: join(lifecycleMediaDir, "bed.mp3"),
+  TRACER_AI_LIVE_SPEECH_PATH: join(lifecycleMediaDir, "speech.mp3"),
+  TRACER_AI_LIVE_FFMPEG_SCRIPT: lifecycleOutputScript,
+};
 const dir = mkdtempSync(join(tmpdir(), "tracer-resident-"));
-const first = startWorker(dir, productsEnv);
+const first = startWorker(dir, lifecycleEnv);
 try {
   const ready = await waitFor(() => {
     const portFile = join(dir, "port.json");
@@ -253,7 +266,7 @@ try {
   forceStop(first.child);
   await waitFor(() => (hasExited(first.child) ? true : null), "worker did not stop");
   rmSync(join(dir, "port.json"), { force: true });
-  const recovered = startWorker(dir, productsEnv);
+  const recovered = startWorker(dir, lifecycleEnv);
   try {
     const recoveredReady = await waitFor(() => {
       const portFile = join(dir, "port.json");
@@ -261,10 +274,16 @@ try {
       return JSON.parse(readFileSync(portFile, "utf8"));
     }, "recovered worker did not listen");
     const after = await request(recoveredReady.port, "/health");
-    assert.equal(after.body.state, "live");
-    assert.equal(after.body.reconnectCount, 2);
+    assert.equal(after.body.state, "stopped");
+    assert.equal(after.body.stopReason, "worker_restarted");
+    assert.equal(after.body.errorCode, "worker_restarted");
+    assert.equal(after.body.mediaReady, false);
     assert.equal(after.body.publicBroadcast, false);
-    const stopped = await request(recoveredReady.port, "/stop", { streamId: "live-session-1", reason: "operator_requested" });
+    const resumed = await request(recoveredReady.port, "/start", { ...liveJob, streamId: "recovered-session" });
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.body.health.state, "live");
+    assert.equal(resumed.body.health.mediaReady, true);
+    const stopped = await request(recoveredReady.port, "/stop", { streamId: "recovered-session", reason: "operator_requested" });
     assert.equal(stopped.body.health.state, "stopped");
     assert.equal(stopped.body.health.stopReason, "operator_requested");
     const shutdown = await request(recoveredReady.port, "/shutdown", {});
@@ -281,6 +300,7 @@ try {
   if (first.child.exitCode === null) forceStop(first.child);
   catalog.close();
   rmSync(dir, { recursive: true, force: true });
+  rmSync(lifecycleMediaDir, { recursive: true, force: true });
 }
 
 const gains = residentMixGains();
