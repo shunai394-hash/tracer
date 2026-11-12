@@ -56,13 +56,19 @@ speech generation, and browser-side drama/BGM mixdown remain separate systems.
    and policy review. Measure reconnects, speech latency, dropped frames, and
    cost before expanding duration.
 
+## What runs today
+
+- The OBS page rotates sellable product scripts, ducks BGM during speech, and switches 16:9 or 9:16 layout.
+- `/api/admin/ai-live/session` reports whether YouTube and TikTok credentials exist and builds the next factual script. Its `live` field stays false. It does not start a broadcast.
+- `node --experimental-strip-types worker/ai-live-runner.mjs --rehearsal` checks the program on a long-running machine. Do not run FFmpeg inside a Vercel function.
+
+## Still blocked on platform approval
+
+- YouTube goes live only from the worker, after `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REFRESH_TOKEN` are set, and only when `worker/platforms/youtube-live-broadcast-manager.mjs` receives `confirmEncoderActive: true`.
+- TikTok does not offer this app a public API to open a live or read comments. Desktop delivery requires TikTok's own approval at https://livecenter.tiktok.com/producer. The short-lived server URL and stream key belong in the worker environment as `TIKTOK_RTMP_URL` and `TIKTOK_STREAM_KEY`. Unofficial login automation is not used.
+
 ## Not yet implemented
 
-- FFmpeg process management or container deployment
-- RTMP publishing or platform authentication
-- Destination-specific comment ingestion
-- Product rotation scheduler and live TTS/BGM orchestration
-- Reconnect supervisor, durable queue, heartbeat persistence, and operator UI
-- Any unattended or 24-hour broadcast
-
-The existence of this contract does not mean a stream can be started today.
+- Vercel では長時間の配信処理を実行しない。配信先が未承認のまま開始したことにはしない。無人の24時間配信は未実装で、stream key はワーカーの環境変数にだけ置く。
+- Starting YouTube or TikTok from the Vercel deployment
+- Posting viewer replies back to YouTube or TikTok
