@@ -119,14 +119,6 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  let tracks=[], urls=[], baseVolume=.35, ducked=false, autoBgmLoop=false, fishVoices=[], speechObjectUrl=null, speechAudio=null, products=[];
  let autoLiveActive=false, autoLiveIndex=0, autoLiveTimer=null, autoLiveDelayResolve=null, finishCurrentSpeech=null, speechRequestController=null;
  function setStatus(t){$('status').textContent=t;$('state').textContent=t}
- function japaneseVoices(){return (synth?synth.getVoices():[]).filter(v=>/^ja/i.test(v.lang||''))}
- function loadVoices(){
-  const old=voiceSelect.value, voices=japaneseVoices();
-  voiceSelect.innerHTML='<option value="">自動選択</option>';
-  voices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=v.name+' ('+v.lang+')';voiceSelect.appendChild(o)});
-  if(old)voiceSelect.value=old;
- }
- function chooseVoice(){const vs=japaneseVoices();if(voiceSelect.value!==''&&vs[Number(voiceSelect.value)])return vs[Number(voiceSelect.value)];return vs.find(v=>/natural|online|nanami|google/i.test(v.name))||vs[0]||null}
  function setVolume(){audio.volume=ducked?baseVolume*.18:baseVolume;$('volumeLabel').textContent=Math.round(baseVolume*100)+'%'}
  function renderTracks(){
   const select=$('track'), current=select.value;
@@ -481,7 +473,8 @@ button.primary{background:#1d4ed8;border-color:#60a5fa}
  $('bgmStop').addEventListener('click',()=>{autoBgmLoop=false;audio.pause();audio.currentTime=0;setStatus('BGM停止')});
  $('volume').addEventListener('input',e=>{baseVolume=Number(e.target.value)/100;setVolume()});
  $('toggle').addEventListener('click',()=>{$('panel').classList.toggle('hidden');$('toggle').textContent=$('panel').classList.contains('hidden')?'操作パネルを表示':'操作パネルを隠す'});
- if(synth){loadVoices();synth.onvoiceschanged=loadVoices}
+ // The selector is reserved for Fish Audio's shared TRACER voice catalogue.
+ // Do not populate it from browser speechSynthesis: that overwrites registered Fish Audio IDs.
  setVolume();
 })();
 </script>
