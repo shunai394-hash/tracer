@@ -11,5 +11,5 @@ assert.ok(args.includes("sine=frequency=440:sample_rate=48000"));
 assert.equal(args.at(-1),"rtmp://localhost:1935/live/test");
 const fakeSpawn=(_command,received)=>{assert.ok(received.includes("-f"));const child=new EventEmitter();child.kill=()=>true;queueMicrotask(()=>child.emit("close",0,null));return child;};
 assert.deepEqual(await runLocalRtmpSmokeTest({url:"rtmp://127.0.0.1:1935/live/test",durationSeconds:2,spawnImpl:fakeSpawn}),{ok:true,destination:"loopback",durationSeconds:2,exitCode:0,signal:null});
-await assert.rejects(runLocalRtmpSmokeTest({url:"rtmp://example.com:1935/live/key",spawnImpl:fakeSpawn}),/loopback/);
+assert.throws(()=>runLocalRtmpSmokeTest({url:"rtmp://example.com:1935/live/key",spawnImpl:fakeSpawn}),/loopback/);
 console.log("AI-live local RTMP publisher safety and lifecycle tests passed");
