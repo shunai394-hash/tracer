@@ -69,7 +69,7 @@ const PRODUCT_CATEGORY_KEYWORDS: Record<string, string[]> = {
   headphones: ["headphones", "wireless headphones", "noise cancelling", "noise-canceling"],
   smartphone: ["iphone", "ipad", "galaxy", "pixel", "android phone", "smartphone", "mobile phone"],
   sneakers: ["sneakers", "running shoes", "trainers", "shoes"],
-  automobile: ["car", "automobile", "vehicle", "toyota", "prius", "honda", "nissan", "mazda"],
+  automobile: ["car floor mat", "floor mats", "dash cam", "car seat cover", "car accessories", "automotive accessories", "車用フロアマット", "ドライブレコーダー", "車載ホルダー", "シートカバー", "カーマット"],
 };
 
 const NON_PRODUCT_PATTERNS = [
