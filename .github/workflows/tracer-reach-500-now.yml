@@ -129,6 +129,61 @@ jobs:
             fi
           }
 
+          run_preflight() {
+            local label="$1"
+            local path="$2"
+            local max_seconds="$3"
+            local output="preflight-${label}.json"
+            local access_token
+            local http_status
+
+            echo "===== PREFLIGHT: ${label} (read-only) ====="
+            if ! access_token="$(token)"; then
+              echo "::error::Preflight ${label}: could not obtain deployment token"
+              return 1
+            fi
+            if ! http_status="$(curl --silent --show-error --max-time "$max_seconds" -o "$output" -w '%{http_code}' -H "Authorization: Bearer ${access_token}" "${BASE}${path}")"; then
+              echo "::error::Preflight ${label}: request failed or timed out"
+              return 1
+            fi
+            python3 - "$output" "$http_status" "$label" <<'PY'
+          import json, sys
+          path, status, label = sys.argv[1:]
+          try:
+              with open(path, encoding="utf-8") as f:
+                  body = json.load(f)
+          except Exception as exc:
+              print(f"::error::Preflight {label}: invalid JSON: {exc}")
+              raise SystemExit(1)
+          if not status.isdigit() or not 200 <= int(status) < 300:
+              print(f"::error::Preflight {label}: HTTP {status}")
+              raise SystemExit(1)
+          if label == "shopify_auth":
+              if body.get("ok") is not True:
+                  print("::error::Shopify auth probe is not healthy; refusing live cycles")
+                  raise SystemExit(1)
+              print("Shopify auth: HTTP 200, ok=true")
+          elif label == "base_identity":
+              required = ("baseApi", "itemsApi", "itemAuditComplete")
+              if any(body.get(key) is not True for key in required):
+                  print("::error::BASE API or complete item snapshot failed; refusing live cycles")
+                  raise SystemExit(1)
+              for key in ("visibleItemsWithoutDbMapping", "visibleItemsWithAmbiguousDbMapping", "itemIdMissingCount", "duplicateItemCount"):
+                  value = body.get(key)
+                  if not isinstance(value, (int, float)) or value != 0:
+                      print(f"::error::BASE identity preflight failed: {key}={value}")
+                      raise SystemExit(1)
+              print("BASE identity: complete snapshot; no missing/ambiguous DB mappings or duplicate item IDs")
+              print("BASE fulfilment status (reported separately): linked=", body.get("visibleItemsLinked"), "unlinked_or_not_fulfillable=", body.get("visibleItemsUnlinked"))
+          PY
+          }
+
+          # Do not write to either sales channel unless authentication and exact
+          # item identity are verified. Offer freshness is reported separately:
+          # the publication gate decides fulfilment readiness per product.
+          run_preflight shopify_auth "/api/admin/shopify/auth-check" 60 || exit 1
+          run_preflight base_identity "/api/channels/base/diagnostics" 90 || exit 1
+
           for cycle in $(seq 1 10); do
             run_endpoint "$cycle" supply "/api/cron/supply-first" 300
             run_endpoint "$cycle" sales "/api/cron/sales-test-publication" 300
