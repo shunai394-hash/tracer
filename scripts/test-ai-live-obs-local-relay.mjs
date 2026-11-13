@@ -94,13 +94,43 @@ try {
   assert.ok((await segment.arrayBuffer()).byteLength > 100);
   const outside = await fetch(new URL("/../package.json", ready.hlsUrl).href).catch(() => null);
   if (outside) assert.equal(outside.status, 404);
+  // Simulate the resident media publisher crashing while the relay is still serving OBS.
   stop(publisher);
+  let endedPlaylist = "";
+  const endedAt = Date.now();
+  while (Date.now() - endedAt < 8_000) {
+    const response = await fetch(ready.hlsUrl).catch(() => null);
+    if (response?.ok) {
+      endedPlaylist = await response.text();
+      if (endedPlaylist.includes("#EXT-X-ENDLIST")) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  assert.match(endedPlaylist, /#EXT-X-ENDLIST/, "publisher exit must finalize the HLS playlist");
+
+  const finalPlaylistResponse = await fetch(ready.hlsUrl);
+  assert.equal(finalPlaylistResponse.status, 200, "relay should serve the finalized playlist during its shutdown grace period");
+  assert.match(await finalPlaylistResponse.text(), /#EXT-X-ENDLIST/);
+
+  let relayExited = relay.exitCode !== null;
+  const exitStartedAt = Date.now();
+  while (!relayExited && Date.now() - exitStartedAt < 8_000) {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    relayExited = relay.exitCode !== null;
+  }
+  assert.equal(relayExited, true, "relay HTTP server must close after the publisher exits");
+
+  const afterShutdown = await fetch(ready.hlsUrl).catch(() => null);
+  assert.equal(afterShutdown, null, "HLS endpoint must stop serving after relay shutdown");
+
   console.log(JSON.stringify({
     relay: "loopback-hls",
     obsStudio: false,
     rtmpUrl: ready.rtmpUrl,
     hlsUrl: ready.hlsUrl,
     segmentBytes: "received",
+    publisherCrash: "playlist-finalized",
+    relayShutdown: "http-closed",
   }));
 } finally {
   stop(relay);
