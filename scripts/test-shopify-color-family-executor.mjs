@@ -51,7 +51,8 @@ assert.doesNotMatch(executor, /ensureShopifyProductPublished|unpublishShopifyPro
 assert.match(executor, /input\.inventoryLocationId\.trim\(\)/, "migration must use the location verified from the existing Shopify variants");
 assert.match(source, /readShopifyVariantInventorySnapshot/, "migration must read current Shopify stock before creating the family");
 assert.match(source, /activateShopifyProduct/, "verified draft family must be explicitly activated before publication");
-assert.match(source, /status: product\.status as "DRAFT" \| "ACTIVE"/, "migration retries must remain idempotent after activation");
+assert.match(source, /status: "DRAFT"/, "color-family executor must preserve draft-only status");
+assert.doesNotMatch(source, /status: product\.status as "DRAFT" \| "ACTIVE"/, "executor must not allow retries against activated products");
 const migration = readFileSync(new URL("../app/api/internal/shopify-five-color-family-migrate/route.ts", import.meta.url), "utf8");
 assert.match(migration, /2606090341151608200/, "migration must be pinned to the exact supplier product");
 assert.match(migration, /variantImageIdentityVerified !== true/, "unverified exact-variant images must block migration");
