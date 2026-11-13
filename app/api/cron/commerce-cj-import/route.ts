@@ -313,12 +313,9 @@ async function repairGenericCommerceTitles(db: ReturnType<typeof createSupabaseA
       const sourceTitle = typeof metadata.sourceTitle === "string" ? metadata.sourceTitle : "";
       const productType = typeof metadata.sourceProductType === "string" ? metadata.sourceProductType : (typeof product.category === "string" ? product.category : null);
       const productVariants = variantsByProduct.get(String(product.id)) ?? [];
-      const variantNames = productVariants.map((variant) => {
-        const attributes = variant.attributes && typeof variant.attributes === "object" && !Array.isArray(variant.attributes)
-          ? variant.attributes as Record<string, unknown> : {};
-        return typeof attributes.supplierVariantName === "string" ? attributes.supplierVariantName : "";
-      }).filter(Boolean);
-      const nextTitle = japaneseCommerceTitle(sourceTitle, productType, variantNames);
+      // A parent product title describes the product, never the union of its
+      // sibling option labels. Each option is localized independently below.
+      const nextTitle = japaneseCommerceTitle(sourceTitle, productType);
       const oldTitle = String(product.title_ja ?? "");
       if (!nextTitle || genericSet.has(nextTitle) || nextTitle === oldTitle) return;
       for (const variant of productVariants) {
@@ -1014,7 +1011,9 @@ export async function GET(request: Request) {
             }
             const shippingCostForPricing = shipping;
             const complianceBlockReason = japaneseCommerceComplianceBlockReason(canonicalDetail.title, canonicalDetail.productType);
-            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType, supplierProductId === candidate.id ? variants.flatMap((item) => typeof item.nameEn === "string" && item.nameEn.trim().length > 0 ? [item.nameEn] : []) : []) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
+            // Keep sibling variant names out of the parent title; the exact child name
+            // is applied only by japaneseVariantSuffix(exactVariant.nameEn).
+            const title = japaneseCommerceTitle(canonicalDetail.title, canonicalDetail.productType) || (supplierProductId === candidate.id ? japaneseCommerceTitle(candidate.title, candidate.productType) : null);
             if (!title) {
               recordSkip("japanese_title_unavailable");
               const logError = await recordCjExclusion(supplierProductId + ":" + exactVariant.vid, "japanese_title_unavailable", {
