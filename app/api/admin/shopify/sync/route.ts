@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       : undefined;
 
     const rawSyncLimit = Number(body.limit);
-    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(15, Math.floor(rawSyncLimit)) : 10;
+    const syncLimit = Number.isFinite(rawSyncLimit) && rawSyncLimit > 0 ? Math.min(50, Math.floor(rawSyncLimit)) : 10;
     const result = await syncPublishedListingsToShopify(listingIds, syncLimit);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
