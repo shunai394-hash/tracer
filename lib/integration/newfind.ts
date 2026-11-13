@@ -80,14 +80,35 @@ function identityConfidence(listing: { identity_confidence?: unknown }): number 
   return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
 }
 
+function isMerchantHeldStockListing(listing: {
+  published?: unknown;
+  manual_inventory?: unknown;
+  inventory?: unknown;
+  pipeline_stage?: unknown;
+  pipeline_status?: unknown;
+}): boolean {
+  const inventory = Number(listing.inventory);
+  return listing.published === true
+    && listing.manual_inventory === true
+    && Number.isSafeInteger(inventory)
+    && inventory > 0
+    && listing.pipeline_stage !== "BLOCKED"
+    && listing.pipeline_status !== "blocked";
+}
+
 function discoveryReason(listing: {
   selection_reasons?: unknown;
   identity_method?: unknown;
   supplier_name?: unknown;
   contribution_margin?: unknown;
   base_item_id?: unknown;
+  manual_inventory?: unknown;
+  inventory?: unknown;
 }): string {
   const reasons = readSelectionReasons(listing);
+  if (listing.manual_inventory === true && Number(listing.inventory) > 0) {
+    return "TRACER merchant-held stock; inventory=" + Math.floor(Number(listing.inventory)) + "; physical stock is held by the seller";
+  }
   const path = reasons.includes("sales_test_gate:supply") ? "supply-first" : reasons.includes("sales_test_gate:market") ? "marketplace ranking" : "sales test";
   const parts = [
     `TRACER discovery via ${path}; passed Sales Test Gate`,
@@ -163,7 +184,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
     const chunk = listingIds.slice(i, i + 100);
     const { data: listings, error: listingError } = await supabase
       .from("shop_listings")
-      .select("id, title, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
+      .select("id, title, published, manual_inventory, inventory, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status")
       .in("id", chunk)
       .is("archived_at", null)
       .eq("published", true);
@@ -174,7 +195,7 @@ export async function retryPendingNewfindPromotions(limit = 20): Promise<{
       shopifyStatusById.set(id, shopifyStatus);
       // The TRACER public sales page only exists for Shopify-synced listings.
       // Do not create doomed NEWFIND deliveries for BASE-only or unsynced rows.
-      if (shopifyStatus === "synced" && hasPassedSalesTestGate(row)) eligible.push(id);
+      if (shopifyStatus === "synced" && (hasPassedSalesTestGate(row) || isMerchantHeldStockListing(row))) eligible.push(id);
     }
   }
 
@@ -223,7 +244,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, manual_inventory, inventory, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
     .eq("id", listingId)
     .is("archived_at", null)
     .eq("published", true)
@@ -235,7 +256,7 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "minimum_listing_price_below_2500" };
   }
 
-  if (!listing || !hasPassedSalesTestGate(listing)) {
+  if (!listing || (!hasPassedSalesTestGate(listing) && !isMerchantHeldStockListing(listing))) {
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "sales_test_gate_not_passed" };
   }
 
@@ -365,7 +386,13 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
       tracer_listing_id: listing.id,
       tracer_product_id: listing.product_id ?? undefined,
       tracer_published: true,
-      sales_test_gate: "passed",
+      ...(isMerchantHeldStockListing(listing)
+        ? {
+            merchant_held_stock: true,
+            fulfillment_mode: "merchant_held_stock",
+            available_inventory: Math.floor(Number(listing.inventory)),
+          }
+        : { sales_test_gate: "passed" }),
       selection_score: selectionScore(listing),
       confidence: identityConfidence(listing),
       source_ref: listing.id,
