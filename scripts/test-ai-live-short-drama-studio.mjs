@@ -136,6 +136,10 @@ test("BGM library is private, authenticated, lists Storage pages, and bounds MP3
   assert.ok(page.includes('id="bgmPreview"'));
   assert.ok(page.includes('id="bgmVolume"'));
   assert.ok(page.includes('id="bgmLoop"'));
+  assert.match(page, /id="bgmLoop" type="checkbox"(?! checked)/);
+  assert.ok(page.includes('id="stopBgmPreview"'));
+  assert.ok(page.includes('bgmPreview.pause();bgmPreview.currentTime=0'));
+  assert.ok(page.includes('試聴を停止しました。'));
   assert.ok(!page.includes("bgmComposer"));
   assert.ok(!page.includes("register-existing"));
   assert.ok(page.includes('body:file'));
