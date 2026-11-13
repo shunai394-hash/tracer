@@ -59,9 +59,8 @@ export function residentLoopbackTarget(value: unknown): { ok: true; url: string 
 
 /**
  * BGM stays at the 0.35 base. While speech is present, sidechaincompress
- * lowers it over SPEECH_DUCK_FADE_MS and releases afterward. Threshold 0.108
- * is the full-scale calibration that settles on the 0.18 ratio; it is not a
- * constant gain applied for the whole program.
+ * lowers it over SPEECH_DUCK_FADE_MS and releases afterward. Threshold 0.108 is calibrated against the boosted detector signal; the
+ * speech audio sent to the mix remains at its original level.
  */
 function residentDuckFilter(splitProgram: boolean, speechInputCount: number): string {
   const base = RESIDENT_BGM_BASE_VOLUME.toFixed(4);
@@ -85,7 +84,7 @@ function residentDuckFilter(splitProgram: boolean, speechInputCount: number): st
     // still triggers ducking. The audible speech path remains untouched.
     "[spoken]apad,asplit=2[speech][key]",
     "[key]volume=4.0[duck-key]",
-    `[bgm][duck-key]sidechaincompress=threshold=0.432:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
+    `[bgm][duck-key]sidechaincompress=threshold=0.108:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
     `[ducked][speech]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0${mixed}`,
   );
   if (splitProgram) lines.push("[amixed]asplit=2[a0][a1]");
