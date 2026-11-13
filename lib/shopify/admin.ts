@@ -999,7 +999,9 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     { id: productId },
   );
   if (!before.product) throw new Error("shopify_color_family_parent_readback_missing");
-  if (!["DRAFT", "ACTIVE"].includes(before.product.status)) throw new Error("shopify_color_family_parent_status_invalid");
+  // A retry must never repair or rewrite an already-published family. The
+  // migration executor is draft-only; live cutover is a separate approved step.
+  if (before.product.status !== "DRAFT") throw new Error("shopify_color_family_existing_parent_not_draft");
   const currentBySku = new Map<string, typeof before.product.variants.nodes[number]>();
   for (const variant of before.product.variants.nodes) {
     if (variant.sku) {
@@ -1063,7 +1065,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     }`,
     { id: productId },
   );
-  if (!refreshed.product || !["DRAFT", "ACTIVE"].includes(refreshed.product.status)) {
+  if (!refreshed.product || refreshed.product.status !== "DRAFT") {
     throw new Error("shopify_color_family_parent_refresh_failed");
   }
   const refreshedBySku = new Map<string, typeof refreshed.product.variants.nodes[number]>();
@@ -1375,7 +1377,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
     { id: productId },
   );
   const product = verified.product;
-  if (!product || !["DRAFT", "ACTIVE"].includes(product.status)) throw new Error("shopify_color_family_verification_parent_failed");
+  if (!product || product.status !== "DRAFT") throw new Error("shopify_color_family_verification_parent_failed");
   if (product.variants.nodes.length !== variants.length) throw new Error("shopify_color_family_verification_variant_count_failed");
   const result = variants.map((expected) => {
     const actual = product.variants.nodes.find((variant) => variant.sku === expected.sku);
@@ -1456,7 +1458,7 @@ export async function createShopifyColorFamily(input: ShopifyColorFamilyCreateIn
       canonicalVariantId: variants.find((expected) => expected.sku === variant.sku)!.canonicalVariantId,
       sourceShopifyVariantId: variants.find((expected) => expected.sku === variant.sku)!.sourceShopifyVariantId,
     })),
-    status: product.status as "DRAFT" | "ACTIVE",
+    status: "DRAFT",
   };
 }
 
