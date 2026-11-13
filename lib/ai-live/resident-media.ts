@@ -81,8 +81,11 @@ function residentDuckFilter(splitProgram: boolean, speechInputCount: number): st
     lines.push("[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=mono[spoken]");
   }
   lines.push(
+    // Boost only the detector path by 12 dB so quieter synthesized speech
+    // still triggers ducking. The audible speech path remains untouched.
     "[spoken]apad,asplit=2[speech][key]",
-    `[bgm][key]sidechaincompress=threshold=0.108:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
+    "[key]volume=4.0[duck-key]",
+    `[bgm][duck-key]sidechaincompress=threshold=0.432:ratio=20:attack=${SPEECH_DUCK_FADE_MS}:release=${SPEECH_DUCK_FADE_MS}:knee=1:detection=peak:makeup=1[ducked]`,
     `[ducked][speech]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0${mixed}`,
   );
   if (splitProgram) lines.push("[amixed]asplit=2[a0][a1]");
