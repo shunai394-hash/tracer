@@ -1,0 +1,103 @@
+name: TRACER Unified Quality Self-Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  production-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify production AI and automation health
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-self.vercel.app"
+          body="$(curl --fail-with-body -sS --max-time 60 "$BASE/api/health")"
+          printf '%s\n' "$body" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), ensure_ascii=False, indent=2))'
+
+          BODY="$body" python3 - <<'PY'
+          import json, os, sys
+          outer = json.loads(os.environ["BODY"])
+          raw = outer.get("text")
+          health = json.loads(raw) if isinstance(raw, str) else outer
+          if health.get("ok") is not True:
+              print("FAIL health: top-level ok is not true")
+              sys.exit(1)
+
+          connections = health.get("connections") or {}
+          required = {
+              "supabase": True,
+              "supabaseServiceRole": True,
+              "cj": True,
+              "ecPulse": True,
+              "newfindInbound": True,
+              "newfindOutbound": True,
+              "gemini": True,
+              "brightData": True,
+          }
+          failures = [f"{k}={connections.get(k)!r} (want {want!r})" for k, want in required.items() if connections.get(k) is not want]
+          if failures:
+              print("FAIL production quality gate: required provider/channel health is incomplete")
+              for failure in failures:
+                  print("  -", failure)
+              sys.exit(1)
+
+          automation = health.get("automation") or {}
+          if automation.get("cronAuthConfigured") is not True:
+              print("FAIL production quality gate: cron authentication is not configured")
+              sys.exit(1)
+          if automation.get("baseConfigured") is not True:
+              print("FAIL production quality gate: BASE is not configured")
+              sys.exit(1)
+
+          print("PASS production provider/channel health and automation prerequisites")
+          PY
+
+      - name: Verify production commit identity and authenticated funnel audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-self.vercel.app"
+          token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --fail-with-body -sS --max-time 60 -H "Authorization: Bearer $token" "$BASE/api/intelligence/pipeline-audit" > audit.json
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open("audit.json", encoding="utf-8"))
+          deployment = d.get("deployment") or {}
+          print("production deployment:", json.dumps(deployment, ensure_ascii=False))
+          if deployment.get("commitSha") != os.environ.get("GITHUB_SHA"):
+              print("FAIL production commit does not match workflow SHA")
+              sys.exit(1)
+          counts = d.get("counts") or {}
+          print("counts:", json.dumps(counts, ensure_ascii=False))
+          print("blocked reasons:", json.dumps(d.get("shopListingBlockedReasons"), ensure_ascii=False))
+          print("duplicates:", json.dumps(d.get("duplicates"), ensure_ascii=False))
+          PY
+
+      - name: Verify AI patrol reports explicit errors instead of hiding runtime failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://tracer-self.vercel.app"
+          token="$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-self.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          curl --fail-with-body -sS --max-time 300 -H "Authorization: Bearer $token" "$BASE/api/cron/patrol-ai" > patrol.json
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open("patrol.json", encoding="utf-8"))
+          print(json.dumps({k: d.get(k) for k in ("status", "decision", "progress", "errors", "before", "after")}, ensure_ascii=False, indent=2))
+          errors = d.get("errors") or []
+          if errors:
+              print("FAIL AI patrol returned explicit runtime/data errors")
+              sys.exit(1)
+          if d.get("status") not in {"ok", "blocked", "no_progress"}:
+              print("FAIL AI patrol returned an unknown status")
+              sys.exit(1)
+          print("PASS AI patrol completed without hidden runtime/data errors")
+          PY
