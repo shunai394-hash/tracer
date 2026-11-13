@@ -12,7 +12,7 @@ for (const path of ["/api/cron/commerce-base-orders", "/api/cron/commerce-base-f
 }
 
 const cjImport = crons.find((entry) => entry.path === "/api/cron/commerce-cj-import");
-assert.equal(cjImport.schedule, "0,30 * * * *", "CJ import must remain every 30 minutes");
+assert.equal(cjImport.schedule, "*/10 * * * *", "CJ import must run every ten minutes");
 
 for (const path of ["/api/cron/commerce-publish-base", "/api/cron/commerce-publish-shopify", "/api/cron/shopify-publish"]) {
   const publish = crons.find((entry) => entry.path === path);
