@@ -23,6 +23,11 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
 <form id="form" method="post" autocomplete="off">
 <label for="token">TRACER管理トークン</label>
 <input id="token" type="password" autocomplete="off" required placeholder="TRACER_ADMIN_TOKEN" />
+<label for="model">音声モデル</label>
+<select id="model" required>
+<option value="eleven_v4_turbo" selected>Eleven v4 Turbo（ライブ会話・低遅延）</option>
+<option value="eleven_v4">Eleven v4（高品質・ナレーション）</option>
+</select>
 <label for="voice">ElevenLabs Voice ID（清美）</label>
 <input id="voice" autocomplete="off" required pattern="[a-zA-Z0-9_-]{8,128}" minlength="8" maxlength="128" spellcheck="false" value="pdJqk51tDVoes2IzwOyU" />
 <label for="script">読み上げ原稿（最大1,200文字）</label>
@@ -38,6 +43,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
   const form = document.getElementById("form");
   const token = document.getElementById("token");
   const voice = document.getElementById("voice");
+  const model = document.getElementById("model");
   const script = document.getElementById("script");
   const button = document.getElementById("generate");
   const status = document.getElementById("status");
@@ -70,7 +76,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
     if (!form.reportValidity()) return;
     pending = true;
     button.disabled = true;
-    status.textContent = "音声を生成中です。通常は数秒かかります。";
+    status.textContent = "選択したモデルで音声を生成中です。通常は数秒かかります。";
     audio.hidden = true;
     audio.pause();
     if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -84,7 +90,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
           "Content-Type": "application/json"
         },
         cache: "no-store",
-        body: JSON.stringify({ text: script.value.trim(), voiceId: voice.value.trim() })
+        body: JSON.stringify({ text: script.value.trim(), voiceId: voice.value.trim(), modelId: model.value })
       });
       const type = response.headers.get("content-type") || "";
       if (!response.ok || !type.toLowerCase().includes("audio/")) {
@@ -97,7 +103,7 @@ textarea{min-height:130px;resize:vertical;line-height:1.7}button{background:#1d4
       audioUrl = URL.createObjectURL(blob);
       audio.src = audioUrl;
       audio.hidden = false;
-      status.textContent = "生成完了。音声を再生します。";
+      status.textContent = "生成完了（" + model.options[model.selectedIndex].text + "）。音声を再生します。";
       token.value = "";
       try {
         await audio.play();

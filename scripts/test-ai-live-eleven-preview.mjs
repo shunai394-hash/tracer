@@ -18,6 +18,8 @@ assert.match(routeSource, /authorizedAdminToken\(request\)/u);
 assert.match(routeSource, /timingSafeEqual\(expectedBytes, suppliedBytes\)/u);
 assert.match(routeSource, /requireAutomationAuth\(request\)/u);
 assert.match(routeSource, /process\.env\.ELEVENLABS_API_KEY/u);
+assert.match(routeSource, /ALLOWED_MODEL_IDS = new Set\(\["eleven_v4", "eleven_v4_turbo"\]\)/u);
+assert.match(routeSource, /error: "unsupported_model_id"/u);
 assert.match(routeSource, /error: "elevenlabs_not_configured"/u);
 assert.match(routeSource, /"elevenlabs_timeout"/u);
 assert.match(routeSource, /"empty_audio_response"/u);
@@ -32,6 +34,8 @@ assert.match(page, /providerDiagnostic/u);
 assert.doesNotMatch(routeSource, /console\.(log|debug|info|warn|error)\(/u);
 assert.doesNotMatch(routeSource, /NEXT_PUBLIC_ELEVENLABS|localStorage|sessionStorage/u);
 assert.equal(routeSource.split("new WebSocket(").length - 1, 1);
+assert.match(routeSource, /v1\/text-to-dialogue\/stream"/u);
+assert.match(routeSource, /modelId === "eleven_v4"/u);
 const adminGate = routeSource.indexOf("if (!authorizedAdminToken(request))");
 const automationGate = routeSource.indexOf("requireAutomationAuth(request)", adminGate);
 assert.ok(adminGate > 0 && automationGate > adminGate);
@@ -40,9 +44,13 @@ assert.match(page, /<meta name="robots" content="noindex,nofollow">/);
 assert.match(page, /type="password"/);
 assert.match(page, new RegExp(`value="${KIYOMI_VOICE_ID}"`));
 assert.match(page, /こんにちは、TRACER AI配信です。/);
+assert.match(page, /<select id="model"/);
+assert.match(page, /value="eleven_v4"/);
+assert.match(page, /value="eleven_v4_turbo"/);
 assert.match(page, /<textarea id="script"/);
 assert.match(page, /fetch\("\/api\/admin\/ai-live\/eleven-v4-turbo"/);
 assert.match(page, /voiceId/);
+assert.match(page, /modelId: model\.value/);
 assert.match(page, /<audio id="audio"/);
 assert.match(page, /認証に失敗しました。管理トークンを確認してください。/);
 assert.match(page, /サーバーにElevenLabsのAPIキーが設定されていません。/);
@@ -155,6 +163,7 @@ FakeSocket.CLOSING = 2;
 FakeSocket.CLOSED = 3;
 
 const originalWebSocket = globalThis.WebSocket;
+const originalFetch = globalThis.fetch;
 const originalAdmin = process.env.TRACER_ADMIN_TOKEN;
 const originalKey = process.env.ELEVENLABS_API_KEY;
 const realSetTimeout = globalThis.setTimeout;
@@ -198,6 +207,11 @@ async function waitForSocket() {
 
 try {
   globalThis.WebSocket = FakeSocket;
+  const httpCalls = [];
+  globalThis.fetch = async (url, options) => {
+    httpCalls.push({ url: String(url), options, body: JSON.parse(options.body) });
+    return new Response(FakeSocket.audioBytes, { status: 200, headers: { "content-type": "audio/mpeg" } });
+  };
   process.env.TRACER_ADMIN_TOKEN = "admin-token-value";
   process.env.ELEVENLABS_API_KEY = "server-side-elevenlabs-key";
   automation.allow = false;
@@ -279,6 +293,14 @@ try {
   assert.equal(invalidObject.status, 400);
   assert.equal(invalidObject.body.error, "invalid_json_object");
 
+  const unsupportedModel = await post({
+    authorization: "Bearer admin-token-value",
+    body: validBody({ modelId: "unknown_model" }),
+  });
+  assert.equal(unsupportedModel.status, 400);
+  assert.equal(unsupportedModel.body.error, "unsupported_model_id");
+  assert.equal(FakeSocket.sockets.length, 0);
+
   for (const text of ["", "   ", "あ".repeat(1201)]) {
     const rejected = await post({
       authorization: "Bearer admin-token-value",
@@ -321,6 +343,23 @@ try {
   const httpBody = Buffer.from(audio.body).toString("utf8");
   assert.equal(httpBody.includes("server-side-elevenlabs-key"), false);
   assert.equal(httpBody.includes("admin-token-value"), false);
+
+  const standardV4 = await post({
+    authorization: "Bearer admin-token-value",
+    body: validBody({ modelId: "eleven_v4" }),
+  });
+  assert.equal(standardV4.status, 200);
+  assert.equal(standardV4.headers.get("x-ai-voice-model"), "eleven_v4");
+  assert.equal(FakeSocket.sockets.length, 0);
+  assert.equal(httpCalls.length, 1);
+  assert.equal(httpCalls[0].url, "https://api.elevenlabs.io/v1/text-to-dialogue/stream");
+  assert.equal(httpCalls[0].options.method, "POST");
+  assert.equal(httpCalls[0].options.headers["xi-api-key"], "server-side-elevenlabs-key");
+  assert.deepEqual(httpCalls[0].body, {
+    model_id: "eleven_v4",
+    output_format: "mp3_44100_128",
+    inputs: [{ text: "こんにちは。清美の音声テストです。", voice_id: KIYOMI_VOICE_ID }],
+  });
 
   automation.allow = true;
   automation.calls = 0;
@@ -394,6 +433,7 @@ try {
   assert.equal(FakeSocket.sockets.length, 1);
 } finally {
   globalThis.WebSocket = originalWebSocket;
+  globalThis.fetch = originalFetch;
   globalThis.setTimeout = realSetTimeout;
   globalThis.clearTimeout = realClearTimeout;
   if (originalAdmin === undefined) delete process.env.TRACER_ADMIN_TOKEN;

@@ -1,10 +1,10 @@
-# TRACER AI-live: Eleven v4 Turbo
+# TRACER AI-live: Eleven v4 / v4 Turbo
 
-Optional admin-authenticated endpoint for manually generating a short Japanese voice sample with ElevenLabs. It does not change the browser preview, enable public use, connect TikTok, or automatically synthesize replies to live comments.
+Optional admin-authenticated endpoint for manually generating a short Japanese voice sample with ElevenLabs. The preview supports both `eleven_v4` and `eleven_v4_turbo` using the same authorized voice ID and test text. It does not enable public use, connect TikTok, or automatically synthesize replies to live comments.
 
 ## Setup
 
-1. Confirm your ElevenLabs account can use the `eleven_v4_turbo` model and check current API pricing/credits.
+1. Confirm your ElevenLabs account can use both `eleven_v4` and `eleven_v4_turbo` and check current API pricing/credits.
 2. Add the API key to the server environment as `ELEVENLABS_API_KEY`; never use a `NEXT_PUBLIC_` variable or commit the key.
 3. Select a voice ID you own or have permission to use. Do not clone or impersonate a real person's voice without consent.
 4. Keep this route behind the existing automation authorization.
@@ -22,11 +22,11 @@ Request JSON:
 }
 ```
 
-Returns MP3 audio on success. Maximum input is 1,200 characters; the provider connection times out after 25 seconds and is not automatically retried. The model and output format are fixed server-side. The endpoint accepts a voice ID, not an arbitrary model ID.
+Returns MP3 audio on success. Maximum input is 1,200 characters; the provider connection times out after 25 seconds and is not automatically retried. The browser offers only the two allowlisted model IDs; the server rejects every other model ID. The default is `eleven_v4_turbo`. The endpoint accepts an authorized voice ID and a fixed model allowlist, not an arbitrary provider model.
 
 ## Transport
 
-`eleven_v4_turbo` must use ElevenLabs' Text to Dialogue WebSocket, not the regular `/v1/text-to-speech/{voice_id}` REST endpoint. The WebSocket registers one voice, accepts dialogue inputs, and emits base64 audio chunks. The route should collect chunks until the final response before returning an MP3.
+Standard `eleven_v4` uses the HTTP Text to Dialogue stream endpoint (`POST /v1/text-to-dialogue/stream`) and returns the streamed MP3 response. `eleven_v4_turbo` uses the Text to Dialogue WebSocket (`/v1/text-to-dialogue/stream-input`) for low-latency generation; it registers the authorized voice, sends the dialogue input, and collects audio chunks until the final marker. Both transports receive the selected model ID server-side. The official guidance recommends standard v4 for content creation/long-form audio and v4 Turbo for real-time agents.
 
 ## Cost and safety
 
