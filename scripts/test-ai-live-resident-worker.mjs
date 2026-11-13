@@ -370,9 +370,9 @@ assert.equal(bgmMade.status, 0, bgmMade.stderr);
 const speechMade = spawnSync("ffmpeg", [
   "-y", "-hide_banner", "-loglevel", "error",
   "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=0.6",
-  "-f", "lavfi", "-i", "aevalsrc=sin(2*PI*3000*t):s=48000:d=1",
+  "-f", "lavfi", "-i", "aevalsrc=0.25*sin(2*PI*3000*t):s=48000:d=1",
   "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=1.2",
-  "-f", "lavfi", "-i", "aevalsrc=sin(2*PI*3000*t):s=48000:d=1",
+  "-f", "lavfi", "-i", "aevalsrc=0.25*sin(2*PI*3000*t):s=48000:d=1",
   "-f", "lavfi", "-i", "aevalsrc=0:s=48000:d=1.2",
   "-filter_complex", "[0:a][1:a][2:a][3:a][4:a]concat=n=5:v=0:a=1",
   "-c:a", "pcm_s16le", speechFile,
