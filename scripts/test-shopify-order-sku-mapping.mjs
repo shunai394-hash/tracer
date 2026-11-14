@@ -5,7 +5,21 @@ import {
   getOrderSkuLookup,
   resolveShopifyOrderSkus,
   tracerSkuForListing,
+  shopifyVariantIdCandidates,
 } from "../lib/shopify/order-sku-mapping.ts";
+
+test("normalizes exact Shopify REST and GraphQL variant identifiers", () => {
+  assert.deepEqual(shopifyVariantIdCandidates(46626337488940), [
+    "46626337488940",
+    "gid://shopify/ProductVariant/46626337488940",
+  ]);
+  assert.deepEqual(shopifyVariantIdCandidates("gid://shopify/ProductVariant/46626337488940"), [
+    "46626337488940",
+    "gid://shopify/ProductVariant/46626337488940",
+  ]);
+  assert.deepEqual(shopifyVariantIdCandidates(""), []);
+  assert.deepEqual(shopifyVariantIdCandidates("not-a-shopify-id"), []);
+});
 
 test("uses the same stable listing SKU across channels and resolves legacy supplier SKUs", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: "variant-42", supplier_product_id: "product-7" };
@@ -69,4 +83,20 @@ test("paid-order webhook resolves legacy TRC supplier-variant SKUs only by exact
   assert.match(paidWebhook, /\.eq\("source_status", "verified"\)/);
   assert.match(paidWebhook, /tracer_sku_mapping_ambiguous/);
   assert.match(paidWebhook, /tracer_sku_mapping_missing/);
+  assert.match(paidWebhook, /variant_id\?: string \| number \| null/,
+    "paid webhook must retain Shopify's exact variant ID");
+  assert.match(paidWebhook, /from\("channel_listing_external_aliases"\)/,
+    "paid webhook must resolve retired Shopify variants through explicit aliases");
+  assert.match(paidWebhook, /\.in\("external_variant_id", candidateIds\)/,
+    "variant alias lookup must use exact normalized Shopify variant identifiers");
+  assert.match(paidWebhook, /\.eq\("status", "published"\)/,
+    "current variant IDs must resolve only against published listings");
+  assert.match(paidWebhook, /tracer_variant_mapping_missing/,
+    "an unmatched supplied variant ID must fail closed rather than falling through to another SKU mapping");
+  assert.match(paidWebhook, /if \(!rawShopifyVariantId\)/,
+    "SKU fallback is permitted only when Shopify omits the variant ID");
+  assert.match(paidWebhook, /tracer_shopify_variant_id_invalid/,
+    "malformed Shopify variant IDs must be rejected");
+  assert.match(paidWebhook, /tracer_variant_alias_lookup_failed/,
+    "alias lookup failures must stop order ingestion");
 });
