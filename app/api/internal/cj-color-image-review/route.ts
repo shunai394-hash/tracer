@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "supplier_offer_read_failed" }, { status: 503 });
   }
 
-  const expectedByVid = new Map(TARGETS.map((row) => [row.vid, row]));
+  const expectedByVid = new Map<string, (typeof TARGETS)[number]>(TARGETS.map((row) => [row.vid, row]));
   const matchedOffers = (offers ?? []).filter((row) =>
     expectedByVid.has(String(row.supplier_variant_id)) &&
     expectedByVid.get(String(row.supplier_variant_id))?.pid === String(row.supplier_product_id),
