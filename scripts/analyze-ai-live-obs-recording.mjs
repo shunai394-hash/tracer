@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -54,7 +53,7 @@ function measure(start, length) {
     "-vn", "-af", "volumedetect", "-f", "null", "-",
   ]);
   const log = `${result.stdout}\n${result.stderr}`;
-  const match = log.match(/mean_volume:\\s*(-?Infinity|-?\\d+(?:\\.\\d+)?)\\s*dB/i);
+  const match = log.match(/mean_volume:\s*(-?Infinity|-?\d+(?:\.\d+)?)\s*dB/i);
   if (!match) fail("Audio measurement unavailable in one of the selected windows");
   return match[1].toLowerCase().includes("infinity") ? -Infinity : Number(match[1]);
 }
