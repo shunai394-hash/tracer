@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const { data: offers, error: offersError } = await db
     .from("supplier_offers")
     .select("variant_id,supplier_product_id,supplier_variant_id")
-    .eq("supplier_code", "CJ")
+    .eq("supplier_code", "cj")
     .in("supplier_product_id", productIds);
 
   if (offersError) {
