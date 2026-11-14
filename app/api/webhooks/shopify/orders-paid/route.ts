@@ -72,13 +72,15 @@ export async function POST(request: Request) {
       const rawShopifyVariantId = String(line.variant_id ?? "").trim();
       if (rawShopifyVariantId) {
         const numericShopifyVariantId = rawShopifyVariantId.replace(/^gid:\/\/shopify\/ProductVariant\//, "");
+        if (!/^\d+$/.test(numericShopifyVariantId)) {
+          throw new Error("tracer_shopify_variant_id_invalid:" + rawShopifyVariantId);
+        }
         const candidateIds = [...new Set([
-          rawShopifyVariantId,
           numericShopifyVariantId,
           "gid://shopify/ProductVariant/" + numericShopifyVariantId
         ])];
         const currentByVariant = await db.from("channel_listings")
-          .select("variant_id").eq("channel", "shopify")
+          .select("variant_id").eq("channel", "shopify").eq("status", "published")
           .in("external_variant_id", candidateIds);
         if (currentByVariant.error) throw new Error("tracer_variant_mapping_read_failed:" + currentByVariant.error.message);
         listingRows = currentByVariant.data ?? [];
@@ -89,10 +91,16 @@ export async function POST(request: Request) {
           if (aliasByVariant.error) throw new Error("tracer_variant_alias_lookup_failed:" + aliasByVariant.error.message);
           listingRows = aliasByVariant.data ?? [];
         }
+        // A supplied Shopify variant ID is authoritative. If neither a current
+        // listing nor an explicit historical alias exists, do not silently map
+        // the order to a different variant merely because its SKU matches.
+        if (listingRows.length === 0) {
+          throw new Error("tracer_variant_mapping_missing:" + rawShopifyVariantId);
+        }
       }
-      // SKU is a compatibility fallback only when the exact Shopify variant ID
-      // has no current listing or historical alias. Never use title matching.
-      if (listingRows.length === 0) {
+      // SKU fallback is reserved for webhook payloads that omit variant_id.
+      // Never use title matching.
+      if (!rawShopifyVariantId) {
         const exact = await db.from("channel_listings")
           .select("variant_id").eq("channel", "shopify").eq("external_sku", sku).eq("status", "published");
         if (exact.error) throw new Error("tracer_sku_mapping_read_failed:" + exact.error.message);
