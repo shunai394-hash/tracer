@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyShopifyWebhookHmac } from "@/lib/shopify/admin";
 import { ingestPaidOrder } from "@/lib/commerce/core";
+import { shopifyVariantIdCandidates } from "@/lib/shopify/order-sku-mapping";
 
 export const runtime = "nodejs";
 
@@ -71,14 +72,10 @@ export async function POST(request: Request) {
       let listingRows: Array<{ variant_id: string }> = [];
       const rawShopifyVariantId = String(line.variant_id ?? "").trim();
       if (rawShopifyVariantId) {
-        const numericShopifyVariantId = rawShopifyVariantId.replace(/^gid:\/\/shopify\/ProductVariant\//, "");
-        if (!/^\d+$/.test(numericShopifyVariantId)) {
+        const candidateIds = shopifyVariantIdCandidates(rawShopifyVariantId);
+        if (candidateIds.length === 0) {
           throw new Error("tracer_shopify_variant_id_invalid:" + rawShopifyVariantId);
         }
-        const candidateIds = [...new Set([
-          numericShopifyVariantId,
-          "gid://shopify/ProductVariant/" + numericShopifyVariantId
-        ])];
         const currentByVariant = await db.from("channel_listings")
           .select("variant_id").eq("channel", "shopify").eq("status", "published")
           .in("external_variant_id", candidateIds);
