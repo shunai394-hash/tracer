@@ -1,0 +1,109 @@
+name: CJ 3-product color image visual review
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cj-color-image-review.yml
+      - app/api/internal/cj-color-image-review/route.ts
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cj-color-image-visual-review-15
+  cancel-in-progress: false
+
+jobs:
+  visual-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Fetch authenticated, fixed-scope image manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://tracer-pied-alpha.vercel.app
+          token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          code="$(curl -sS -o image-manifest.json -w "%{http_code}" --max-time 45 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/cj-color-image-review" || true)"
+          echo "Read-only image manifest HTTP $code"
+          python3 - <<'PY'
+          import json,sys
+          d=json.load(open("image-manifest.json",encoding="utf-8"))
+          print(json.dumps({k:d.get(k) for k in ("ok","readOnly","targetProductCount","checked","exactSkuCount","identityVerifiedCount","imageCount")},ensure_ascii=False,indent=2))
+          if d.get("ok") is not True or d.get("readOnly") is not True or d.get("checked") != 15:
+              print(json.dumps(d,ensure_ascii=False,indent=2))
+              sys.exit("fixed_scope_manifest_incomplete")
+          PY
+
+      - name: Download and assemble exact-variant contact sheets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages pillow
+          python3 - <<'PY'
+          import csv, io, json, os, urllib.request
+          from collections import defaultdict
+          from PIL import Image, ImageDraw, ImageOps
+
+          ALLOWED = {"cf.cjdropshipping.com", "oss-cf.cjdropshipping.com"}
+          data = json.load(open("image-manifest.json", encoding="utf-8"))
+          os.makedirs("color-image-review/images", exist_ok=True)
+          groups = defaultdict(list)
+
+          class SameHostHttpsRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  from urllib.parse import urlsplit
+                  parsed = urlsplit(newurl)
+                  if parsed.scheme != "https" or parsed.hostname not in ALLOWED or parsed.username or parsed.password or parsed.port:
+                      raise RuntimeError("blocked_image_redirect")
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+          opener = urllib.request.build_opener(SameHostHttpsRedirect)
+          with open("color-image-review/variant-image-map.csv", "w", newline="", encoding="utf-8-sig") as f:
+              writer = csv.writer(f)
+              writer.writerow(["supplier_product_id","variant_name","supplier_variant_id","sku","title","image_url"])
+              for row in data["rows"]:
+                  from urllib.parse import urlsplit
+                  parsed = urlsplit(row["imageUrl"])
+                  if parsed.scheme != "https" or parsed.hostname not in ALLOWED or parsed.username or parsed.password or parsed.port:
+                      raise SystemExit("blocked_image_host:" + str(row["supplierVariantId"]))
+                  request = urllib.request.Request(row["imageUrl"], headers={"User-Agent":"TRACER-CJ-Color-Image-Review/1.0"})
+                  with opener.open(request, timeout=30) as response:
+                      payload = response.read(8 * 1024 * 1024 + 1)
+                      content_type = response.headers.get("Content-Type", "")
+                  if len(payload) > 8 * 1024 * 1024 or not content_type.lower().startswith("image/"):
+                      raise SystemExit("invalid_or_oversized_image:" + str(row["supplierVariantId"]))
+                  opened = Image.open(io.BytesIO(payload))
+                  opened.load()
+                  image = opened.convert("RGB")
+                  filename = f'{row["supplierProductId"]}_{row["supplierVariantId"]}.jpg'
+                  image.save(f"color-image-review/images/{filename}", quality=90)
+                  groups[row["supplierProductId"]].append((row, image.copy()))
+                  writer.writerow([row["supplierProductId"],row["variantName"],row["supplierVariantId"],row["sku"],row["title"],row["imageUrl"]])
+
+          for pid, items in groups.items():
+              cell_w, cell_h, cols = 320, 340, 3
+              row_count = (len(items) + cols - 1) // cols
+              sheet = Image.new("RGB", (cols * cell_w, row_count * cell_h), "white")
+              draw = ImageDraw.Draw(sheet)
+              for index, (row, source) in enumerate(items):
+                  x, y = (index % cols) * cell_w, (index // cols) * cell_h
+                  thumb = ImageOps.contain(source, (cell_w - 24, 250))
+                  sheet.paste(thumb, (x + (cell_w-thumb.width)//2, y + 8 + (250-thumb.height)//2))
+                  draw.text((x+10,y+270), str(row["variantName"])[:36], fill="black")
+                  draw.text((x+10,y+290), str(row["sku"])[:42], fill="black")
+                  draw.text((x+10,y+310), "VID " + str(row["supplierVariantId"]), fill="black")
+              sheet.save(f"color-image-review/{pid}.jpg", quality=92)
+
+          print(json.dumps({"products":len(groups),"images":sum(map(len,groups.values())),"contactSheets":[f"{pid}.jpg" for pid in sorted(groups)]},ensure_ascii=False))
+          PY
+
+      - name: Upload contact sheets and original variant images
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracer-cj-color-image-review-15
+          path: color-image-review/
+          retention-days: 3
