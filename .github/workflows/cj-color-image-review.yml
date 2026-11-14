@@ -76,9 +76,9 @@ jobs:
                       content_type = response.headers.get("Content-Type", "")
                   if len(payload) > 8 * 1024 * 1024 or not content_type.lower().startswith("image/"):
                       raise SystemExit("invalid_or_oversized_image:" + str(row["supplierVariantId"]))
-                  image = Image.open(io.BytesIO(payload)).convert("RGB")
-                  image.verify()
-                  image = Image.open(io.BytesIO(payload)).convert("RGB")
+                  opened = Image.open(io.BytesIO(payload))
+                  opened.load()
+                  image = opened.convert("RGB")
                   filename = f'{row["supplierProductId"]}_{row["supplierVariantId"]}.jpg'
                   image.save(f"color-image-review/images/{filename}", quality=90)
                   groups[row["supplierProductId"]].append((row, image.copy()))
