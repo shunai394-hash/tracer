@@ -18,6 +18,8 @@ jobs:
       CJ_API_KEY: ci-cj-key
     steps:
       - uses: actions/checkout@v4
+      - name: Build resident AI live worker container
+        run: docker build -f worker/Dockerfile -t tracer-ai-live-worker:ci .
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -49,7 +51,7 @@ jobs:
       - name: Set up disposable local PostgreSQL for integration tests
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql postgresql-client
+          sudo apt-get install -y postgresql postgresql-client ffmpeg
           PG_VERSION="$(pg_lsclusters --no-header | awk 'NR == 1 { print $1 }')"
           test -n "$PG_VERSION"
           sudo pg_ctlcluster "$PG_VERSION" main start
@@ -148,5 +150,15 @@ jobs:
         run: npm run test:storefront-color-family
       - name: Test Shopify color-variant identity safety
         run: node --experimental-strip-types --no-warnings scripts/test-shopify-variant-identity.mjs
+      - name: Test AI live resident worker
+        run: npm run test:ai-live-resident-worker
+      - name: Test actual loopback RTMP publish and receive
+        run: npm run test:ai-live-loopback-rtmp
+      - name: Test OBS loopback ingest and speech ducking
+        run: npm run test:ai-live-obs-loopback
+      - name: Test localhost HLS relay without claiming OBS playback
+        run: npm run test:ai-live-obs-local-relay
+      - name: Record whether OBS Studio is installed
+        run: npm run test:ai-live-obs-studio-presence
       - run: npm run lint
       - run: npm run build

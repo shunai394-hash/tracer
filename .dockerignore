@@ -1,0 +1,6 @@
+*
+!lib
+!lib/ai-live
+!lib/ai-live/**
+!worker
+!worker/ai-live-resident.mjs
