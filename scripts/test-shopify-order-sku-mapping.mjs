@@ -5,7 +5,21 @@ import {
   getOrderSkuLookup,
   resolveShopifyOrderSkus,
   tracerSkuForListing,
+  shopifyVariantIdCandidates,
 } from "../lib/shopify/order-sku-mapping.ts";
+
+test("normalizes exact Shopify REST and GraphQL variant identifiers", () => {
+  assert.deepEqual(shopifyVariantIdCandidates(46626337488940), [
+    "46626337488940",
+    "gid://shopify/ProductVariant/46626337488940",
+  ]);
+  assert.deepEqual(shopifyVariantIdCandidates("gid://shopify/ProductVariant/46626337488940"), [
+    "46626337488940",
+    "gid://shopify/ProductVariant/46626337488940",
+  ]);
+  assert.deepEqual(shopifyVariantIdCandidates(""), []);
+  assert.deepEqual(shopifyVariantIdCandidates("not-a-shopify-id"), []);
+});
 
 test("uses the same stable listing SKU across channels and resolves legacy supplier SKUs", () => {
   const listing = { id: "11111111-1111-4111-8111-111111111111", supplier_variant_id: "variant-42", supplier_product_id: "product-7" };
