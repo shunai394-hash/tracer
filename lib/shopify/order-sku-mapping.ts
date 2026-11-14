@@ -71,6 +71,6 @@ export function shopifyVariantIdCandidates(value: unknown): string[] {
   const raw = String(value ?? "").trim();
   if (!raw) return [];
   const numericId = raw.replace(/^gid:\/\/shopify\/ProductVariant\//, "");
-  if (!/^\\d+$/.test(numericId)) return [];
+  if (!/^\d+$/.test(numericId)) return [];
   return [...new Set([numericId, `gid://shopify/ProductVariant/${numericId}`])];
 }
