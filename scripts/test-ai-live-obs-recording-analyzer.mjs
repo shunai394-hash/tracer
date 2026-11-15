@@ -21,7 +21,10 @@ try {
   const generated = run("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i",
-    "aevalsrc=if(lt(t\\,5)\\,0.2*sin(2*PI*440*t)\\,0):s=48000:d=10",
+    "sine=frequency=440:sample_rate=48000:duration=5",
+    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+    "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1",
+    "-t", "10",
     "-c:a", "pcm_s16le", crashFile,
   ]);
   assert.equal(generated.status, 0, generated.stderr);
