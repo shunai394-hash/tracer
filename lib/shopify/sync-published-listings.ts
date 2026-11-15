@@ -610,6 +610,10 @@ async function syncListingRows(
           // Reuse a saved variant ID only when the saved product ID was the one verified above.
           // Otherwise use an exact SKU recovery match, which admin.ts verifies against the SKU.
           variantId: existingById?.id === existing.id ? (row.shopify_variant_id || null) : recoveredVariantId,
+          // Permit a legacy supplier SKU only when the persisted Shopify product
+          // ID was fetched and matched above; admin.ts still resolves the exact
+          // saved variant ID inside that product before normalizing its SKU.
+          allowSavedVariantIdSkuMismatch: existingById?.id === existing.id && Boolean(row.shopify_variant_id),
           sku: productInput.sku,
           imageUrl: existing.media?.nodes?.length ? null : row.image_url,
         });
