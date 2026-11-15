@@ -3,12 +3,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import {
-  activateShopifyProduct,
   createShopifyColorFamily,
-  ensureShopifyProductPublished,
   readShopifyVariantInventorySnapshot,
   shopifyGraphQL,
-  unpublishShopifyProduct,
 } from "@/lib/shopify/admin";
 
 export const runtime = "nodejs";
@@ -57,7 +54,6 @@ export async function POST(request: Request) {
 
   const db = createSupabaseAdminClient();
   const now = new Date();
-  const nowIso = now.toISOString();
   const expectedByVid = new Map<string, (typeof FAMILY)[number]>(FAMILY.map((item) => [item.vid, item]));
 
   try {
@@ -215,10 +211,6 @@ export async function POST(request: Request) {
       return { ...variant, inventory: snapshot.available };
     });
 
-    const storeDomain = String(process.env.SHOPIFY_STORE_DOMAIN ?? "").trim()
-      .replace(/^https?:\/\//i, "").replace(/\/$/, "");
-    if (!storeDomain) throw new Error("shopify_store_domain_missing");
-
     const created = await createShopifyColorFamily({
       inventoryLocationId,
       title: String(product.title_ja ?? "").trim(),
@@ -245,53 +237,24 @@ export async function POST(request: Request) {
       }
     }
 
-    await activateShopifyProduct(created.productId);
-    const publication = await ensureShopifyProductPublished(created.productId);
-    if (!publication.published) throw new Error("color_family_new_parent_publish_unverified");
-
-    const resultBySku = new Map(created.variants.map((row) => [row.sku, row]));
-    const productUrl = "https://" + storeDomain + "/products/" + HANDLE;
-    for (const variant of variantsForShopify) {
-      const createdVariant = resultBySku.get(variant.sku);
-      if (!createdVariant) throw new Error("color_family_new_shopify_variant_missing:" + variant.sku);
-      const { error } = await db.from("channel_listings").update({
-        external_product_id: created.productId,
-        external_variant_id: createdVariant.id,
-        external_sku: variant.sku,
-        status: "published",
-        selling_price: variant.price,
-        published_url: productUrl,
-        last_error: null,
-        last_synced_at: nowIso,
-        updated_at: nowIso,
-      }).eq("channel", "shopify").eq("variant_id", variant.canonicalVariantId);
-      if (error) throw new Error("color_family_channel_listing_update_failed:" + variant.sku + ":" + error.message);
-    }
-
-    // Only after the new parent is live and all canonical channel rows point to it,
-    // hide the former standalone pages. Historical IDs remain resolvable via aliases.
-    const oldProductIds = [...new Set(FAMILY.map((item) => item.oldProductId))];
-    const oldUnpublishResults = [];
-    for (const oldProductId of oldProductIds) {
-      const result = await unpublishShopifyProduct(oldProductId);
-      if (result.published) throw new Error("color_family_old_product_still_published:" + oldProductId);
-      oldUnpublishResults.push({ productId: oldProductId, published: result.published });
-    }
-
+    // Safety gate: create and verify a DRAFT only. Keep every legacy
+    // Shopify product published and leave channel_listings untouched until
+    // a separate, explicitly approved cutover is performed.
     return NextResponse.json({
       ok: true,
-      status: "PUBLISHED",
+      status: "DRAFT_READY",
       supplierProductId: SUPPLIER_PRODUCT_ID,
       productId: created.productId,
-      productUrl,
       variantCount: created.variants.length,
       variants: created.variants,
       inventoryLocationId,
       inventoryPerVariant: snapshots.map((row) => ({ variantId: row.variantId, available: row.available })),
-      oldProductsUnpublished: oldUnpublishResults,
+      oldProductsChanged: false,
+      channelListingsChanged: false,
+      publicationRequiredForCutover: true,
       aliasesPreserved: true,
       basePublication: "unchanged_by_design_per_variant_image_api_limitation",
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[TRACER SHOPIFY NINE-COLOR FAMILY MIGRATION FAILED]", message);
