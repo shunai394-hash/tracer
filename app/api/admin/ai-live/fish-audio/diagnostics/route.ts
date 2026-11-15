@@ -12,6 +12,12 @@ const TIMEOUT_MS = 12_000;
 const PAGE_SIZE = 100;
 const MAX_MODEL_PAGES = 10;
 
+// Read-only checks for the two user-registered drama voices involved in the current episode.
+const REGISTERED_DIAGNOSTIC_VOICES = [
+  { id: "fb10beaad13d434680248bfa5eeb566f", title: "あかり" },
+  { id: "64eb21d34a75439f8cedfcd1640e838f", title: "まさと（朝のあかり）" },
+] as const;
+
 function authorizedAdminToken(request: Request): boolean {
   const expected = process.env.TRACER_ADMIN_TOKEN;
   const authorization = request.headers.get("authorization") ?? "";
@@ -158,6 +164,30 @@ export async function GET(request: Request) {
     }
   }));
 
+  const registeredVoiceChecks = await Promise.all(REGISTERED_DIAGNOSTIC_VOICES.map(async (voice) => {
+    const [voiceResult, detailResult] = await Promise.allSettled([
+      resolveFishAudioModelVoice(apiKey, voice.id, voice.title),
+      fishGet(`/model/${encodeURIComponent(voice.id)}`, apiKey),
+    ]);
+    const detail = detailResult.status === "fulfilled" && detailResult.value && typeof detailResult.value === "object"
+      ? detailResult.value as Record<string, unknown>
+      : null;
+    return {
+      title: voice.title,
+      id: voice.id,
+      accessible: voiceResult.status === "fulfilled" && Boolean(voiceResult.value),
+      status: voiceResult.status === "fulfilled" && voiceResult.value ? "accessible" : "not_accessible",
+      providerDetailStatus: detailResult.status === "fulfilled" ? "available" : "lookup_failed",
+      provider: detail ? {
+        title: typeof detail.title === "string" ? detail.title.slice(0, 120) : null,
+        type: typeof detail.type === "string" ? detail.type : null,
+        state: typeof detail.state === "string" ? detail.state : null,
+        visibility: typeof detail.visibility === "string" ? detail.visibility : null,
+        updatedAt: typeof detail.updated_at === "string" ? detail.updated_at : null,
+      } : null,
+    };
+  }));
+
   const checks = {
     apiCredit: creditResult.status === "fulfilled"
       ? { ok: true, balance: typeof credit?.credit === "string" || typeof credit?.credit === "number" ? String(credit.credit) : null, hasFreeCredit: typeof credit?.has_free_credit === "boolean" ? credit.has_free_credit : null }
@@ -177,6 +207,7 @@ export async function GET(request: Request) {
     checkedAt: new Date().toISOString(),
     account: checks,
     assignedCharacterVoices,
+    registeredVoiceChecks,
     interpretation: allReadable
       ? "Fish Audio account, API credit, membership package, and owned voice models were read. The model-creation quota itself is not exposed by these read endpoints; if the API balance is positive and 蒼真 is absent, ask Fish Audio support to inspect the API key's model-creation entitlement before paying."
       : "One or more read-only checks failed. Review each provider status; do not retry voice uploads until the API key account and API credit are confirmed.",
