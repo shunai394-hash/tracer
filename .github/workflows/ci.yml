@@ -160,5 +160,7 @@ jobs:
         run: npm run test:ai-live-obs-local-relay
       - name: Record whether OBS Studio is installed
         run: npm run test:ai-live-obs-studio-presence
+      - name: Test OBS recording analyzer against synthetic audio
+        run: npm run test:ai-live-obs-recording-analyzer
       - run: npm run lint
       - run: npm run build
