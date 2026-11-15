@@ -59,20 +59,6 @@ export function ProductVariantSelector({
             <div className="flex aspect-[4/5] w-full items-center justify-center px-6 text-center text-sm text-neutral-500">このカラーの画像は確認できません</div>
           )}
         </div>
-        {colorFamily ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {choices.map((choice) => (
-              <button key={choice.id} type="button" onClick={() => setSelectedId(choice.id)} aria-label={`${choice.label || "カラー"}を選択`} aria-pressed={selected.id === choice.id} className={`w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left ${selected.id === choice.id ? "border-[#3B241A]" : "border-transparent"}`}>
-                {choice.imageUrl ? (
-                  <ProductImage src={choice.imageUrl} alt={choice.label || listing.title} className="aspect-square w-full object-cover" />
-                ) : (
-                  <span className="flex aspect-square items-center justify-center px-1 text-center text-[10px] text-neutral-500">画像未確認</span>
-                )}
-                <span className="block truncate px-2 py-1.5 text-center text-xs text-[#3B241A]">{choice.label || "未確認"}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
       <div>
         {categoryLabel ? <p className="text-[11px] tracking-[0.3em] text-[#9A6B5B]">{categoryLabel}</p> : null}
