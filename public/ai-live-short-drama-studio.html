@@ -513,6 +513,14 @@ $("fishDiagnostics").addEventListener("click",async()=>{
    }
    if(!(provider.samples||[]).length)lines.push("  登録サンプル：なし");
   }
+  lines.push("", "【第1話の登録ボイスID直接照合（生成なし）】");
+  for(const voice of data.registeredVoiceChecks||[]){
+   lines.push("・"+voice.title+"／"+voice.id+"／"+(voice.status==="accessible"?"接続可能":voice.status==="not_accessible"?"Fish Audio側で参照不可":"照会エラー"));
+   const provider=voice.provider;
+   if(!provider){lines.push("  Fish Audioモデル詳細：取得失敗");continue;}
+   lines.push("  Fish Audio登録情報："+(provider.title||"名称不明")+"／type："+(provider.type||"不明")+"／state："+(provider.state||"不明")+"／visibility："+(provider.visibility||"不明"));
+   lines.push("  最終更新："+(provider.updatedAt||"不明"));
+  }
   lines.push("",data.interpretation||"");
   output.textContent=lines.join("\n");
  }catch(error){output.textContent="診断エラー："+error.message;}
