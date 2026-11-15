@@ -81,3 +81,26 @@ test("permits a single legacy variant when no saved ID or exact SKU exists", () 
     matchedBy: "single_variant",
   });
 });
+
+test("allows SKU normalization only when the caller explicitly trusts a saved variant ID", () => {
+  const savedSupplierVariant = { id: "gid://shopify/ProductVariant/201", sku: "CJNS192984501AZ" };
+  const sibling = { id: "gid://shopify/ProductVariant/202", sku: "CJNS192984502BY" };
+  assert.deepEqual(
+    resolveShopifyVariantIdentity([savedSupplierVariant, sibling], "TRC-listing-201", savedSupplierVariant.id),
+    { ok: false, reason: "saved_variant_sku_mismatch" },
+  );
+  assert.deepEqual(
+    resolveShopifyVariantIdentity([savedSupplierVariant, sibling], "TRC-listing-201", savedSupplierVariant.id, { allowSavedIdSkuMismatch: true }),
+    { ok: true, variant: savedSupplierVariant, matchedBy: "saved_id" },
+  );
+});
+
+test("trusted saved ID does not bypass duplicate expected SKU ambiguity", () => {
+  const one = { id: "gid://shopify/ProductVariant/301", sku: "CJNS-one" };
+  const two = { id: "gid://shopify/ProductVariant/302", sku: "TRC-listing" };
+  const three = { id: "gid://shopify/ProductVariant/303", sku: "TRC-listing" };
+  assert.deepEqual(
+    resolveShopifyVariantIdentity([one, two, three], "TRC-listing", one.id, { allowSavedIdSkuMismatch: true }),
+    { ok: false, reason: "variant_sku_ambiguous" },
+  );
+});
