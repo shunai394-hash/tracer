@@ -5,26 +5,26 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-// Fixed review scope: three known color families and their exact CJ variant IDs.
+// Fixed review scope: the second batch of three known CJ variant families and their exact variant IDs.
 // This endpoint is read-only and never accepts caller-supplied product IDs or URLs.
 const TARGETS = [
-  { pid: "1454782204398931968", vid: "1454782204449263616", sku: "CJNS133704001AZ", name: "Blue" },
-  { pid: "1454782204398931968", vid: "1454782204453457920", sku: "CJNS133704002BY", name: "Green" },
-  { pid: "1454782204398931968", vid: "1454782204457652224", sku: "CJNS133704003CX", name: "Orange" },
-  { pid: "1454782204398931968", vid: "1454782204461846528", sku: "CJNS133704004DW", name: "Black" },
-  { pid: "1454782204398931968", vid: "1454782204466040832", sku: "CJNS133704005EV", name: "Gray" },
+  { pid: "2607241016071620500", vid: "2607241016071621300", sku: "CJYD300565901AZ", name: "Blue" },
+  { pid: "2607241016071620500", vid: "2607241016071622300", sku: "CJYD300565902BY", name: "Blue / Green" },
+  { pid: "2607241016071620500", vid: "2607241016071624300", sku: "CJYD300565904DW", name: "Yellow / Purple" },
+  { pid: "2607241016071620500", vid: "2607241016071624800", sku: "CJYD300565905EV", name: "Khaki" },
+  { pid: "2607241016071620500", vid: "2607241016071625500", sku: "CJYD300565906FU", name: "Pink" },
 
-  { pid: "2606090341151608200", vid: "2606090341151608900", sku: "CJNS292694701AZ", name: "Blue" },
-  { pid: "2606090341151608200", vid: "2606090341151609400", sku: "CJNS292694702BY", name: "Green" },
-  { pid: "2606090341151608200", vid: "2606090341151609900", sku: "CJNS292694703CX", name: "Pink" },
-  { pid: "2606090341151608200", vid: "2606090341161600400", sku: "CJNS292694704DW", name: "Black" },
-  { pid: "2606090341151608200", vid: "2606090341161600800", sku: "CJNS292694705EV", name: "Brown" },
+  { pid: "2610130715191608300", vid: "2610130715201600400", sku: "CJNS325262901AZ", name: "Variant 1" },
+  { pid: "2610130715191608300", vid: "2610130715201600403", sku: "CJNS325262904DW", name: "White" },
+  { pid: "2610130715191608300", vid: "2610130715201600404", sku: "CJNS325262905EV", name: "Red" },
+  { pid: "2610130715191608300", vid: "2610130715201600405", sku: "CJNS325262906FU", name: "Blue" },
+  { pid: "2610130715191608300", vid: "2610130715201600406", sku: "CJNS325262907GT", name: "Green" },
 
-  { pid: "2608270931501632200", vid: "2608270931501633200", sku: "CJNS310228901AZ", name: "Variant 1" },
-  { pid: "2608270931501632200", vid: "2608270931501633201", sku: "CJNS310228902BY", name: "Variant 2" },
-  { pid: "2608270931501632200", vid: "2608270931501633202", sku: "CJNS310228903CX", name: "Black" },
-  { pid: "2608270931501632200", vid: "2608270931501633203", sku: "CJNS310228904DW", name: "Blue" },
-  { pid: "2608270931501632200", vid: "2608270931501633204", sku: "CJNS310228905EV", name: "Black / Gray" },
+  { pid: "1541796973395849216", vid: "1541796973794308096", sku: "CJST151297001AZ", name: "White" },
+  { pid: "1541796973395849216", vid: "1541796973819473920", sku: "CJST151297002BY", name: "Green" },
+  { pid: "1541796973395849216", vid: "1541796973823668224", sku: "CJST151297003CX", name: "Blue" },
+  { pid: "1541796973395849216", vid: "1541796973827862528", sku: "CJST151297004DW", name: "Orange" },
+  { pid: "1541796973395849216", vid: "1541796973832056832", sku: "CJST151297005EV", name: "Black" },
 ] as const;
 
 const ALLOWED_IMAGE_HOSTS = new Set([
