@@ -9,6 +9,9 @@ BEGIN
 END
 $$;
 
+CREATE TABLE public.shop_orders (id uuid PRIMARY KEY, shopify_order_id text NOT NULL);
+CREATE TABLE public.shop_order_items (id uuid PRIMARY KEY, order_id uuid NOT NULL REFERENCES public.shop_orders(id), listing_id uuid NOT NULL, shopify_line_item_id text NOT NULL);
+
 CREATE TABLE public.shop_listings (
   id uuid PRIMARY KEY,
   manual_inventory boolean NOT NULL DEFAULT false,
@@ -19,6 +22,7 @@ CREATE TABLE public.shop_listings (
 );
 
 \ir ../supabase/migrations/20261117093000_shopify_manual_stock_idempotent_reservations.sql
+\ir ../supabase/migrations/20261118010000_shopify_manual_fulfillment_work_items.sql
 
 INSERT INTO public.shop_listings (id, manual_inventory, published, inventory)
 VALUES
@@ -95,6 +99,48 @@ BEGIN
   SELECT inventory INTO stock FROM public.shop_listings WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   IF stock <> 5 THEN RAISE EXCEPTION 'archived listing stock should restore to 5, got %', stock; END IF;
 
+  -- A paid manual-stock line can be represented in the dedicated fulfillment queue.
+  INSERT INTO public.shop_orders (id, shopify_order_id)
+  VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'order-104');
+  INSERT INTO public.shop_order_items (id, order_id, listing_id, shopify_line_item_id)
+  VALUES ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'line-104');
+  SELECT public.reserve_shopify_manual_stock(
+    'order-104', 'line-104', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 1
+  ) INTO result;
+  INSERT INTO public.shopify_manual_fulfillment_work_items (
+    reservation_id, shop_order_id, shop_order_item_id, listing_id,
+    shopify_order_id, shopify_line_item_id, quantity
+  )
+  SELECT r.id, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', r.listing_id,
+    r.shopify_order_id, r.shopify_line_item_id, r.quantity
+  FROM public.shopify_manual_stock_reservations r
+  WHERE r.shopify_line_item_id = 'line-104';
+  IF NOT EXISTS (
+    SELECT 1 FROM public.shopify_manual_fulfillment_work_items
+    WHERE shopify_line_item_id = 'line-104' AND status = 'queued' AND quantity = 1
+  ) THEN RAISE EXCEPTION 'manual fulfillment work item was not queued'; END IF;
+  UPDATE public.shopify_manual_fulfillment_work_items
+  SET status = 'shipped', carrier = 'test-carrier', tracking_number = 'TEST-123', shipped_at = now()
+  WHERE shopify_line_item_id = 'line-104';
+  IF NOT EXISTS (
+    SELECT 1 FROM public.shopify_manual_fulfillment_work_items
+    WHERE shopify_line_item_id = 'line-104' AND status = 'shipped' AND tracking_number = 'TEST-123'
+  ) THEN RAISE EXCEPTION 'manual fulfillment tracking update failed'; END IF;
+  BEGIN
+    INSERT INTO public.shopify_manual_fulfillment_work_items (
+      reservation_id, shop_order_id, shop_order_item_id, listing_id,
+      shopify_order_id, shopify_line_item_id, quantity
+    )
+    SELECT r.id, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', r.listing_id,
+      r.shopify_order_id, r.shopify_line_item_id, r.quantity
+    FROM public.shopify_manual_stock_reservations r
+    WHERE r.shopify_line_item_id = 'line-104';
+    RAISE EXCEPTION 'duplicate fulfillment work item unexpectedly inserted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
   -- Supplier-owned listings must not be reservable by this RPC.
   BEGIN
     PERFORM public.reserve_shopify_manual_stock(
@@ -107,4 +153,4 @@ BEGIN
 END
 $$;
 
-SELECT 'Shopify manual stock reservation SQL integration tests passed' AS result;
+SELECT 'Shopify manual stock reservation and fulfillment queue SQL integration tests passed' AS result;
