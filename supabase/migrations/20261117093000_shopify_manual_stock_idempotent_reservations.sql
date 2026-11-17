@@ -151,9 +151,10 @@ begin
   update public.shop_listings
   set inventory = inventory + reservation.quantity,
       updated_at = now()
+  -- Restore to the original TRACER-owned listing even if it was archived
+  -- after sale; archival must not strand already-reserved physical stock.
   where id = reservation.listing_id
-    and manual_inventory = true
-    and archived_at is null;
+    and manual_inventory = true;
 
   if not found then
     raise exception 'manual_stock_listing_restore_failed';
