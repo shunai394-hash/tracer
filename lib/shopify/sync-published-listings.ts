@@ -8,6 +8,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { resolveListingImage } from "@/lib/catalog/resolve-listing-image";
 
 type Listing = {
   id: string;
@@ -266,6 +267,14 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Listing[];
+  for (const row of rows) {
+    const resolved = await resolveListingImage(supabase, {
+      image_url: row.image_url,
+      supplier_product_id: row.supplier_product_id,
+      supplier_variant_id: row.supplier_variant_id,
+    });
+    row.image_url = resolved.imageUrl;
+  }
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   let liveVariantStateById = new Map<string, LiveShopifyVariantState>();
   let liveVariantReconciliationError: string | null = null;
