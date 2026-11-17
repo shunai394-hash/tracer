@@ -100,3 +100,28 @@ test("paid-order webhook resolves legacy TRC supplier-variant SKUs only by exact
   assert.match(paidWebhook, /tracer_variant_alias_lookup_failed/,
     "alias lookup failures must stop order ingestion");
 });
+
+test("paid webhook separates manual-stock lines from supplier procurement and is retry-safe", () => {
+  const paidWebhook = readFileSync("app/api/webhooks/shopify/orders-paid/route.ts", "utf8");
+  assert.match(paidWebhook, /manualLines: CanonicalManualLine\[\]/);
+  assert.match(paidWebhook, /manualListing\?\.manual_inventory === true/,
+    "manual inventory must not require a supplier offer");
+  assert.match(paidWebhook, /reserve_shopify_manual_stock/,
+    "manual stock must use the atomic reservation RPC");
+  assert.match(paidWebhook, /shopify_manual_fulfillment_work_items/,
+    "manual stock must enter its dedicated fulfillment queue");
+  assert.match(paidWebhook, /manual_stock_local_order_not_imported/,
+    "paid webhook must retry rather than fabricate a missing local order");
+  assert.match(paidWebhook, /manual_stock_order_item_mapping_missing/,
+    "manual line must match the exact imported Shopify line and listing");
+  assert.match(paidWebhook, /onConflict: "shopify_line_item_id", ignoreDuplicates: true/,
+    "queue writes must tolerate webhook retries");
+  assert.match(paidWebhook, /manual_fulfillment_queue_identity_conflict/,
+    "duplicate line IDs with changed queue identity must fail closed");
+  assert.match(paidWebhook, /if \(supplierLines\.length > 0\)/,
+    "supplier procurement is invoked only for supplier-owned lines");
+  assert.match(paidWebhook, /if \(manualLines\.length > 0\)/,
+    "manual fulfillment is processed independently for mixed carts");
+  assert.match(paidWebhook, /processed: true, processed_at:/,
+    "webhook is marked processed only after both line paths finish");
+});
