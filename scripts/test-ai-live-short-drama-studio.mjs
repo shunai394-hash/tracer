@@ -272,6 +272,16 @@ test("Fish Audio diagnostics displays the actual scanned model count field", () 
   assert.ok(!page.includes('models.pageCount??"不明"'));
 });
 
+test("Fish Audio diagnostics directly verifies the two registered episode-one voice IDs without TTS", () => {
+  assert.ok(diagnosticsRoute.includes("REGISTERED_DIAGNOSTIC_VOICES"));
+  assert.ok(diagnosticsRoute.includes("fb10beaad13d434680248bfa5eeb566f"));
+  assert.ok(diagnosticsRoute.includes("64eb21d34a75439f8cedfcd1640e838f"));
+  assert.ok(diagnosticsRoute.includes("registeredVoiceChecks,"));
+  assert.ok(page.includes("第1話の登録ボイスID直接照合（生成なし）"));
+  assert.ok(page.includes("data.registeredVoiceChecks||[]"));
+  assert.doesNotMatch(diagnosticsRoute, /FISH_TTS_URL|\/v1\/tts/);
+});
+
 test("Fish Audio diagnostics directly verifies each assigned character model ID", () => {
   assert.ok(diagnosticsRoute.includes("TRACER_DRAMA_CHARACTER_VOICES.map"));
   assert.ok(diagnosticsRoute.includes("resolveFishAudioModelVoice(apiKey, character.id, character.title)"));
