@@ -93,7 +93,7 @@ test("paid-order webhook resolves legacy TRC supplier-variant SKUs only by exact
     "current variant IDs must resolve only against published listings");
   assert.match(paidWebhook, /tracer_variant_mapping_missing/,
     "an unmatched supplied variant ID must fail closed rather than falling through to another SKU mapping");
-  assert.match(paidWebhook, /if \(!rawShopifyVariantId\)/,
+  assert.match(paidWebhook, /else \{\s*const exact = await db\.from\("channel_listings"\)/,
     "SKU fallback is permitted only when Shopify omits the variant ID");
   assert.match(paidWebhook, /tracer_shopify_variant_id_invalid/,
     "malformed Shopify variant IDs must be rejected");
