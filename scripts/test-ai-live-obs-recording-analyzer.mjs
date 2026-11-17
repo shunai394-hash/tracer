@@ -22,7 +22,7 @@ try {
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i",
     "sine=frequency=440:sample_rate=48000:duration=5",
-    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=5",
     "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1",
     "-t", "10",
     "-c:a", "pcm_s16le", crashFile,
