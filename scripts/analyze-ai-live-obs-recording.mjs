@@ -48,8 +48,8 @@ if (postDuration < windowSeconds * 0.8) fail("Not enough recording after --crash
 
 function measure(start, length) {
   const result = run("ffmpeg", [
-    "-hide_banner", "-nostats", "-i", file,
-    "-ss", String(start), "-t", String(length),
+    "-hide_banner", "-nostats", "-ss", String(start), "-i", file,
+    "-t", String(length),
     "-vn", "-af", "volumedetect", "-f", "null", "-",
   ]);
   const log = `${result.stdout}\n${result.stderr}`;
