@@ -10,6 +10,7 @@ import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { getBaseColorFamilyBlockedIds } from "@/lib/channels/base-color-family";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { resolveListingImage } from "@/lib/catalog/resolve-listing-image";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -144,6 +145,16 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // batch and starve fresh products waiting for their first BASE item.
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
+  for (const listing of listings ?? []) {
+    const resolved = await resolveListingImage(supabase, {
+      image_url: listing.image_url == null ? null : String(listing.image_url),
+      supplier_product_id: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
+      supplier_variant_id: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
+    });
+    // Use only exact, verified per-variant imagery for multi-variant supplier products.
+    // A missing verified image is intentionally left null so the existing publication gate fails closed.
+    listing.image_url = resolved.imageUrl;
+  }
   const standardListings = (listings ?? []).filter((listing) =>
     String(listing.id) !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
   );
@@ -398,8 +409,43 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     if (!validHttpUrl(listing.image_url)) {
-      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "image_url_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "image_url_invalid" });
+      // If a previously published multi-variant item no longer has an exact,
+      // visually verified image, hide it without changing its saved price or stock.
+      if (listing.base_item_id) {
+        try {
+          const current = await getBaseItemDetail(String(listing.base_item_id));
+          const currentStock = Number(current.stock);
+          const currentPrice = Number(current.price);
+          if (!Number.isInteger(currentStock) || currentStock < 0 || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+            throw new Error("base_existing_item_state_unreadable");
+          }
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: String(listing.title ?? ""),
+            detail: String(listing.description ?? listing.title ?? ""),
+            price: currentPrice,
+            stock: currentStock,
+            visible: false,
+          });
+        } catch (hideError) {
+          const message = hideError instanceof Error ? hideError.message : String(hideError);
+          results.push({ listingId, ok: false, error: `unverified_image_hide_failed:${message}` });
+          continue;
+        }
+      }
+      await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "variant_image_unverified",
+        // The DB constraint allows pending/creating/published/failed only.
+        // Mark failed so the hidden BASE item remains eligible for a later verified retry.
+        base_publication_status: listing.base_item_id ? "failed" : listing.base_publication_status,
+        base_publication_lease_until: null,
+        base_last_error: "variant_image_unverified",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, hidden: Boolean(listing.base_item_id), error: "variant_image_unverified" });
       continue;
     }
 

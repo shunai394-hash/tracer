@@ -8,6 +8,7 @@ import { isPublishableCatalogDescription, isPublishableCatalogTitle } from "@/li
 import { getStorefrontStockCap, toStorefrontStockQuantity } from "@/lib/shopify/storefront-stock";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { resolveListingImage } from "@/lib/catalog/resolve-listing-image";
 
 type Listing = {
   id: string;
@@ -266,6 +267,14 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Listing[];
+  for (const row of rows) {
+    const resolved = await resolveListingImage(supabase, {
+      image_url: row.image_url,
+      supplier_product_id: row.supplier_product_id,
+      supplier_variant_id: row.supplier_variant_id,
+    });
+    row.image_url = resolved.imageUrl;
+  }
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 15);
   let liveVariantStateById = new Map<string, LiveShopifyVariantState>();
   let liveVariantReconciliationError: string | null = null;
@@ -342,9 +351,20 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  * Why a listing may not be written to Shopify. Empty means it passes the
  * catalog, supplier identity, inventory, price and fulfillment checks.
  */
+function isValidHttpImageUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
+  if (!isValidHttpImageUrl(row.image_url)) reasons.push("variant_image_unverified");
   if (row.orderable !== true) reasons.push("supplier_not_orderable");
   if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");

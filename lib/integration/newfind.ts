@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 import { getNewfindConfig } from "@/lib/config/env";
+import { resolveListingImage } from "@/lib/catalog/resolve-listing-image";
 import { hasPassedSalesTestGate, SALES_TEST_GATE_PASSED } from "@/lib/market/sales-test-gate";
 import { localizeProductTitle, isJapaneseProductTitle } from "@/lib/intelligence/japanese-product";
 import { isRetryableRejectedNewfindEvent } from "@/lib/integration/newfind-retry-policy";
@@ -223,13 +224,25 @@ export async function promoteShopListingToNewfind(listingId: string): Promise<Ne
 
   const { data: listing, error } = await supabase
     .from("shop_listings")
-    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, base_item_id, contribution_margin, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
+    .select("id, slug, title, description, image_url, selling_price, currency, bestseller_id, product_id, identity_method, identity_confidence, supplier_name, supplier_product_id, supplier_variant_id, base_item_id, contribution_margin, published, archived_at, pipeline_stage, pipeline_status, pipeline_reason, selection_reasons, shopify_sync_status, shopify_product_id, shopify_variant_id, shopify_handle")
     .eq("id", listingId)
     .is("archived_at", null)
     .eq("published", true)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
+
+  if (listing) {
+    const resolved = await resolveListingImage(supabase, {
+      image_url: listing.image_url == null ? null : String(listing.image_url),
+      supplier_product_id: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
+      supplier_variant_id: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
+    });
+    listing.image_url = resolved.imageUrl;
+    if (!resolved.imageUrl) {
+      return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: resolved.reason ?? "variant_image_unverified" };
+    }
+  }
 
   if (listing && !isMinimumListingPriceEligible(listing.selling_price)) {
     return { configured: Boolean(cfg.apiUrl && cfg.webhookSecret), sent: false, eventId: id, status: null, ackStatus: null, detail: "minimum_listing_price_below_2500" };
