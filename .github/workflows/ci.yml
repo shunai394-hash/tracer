@@ -135,15 +135,7 @@ jobs:
           PGPASSWORD: ci-postgres-password
           PGDATABASE: tracer_manual_stock_test
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-stripe-manual-stock-release.sql
-      - name: Run Shopify manual stock reservation SQL integration tests (disposable CI database only)
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5432
-          PGUSER: postgres
-          PGPASSWORD: ci-postgres-password
-          PGDATABASE: tracer_shopify_manual_stock_test
-        run: psql -v ON_ERROR_STOP=1 -f scripts/test-shopify-manual-stock-reservations.sql
-      - name: Run Shopify manual fulfillment queue SQL integration tests (disposable CI database only)
+      - name: Run Shopify manual stock reservation and fulfillment queue SQL integration tests (disposable CI database only)
         env:
           PGHOST: 127.0.0.1
           PGPORT: 5432
