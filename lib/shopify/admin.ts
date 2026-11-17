@@ -538,28 +538,8 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
 }
 
 export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
-  // Repair products that were previously created without media, while avoiding
-  // adding another copy of the same image on every routine catalog sync.
-  const existingMedia = await shopifyGraphQL<{
-    product: {
-      featuredImage?: { url: string } | null;
-      media: { nodes: Array<{ id: string; mediaContentType: string; preview?: { image?: { url: string } | null } | null }> };
-    } | null;
-  }>(
-    "query TracerProductImagePreflight($id: ID!) { product(id: $id) { featuredImage { url } media(first: 10) { nodes { id mediaContentType preview { image { url } } } } } }",
-    { id: input.productId },
-  );
-  // Shopify's product image connection can expose a persisted featured image
-  // even when the media preview is temporarily absent from this query shape.
-  // Prefer the canonical featuredImage readback to avoid repeatedly re-uploading
-  // a valid existing image and then failing on stale media processing state.
-  const hasProductImage = Boolean(existingMedia.product?.featuredImage?.url)
-    || (existingMedia.product?.media.nodes ?? []).some((media) =>
-      media.mediaContentType === "IMAGE" && Boolean(media.preview?.image?.url),
-    );
-  const mediaToAdd = !hasProductImage && input.imageUrl
-    ? [{ originalSource: input.imageUrl, alt: input.title, mediaContentType: "IMAGE" }]
-    : [];
+  // Variant-specific images are added and attached after exact variant resolution below.
+  const mediaToAdd: Array<{ originalSource: string; alt: string; mediaContentType: "IMAGE" }> = [];
   const productData = await shopifyGraphQL<{
     productUpdate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
   }>(
