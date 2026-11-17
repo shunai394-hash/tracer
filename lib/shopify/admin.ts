@@ -428,6 +428,79 @@ async function verifyPersistedShopifySeo(productId: string, productTitle: string
 }
 
 
+async function ensureShopifyVariantImage(productId: string, variantId: string, imageUrl: string | null | undefined, alt: string): Promise<void> {
+  if (!imageUrl) return;
+  type ImageNode = { id: string; mediaContentType: string; status?: string; image?: { url: string } | null };
+  let image: ImageNode | undefined;
+  const readProductImages = async () => shopifyGraphQL<{
+    product: { media: { nodes: ImageNode[] } } | null;
+  }>(
+    `query TracerVariantImageReadback($id: ID!) {
+      product(id: $id) {
+        media(first: 100) {
+          nodes { id mediaContentType ... on MediaImage { status image { url } } }
+        }
+      }
+    }`,
+    { id: productId },
+  );
+  const initial = await readProductImages();
+  image = (initial.product?.media.nodes ?? []).find((node) =>
+    node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "READY",
+  );
+  if (!image) {
+    const added = await shopifyGraphQL<{
+      productUpdate: { userErrors: Array<{ message: string }> };
+    }>(
+      `mutation TracerAddVariantImage($input: ProductUpdateInput!, $media: [CreateMediaInput!]) {
+        productUpdate(product: $input, media: $media) { userErrors { message } }
+      }`,
+      { input: { id: productId }, media: [{ originalSource: imageUrl, alt, mediaContentType: "IMAGE" }] },
+    );
+    if (added.productUpdate.userErrors.length) {
+      throw new Error(added.productUpdate.userErrors.map((error) => error.message).join("; "));
+    }
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      const readback = await readProductImages();
+      image = (readback.product?.media.nodes ?? []).find((node) =>
+        node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "READY",
+      );
+      if (image) break;
+      const failed = (readback.product?.media.nodes ?? []).some((node) =>
+        node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "FAILED",
+      );
+      if (failed) throw new Error("shopify_variant_image_processing_failed");
+      if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+  }
+  if (!image) throw new Error("shopify_variant_image_not_ready_after_readback");
+
+  const currentVariant = await shopifyGraphQL<{
+    productVariant: { media: { nodes: Array<{ id: string }> } } | null;
+  }>(
+    `query TracerVariantMediaCheck($id: ID!) {
+      productVariant(id: $id) { media(first: 100) { nodes { id } } }
+    }`,
+    { id: variantId },
+  );
+  if (!currentVariant.productVariant) throw new Error("shopify_variant_missing_for_image_assignment");
+  if (currentVariant.productVariant.media.nodes.some((node) => node.id === image!.id)) return;
+
+  const attached = await shopifyGraphQL<{
+    productVariantAppendMedia: { userErrors: Array<{ message: string }> };
+  }>(
+    `mutation TracerAppendImageToVariant($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+      productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+        userErrors { message }
+      }
+    }`,
+    { productId, variantMedia: [{ variantId, mediaIds: [image.id] }] },
+  );
+  if (attached.productVariantAppendMedia.userErrors.length) {
+    throw new Error(attached.productVariantAppendMedia.userErrors.map((error) => error.message).join("; "));
+  }
+}
+
 export async function createShopifyProduct(input: { title: string; descriptionHtml: string; handle: string; price: number; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
   const data = await shopifyGraphQL<{
     productCreate: { product: ShopifyProduct | null; userErrors: Array<{ field?: string[]; message: string }> };
@@ -447,6 +520,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   await verifyPersistedShopifySeo(product.id, input.title, expectedSeo, "create");
   const variant = product.variants?.nodes?.[0];
   if (!variant) throw new Error("Shopify productCreate returned no variant");
+  await ensureShopifyVariantImage(product.id, variant.id, input.imageUrl, input.title);
 
   const variantData = await shopifyGraphQL<{
     productVariantsBulkUpdate: { productVariants: Array<{ id: string; sku: string | null; price: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
@@ -546,6 +620,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
   );
   if (!variantResolution.ok) throw new Error(`shopify_${variantResolution.reason}`);
   const variantId = variantResolution.variant.id;
+  await ensureShopifyVariantImage(input.productId, variantId, input.imageUrl, input.title);
 
   const variantData = await shopifyGraphQL<{
     productVariantsBulkUpdate: { productVariants: Array<{ id: string; sku: string | null; price: string | null }>; userErrors: Array<{ field?: string[]; message: string }> };
