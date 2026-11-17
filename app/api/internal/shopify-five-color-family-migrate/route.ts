@@ -126,6 +126,11 @@ export async function POST(request: Request) {
       if (attributes.variantImageIdentityVerified !== true || !validHttpsImage(imageUrl)) {
         throw new Error("color_family_exact_variant_image_unverified:" + expected.sku);
       }
+      // Never promote URL identity or uniqueness into visual color verification.
+      // This flag must already have been set by a person or trusted visual review.
+      if (attributes.colorImageVerified !== true) {
+        throw new Error("color_family_visual_color_confirmation_required:" + expected.sku);
+      }
       if (images.has(imageUrl)) throw new Error("color_family_variant_image_not_unique:" + expected.sku);
       images.add(imageUrl);
       return {
@@ -136,7 +141,7 @@ export async function POST(request: Request) {
         sku: expected.sku,
         colorLabel: expected.colorLabel,
         imageUrl,
-        colorImageVerified: true,
+        colorImageVerified: attributes.colorImageVerified === true,
         price: Number(price.selling_price),
       };
     });
