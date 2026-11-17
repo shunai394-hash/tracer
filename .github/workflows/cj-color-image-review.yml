@@ -27,16 +27,34 @@ jobs:
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
           token="$(curl -sSf --max-time 20 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          code="$(curl -sS -o image-manifest.json -w "%{http_code}" --max-time 45 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/cj-color-image-review" || true)"
-          echo "Read-only image manifest HTTP $code"
-          python3 - <<'PY'
-          import json,sys
-          d=json.load(open("image-manifest.json",encoding="utf-8"))
-          print(json.dumps({k:d.get(k) for k in ("ok","readOnly","targetProductCount","checked","exactSkuCount","identityVerifiedCount","imageCount")},ensure_ascii=False,indent=2))
-          if d.get("ok") is not True or d.get("readOnly") is not True or d.get("checked") != 15:
-              print(json.dumps(d,ensure_ascii=False,indent=2))
-              sys.exit("fixed_scope_manifest_incomplete")
+          expected = "2607241016071621300,2607241016071622300,2607241016071624300,2607241016071624800,2607241016071625500,2610130715201600400,2610130715201600403,2610130715201600404,2610130715201600405,2610130715201600406,1541796973794308096,1541796973819473920,1541796973823668224,1541796973827862528,1541796973832056832"
+          export EXPECTED_VARIANT_IDS="$expected"
+          ready=0
+          for attempt in $(seq 1 18); do
+            code="$(curl -sS -o image-manifest.json -w "%{http_code}" --max-time 45 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" "$BASE/api/internal/cj-color-image-review" || true)"
+            if python3 - <<'PY'
+          import json,os,sys
+          try:
+              d=json.load(open("image-manifest.json",encoding="utf-8"))
+              expected=set(os.environ["EXPECTED_VARIANT_IDS"].split(","))
+              rows=d.get("rows",[])
+              actual={str(r.get("supplierVariantId")) for r in rows}
+              ok=(d.get("ok") is True and d.get("readOnly") is True and d.get("checked")==15 and actual==expected)
+              print(json.dumps({k:d.get(k) for k in ("ok","readOnly","targetProductCount","checked","exactSkuCount","identityVerifiedCount","imageCount")}|{"expectedVariantIdsMatched":actual==expected},ensure_ascii=False))
+              sys.exit(0 if ok else 1)
+          except Exception as e:
+              print(f"manifest_not_ready: {e}")
+              sys.exit(1)
           PY
+            then
+              ready=1
+              echo "Read-only image manifest HTTP $code; exact second-batch variant IDs confirmed."
+              break
+            fi
+            echo "Waiting for the matching deployed route (attempt $attempt/18, HTTP $code)."
+            sleep 10
+          done
+          test "$ready" = "1" || { echo "second_batch_manifest_not_ready"; exit 1; }
 
       - name: Download and assemble exact-variant contact sheets
         shell: bash
