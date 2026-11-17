@@ -354,6 +354,7 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
+  if (typeof row.image_url !== "string" || !/^https?:\\/\\//i.test(row.image_url)) reasons.push("variant_image_unverified");
   if (row.orderable !== true) reasons.push("supplier_not_orderable");
   if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
