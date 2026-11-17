@@ -10,6 +10,7 @@ import { shopifyGraphQL } from "@/lib/shopify/admin";
 import { getPublishableSupplierListingStatuses } from "@/lib/catalog/canonical-supplier-identity";
 import { getBaseColorFamilyBlockedIds } from "@/lib/channels/base-color-family";
 import { freeShippingText, normalizeListingTitle } from "@/lib/commerce/listing-title";
+import { resolveListingImage } from "@/lib/catalog/resolve-listing-image";
 
 export type BasePublicationResult = {
   attempted: number;
@@ -144,6 +145,16 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
   // batch and starve fresh products waiting for their first BASE item.
   const { data: listings, error } = await query.order("created_at", { ascending: false }).limit(safeLimit);
   if (error) throw new Error(error.message);
+  for (const listing of listings ?? []) {
+    const resolved = await resolveListingImage(supabase, {
+      image_url: listing.image_url == null ? null : String(listing.image_url),
+      supplier_product_id: listing.supplier_product_id == null ? null : String(listing.supplier_product_id),
+      supplier_variant_id: listing.supplier_variant_id == null ? null : String(listing.supplier_variant_id),
+    });
+    // Use only exact, verified per-variant imagery for multi-variant supplier products.
+    // A missing verified image is intentionally left null so the existing publication gate fails closed.
+    listing.image_url = resolved.imageUrl;
+  }
   const standardListings = (listings ?? []).filter((listing) =>
     String(listing.id) !== "1ae04dd1-a228-43b7-b003-3a2fb75da98a"
   );
