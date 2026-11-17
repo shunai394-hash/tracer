@@ -430,7 +430,7 @@ async function verifyPersistedShopifySeo(productId: string, productTitle: string
 
 async function ensureShopifyVariantImage(productId: string, variantId: string, imageUrl: string | null | undefined, alt: string): Promise<void> {
   if (!imageUrl) return;
-  type ImageNode = { id: string; mediaContentType: string; status?: string; image?: { url: string } | null };
+  type ImageNode = { id: string; mediaContentType: string; status?: string; image?: { url: string } | null; originalSource?: { url: string | null } | null };
   let image: ImageNode | undefined;
   const readProductImages = async () => shopifyGraphQL<{
     product: { media: { nodes: ImageNode[] } } | null;
@@ -438,7 +438,7 @@ async function ensureShopifyVariantImage(productId: string, variantId: string, i
     `query TracerVariantImageReadback($id: ID!) {
       product(id: $id) {
         media(first: 100) {
-          nodes { id mediaContentType ... on MediaImage { status image { url } } }
+          nodes { id mediaContentType ... on MediaImage { status image { url } originalSource { url } } }
         }
       }
     }`,
@@ -446,7 +446,7 @@ async function ensureShopifyVariantImage(productId: string, variantId: string, i
   );
   const initial = await readProductImages();
   image = (initial.product?.media.nodes ?? []).find((node) =>
-    node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "READY",
+    node.mediaContentType === "IMAGE" && node.originalSource?.url === imageUrl && Boolean(node.image?.url) && node.status === "READY",
   );
   if (!image) {
     const added = await shopifyGraphQL<{
@@ -467,7 +467,7 @@ async function ensureShopifyVariantImage(productId: string, variantId: string, i
       );
       if (image) break;
       const failed = (readback.product?.media.nodes ?? []).some((node) =>
-        node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "FAILED",
+        node.mediaContentType === "IMAGE" && node.originalSource?.url === imageUrl && node.status === "FAILED",
       );
       if (failed) throw new Error("shopify_variant_image_processing_failed");
       if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, 1_500));
