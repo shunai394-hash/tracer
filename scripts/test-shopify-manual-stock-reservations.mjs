@@ -20,6 +20,7 @@ assert.match(migration, /raise exception 'manual_stock_unavailable'/, "insuffici
 assert.match(migration, /where shopify_line_item_id = trim\(p_shopify_line_item_id\)[\s\S]*status = 'reserved'/, "release must locate and transition only the original reservation");
 assert.match(migration, /status = 'released'[\s\S]*released_at = now\(\)/, "release must leave an auditable terminal state");
 assert.match(migration, /inventory = inventory \+ reservation\.quantity/, "release must restore the reserved quantity exactly once");
+assert.match(migration, /where id = reservation\.listing_id[\\s\\S]*and manual_inventory = true;/, "release must restore the original listing even if it was archived after reservation");
 assert.match(migration, /grant execute on function public\.reserve_shopify_manual_stock\(text, text, uuid, integer\) to service_role/, "only service_role may reserve Shopify manual stock");
 assert.match(migration, /grant execute on function public\.release_shopify_manual_stock\(text, text\) to service_role/, "only service_role may release Shopify manual stock");
 
