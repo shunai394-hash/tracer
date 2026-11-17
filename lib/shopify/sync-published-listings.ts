@@ -631,7 +631,7 @@ async function syncListingRows(
           // Otherwise use an exact SKU recovery match, which admin.ts verifies against the SKU.
           variantId: existingById?.id === existing.id ? (row.shopify_variant_id || null) : recoveredVariantId,
           sku: productInput.sku,
-          imageUrl: existing.media?.nodes?.length ? null : row.image_url,
+          imageUrl: row.image_url,
         });
       } else {
         try {
@@ -662,7 +662,7 @@ async function syncListingRows(
                 price: productInput.price,
                 variantId: null,
                 sku: productInput.sku,
-                imageUrl: exactFallback.media?.nodes?.length ? null : row.image_url,
+                imageUrl: row.image_url,
               })
             : await createShopifyProduct({ ...productInput, imageUrl: row.image_url });
         }
