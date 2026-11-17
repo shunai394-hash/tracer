@@ -409,8 +409,32 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
     }
 
     if (!validHttpUrl(listing.image_url)) {
-      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "image_url_invalid", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
-      results.push({ listingId, ok: false, skipped: true, error: "image_url_invalid" });
+      // If a previously published multi-variant item no longer has an exact,
+      // visually verified image, hide it without changing its saved price or stock.
+      if (listing.base_item_id) {
+        try {
+          const current = await getBaseItemDetail(String(listing.base_item_id));
+          const currentStock = Number(current.stock);
+          const currentPrice = Number(current.price);
+          if (!Number.isInteger(currentStock) || currentStock < 0 || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+            throw new Error("base_existing_item_state_unreadable");
+          }
+          await editBaseItem({
+            itemId: String(listing.base_item_id),
+            title: String(listing.title ?? ""),
+            detail: String(listing.description ?? listing.title ?? ""),
+            price: currentPrice,
+            stock: currentStock,
+            visible: false,
+          });
+        } catch (hideError) {
+          const message = hideError instanceof Error ? hideError.message : String(hideError);
+          results.push({ listingId, ok: false, error: `unverified_image_hide_failed:${message}` });
+          continue;
+        }
+      }
+      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "variant_image_unverified", base_publication_status: listing.base_item_id ? "hidden" : listing.base_publication_status, base_last_error: "variant_image_unverified", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      results.push({ listingId, ok: false, skipped: true, hidden: Boolean(listing.base_item_id), error: "variant_image_unverified" });
       continue;
     }
 
