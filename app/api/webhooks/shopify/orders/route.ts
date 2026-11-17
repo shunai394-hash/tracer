@@ -71,13 +71,16 @@ export async function POST(request: Request) {
     // to supplier_product_id and finally listing.id. Do not treat the SKU itself
     // as shop_listings.id: resolve its exact stable identity first.
     const lookup = getOrderSkuLookup(skus.filter(Boolean));
-    const listingSelect = "id,product_id,title,published,orderable,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
+    const listingSelect = "id,product_id,title,published,orderable,manual_inventory,inventory,archived_at,selling_price,supplier_listing_id,supplier_name,supplier_product_id,supplier_variant_id,shopify_variant_id";
     type ListingRow = {
       id: string;
       product_id: string;
       title: string;
       published: boolean;
       orderable: boolean;
+      manual_inventory: boolean;
+      inventory: number | null;
+      archived_at: string | null;
       selling_price: number | string | null;
       supplier_listing_id: string | null;
       supplier_name: string | null;
@@ -115,8 +118,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, blocked: true, reason: resolution.reason, sku: resolution.sku, line: resolution.lineIndex });
     }
     const byLine = resolution.listings;
-    if (!existingOrderId && byLine.some((listing) => listing.published !== true || listing.orderable !== true)) {
-      return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
+    if (!existingOrderId) {
+      const manualDemand = new Map<string, number>();
+      for (const [index, item] of items.entries()) {
+        const listing = byLine[index];
+        if (!listing || listing.published !== true || listing.archived_at) {
+          return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
+        }
+        const quantity = n(item.quantity);
+        if (!Number.isInteger(quantity) || Number(quantity) <= 0) {
+          return NextResponse.json({ ok: true, blocked: true, reason: "invalid_line_quantity" });
+        }
+        if (listing.manual_inventory === true) {
+          manualDemand.set(listing.id, (manualDemand.get(listing.id) ?? 0) + Number(quantity));
+        } else if (listing.orderable !== true) {
+          return NextResponse.json({ ok: true, blocked: true, reason: "listing_not_orderable" });
+        }
+      }
+      for (const [listingId, requested] of manualDemand) {
+        const listing = byLine.find((row) => row.id === listingId);
+        if (!listing || Number(listing.inventory ?? 0) < requested) {
+          return NextResponse.json({ ok: true, blocked: true, reason: "manual_stock_insufficient" });
+        }
+      }
     }
 
     const financial = String(order.financial_status ?? "pending");
