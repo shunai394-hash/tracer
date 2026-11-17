@@ -463,7 +463,7 @@ export async function createShopifyProduct(input: { title: string; descriptionHt
   return { ...product, variants: { nodes: variantData.productVariantsBulkUpdate.productVariants } };
 }
 
-export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
+export async function updateShopifyProduct(input: { productId: string; title: string; descriptionHtml: string; handle: string; price: number; variantId?: string | null; sku: string; allowSavedVariantIdSkuMismatch?: boolean; imageUrl?: string | null; seoTitle?: string | null; seoDescription?: string | null }): Promise<ShopifyProduct> {
   // Repair products that were previously created without media, while avoiding
   // adding another copy of the same image on every routine catalog sync.
   const existingMedia = await shopifyGraphQL<{
@@ -543,6 +543,7 @@ export async function updateShopifyProduct(input: { productId: string; title: st
     product.variants?.nodes ?? [],
     input.sku,
     toShopifyGid("ProductVariant", input.variantId),
+    { allowSavedIdSkuMismatch: input.allowSavedVariantIdSkuMismatch === true },
   );
   if (!variantResolution.ok) throw new Error(`shopify_${variantResolution.reason}`);
   const variantId = variantResolution.variant.id;

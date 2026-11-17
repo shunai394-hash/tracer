@@ -11,6 +11,7 @@ export function resolveShopifyVariantIdentity(
   variants: ShopifyVariantIdentity[],
   expectedSku: string,
   savedVariantId?: string | null,
+  options: { allowSavedIdSkuMismatch?: boolean } = {},
 ): ShopifyVariantResolution {
   const targetSku = expectedSku.trim();
   const preferredId = String(savedVariantId ?? "").trim();
@@ -46,6 +47,13 @@ export function resolveShopifyVariantIdentity(
       // A blank SKU can be repaired by ID only when the product has multiple
       // variants but no other variant claims the expected SKU.
       if (!saved.sku?.trim()) {
+        return { ok: true, variant: saved, matchedBy: "saved_id" };
+      }
+
+      // Opt-in is reserved for a persisted variant ID on a product fetched by
+      // its matching persisted product ID. The update mutation then normalizes
+      // this variant to TRACER's channel-neutral SKU.
+      if (options.allowSavedIdSkuMismatch === true) {
         return { ok: true, variant: saved, matchedBy: "saved_id" };
       }
 
