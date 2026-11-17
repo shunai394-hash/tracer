@@ -30,9 +30,7 @@ export async function resolveListingImage(
   const productId = String(listing.supplier_product_id ?? "").trim();
   const variantId = String(listing.supplier_variant_id ?? "").trim();
   if (!productId || !variantId) {
-    return validImageUrl(listing.image_url)
-      ? { imageUrl: listing.image_url, source: "single_product" }
-      : { imageUrl: null, source: "blocked", reason: "supplier_identity_or_image_missing" };
+    return { imageUrl: null, source: "blocked", reason: "supplier_identity_or_image_missing" };
   }
 
   const { data: offer, error: offerError } = await db
