@@ -433,7 +433,18 @@ export async function publishPublishedListingsToBase(limit = 10, listingIds?: st
           continue;
         }
       }
-      await supabase.from("shop_listings").update({ pipeline_stage: "BASE_PUBLICATION", pipeline_status: "blocked", pipeline_reason: "variant_image_unverified", base_publication_status: listing.base_item_id ? "hidden" : listing.base_publication_status, base_last_error: "variant_image_unverified", pipeline_updated_at: new Date().toISOString() }).eq("id", listingId);
+      await supabase.from("shop_listings").update({
+        published: false,
+        pipeline_stage: "BASE_PUBLICATION",
+        pipeline_status: "blocked",
+        pipeline_reason: "variant_image_unverified",
+        // The DB constraint allows pending/creating/published/failed only.
+        // Mark failed so the hidden BASE item remains eligible for a later verified retry.
+        base_publication_status: listing.base_item_id ? "failed" : listing.base_publication_status,
+        base_publication_lease_until: null,
+        base_last_error: "variant_image_unverified",
+        pipeline_updated_at: new Date().toISOString(),
+      }).eq("id", listingId);
       results.push({ listingId, ok: false, skipped: true, hidden: Boolean(listing.base_item_id), error: "variant_image_unverified" });
       continue;
     }
