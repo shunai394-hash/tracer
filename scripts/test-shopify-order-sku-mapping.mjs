@@ -125,3 +125,17 @@ test("paid webhook separates manual-stock lines from supplier procurement and is
   assert.match(paidWebhook, /processed: true, processed_at:/,
     "webhook is marked processed only after both line paths finish");
 });
+
+test("Shopify order import permits only available published manual stock", () => {
+  const orderWebhook = readFileSync("app/api/webhooks/shopify/orders/route.ts", "utf8");
+  assert.match(orderWebhook, /manual_inventory,inventory,archived_at/,
+    "order import must load the manual-stock gate fields");
+  assert.match(orderWebhook, /listing\.manual_inventory === true/,
+    "manual stock may bypass supplier orderable only through its explicit flag");
+  assert.match(orderWebhook, /manualDemand\.set\(listing\.id/,
+    "multiple lines for one listing must be aggregated before stock validation");
+  assert.match(orderWebhook, /manual_stock_insufficient/,
+    "manual stock demand above available quantity must be rejected");
+  assert.match(orderWebhook, /listing\.orderable !== true/,
+    "supplier-owned listings must retain the existing orderable gate");
+});
