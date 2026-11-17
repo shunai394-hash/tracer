@@ -351,10 +351,20 @@ export async function syncPublishedListingsToShopify(limit = 10, listingIds?: st
  * Why a listing may not be written to Shopify. Empty means it passes the
  * catalog, supplier identity, inventory, price and fulfillment checks.
  */
+function isValidHttpImageUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function blockReasons(row: Listing): string[] {
   const reasons: string[] = [];
   if (!row.supplier_product_id || !row.supplier_variant_id) reasons.push("supplier_variant_missing");
-  if (typeof row.image_url !== "string" || !/^https?:\\/\\//i.test(row.image_url)) reasons.push("variant_image_unverified");
+  if (!isValidHttpImageUrl(row.image_url)) reasons.push("variant_image_unverified");
   if (row.orderable !== true) reasons.push("supplier_not_orderable");
   if (row.tracking_available !== true) reasons.push("supplier_tracking_unavailable");
   if (!isPublishableCatalogTitle(row.title)) reasons.push("catalog_title_not_publishable");
