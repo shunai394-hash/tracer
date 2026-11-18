@@ -463,7 +463,10 @@ async function ensureShopifyVariantImage(productId: string, variantId: string, i
     for (let attempt = 0; attempt < 7; attempt += 1) {
       const readback = await readProductImages();
       image = (readback.product?.media.nodes ?? []).find((node) =>
-        node.mediaContentType === "IMAGE" && node.image?.url === imageUrl && node.status === "READY",
+        node.mediaContentType === "IMAGE"
+        && node.originalSource?.url === imageUrl
+        && Boolean(node.image?.url)
+        && node.status === "READY",
       );
       if (image) break;
       const failed = (readback.product?.media.nodes ?? []).some((node) =>
@@ -484,20 +487,54 @@ async function ensureShopifyVariantImage(productId: string, variantId: string, i
     { id: variantId },
   );
   if (!currentVariant.productVariant) throw new Error("shopify_variant_missing_for_image_assignment");
-  if (currentVariant.productVariant.media.nodes.some((node) => node.id === image!.id)) return;
+  const existingMediaIds = currentVariant.productVariant.media.nodes
+    .map((node) => node.id)
+    .filter((id) => id !== image!.id);
+  if (!currentVariant.productVariant.media.nodes.some((node) => node.id === image!.id)) {
+    const attached = await shopifyGraphQL<{
+      productVariantAppendMedia: { userErrors: Array<{ message: string }> };
+    }>(
+      `mutation TracerAppendImageToVariant($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+        productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+          userErrors { message }
+        }
+      }`,
+      { productId, variantMedia: [{ variantId, mediaIds: [image.id] }] },
+    );
+    if (attached.productVariantAppendMedia.userErrors.length) {
+      throw new Error(attached.productVariantAppendMedia.userErrors.map((error) => error.message).join("; "));
+    }
+  }
 
-  const attached = await shopifyGraphQL<{
-    productVariantAppendMedia: { userErrors: Array<{ message: string }> };
+  // Keep the verified image attached first. Only then detach stale/wrong
+  // images from this variant; product-level media remains untouched.
+  if (existingMediaIds.length > 0) {
+    const detached = await shopifyGraphQL<{
+      productVariantDetachMedia: { userErrors: Array<{ message: string }> };
+    }>(
+      `mutation TracerDetachStaleVariantImages($productId: ID!, $variantMedia: [ProductVariantDetachMediaInput!]!) {
+        productVariantDetachMedia(productId: $productId, variantMedia: $variantMedia) {
+          userErrors { message }
+        }
+      }`,
+      { productId, variantMedia: [{ variantId, mediaIds: existingMediaIds }] },
+    );
+    if (detached.productVariantDetachMedia.userErrors.length) {
+      throw new Error(detached.productVariantDetachMedia.userErrors.map((error) => error.message).join("; "));
+    }
+  }
+
+  const verifiedVariant = await shopifyGraphQL<{
+    productVariant: { media: { nodes: Array<{ id: string }> } } | null;
   }>(
-    `mutation TracerAppendImageToVariant($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
-      productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
-        userErrors { message }
-      }
+    `query TracerVariantMediaVerify($id: ID!) {
+      productVariant(id: $id) { media(first: 100) { nodes { id } } }
     }`,
-    { productId, variantMedia: [{ variantId, mediaIds: [image.id] }] },
+    { id: variantId },
   );
-  if (attached.productVariantAppendMedia.userErrors.length) {
-    throw new Error(attached.productVariantAppendMedia.userErrors.map((error) => error.message).join("; "));
+  const finalMediaIds = verifiedVariant.productVariant?.media.nodes.map((node) => node.id) ?? [];
+  if (!finalMediaIds.includes(image.id) || finalMediaIds.some((id) => id !== image!.id)) {
+    throw new Error("shopify_variant_image_assignment_verification_failed");
   }
 }
 
