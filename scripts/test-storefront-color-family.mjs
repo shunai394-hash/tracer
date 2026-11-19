@@ -49,20 +49,24 @@ const sharedImage = groupExactColorFamilies([
   member(FAMILIES[0], 0),
   member(FAMILIES[0], 1, { imageUrl: member(FAMILIES[0], 0).imageUrl }),
 ]).catalog;
-assert.equal(sharedImage.length, 2);
+assert.equal(sharedImage.length, 1);
 assert.ok(sharedImage.every((item) => item.colorSaleBlocked === true));
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
-assert.ok(sharedImage.every((item) => item.variants.length === 0));
+assert.ok(sharedImage.every((item) => item.variants.length === 2));
+assert.ok(sharedImage[0].variants.every((variant) => variant.imageUrl === null));
+assert.equal(sharedImage[0].imageUrl, null);
 assert.ok(sharedImage.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_image_ambiguous:"))));
 
 const missingImages = groupExactColorFamilies([
   member(FAMILIES[0], 0, { imageUrl: null }),
   member(FAMILIES[0], 1, { imageUrl: null }),
 ]).catalog;
-assert.equal(missingImages.length, 2);
+assert.equal(missingImages.length, 1);
 assert.ok(missingImages.every((item) => item.colorSaleBlocked === true));
 assert.ok(missingImages.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
-assert.ok(missingImages.every((item) => item.variants.length === 0));
+assert.ok(missingImages.every((item) => item.variants.length === 2));
+assert.ok(missingImages[0].variants.every((variant) => variant.imageUrl === null));
+assert.equal(missingImages[0].imageUrl, null);
 
 const differentProducts = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "同じ名前（ブラック）" }),
@@ -84,6 +88,16 @@ assert.deepEqual(
   new Set([member(FAMILIES[0], 0).id, member(FAMILIES[0], 1).id]),
 );
 
+
+const unverifiedColorFamilyStaysOneCard = groupExactColorFamilies([
+  member(FAMILIES[0], 0, { colorImageVerified: false }),
+  member(FAMILIES[0], 1, { colorImageVerified: false }),
+]).catalog;
+assert.equal(unverifiedColorFamilyStaysOneCard.length, 1);
+assert.equal(unverifiedColorFamilyStaysOneCard[0].variants.length, 2);
+assert.equal(unverifiedColorFamilyStaysOneCard[0].colorSaleBlocked, true);
+assert.ok(unverifiedColorFamilyStaysOneCard[0].variants.every((variant) => variant.imageUrl === null));
+
 const proteinId = "1ae04dd1-a228-43b7-b003-3a2fb75da98a";
 const protein = groupExactColorFamilies([
   member(FAMILIES[0], 0, { id: proteinId, manualInventory: true, supplierProductId: FAMILIES[0].supplierProductId, title: "BEAUTY FORMULA チョコレート風味プロテイン 300g" }),
@@ -93,7 +107,7 @@ const unverifiedImageIdentity = groupExactColorFamilies([
   member(FAMILIES[0], 0, { variantImageIdentityVerified: false }),
   member(FAMILIES[0], 1, { variantImageIdentityVerified: false }),
 ]).catalog;
-assert.equal(unverifiedImageIdentity.length, 2);
+assert.equal(unverifiedImageIdentity.length, 1);
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlocked === true));
 assert.ok(unverifiedImageIdentity.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
 
@@ -102,18 +116,18 @@ const distinctUrlsButUnverifiedColors = groupExactColorFamilies([
   member(FAMILIES[0], 0, { colorImageVerified: false }),
   member(FAMILIES[0], 1, { colorImageVerified: false }),
 ]).catalog;
-assert.equal(distinctUrlsButUnverifiedColors.length, 2);
+assert.equal(distinctUrlsButUnverifiedColors.length, 1);
 assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlocked === true));
 assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:") && blocker.includes("variant_color_image_unverified:"))));
-assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.variants.length === 0));
+assert.ok(distinctUrlsButUnverifiedColors.every((item) => item.variants.length === 2));
+assert.ok(distinctUrlsButUnverifiedColors[0].variants.every((variant) => variant.imageUrl === null));
 
 const missingLabels = groupExactColorFamilies([
   member(FAMILIES[0], 0, { title: "レディース ハンドバッグ" }),
   member(FAMILIES[0], 1, { title: "レディース ハンドバッグ" }),
 ]).catalog;
 assert.equal(missingLabels.length, 2);
-assert.ok(missingLabels.every((item) => item.colorSaleBlocked === true));
-assert.ok(missingLabels.every((item) => item.colorSaleBlockers.some((blocker) => blocker.startsWith("color_family_unverified:"))));
+assert.ok(missingLabels.every((item) => item.colorSaleBlocked === false));
 assert.ok(missingLabels.every((item) => item.variants.length === 0));
 
 const missingSku = groupExactColorFamilies([
@@ -148,7 +162,7 @@ assert.match(page, /saleBlocked=\{listing\.colorSaleBlocked === true\}/);
 assert.match(cart, /supplierVariantId\?: string \| null/);
 assert.match(button, /supplierVariantId: props\.supplierVariantId/);
 assert.match(store, /color_family_unverified/);
-assert.match(store, /row\.colorSaleBlocked !== true/);
+assert.match(store, /export function listPublishedShopListings\(\): Promise<ShopListing\[]> \{\s*\/\/[\s\S]*?return listCatalogFamilies\(\);/);
 assert.match(store, /supplier_variant_id: line\.listing\.supplier_variant_id/);
 assert.match(store, /colorSelections/);
 
