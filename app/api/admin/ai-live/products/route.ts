@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { listSellableAiLiveProducts } from "@/lib/ai-live/sellable-products";
+import { supplierFactsByListingId } from "@/lib/ai-live/sellable-supplier-fact";
 import { requireAutomationAuth } from "@/lib/security/cron-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -40,13 +41,22 @@ export async function GET(request: Request) {
   try {
     const db = createSupabaseAdminClient();
     const products = await listSellableAiLiveProducts(db, limit);
+    const supplierFacts = await supplierFactsByListingId(db, products.map((product) => product.id));
+    const visibleProducts = products.map((product) => {
+      const supplier = supplierFacts.get(product.id);
+      return {
+        ...product,
+        supplierConfirmed: supplier?.supplierConfirmed === true,
+        supplierFingerprint: supplier?.supplierFingerprint ?? null,
+      };
+    });
     return NextResponse.json(
       {
         ok: true,
         readOnly: true,
         generatedAt: new Date().toISOString(),
-        count: products.length,
-        products,
+        count: visibleProducts.length,
+        products: visibleProducts,
       },
       {
         headers: {
