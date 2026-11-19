@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Wait for the production diagnostic revision and read BASE API counts
@@ -26,13 +26,13 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://tracer-pied-alpha.vercel.app
-          token="$(curl --fail-with-body --silent --show-error --max-time 20 \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \
+          token="$(curl --fail-with-body --silent --show-error --max-time 20 \\
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \\
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ftracer-pied-alpha.vercel.app" \\
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           for attempt in $(seq 1 24); do
-            code="$(curl --silent --show-error --max-time 60 -o result.json -w "%{http_code}" \
-              -H "Authorization: Bearer $token" \
+            code="$(curl --silent --show-error --max-time 60 -o result.json -w "%{http_code}" \\
+              -H "Authorization: Bearer $token" \\
               "$BASE/api/admin/channels/base/orders-diagnostic" || true)"
             echo "HTTP $code (attempt $attempt/24)"
             if [[ "$code" == "200" ]] && python3 - <<'PY'
@@ -41,12 +41,29 @@ jobs:
           if d.get("ok") is True and isinstance(d.get("apiCrossCheck"), dict):
               print(json.dumps(d, ensure_ascii=False, indent=2))
               sys.exit(0)
+          # A valid diagnostic response with an application error is terminal.
+          if d.get("ok") is False:
+              print(json.dumps(d, ensure_ascii=False, indent=2))
+              sys.exit(2)
           sys.exit(1)
           PY
             then
               exit 0
+            else
+              result=$?
+              if [[ "$result" -eq 2 ]]; then
+                echo "BASE diagnostic returned an application error; stopping without retries."
+                exit 1
+              fi
             fi
-            echo "New diagnostic revision not ready; retrying in 10 seconds."
+            # Only retry transient deployment/readiness responses. Auth and other
+            # application failures are terminal and should not waste four minutes.
+            if [[ "$code" != "502" && "$code" != "503" && "$code" != "504" && "$code" != "404" ]]; then
+              echo "Non-retryable HTTP response: $code"
+              cat result.json
+              exit 1
+            fi
+            echo "Diagnostic revision not ready; retrying in 10 seconds."
             sleep 10
           done
           echo "Production diagnostic revision did not become ready with apiCrossCheck."
