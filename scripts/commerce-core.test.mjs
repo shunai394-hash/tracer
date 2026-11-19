@@ -1359,6 +1359,14 @@ test("BASE image format rejection retries with the existing Shopify CDN image on
 });
 
 
+test("existing-offer repricing retries prices below the minimum expected profit floor", async () => {
+  const route = await readFile(new URL("../app/api/cron/commerce-reprice-existing/route.ts", import.meta.url), "utf8");
+  assert.match(route, /import \{ MIN_EXPECTED_PROFIT_JPY, recalculatePrice \} from "@\/lib\/commerce\/core"/);
+  assert.match(route, /Number\(price\.expected_profit\) < MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(route, /Number\(ap\.expected_profit\) < MIN_EXPECTED_PROFIT_JPY/);
+  assert.match(route, /Number\(bp\.expected_profit\) < MIN_EXPECTED_PROFIT_JPY/);
+});
+
 test("scheduled minimum-profit withdrawal batches existing published listings without deleting them", async () => {
   const route = await readFile(new URL("../app/api/cron/commerce-minimum-profit-withdraw/route.ts", import.meta.url), "utf8");
   assert.match(route, /MIN_EXPECTED_PROFIT_JPY = 2500/);
