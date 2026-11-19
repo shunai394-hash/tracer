@@ -727,7 +727,7 @@ test("CJ imported products use specific customer-facing Japanese descriptions", 
 
 test("Shopify publication permits SKU normalization only when persisted product and variant IDs are both present", async () => {
   const publisher = await readFile(new URL("../lib/commerce/publish.ts", import.meta.url), "utf8");
-  assert.match(publisher, /productId && variantId\\s*\\? await updateWithHandleCollisionRecovery\\(\\{[\\s\\S]*?variantId, sku, allowSavedVariantIdSkuMismatch: true/);
+  assert.match(publisher, /productId && variantId\s*\? await updateWithHandleCollisionRecovery\(\{[\s\S]*?variantId, sku, allowSavedVariantIdSkuMismatch: true/);
   assert.match(publisher, /recoveredProduct && recoveredVariantId\\s*\\? await updateWithHandleCollisionRecovery/);
 });
 
