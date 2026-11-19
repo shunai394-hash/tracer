@@ -930,7 +930,7 @@ export async function syncCommerceListings(channel: Channel, limit = 10, onlyUnp
           ?? (recoveredVariants.length === 1 && !recoveredVariants[0]?.sku ? recoveredVariants[0].id : null);
         const updateWithHandleCollisionRecovery = async (input: {
           productId: string; title: string; descriptionHtml: string; handle: string;
-          price: number; variantId: string; sku: string; imageUrl: string | null;
+          price: number; variantId: string; sku: string; allowSavedVariantIdSkuMismatch?: boolean; imageUrl: string | null;
           seoTitle: string; seoDescription: string;
         }) => {
           try {
