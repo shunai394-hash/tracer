@@ -167,3 +167,4 @@ assert.match(store, /supplier_variant_id: line\.listing\.supplier_variant_id/);
 assert.match(store, /colorSelections/);
 
 console.log("storefront color family: 15 synthetic variants, exact supplier-image identity, image-gap sales fallback, and cart identity passed");
+
