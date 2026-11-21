@@ -27,10 +27,10 @@ The helper is deliberately a command-line workstation tool for the first rollout
 
    ```powershell
    py -m pip install -U openai-whisper
-   whisper --help
+   py -m whisper --help
    ```
 
-   Whisper requires FFmpeg. Reopen PowerShell after changing PATH.
+   Whisper requires FFmpeg. If `whisper.exe` is not on PATH, TRACER now falls back to `py -m whisper` automatically.
 
 ## 2. Configure the current PowerShell session
 

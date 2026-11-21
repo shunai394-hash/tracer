@@ -81,9 +81,32 @@ export async function askOllama(prompt, model = process.env.OLLAMA_MODEL) {
   return answer.trim();
 }
 
+function getWhisperLauncher() {
+  const direct = spawnSync("whisper", ["--help"], {
+    stdio: "ignore", windowsHide: true, shell: false, timeout: 10000,
+  });
+  if (!direct.error && direct.status === 0) return { command: "whisper", prefix: [] };
+
+  // Windows Python installs often put whisper.exe in a Scripts directory that
+  // is not on PATH. The Python module remains runnable through the py launcher.
+  const python = spawnSync("py", ["-m", "whisper", "--help"], {
+    stdio: "ignore", windowsHide: true, shell: false, timeout: 15000,
+  });
+  if (!python.error && python.status === 0) return { command: "py", prefix: ["-m", "whisper"] };
+  return null;
+}
+
 function runWhisper(args) {
+  const launcher = getWhisperLauncher();
+  if (!launcher) {
+    return Promise.reject(new Error(
+      "Whisper was not found. Install it with 'py -m pip install -U openai-whisper' or add the Python Scripts folder to PATH.",
+    ));
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn("whisper", args, { stdio: "inherit", windowsHide: true, shell: false });
+    const child = spawn(launcher.command, [...launcher.prefix, ...args], {
+      stdio: "inherit", windowsHide: true, shell: false,
+    });
     child.once("error", (error) => reject(new Error(`Whisper could not start: ${error.message}`)));
     child.once("close", (code) => code === 0
       ? resolve()
@@ -107,13 +130,7 @@ export async function transcribeWithWhisper(inputFile, outputDir = path.dirname(
 }
 
 function whisperInstalled() {
-  const result = spawnSync("whisper", ["--help"], {
-    stdio: "ignore",
-    windowsHide: true,
-    shell: false,
-    timeout: 5000,
-  });
-  return !result.error && result.status === 0;
+  return getWhisperLauncher() !== null;
 }
 
 function usage() {
