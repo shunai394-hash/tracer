@@ -75,12 +75,14 @@ function supplierIdentity(member: ColorFamilyMember): { supplier: string; produc
 }
 
 function choiceFrom(member: ColorFamilyMember, label: string, imageUrl: string | null): ColorFamilyChoice {
+  const verifiedVariantImage = member.variantImageIdentityVerified === true && member.colorImageVerified === true;
   return {
     id: member.id,
     slug: member.slug,
     title: member.title,
     label,
-    imageUrl,
+    // Never present an unverified color photo as if it were the selected color.
+    imageUrl: verifiedVariantImage ? imageUrl : null,
     sellingPrice: member.sellingPrice,
     currency: member.currency,
     inventory: member.inventory,
@@ -151,14 +153,18 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
   }
 
   const sorted = [...choices].sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  // If any family-level check fails, hide all per-color photos until the entire
+  // family is safe; never imply that a shared or unreviewed photo is color-accurate.
+  const safeChoices = blockers.length > 0 ? sorted.map((choice) => ({ ...choice, imageUrl: null })) : sorted;
   const representative = members.find((member) => member.id === sorted[0]?.id) ?? members[0];
   const parents = new Set(members.map((member) => parentTitleFromColorTitle(member.title)).filter(Boolean));
   const title = parents.size === 1 ? [...parents][0] : representative.title;
   return {
     ...representative,
     title,
-    imageUrl: sorted.find((choice) => choice.imageUrl)?.imageUrl ?? representative.imageUrl,
-    variants: sorted,
+    // A blocked family must not fall back to a possibly incorrect parent photo.
+    imageUrl: blockers.length > 0 ? null : (sorted.find((choice) => choice.imageUrl)?.imageUrl ?? representative.imageUrl),
+    variants: safeChoices,
     colorSaleBlocked: blockers.length > 0,
     colorSaleBlockers: [...new Set(blockers)],
   };
@@ -169,7 +175,8 @@ function buildFamily<T extends ColorFamilyMember>(members: T[], requireSku: bool
  * legacy channel imports assigned separate internal product IDs to each variant.
  * Title similarity never creates a family. A family with image-only
  * evidence gaps stays as separate existing listings until distinct exact-variant image
- * identities are verified; other identity, SKU, price, or stock failures fail closed.
+ * identities are verified; other identity, SKU, price, or stock failures keep one
+ * family card but fail closed for checkout.
  */
 export function groupExactColorFamilies<T extends ColorFamilyMember>(
   members: T[],
@@ -198,17 +205,22 @@ export function groupExactColorFamilies<T extends ColorFamilyMember>(
       catalog.push(single(group[0]));
       continue;
     }
-    const family = buildFamily(group, requireSku);
-    // A multi-color family is one sellable page only when every identity,
-    // SKU, price, stock, label, and exact-variant image identity check passes. Do not
-    // fall back to separately purchasable color pages when any check fails.
-    if (family.colorSaleBlocked) {
-      for (const member of group) {
-        catalog.push(single(member, ["color_family_unverified:" + family.colorSaleBlockers.join(",")]));
-      }
-    } else {
-      catalog.push(family);
+    // Only group a true color family: each exact supplier variant must have
+    // a distinct, explicit color label. Similar titles and unlabeled model/kit
+    // variants remain separate products.
+    const labels = group.map((member) => colorLabelFromTitle(member.title));
+    const normalizedLabels = labels.map((label) => label?.toLocaleLowerCase("ja-JP") ?? "");
+    if (normalizedLabels.some((label) => !label) || new Set(normalizedLabels).size !== normalizedLabels.length) {
+      for (const member of group) catalog.push(single(member));
+      continue;
     }
+
+    const family = buildFamily(group, requireSku);
+    // Keep a verified-identity color family as ONE catalog card even when an
+    // image/SKU/price/stock check blocks checkout. This removes duplicate color
+    // pages from the shopping list without pretending an unverified variant
+    // image is correct or allowing an unsafe purchase.
+    catalog.push(family);
   }
 
   return { catalog };

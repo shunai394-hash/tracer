@@ -227,7 +227,9 @@ function listCatalogFamilies(): Promise<ShopListing[]> {
 }
 
 export function listPublishedShopListings(): Promise<ShopListing[]> {
-  return listCatalogFamilies().then((rows) => rows.filter((row) => row.colorSaleBlocked !== true));
+  // Keep exact color families visible as one card even when checkout is blocked
+// pending image/identity review. The detail page remains non-purchasable until verified.
+  return listCatalogFamilies();
 }
 
 function withColorFamily(listing: ShopListing, requestedId: string, families: ShopListing[]): ShopListing {
