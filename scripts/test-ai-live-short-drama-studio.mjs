@@ -197,12 +197,15 @@ test("all drama audio playback surfaces attach the shared lip-sync engine", () =
 });
 
 test("lip sync closes fully on silence, reacts quickly, and limits maximum opening", () => {
-  assert.ok(lipSync.includes("rms <= 0.022"));
-  assert.ok(lipSync.includes("smoothed *= 0.48"));
-  assert.ok(lipSync.includes("smoothed = 0"));
-  assert.ok(lipSync.includes("setGain"));
+  assert.ok(lipSync.includes("getByteTimeDomainData"));
+  assert.ok(lipSync.includes("getByteFrequencyData"));
+  assert.ok(lipSync.includes("averageBand"));
+  assert.ok(lipSync.includes("--lip-wide"));
+  assert.ok(lipSync.includes("--lip-round"));
+  assert.ok(lipSync.includes('target.style.setProperty("--lip-open"'));
   assert.ok(lipSync.includes("mouths: new Set()"));
-  assert.ok(page.includes("height:calc(1px + 7px * var(--lip-open,0))"));
+  assert.ok(page.includes("height:calc(2px + 15px * var(--lip-open,0))"));
+  assert.ok(page.includes("width:calc(17% + 15% * var(--lip-wide,0))"));
   assert.ok(page.includes('id="lipSyncGain"'));
 });
 test("output-list face mirrors sequential playback from the script-row audio", () => {
