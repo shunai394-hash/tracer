@@ -3,7 +3,7 @@
   const contexts = new WeakMap();
   const attachments = new WeakMap();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  let gain = 0.72;
+  let gain = 1.12;
   const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 
   function attach(audio, mouth) {
@@ -76,13 +76,13 @@
       const total = low + mid + high + 0.0001;
 
       // RMS tracks syllable energy; spectral balance adds visible vowel-shape changes.
-      const targetOpen = rms < 0.014
+      const targetOpen = rms < 0.009
         ? 0
-        : clamp((rms - 0.014) * 11.5 * gain, 0, 0.92);
+        : clamp((rms - 0.009) * 17 * gain, 0, 1);
       const targetWide = clamp((high / total - 0.18) * 2.1, 0, 1);
       const targetRound = clamp((low / total - 0.24) * 1.8, 0, 1);
 
-      const smooth = (current, target) => current + (target - current) * (target > current ? 0.62 : 0.34);
+      const smooth = (current, target) => current + (target - current) * (target > current ? 0.82 : 0.24);
       entry.open = smooth(entry.open, targetOpen);
       entry.wide = smooth(entry.wide, targetOpen === 0 ? 0 : targetWide);
       entry.round = smooth(entry.round, targetOpen === 0 ? 0 : targetRound);
