@@ -204,8 +204,8 @@ test("lip sync closes fully on silence, reacts quickly, and limits maximum openi
   assert.ok(lipSync.includes("--lip-round"));
   assert.ok(lipSync.includes('target.style.setProperty("--lip-open"'));
   assert.ok(lipSync.includes("mouths: new Set()"));
-  assert.ok(page.includes("height:calc(2px + 15px * var(--lip-open,0))"));
-  assert.ok(page.includes("width:calc(17% + 15% * var(--lip-wide,0))"));
+  assert.ok(page.includes("height:calc(3px + 27px * var(--lip-open,0))"));
+  assert.ok(page.includes("width:calc(25% + 27% * var(--lip-wide,0))"));
   assert.ok(page.includes('id="lipSyncGain"'));
 });
 test("output-list face mirrors sequential playback from the script-row audio", () => {
@@ -308,4 +308,14 @@ test("BGM uploads use an authenticated signed-URL preparation step and bypass Ve
   assert.ok(page.includes("data.upload.url"));
   assert.ok(!page.includes("/api/admin/ai-live/short-drama/bgm/register-existing"));
   assert.ok(!page.includes('form.append("file",file,file.name)'));
+});
+
+
+test("studio lip sync has a visibly larger mouth and a working opening-strength control", () => {
+  assert.ok(page.includes("width:84px;height:84px;flex:0 0 84px;"));
+  assert.ok(page.includes('value="75"><p class="muted">口の開き幅を調整できます。発話中は大きく開き'));
+  assert.ok(page.includes('lipSyncGainInput.addEventListener("input",applyLipSyncGain)'));
+  assert.ok(page.includes("window.TracerLipSync?.setGain(value/67)"));
+  assert.ok(lipSync.includes("let gain = 1.12"));
+  assert.ok(lipSync.includes("clamp((rms - 0.009) * 17 * gain, 0, 1)"));
 });
