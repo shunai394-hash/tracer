@@ -81,7 +81,7 @@
     const total = scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 0);
     $("museMotionTotal").textContent = total.toFixed(1) + "秒";
     $("museMotionCount").textContent = scenes.length + "シーン";
-    if (selectedBgm) $("museMotionStatus").dataset.bgm = "BGM："+selectedBgm.title+"（"+Math.round((selectedBgm.volume||0)*100)+"%）";
+    $("museMotionBgmInfo").textContent = selectedBgm ? "BGM："+selectedBgm.title+" ／ "+selectedBgm.genre+" ／ 音量 "+Math.round((selectedBgm.volume||0)*100)+"%"+(selectedBgm.loop?" ／ ループ":"") : "BGM：未選択";
   }
 
   function setStatus(message) {
