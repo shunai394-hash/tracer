@@ -46,7 +46,7 @@ Bearer `TRACER_ADMIN_TOKEN`. The studio calls this after building a valid manife
 
 `POST /api/admin/ai-live/muse-render/assets`
 
-Bearer `TRACER_ADMIN_TOKEN`; body contains `jobId`, `fileName` (without extension), `contentType`, and byte `size`. Upload the raw bytes to the returned signed URL with HTTP PUT.
+Bearer `TRACER_ADMIN_TOKEN`; body contains `jobId`, `fileName` (without extension), `contentType`, and byte `size`. Upload the raw bytes to the returned signed URL with HTTP POST.
 
 ### Worker
 
@@ -54,7 +54,7 @@ POST `/api/admin/ai-live/muse-render/worker` with Bearer `MUSE_RENDER_WORKER_TOK
 
 - `{"action":"claim"}`: atomically claims the oldest job and returns its manifest, time-limited signed asset URLs, and a signed upload URL for `render.mp4`. Empty queue returns `job:null`.
 - Render locally with `workers/muse-render/renderer.py`.
-- Upload MP4 to the supplied signed upload URL using HTTP PUT and `Content-Type: video/mp4`.
+- Upload MP4 to the supplied signed upload URL using HTTP POST and `Content-Type: video/mp4`.
 - `{"action":"complete","id":"...","leaseToken":"...","succeeded":true}` records success. For errors use `succeeded:false` and an error string.
 
 The lease duration is 30 minutes. Attempts are capped at five for jobs whose leases expire; a worker-reported failure is marked failed. There is no lease-heartbeat endpoint yet, so a render must finish within the lease window.
