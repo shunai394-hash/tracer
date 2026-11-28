@@ -92,6 +92,39 @@ class ManifestValidationTests(unittest.TestCase):
             self.assertLess(frame[1], 100)
             self.assertLess(frame[2], 100)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg and ffprobe are required")
+    def test_scene_video_is_used_as_background_without_source_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            assets = root / "assets"
+            assets.mkdir()
+            source = assets / "scene-1.mp4"
+            subprocess.run([
+                shutil.which("ffmpeg"), "-y", "-f", "lavfi", "-i",
+                "testsrc2=size=160x90:rate=24:duration=1.2",
+                "-f", "lavfi", "-i", "sine=frequency=880:duration=1.2",
+                "-shortest", "-c:v", "libx264", "-c:a", "aac", str(source)
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "format": "muse-motion-manifest",
+                "version": 1,
+                "scenes": [{
+                    "title": "Lip sync clip", "text": "口パク映像",
+                    "durationSeconds": 1.5, "motionPreset": "fade",
+                    "videoFile": "scene-1"
+                }]
+            }), encoding="utf-8")
+            output = root / "video-output.mp4"
+            render(manifest_path, assets, output, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-show_entries",
+                "stream=codec_type:format=duration", "-of", "json", str(output)
+            ], check=True, capture_output=True, text=True)
+            details = json.loads(probe.stdout)
+            self.assertGreaterEqual(float(details["format"]["duration"]), 1.4)
+            self.assertEqual([stream["codec_type"] for stream in details["streams"]], ["video"])
+
     def test_rejects_empty_scenes(self):
         with self.assertRaises(ValueError):
             validate_manifest({"format": "muse-motion-manifest", "version": 1, "scenes": []})
