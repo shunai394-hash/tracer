@@ -96,7 +96,12 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
                         break
                 if image_path is None:
                     raise ValueError(f"Scene {index + 1} image asset is missing")
-                vf = f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,{draw}"
+                camera = ""
+                if scene["motionPreset"] == "soft-zoom":
+                    camera = ",zoompan=z='min(zoom+0.0007\\,1.06)':d=1:s=1920x1080:fps=30"
+                elif scene["motionPreset"] == "slide-left":
+                    camera = ",zoompan=z='1.04':x='(iw-iw/zoom)*on/(max(1\\,duration*30))':y='(ih-ih/zoom)/2':d=1:s=1920x1080:fps=30"
+                vf = f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1{camera},{draw}"
                 command = [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-t", str(duration), "-i", str(image_path), "-vf", vf]
             else:
                 command = [ffmpeg, "-y", "-f", "lavfi", "-i", f"color=c=0x101827:s=1920x1080:r=30:d={duration}", "-vf", draw]
