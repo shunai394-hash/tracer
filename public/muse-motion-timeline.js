@@ -15,7 +15,11 @@
   const stopButton = $("museMotionStop");
   const addButton = $("museMotionAdd");
   const exportButton = $("museMotionExport");
+  const syncButton = $("museMotionSync");
   let timeline = null;
+  let narrationAudio = null;
+  let bgmAudio = null;
+  let selectedBgm = null;
   let nextId = 1;
   let scenes = [
     { id: nextId++, title: "オープニング", duration: 3, preset: "fade-up", text: "物語のはじまり" },
@@ -83,6 +87,8 @@
   }
 
   function resetPreview() {
+    if (narrationAudio) { narrationAudio.pause(); narrationAudio.currentTime = 0; narrationAudio = null; }
+    if (bgmAudio) { bgmAudio.pause(); bgmAudio.currentTime = 0; bgmAudio = null; }
     if (timeline) {
       timeline.kill();
       timeline = null;
@@ -107,6 +113,9 @@
       preview.textContent = scene.text || scene.title;
       preview.dataset.scene = String(index + 1);
       gsap.set(preview, base);
+      if (narrationAudio) { narrationAudio.pause(); narrationAudio.currentTime = 0; }
+      narrationAudio = scene.audioUrl ? new Audio(scene.audioUrl) : null;
+      if (narrationAudio) narrationAudio.play().catch(() => setStatus("セリフ音声の再生がブラウザーによりブロックされました。プレビューをもう一度押してください。"));
     }, null, start);
     tl.to(preview, {
       ...target,
@@ -128,9 +137,10 @@
     }
     resetPreview();
     timeline = window.gsap.timeline({
-      onComplete: () => setStatus("プレビュー再生が完了しました。"),
+      onComplete: () => { resetPreview(); setStatus("台本・セリフ音声・BGMのプレビューが完了しました。"); },
       onStart: () => setStatus("プレビュー再生中…")
     });
+    if (selectedBgm?.url) { bgmAudio = new Audio(selectedBgm.url); bgmAudio.loop = Boolean(selectedBgm.loop); bgmAudio.volume = Math.min(1, Math.max(0, Number(selectedBgm.volume) || 0)); bgmAudio.play().catch(() => setStatus("BGM再生がブロックされました。")); }
     scenes.forEach((scene, index) => animateScene(scene, index, timeline));
     timeline.play(0);
   }
@@ -146,8 +156,13 @@
         title: scene.title,
         text: scene.text,
         durationSeconds: Number(scene.duration),
-        motionPreset: scene.preset
+        motionPreset: scene.preset,
+        speakerName: scene.speakerName || "",
+        voiceName: scene.voiceName || "",
+        voiceId: scene.voiceId || "",
+        narrationAudioReady: Boolean(scene.audioReady)
       })),
+      bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
       totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
     };
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
@@ -160,12 +175,43 @@
     setStatus("演出マニフェストを書き出しました。これは設計データであり、完成動画ではありません。");
   }
 
+
+  function syncFromDrama() {
+    const bridge = window.TracerMuseBridge;
+    if (!bridge || typeof bridge.getProject !== "function" || typeof bridge.getLines !== "function") {
+      setStatus("ドラマスタジオとの接続が見つかりません。スタジオを再読み込みしてください。");
+      return;
+    }
+    const project = bridge.getProject();
+    const lines = bridge.getLines();
+    if (!lines.length) { setStatus("台本にセリフがありません。先にセリフを追加してください。"); return; }
+    resetPreview();
+    scenes = lines.map((line, index) => ({
+      id: nextId++,
+      title: (line.speakerName || "話者") + "・セリフ" + (index + 1),
+      text: line.text || "",
+      duration: line.durationSeconds || Math.max(2, Math.min(12, (String(line.text || "").length * 0.32))),
+      preset: index === 0 ? "fade-up" : "soft-zoom",
+      speakerName: line.speakerName,
+      voiceName: line.voiceName,
+      voiceId: line.voiceId,
+      audioReady: line.audioReady,
+      audioUrl: line.audioUrl || ""
+    }));
+    selectedBgm = typeof bridge.getBgm === "function" ? bridge.getBgm() : null;
+    if (selectedBgm) selectedBgm.url = bridge.getBgmUrl ? bridge.getBgmUrl() : "";
+    renderScenes();
+    const ready = scenes.filter(scene => scene.audioReady).length;
+    setStatus("台本を取り込みました："+(project.title || "無題")+" 第"+(project.episode || 1)+"話／"+scenes.length+"セリフ。生成済み音声 "+ready+"件。尺未確定のセリフは文字数からの仮見積もりです。");
+  }
+
   addButton.addEventListener("click", () => {
     if (scenes.length >= 30) { setStatus("試作版では最大30シーンです。"); return; }
     scenes.push({ id: nextId++, title: "新しいシーン", duration: 3, preset: "fade-up", text: "テキストを入力" });
     renderScenes();
   });
   playButton.addEventListener("click", play);
+  syncButton.addEventListener("click", syncFromDrama);
   stopButton.addEventListener("click", () => { resetPreview(); setStatus("プレビューを停止しました。"); });
   exportButton.addEventListener("click", exportManifest);
   renderScenes();
