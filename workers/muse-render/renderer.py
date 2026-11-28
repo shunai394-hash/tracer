@@ -71,8 +71,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             duration = scene["durationSeconds"]
             clip = tempdir / f"scene-{index:03d}.mp4"
             text = drawtext_escape(scene["text"] or scene["title"])
-                    # Motion is intentionally restrained for a readable first renderer.
-            zoom = "zoompan=z='min(zoom+0.0008,1.04)':d=1:s=1920x1080:fps=30"
+            # Motion is intentionally restrained for a readable first renderer.
             if scene["motionPreset"] == "slide-left":
                 x_expr = "if(lt(t,0.5),960-960*t/0.5,0)"
             elif scene["motionPreset"] == "fade-up":
@@ -84,7 +83,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             clips.append(clip)
             offset += duration
         concat = tempdir / "concat.txt"
-        concat.write_text("".join(f"file '{clip.as_posix()}'\\n" for clip in clips), encoding="utf-8")
+        concat.write_text("".join(f"file '{clip.as_posix()}'\n" for clip in clips), encoding="utf-8")
         silent = tempdir / "silent.mp4"
         run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(silent)])
 
@@ -97,8 +96,8 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
         inputs = ["-i", str(silent)]
         filters = []
         mix_labels = []
-        for index, path in voice_files:
-            input_no = 1 + len(voice_files[:len([v for v in voice_files if v[0] < index])])
+        for ordinal, (index, path) in enumerate(voice_files):
+            input_no = ordinal + 1
             inputs += ["-i", str(path)]
             start = sum(s["durationSeconds"] for s in manifest["scenes"][:index])
             label = f"v{index}"
