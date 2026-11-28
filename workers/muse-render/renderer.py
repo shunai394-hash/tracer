@@ -10,7 +10,6 @@ import argparse
 import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -72,8 +71,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             duration = scene["durationSeconds"]
             clip = tempdir / f"scene-{index:03d}.mp4"
             text = drawtext_escape(scene["text"] or scene["title"])
-            alpha = "if(lt(t,0.35),t/0.35,if(gt(t\\,D-0.35),(D-t)/0.35,1))".replace("D", str(duration))
-            # Motion is intentionally restrained for a readable first renderer.
+                    # Motion is intentionally restrained for a readable first renderer.
             zoom = "zoompan=z='min(zoom+0.0008,1.04)':d=1:s=1920x1080:fps=30"
             if scene["motionPreset"] == "slide-left":
                 x_expr = "if(lt(t,0.5),960-960*t/0.5,0)"
@@ -100,16 +98,16 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
         filters = []
         mix_labels = []
         for index, path in voice_files:
+            input_no = 1 + len(voice_files[:len([v for v in voice_files if v[0] < index])])
             inputs += ["-i", str(path)]
-            input_no = len(inputs) // 2
             start = sum(s["durationSeconds"] for s in manifest["scenes"][:index])
             label = f"v{index}"
             filters.append(f"[{input_no}:a]adelay={int(start*1000)}|{int(start*1000)},volume=1.0[{label}]")
             mix_labels.append(f"[{label}]")
         has_bgm = bgm.exists() and bgm.is_file() and assets_dir in bgm.parents
         if has_bgm:
+            input_no = 1 + len(voice_files)
             inputs += ["-stream_loop", "-1", "-i", str(bgm)]
-            input_no = len(inputs) // 2
             filters.append(f"[{input_no}:a]volume=0.18,atrim=0:{manifest['totalDurationSeconds']}[bg]")
             mix_labels.append("[bg]")
         if mix_labels:
