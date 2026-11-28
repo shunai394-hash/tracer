@@ -50,17 +50,17 @@ export async function GET(request: Request) {
   try {
     const id = new URL(request.url).searchParams.get("id");
     let query = createSupabaseAdminClient().from("ai_live_muse_render_jobs")
-      .select("id,status,requested_by,attempt_count,output_video_url,error_message,created_at,updated_at,completed_at")
+      .select("id,status,requested_by,attempt_count,output_video_url,output_path,error_message,created_at,updated_at,completed_at")
       .order("created_at", { ascending: false }).limit(30);
     if (id) query = query.eq("id", id);
     const { data, error } = await query;
     if (error) throw error;
     const storage = createSupabaseAdminClient().storage.from(BUCKET);
     const jobs = await Promise.all((data ?? []).map(async (job) => {
-      if (job.status !== "succeeded" || !job.output_path) return job;
-      const { data: signed, error: signError } = await storage.createSignedUrl(job.output_path, 60 * 60);
+      if (job.status !== "succeeded" || !job.output_path) const { data: signed, error: signError } = await storage.createSignedUrl(job.output_path, 60 * 60);
       if (signError) throw signError;
-      return { ...job, output_video_url: signed.signedUrl };
+      const { output_path: _outputPath, ...visible } = job;
+      return { ...visible, output_video_url: signed.signedUrl };
     }));
     return json({ ok: true, jobs });
   } catch {
