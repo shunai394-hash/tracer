@@ -101,7 +101,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             inputs += ["-i", str(path)]
             start = sum(s["durationSeconds"] for s in manifest["scenes"][:index])
             label = f"v{index}"
-            filters.append(f"[{input_no}:a]adelay={int(start*1000)}|{int(start*1000)},volume=1.0[{label}]")
+            filters.append(f"[{input_no}:a]adelay={int(start*1000)}|{int(start*1000)},apad=whole_dur={manifest['totalDurationSeconds']},volume=1.0[{label}]")
             mix_labels.append(f"[{label}]")
         has_bgm = bgm.exists() and bgm.is_file() and assets_dir in bgm.parents
         if has_bgm:
@@ -111,7 +111,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             mix_labels.append("[bg]")
         if mix_labels:
             filters.append("".join(mix_labels) + f"amix=inputs={len(mix_labels)}:duration=longest:normalize=0[aout]")
-            run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(output)])
+            run([ffmpeg, "-y", *inputs, "-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", str(manifest["totalDurationSeconds"]), "-movflags", "+faststart", str(output)])
         else:
             shutil.copy2(silent, output)
 
