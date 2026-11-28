@@ -216,6 +216,135 @@
   syncButton.addEventListener("click", syncFromDrama);
   stopButton.addEventListener("click", () => { resetPreview(); setStatus("プレビューを停止しました。"); });
   exportButton.addEventListener("click", exportManifest);
+  // Full MP4 render: upload the existing generated narration/BGM assets, enqueue, then poll.
+  const renderButton = document.createElement("button");
+  renderButton.type = "button";
+  renderButton.textContent = "🎬 MP4動画を生成";
+  renderButton.id = "museMotionRender";
+  const actions = root.querySelector(".museMotionActions");
+  const videoWrap = document.createElement("div");
+  videoWrap.id = "museMotionVideoResult";
+  videoWrap.style.marginTop = "14px";
+  videoWrap.setAttribute("aria-live", "polite");
+  if (actions) actions.append(renderButton);
+  const video = document.createElement("video");
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  video.style.cssText = "display:none;width:100%;max-height:520px;border-radius:12px;background:#000;margin-top:12px";
+  videoWrap.append(video);
+  const resultText = document.createElement("p");
+  resultText.className = "muted";
+  videoWrap.append(resultText);
+  if (actions) actions.after(videoWrap);
+
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  async function apiJson(url, options) {
+    const response = await fetch(url, { ...options, cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.message || data.error || ("HTTP " + response.status));
+    return data;
+  }
+  async function uploadAsset(jobId, fileName, blob, contentType) {
+    const prepared = await apiJson("/api/admin/ai-live/muse-render/assets", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + $("token").value.trim(), "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId, fileName, contentType, size: blob.size })
+    });
+    const uploaded = await fetch(prepared.upload.url, {
+      method: "PUT",
+      headers: { "x-upsert": "false", "Content-Type": contentType },
+      body: blob,
+      cache: "no-store"
+    });
+    if (!uploaded.ok) throw new Error(fileName + " のStorage保存に失敗しました（HTTP " + uploaded.status + "）。");
+  }
+  function currentManifest() {
+    return {
+      format: "muse-motion-manifest", version: 1, createdAt: new Date().toISOString(), fps: 30,
+      scenes: scenes.map((scene, index) => ({
+        order: index + 1, title: scene.title, text: scene.text,
+        durationSeconds: Number(scene.duration), motionPreset: scene.preset,
+        speakerName: scene.speakerName || "", voiceName: scene.voiceName || "",
+        voiceId: scene.voiceId || "", narrationAudioReady: Boolean(scene.audioReady)
+      })),
+      bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
+      totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
+    };
+  }
+  async function renderMp4() {
+    const bridge = window.TracerMuseBridge;
+    const token = $("token")?.value.trim();
+    if (!token) { setStatus("先にTRACER管理トークンを入力してください。"); $("token")?.focus(); return; }
+    if (!bridge || typeof bridge.getLines !== "function") { setStatus("ドラマスタジオとの接続がありません。ページを再読み込みしてください。"); return; }
+    if (!scenes.length) { setStatus("シーンがありません。"); return; }
+    const lines = bridge.getLines();
+    const ready = lines.filter(line => line.audioReady && line.audioUrl);
+    if (!ready.length) { setStatus("生成済みセリフ音声がありません。先にFish Audioで音声を生成してください。"); return; }
+    renderButton.disabled = true;
+    video.style.display = "none";
+    video.removeAttribute("src");
+    resultText.textContent = "";
+    try {
+      const manifest = currentManifest();
+      const assetPaths = ready.map((_, index) => "voice-" + (index + 1) + ".mp3");
+      let bgmBlob = null;
+      if (selectedBgm?.url) {
+        const response = await fetch(selectedBgm.url, { cache: "no-store" });
+        if (!response.ok) throw new Error("選択中BGMを取得できません（HTTP " + response.status + "）。BGM一覧を更新してください。");
+        bgmBlob = await response.blob();
+        if (!bgmBlob.size) throw new Error("BGMファイルが空です。");
+        assetPaths.push("bgm.mp3");
+      }
+      setStatus("MP4生成ジョブを登録しています…");
+      const created = await apiJson("/api/admin/ai-live/muse-render/jobs", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ requestedBy: "muse-studio", manifest, assetPaths })
+      });
+      const jobId = created.job.id;
+      for (let i = 0; i < ready.length; i++) {
+        setStatus("音声素材をアップロード中… " + (i + 1) + "/" + ready.length);
+        const response = await fetch(ready[i].audioUrl);
+        if (!response.ok) throw new Error("セリフ音声 " + (i + 1) + " を読み込めません。再生成してください。");
+        const blob = await response.blob();
+        await uploadAsset(jobId, "voice-" + (i + 1), blob, "audio/mpeg");
+      }
+      if (bgmBlob) {
+        setStatus("BGMをアップロード中…");
+        await uploadAsset(jobId, "bgm", bgmBlob, "audio/mpeg");
+      }
+      setStatus("ジョブ登録完了。Colabワーカーの処理待ちです。ジョブID：" + jobId);
+      resultText.textContent = "ジョブID：" + jobId + " ／ ワーカー待機中";
+      for (let attempt = 0; attempt < 360; attempt++) {
+        await wait(5000);
+        const state = await apiJson("/api/admin/ai-live/muse-render/jobs?id=" + encodeURIComponent(jobId), {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const job = state.jobs?.[0];
+        if (!job) throw new Error("ジョブ状態を取得できません。");
+        if (job.status === "failed") throw new Error("動画生成に失敗しました：" + (job.error_message || "詳細不明"));
+        if (job.status === "succeeded" && job.output_video_url) {
+          video.src = job.output_video_url;
+          video.style.display = "block";
+          video.load();
+          resultText.textContent = "MP4生成完了。動画を再生して確認してください。";
+          setStatus("MP4動画の生成が完了しました。");
+          return;
+        }
+        resultText.textContent = "ジョブ状態：" + job.status + " ／ 試行 " + job.attempt_count;
+      }
+      setStatus("ワーカーの処理がまだ完了していません。ページを閉じてもジョブはキューに残ります。後で再読み込みして状態を確認してください。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus("MP4生成エラー：" + message);
+      resultText.textContent = message;
+    } finally {
+      renderButton.disabled = false;
+    }
+  }
+  renderButton.addEventListener("click", renderMp4);
+
   renderScenes();
   if (!window.gsap) setStatus("GSAPの読み込みを待機中です。読み込めない場合もシーン編集・JSON出力は可能です。");
   else setStatus("シーンを編集し、プレビューまたは演出マニフェスト出力を実行できます。");
