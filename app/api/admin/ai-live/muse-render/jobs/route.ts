@@ -40,7 +40,7 @@ function validateManifest(value: unknown): value is Record<string, unknown> {
 }
 function validAssetPaths(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 122 && value.every((p) =>
-    typeof p === "string" && p.length <= 240 && /^[a-zA-Z0-9][a-zA-Z0-9/_-]*\.(mp3|png|jpg|jpeg|webp)$/i.test(p) &&
+    typeof p === "string" && p.length <= 240 && /^[a-zA-Z0-9][a-zA-Z0-9/_-]*\\.(mp3|png|jpg|jpeg|webp)$/i.test(p) &&
     !p.includes("..") && !p.startsWith("/") && !p.includes("//")
   );
 }
@@ -49,18 +49,23 @@ export async function GET(request: Request) {
   if (authError) return authError;
   try {
     const id = new URL(request.url).searchParams.get("id");
-    let query = createSupabaseAdminClient().from("ai_live_muse_render_jobs")
+    const db = createSupabaseAdminClient();
+    let query = db.from("ai_live_muse_render_jobs")
       .select("id,status,requested_by,attempt_count,output_video_url,output_path,error_message,created_at,updated_at,completed_at")
       .order("created_at", { ascending: false }).limit(30);
     if (id) query = query.eq("id", id);
     const { data, error } = await query;
     if (error) throw error;
-    const storage = createSupabaseAdminClient().storage.from(BUCKET);
+    const storage = db.storage.from(BUCKET);
     const jobs = await Promise.all((data ?? []).map(async (job) => {
-      if (job.status !== "succeeded" || !job.output_path) const { data: signed, error: signError } = await storage.createSignedUrl(job.output_path, 60 * 60);
-      if (signError) throw signError;
+      let outputVideoUrl: string | null = null;
+      if (job.status === "succeeded" && job.output_path) {
+        const { data: signed, error: signError } = await storage.createSignedUrl(job.output_path, 60 * 60);
+        if (signError) throw signError;
+        outputVideoUrl = signed.signedUrl;
+      }
       const { output_path: _outputPath, ...visible } = job;
-      return { ...visible, output_video_url: signed.signedUrl };
+      return { ...visible, output_video_url: outputVideoUrl };
     }));
     return json({ ok: true, jobs });
   } catch {
