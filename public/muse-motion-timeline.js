@@ -51,6 +51,7 @@
         <div class="museMotionSceneFields">
           <label>シーン名<input data-field="title" maxlength="60" value="${escapeHtml(scene.title)}"></label>
           <label>画面テキスト<input data-field="text" maxlength="120" value="${escapeHtml(scene.text)}"></label>
+          <p class="museMotionSceneInfo">${escapeHtml(scene.speakerName ? "話者："+scene.speakerName : "話者未設定")} ／ ${escapeHtml(scene.voiceName || (scene.voiceId ? "ボイスID登録済み" : "ボイス未設定"))} ／ ${scene.audioReady ? "生成済み音声あり" : "音声未生成・仮尺"}</p>
           <div class="museMotionSceneControls">
             <label>秒数<input data-field="duration" type="number" min="0.5" max="60" step="0.5" value="${scene.duration}"></label>
             <label>動き<select data-field="preset">${presets.map(([value,label]) => `<option value="${value}" ${scene.preset === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
@@ -80,6 +81,7 @@
     const total = scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 0);
     $("museMotionTotal").textContent = total.toFixed(1) + "秒";
     $("museMotionCount").textContent = scenes.length + "シーン";
+    if (selectedBgm) $("museMotionStatus").dataset.bgm = "BGM："+selectedBgm.title+"（"+Math.round((selectedBgm.volume||0)*100)+"%）";
   }
 
   function setStatus(message) {
