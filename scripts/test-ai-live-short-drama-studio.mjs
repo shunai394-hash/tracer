@@ -12,6 +12,8 @@ const diagnosticsRoute = readFileSync("app/api/admin/ai-live/fish-audio/diagnost
 const privateCloneVoices = readFileSync("lib/ai-live/fish-audio-private-drama-clone-voices.ts", "utf8");
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
+const castRoute = readFileSync("app/api/admin/ai-live/short-drama/cast/route.ts", "utf8");
+const castMigration = readFileSync("supabase/migrations/20261111130000_create_ai_live_drama_casts.sql", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
 const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
 
@@ -345,4 +347,31 @@ test("studio lip sync has a visibly larger mouth and a working opening-strength 
   assert.ok(page.includes("window.TracerLipSync?.setGain(value/67)"));
   assert.ok(lipSync.includes("let gain = 1.12"));
   assert.ok(lipSync.includes("clamp((rms - 0.009) * 17 * gain, 0, 1)"));
+});
+
+test("custom registered voices can be removed from TRACER without deleting Fish Audio models or saved cast IDs", () => {
+  assert.ok(page.includes("async function removeRegisteredVoice(voice)"));
+  assert.ok(page.includes('method:"DELETE"'));
+  assert.ok(page.includes('textContent="この声を一覧から削除"'));
+  assert.ok(page.includes("Fish Audio側のモデルと過去のドラマ配役は削除しません"));
+  assert.ok(voicesRoute.includes("export async function DELETE(request: Request)"));
+  assert.ok(voicesRoute.includes('from("fish_audio_registered_voices").delete()'));
+  assert.ok(voicesRoute.includes("protectedIds"));
+  assert.ok(page.includes("削除済み・未登録ボイス（既存配役IDを保持）"));
+});
+test("drama cast is persisted by title and can be restored for later episodes", () => {
+  assert.ok(page.includes('id="saveDramaCast"'));
+  assert.ok(page.includes('id="loadDramaCast"'));
+  assert.ok(page.includes("async function saveDramaCast()"));
+  assert.ok(page.includes("async function loadDramaCast()"));
+  assert.ok(page.includes("/api/admin/ai-live/short-drama/cast"));
+  assert.ok(page.includes("保存済みの配役を呼び出す"));
+  assert.ok(page.includes("refreshLineCharacters();refreshCharacterFaces();"));
+  assert.ok(castRoute.includes('from("ai_live_drama_casts")'));
+  assert.ok(castRoute.includes("export async function GET(request: Request)"));
+  assert.ok(castRoute.includes("export async function POST(request: Request)"));
+  assert.ok(castRoute.includes("dramaKey(title)"));
+  assert.ok(castMigration.includes("create table if not exists public.ai_live_drama_casts"));
+  assert.ok(castMigration.includes("enable row level security"));
+  assert.ok(castMigration.includes("revoke all on public.ai_live_drama_casts from anon, authenticated"));
 });
