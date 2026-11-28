@@ -262,7 +262,7 @@ async function removeRegisteredVoice(voice){
   const data=await response.json().catch(()=>({}));
   if(!response.ok||!data.ok)throw new Error(data.message||data.error||"ボイスを削除できませんでした");
   voices=voices.filter(item=>item.id!==voice.id);
-  voicePreviewUrls.delete(voice.id);
+  const previewUrl=voicePreviewUrls.get(voice.id);if(previewUrl)URL.revokeObjectURL(previewUrl);voicePreviewUrls.delete(voice.id);
   refreshCharacterVoiceOptions();renderVoiceLibrary();
   $("loadStatus").textContent=data.message+" 担当中の人物には旧IDを保持しています。";
  }catch(error){$("loadStatus").textContent="削除エラー："+error.message;if(button)button.disabled=false;}
@@ -291,7 +291,7 @@ function renderVoiceLibrary(){
  const registeredHeading=document.createElement("h3");registeredHeading.style.gridColumn="1 / -1";registeredHeading.textContent="IDから登録した音声（"+idRegistered.length+"件）";root.append(registeredHeading);
  const registeredNote=document.createElement("p");registeredNote.className="muted";registeredNote.style.gridColumn="1 / -1";registeredNote.textContent="Fish AudioモデルIDで照合し、TRACER共通台帳に保存した音声です。全件ここに表示します。";root.append(registeredNote);
  for(const voice of idRegistered){
-  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const remove=document.createElement("button");remove.type="button";remove.className="secondary";remove.textContent="この声を一覧から削除";remove.addEventListener("click",()=>removeRegisteredVoice(voice));const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId);addVoicePreviewControls(card,voice);addVoiceAssignmentControl(card,voice);card.append(choose,remove);root.append(card);
+  const card=document.createElement("div");card.className="scene";const name=document.createElement("strong");name.textContent=voice.title;const meta=document.createElement("p");meta.className="muted";meta.textContent="Fish Audio登録済み・使用可能";const modelId=document.createElement("p");modelId.className="voiceMeta";modelId.textContent="モデルID: "+voice.id;const remove=document.createElement("button");remove.type="button";remove.className="secondary";remove.textContent="この声を一覧から削除";remove.addEventListener("click",()=>removeRegisteredVoice(voice));const choose=document.createElement("button");choose.type="button";choose.className="secondary";choose.textContent="登場人物に追加";choose.addEventListener("click",()=>{addCharacter(voice.title,voice.id);status.textContent="「"+voice.title+"」を登場人物に追加しました。";});card.append(name,meta,modelId);addVoicePreviewControls(card,voice);addVoiceAssignmentControl(card,voice);card.append(choose);if(!["7478a76f38974bd2afa89c1bbe6831c7","160840e5c583459d89dc5521e7f175e5"].includes(voice.id))card.append(remove);root.append(card);
  }
  const presetNames=new Set(voicePresetDefinitions.map(item=>item.title));
  const otherVoices=registered.filter(voice=>voice?.id&&voice.source!=="id_registered"&&!presetNames.has(String(voice.title||voice.name||"").trim()));
