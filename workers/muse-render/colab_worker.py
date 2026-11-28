@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -78,9 +79,20 @@ def process_job(api: str, worker_token: str, job: dict, font: str) -> None:
             raise RuntimeError("Rendered MP4 is unexpectedly small")
         upload(job["output"]["url"], job["output"]["token"], output_path)
 
-    request_json(api, worker_token, {
-        "action": "complete", "id": job_id, "leaseToken": lease_token, "succeeded": True,
-    })
+    # Completion is reported by main after the heartbeat thread is stopped.
+
+
+def heartbeat_loop(api: str, token: str, job_id: str, lease_token: str, stop: threading.Event) -> None:
+    while not stop.wait(240):
+        try:
+            request_json(api, token, {
+                "action": "heartbeat", "id": job_id, "leaseToken": lease_token,
+            })
+            print(f"Lease renewed for {job_id}", flush=True)
+        except Exception as exc:
+            print(f"Lease heartbeat failed for {job_id}: {exc}", flush=True)
+            # Do not silently continue as if ownership were guaranteed.
+            return
 
 
 def main() -> int:
@@ -108,10 +120,25 @@ def main() -> int:
                 time.sleep(max(2, args.poll_seconds))
                 continue
             print(f"Claimed {job['id']} (attempt {job.get('attempt', '?')})", flush=True)
+            stop_heartbeat = threading.Event()
+            heartbeat = threading.Thread(
+                target=heartbeat_loop,
+                args=(api, args.token, job["id"], job["leaseToken"], stop_heartbeat),
+                daemon=True,
+            )
+            heartbeat.start()
             try:
                 process_job(api, args.token, job, args.font)
+                stop_heartbeat.set()
+                heartbeat.join(timeout=5)
+                request_json(api, args.token, {
+                    "action": "complete", "id": job["id"], "leaseToken": job["leaseToken"],
+                    "succeeded": True,
+                })
                 print(f"Completed {job['id']}", flush=True)
             except Exception as exc:
+                stop_heartbeat.set()
+                heartbeat.join(timeout=5)
                 message = str(exc)[:900]
                 print(f"Failed {job['id']}: {message}", flush=True)
                 try:
