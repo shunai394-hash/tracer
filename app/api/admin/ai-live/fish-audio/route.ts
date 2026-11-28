@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
+const FISH_TTS_TIMESTAMP_URL = "https://api.fish.audio/v1/tts/stream/with-timestamp";
 const MAX_TEXT_CHARS = 1200;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 const PROVIDER_TIMEOUT_MS = 50_000;
@@ -63,7 +64,88 @@ async function readBoundedAudio(response: Response): Promise<Uint8Array> {
   return result;
 }
 
-/** One-shot, admin-only Fish Audio preview. No retries and no automatic publishing. */
+type TimestampSegment = { text: string; start: number; end: number };
+type TimestampChunk = { content: string; offset: number; segments: TimestampSegment[] };
+
+async function readTimestampedStream(response: Response): Promise<{ audio: Uint8Array; timeline: TimestampSegment[] }> {
+  if (!response.body) throw new Error("empty_timestamp_stream");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const audioChunks: Uint8Array[] = [];
+  const alignmentByChunk = new Map<number, TimestampChunk>();
+  let buffer = "";
+  let totalAudioBytes = 0;
+
+  const consumeEvent = (eventText: string) => {
+    const dataLine = eventText.split(/\r?\n/).find((line) => line.startsWith("data:"));
+    if (!dataLine) return;
+    const raw = dataLine.slice(5).trim();
+    if (!raw || raw === "[DONE]") return;
+    const event = JSON.parse(raw) as {
+      audio_base64?: unknown;
+      chunk_seq?: unknown;
+      chunk_audio_offset_sec?: unknown;
+      content?: unknown;
+      alignment?: { segments?: Array<{ text?: unknown; start?: unknown; end?: unknown }> } | null;
+    };
+    if (typeof event.audio_base64 === "string" && event.audio_base64) {
+      const bytes = Buffer.from(event.audio_base64, "base64");
+      totalAudioBytes += bytes.byteLength;
+      if (totalAudioBytes > MAX_AUDIO_BYTES) throw new Error("audio_size_limit_exceeded");
+      audioChunks.push(new Uint8Array(bytes));
+    }
+    if (event.alignment && Array.isArray(event.alignment.segments) &&
+        Number.isInteger(event.chunk_seq) && Number.isFinite(event.chunk_audio_offset_sec)) {
+      const segments = event.alignment.segments.flatMap((segment) => {
+        const text = typeof segment.text === "string" ? segment.text : "";
+        const start = Number(segment.start);
+        const end = Number(segment.end);
+        return text && Number.isFinite(start) && Number.isFinite(end) && end >= start
+          ? [{ text, start, end }] : [];
+      });
+      alignmentByChunk.set(Number(event.chunk_seq), {
+        content: typeof event.content === "string" ? event.content : "",
+        offset: Number(event.chunk_audio_offset_sec),
+        segments,
+      });
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = events.pop() ?? "";
+      for (const eventText of events) consumeEvent(eventText);
+      if (done) break;
+    }
+    if (buffer.trim()) consumeEvent(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!audioChunks.length) throw new Error("empty_audio_response");
+  const audio = new Uint8Array(totalAudioBytes);
+  let offset = 0;
+  for (const chunk of audioChunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const timeline: TimestampSegment[] = [];
+  for (const [, chunk] of [...alignmentByChunk.entries()].sort(([a], [b]) => a - b)) {
+    for (const segment of chunk.segments) {
+      timeline.push({
+        text: segment.text,
+        start: segment.start + chunk.offset,
+        end: segment.end + chunk.offset,
+      });
+    }
+  }
+  return { audio, timeline };
+}
+
+/** One-shot, admin-only Fish Audio preview. Timestamp alignment is opt-in and never retried. */
 export async function POST(request: Request) {
   if (!authorizedAdminToken(request)) {
     const authError = await requireAutomationAuth(request);
@@ -93,6 +175,7 @@ export async function POST(request: Request) {
 
   const text = typeof input.text === "string" ? input.text.trim() : "";
   const referenceId = typeof input.referenceId === "string" ? input.referenceId.trim() : "";
+  const withTimestamps = input.withTimestamps === true;
   const speed = typeof input.prosody === "object" && input.prosody !== null && !Array.isArray(input.prosody)
     ? (input.prosody as Record<string, unknown>).speed
     : undefined;
@@ -143,20 +226,22 @@ export async function POST(request: Request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
   try {
-    const response = await fetch(FISH_TTS_URL, {
+    const response = await fetch(withTimestamps ? FISH_TTS_TIMESTAMP_URL : FISH_TTS_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        Accept: withTimestamps ? "text/event-stream" : "audio/mpeg",
         model: process.env.FISH_AUDIO_MODEL || "s2.1-pro-free",
       },
-      body: JSON.stringify({ text, reference_id: referenceId, format: "mp3", prosody: { speed: prosodySpeed } }),
+      body: JSON.stringify(withTimestamps
+        ? { text, reference_id: referenceId, format: "mp3", language: "ja", latency: "balanced", prosody: { speed: prosodySpeed } }
+        : { text, reference_id: referenceId, format: "mp3", prosody: { speed: prosodySpeed } }),
       cache: "no-store",
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      // Do not forward provider response bodies: they may contain submitted text or identifiers.
       return json({
         ok: false,
         error: "fish_audio_request_rejected",
@@ -164,6 +249,21 @@ export async function POST(request: Request) {
         message: "Fish Audio rejected the request. Check model access and API permissions. It was not automatically retried.",
         generationStarted: true,
       }, 502);
+    }
+
+    if (withTimestamps) {
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().includes("text/event-stream")) {
+        return json({ ok: false, error: "unexpected_timestamp_content_type", generationStarted: true }, 502);
+      }
+      const result = await readTimestampedStream(response);
+      return json({
+        ok: true,
+        audioBase64: Buffer.from(result.audio).toString("base64"),
+        contentType: "audio/mpeg",
+        timeline: result.timeline,
+        alignmentUnit: "word_or_text_segment",
+      });
     }
 
     const contentType = response.headers.get("content-type") || "";

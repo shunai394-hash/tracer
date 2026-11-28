@@ -24,9 +24,13 @@ test("short drama studio assigns voices per character and lines", () => {
   assert.ok(page.includes("pause"));
   assert.ok(page.includes("buildSpokenText"));
   assert.ok(page.includes("tracer-lip-sync.js"));
-  assert.ok(page.includes("TracerLipSync.attach"));
+  assert.ok(page.includes("TracerLipSync.attachAligned"));
   assert.ok(page.includes("lipSyncMouth"));
   assert.ok(lipSync.includes("getByteTimeDomainData"));
+  assert.ok(lipSync.includes("function attachAligned(audio, mouth, timeline)"));
+  assert.ok(lipSync.includes("function buildVisemes(timeline)"));
+  assert.ok(lipSync.includes('case "i": return { open: 0.34, wide: 1'));
+  assert.ok(lipSync.includes('case "u": return { open: 0.38, wide: 0.08, round: 1'));
 });
 
 test("generation is explicit, sequential, bounded, and stoppable", () => {
@@ -39,6 +43,12 @@ test("generation is explicit, sequential, bounded, and stoppable", () => {
   assert.ok(route.includes("MAX_TEXT_CHARS = 1200"));
   assert.ok(route.includes("MAX_AUDIO_BYTES = 12 * 1024 * 1024"));
   assert.ok(route.includes("PROVIDER_TIMEOUT_MS = 50_000"));
+  assert.ok(route.includes("/v1/tts/stream/with-timestamp"));
+  assert.ok(route.includes("readTimestampedStream"));
+  assert.ok(route.includes("alignmentUnit: \"word_or_text_segment\""));
+  assert.ok(page.includes("withTimestamps:true"));
+  assert.ok(page.includes("row.timeline=aligned.timeline"));
+  assert.ok(page.includes("同期できない音声は採用しません"));
 });
 
 test("studio does not auto-publish, schedule, or retry generated audio", () => {
@@ -190,8 +200,8 @@ test("Fish Audio diagnostics are read-only, authenticated, and inspect wallet pl
 
 
 test("all drama audio playback surfaces attach the shared lip-sync engine", () => {
-  assert.ok(page.includes('window.TracerLipSync.attach(audio,mouth)'));
-  assert.ok(page.includes('window.TracerLipSync.attach(audio,el.querySelector(".lipSyncMouth"))'));
+  assert.ok(page.includes('window.TracerLipSync.attachAligned(audio,mouth,row.timeline)'));
+  assert.ok(page.includes('window.TracerLipSync.attachAligned(audio,el.querySelector(".lipSyncMouth"),row.timeline)'));
   assert.ok(page.includes('audio.play().catch(error=>{cleanup();reject(error);})'));
   assert.ok(page.includes('const audio=line?.querySelector("audio")'));
 });
@@ -210,7 +220,7 @@ test("lip sync closes fully on silence, reacts quickly, and limits maximum openi
 });
 test("output-list face mirrors sequential playback from the script-row audio", () => {
   assert.ok(page.includes("const sourceAudio=sourceLine?.querySelector(\"audio\")"));
-  assert.ok(page.includes("window.TracerLipSync.attach(sourceAudio,mouth)"));
+  assert.ok(page.includes("window.TracerLipSync.attachAligned(sourceAudio,mouth,row.timeline)"));
 });
 test("voice preview cards attach the shared lip-sync engine", () => {
   assert.ok(page.includes("sampleFace=makeLipSyncFace"));
