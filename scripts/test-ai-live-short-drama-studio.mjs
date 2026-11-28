@@ -179,6 +179,23 @@ test("finished drama mix combines dialogue with loopable BGM and fade automation
   assert.ok(page.includes("duration>300"));
 });
 
+
+test("lip-sync video export records timestamp-driven mouth animation with synchronized dialogue and optional BGM", () => {
+  assert.ok(page.includes('id="exportLipSyncVideo"'));
+  assert.ok(page.includes('id="videoExportStatus"'));
+  assert.ok(page.includes("async function exportLipSyncVideo()"));
+  assert.ok(page.includes("row.timeline"));
+  assert.ok(page.includes("canvas.captureStream(30)"));
+  assert.ok(page.includes("new MediaRecorder(stream"));
+  assert.ok(page.includes("source.start(audioStartAt+starts[index],0,buffers[index].duration)"));
+  assert.ok(page.includes("video/mp4"));
+  assert.ok(page.includes("video/webm"));
+  assert.ok(page.includes("videoExportDownload"));
+  assert.ok(page.includes("mouthX,mouthY,mw/2,mh/2"));
+  assert.ok(page.includes("口の動きと字幕を映像に描画"));
+  assert.ok(!page.includes("setTimeout("));
+});
+
 test("short drama studio inline JavaScript parses without syntax errors", () => {
   const scriptStart = page.indexOf("<script>");
   const scriptEnd = page.indexOf("</script>", scriptStart);
