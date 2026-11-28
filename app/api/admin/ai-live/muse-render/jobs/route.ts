@@ -40,7 +40,7 @@ function validateManifest(value: unknown): value is Record<string, unknown> {
 }
 function validAssetPaths(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 122 && value.every((p) =>
-    typeof p === "string" && p.length <= 240 && /^[a-zA-Z0-9][a-zA-Z0-9/_-]*\.(mp3|png|jpg|jpeg|webp)$/i.test(p) &&
+    typeof p === "string" && p.length <= 240 && /^[a-zA-Z0-9][a-zA-Z0-9/_-]*\.(mp3|png|jpg|jpeg|webp|mp4|webm)$/i.test(p) &&
     !p.includes("..") && !p.startsWith("/") && !p.includes("//")
   );
 }
