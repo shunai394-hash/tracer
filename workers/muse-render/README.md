@@ -30,8 +30,8 @@ authorizing and downloading Supabase-hosted assets into the isolated job folder.
 
 ## Current limitations
 
-The renderer produces 1920x1080 H.264 MP4 with animated text cards, optional
-per-scene PNG/JPEG/WebP still-image backgrounds, and audio mixing. It does not
-yet render moving character footage, 3D scenes, or lip-sync mouth animation. The current browser manifest intentionally excludes
-temporary audio URLs, so the queue/upload adapter must attach approved audio
-assets before this worker can produce a fully voiced drama.
+The renderer produces an H.264 MP4 with animated text cards, optional
+per-scene still images, and one mixed audio track. It does not itself run
+MuseTalk. `musetalk_adapter.py` can create `lipsync.mp4` on a Colab GPU before
+this renderer starts, and only when the job asks for it and the upstream
+checkout is already installed. That inference has not been executed here.

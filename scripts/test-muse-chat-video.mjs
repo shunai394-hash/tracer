@@ -6,6 +6,10 @@ const chatRoute = await readFile(new URL("../app/api/chat/route.ts", import.meta
 const statusRoute = await readFile(new URL("../app/api/chat/muse-video/route.ts", import.meta.url), "utf8");
 const queue = await readFile(new URL("../lib/muse/render-queue.ts", import.meta.url), "utf8");
 const chatUi = await readFile(new URL("../components/tracer-chat.tsx", import.meta.url), "utf8");
+const studio = await readFile(new URL("../public/muse-motion-timeline.js", import.meta.url), "utf8");
+const jobsRoute = await readFile(new URL("../app/api/admin/ai-live/muse-render/jobs/route.ts", import.meta.url), "utf8");
+const workerRoute = await readFile(new URL("../app/api/admin/ai-live/muse-render/worker/route.ts", import.meta.url), "utf8");
+const colabWorker = await readFile(new URL("../workers/muse-render/colab_worker.py", import.meta.url), "utf8");
 
 assert.equal(isMuseVideoRequest("今おすすめの商品は？"), false);
 assert.equal(isMuseVideoRequest("30秒の商品紹介動画を作って"), true);
@@ -41,6 +45,16 @@ const withAssets = planMuseVideoRequest("この人物に音声を合わせて口
 });
 assert.equal(withAssets.ready, true);
 assert.equal(withAssets.manifest.lipsyncFile, "lipsync");
+assert.equal(withAssets.manifest.lipSync, undefined);
+
+const generatedLipsync = planMuseVideoRequest("この人物に音声を合わせて口パクさせて。台本：「こんにちは、新作です。」", {
+  image: true,
+  voice: true,
+});
+assert.equal(generatedLipsync.ready, true);
+assert.equal(generatedLipsync.manifest.lipSync.engine, "musetalk");
+assert.equal(generatedLipsync.manifest.lipsyncFile, undefined);
+assert.equal(generatedLipsync.manifest.scenes[0].imageFile, "scene-1");
 
 assert.ok(chatRoute.includes('requestedBy: "muse-chat"'));
 assert.ok(chatRoute.includes("enqueueMuseRenderJob"));
@@ -49,6 +63,16 @@ assert.ok(!chatRoute.includes("status: \"succeeded\""));
 assert.ok(statusRoute.includes('finished ? "完成"'));
 assert.ok(statusRoute.includes("outputVideoUrl: finished ? job.outputVideoUrl : null"));
 assert.ok(queue.includes("ai_live_muse_render_jobs"));
+assert.ok(queue.includes('engine !== "musetalk"'));
+assert.ok(studio.includes('requestedBy: "muse-studio"'));
+assert.ok(studio.includes("/api/admin/ai-live/muse-render/jobs"));
+assert.ok(jobsRoute.includes("enqueueMuseRenderJob"));
+assert.ok(jobsRoute.includes("ai_live_muse_render_jobs"));
+assert.ok(workerRoute.includes('body.action === "status"'));
+assert.ok(colabWorker.includes("attach_musetalk_video"));
+assert.ok(colabWorker.includes('"action": "status"'));
+assert.ok(colabWorker.includes('"action": "claim"'));
+assert.ok(chatRoute.includes("delete manifest.lipSync"));
 assert.ok(chatUi.includes("/api/chat/muse-video?id="));
 assert.ok(chatUi.includes('download="tracer-muse.mp4"'));
 assert.ok(chatUi.includes('message.museVideo.status === "succeeded" && message.museVideo.outputVideoUrl'));

@@ -20,6 +20,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+from musetalk_adapter import attach_musetalk_video, readiness
 from renderer import render
 
 USER_AGENT = "TRACER-Muse-Render-Worker/1.0"
@@ -71,8 +72,12 @@ def process_job(api: str, worker_token: str, job: dict, font: str) -> None:
                 raise RuntimeError("Unsafe asset path from queue")
             download(asset["url"], assets_dir / relative.name)
 
+        manifest = job.get("manifest")
+        if not isinstance(manifest, dict):
+            raise RuntimeError("Job manifest is missing")
+        attach_musetalk_video(manifest, assets_dir)
         manifest_path = root / "manifest.json"
-        manifest_path.write_text(json.dumps(job["manifest"], ensure_ascii=False), encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
         output_path = root / "render.mp4"
         render(manifest_path, assets_dir, output_path, font)
         if output_path.stat().st_size < 1024:
@@ -95,17 +100,47 @@ def heartbeat_loop(api: str, token: str, job_id: str, lease_token: str, stop: th
             return
 
 
+def check_worker(api: str, token: str) -> int:
+    """Confirm the worker token without claiming or rendering a queued job."""
+    try:
+        response = request_json(api, token, {"action": "status"})
+    except urllib.error.HTTPError as exc:
+        print(f"Worker authentication failed: HTTP {exc.code}", flush=True)
+        return 1
+    except Exception as exc:
+        print(f"Worker status check failed: {exc}", flush=True)
+        return 1
+    if response.get("ok") is not True:
+        print("Worker authentication failed", flush=True)
+        return 1
+    report = readiness()
+    gpu = report["gpu"]
+    print("Worker authentication: ok", flush=True)
+    print(f"Queue: {response.get('queue', 'ai_live_muse_render_jobs')}", flush=True)
+    print(f"FFmpeg: {'present' if shutil.which('ffmpeg') else 'missing'}", flush=True)
+    print(f"GPU: {gpu.get('name') or 'missing'}", flush=True)
+    print(f"MuseTalk ready: {'yes' if report['ready'] else 'no'}", flush=True)
+    if report["ready"]:
+        print("MuseTalk was not executed: --check does not run inference", flush=True)
+    else:
+        print("MuseTalk was not executed: " + "; ".join(report["reasons"]), flush=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default=os.environ.get("TRACER_BASE_URL", ""))
     parser.add_argument("--token", default=os.environ.get("MUSE_RENDER_WORKER_TOKEN", ""))
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--once", action="store_true", help="Claim at most one job, then exit")
+    parser.add_argument("--check", action="store_true", help="Verify worker authentication without claiming a job")
     parser.add_argument("--font", default=os.environ.get("MUSE_FONT_FILE", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"))
     args = parser.parse_args()
     if not args.base_url or not args.token:
         parser.error("Set --base-url and --token (or TRACER_BASE_URL / MUSE_RENDER_WORKER_TOKEN)")
     api = args.base_url.rstrip("/") + "/api/admin/ai-live/muse-render/worker"
+    if args.check:
+        return check_worker(api, args.token)
     if shutil.which("ffmpeg") is None:
         parser.error("FFmpeg is not installed. In Colab run: !apt-get -qq update && !apt-get -qq install -y ffmpeg fonts-noto-cjk")
 

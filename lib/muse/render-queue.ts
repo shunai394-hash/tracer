@@ -13,6 +13,11 @@ export function validateMuseManifest(value: unknown): value is Record<string, un
   if (manifest.scenes.length < 1 || manifest.scenes.length > 120) return false;
   if (manifest.aspect !== undefined && (typeof manifest.aspect !== "string" || !ASPECTS.has(manifest.aspect))) return false;
   if (manifest.lipsyncFile !== undefined && manifest.lipsyncFile !== "lipsync") return false;
+  if (manifest.lipSync !== undefined) {
+    const lipSync = manifest.lipSync;
+    if (!lipSync || typeof lipSync !== "object" || Array.isArray(lipSync)) return false;
+    if ((lipSync as { engine?: unknown }).engine !== "musetalk") return false;
+  }
   if (manifest.bgm !== undefined && manifest.bgm !== null && (typeof manifest.bgm !== "object" || Array.isArray(manifest.bgm))) return false;
   let total = 0;
   for (const scene of manifest.scenes) {
@@ -41,6 +46,11 @@ export function validateMuseAssetPaths(value: unknown): value is string[] {
 
 export function manifestAssetsMatch(manifest: Record<string, unknown>, paths: string[]): boolean {
   if (manifest.lipsyncFile === "lipsync" && !paths.some((path) => /^lipsync\.(mp4|webm)$/i.test(path))) return false;
+  const lipSync = manifest.lipSync as { engine?: unknown } | undefined;
+  if (lipSync?.engine === "musetalk" && manifest.lipsyncFile !== "lipsync") {
+    const scenes = manifest.scenes as Array<Record<string, unknown>>;
+    if (!scenes.some((scene) => typeof scene.imageFile === "string")) return false;
+  }
   const scenes = manifest.scenes as Array<Record<string, unknown>>;
   return scenes.every((scene) => {
     if (typeof scene.imageFile === "string" && !paths.some((path) => path.startsWith(`${scene.imageFile}.`))) return false;

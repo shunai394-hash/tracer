@@ -25,6 +25,9 @@ export async function POST(request: Request) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return json({ ok: false, error: "invalid_json" }, 400);
     body = value as Record<string, unknown>;
   } catch { return json({ ok: false, error: "invalid_json" }, 400); }
+  if (body.action === "status") {
+    return json({ ok: true, worker: "muse-render", queue: "ai_live_muse_render_jobs" });
+  }
 
   try {
     const db = createSupabaseAdminClient();

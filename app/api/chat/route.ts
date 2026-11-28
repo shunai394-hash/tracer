@@ -81,6 +81,7 @@ function applyAttachments(manifest: Record<string, unknown>, items: PreparedAtta
   const scenes = manifest.scenes as Array<Record<string, unknown>>;
   if (items.some((item) => item.role === "lipsync")) {
     manifest.lipsyncFile = "lipsync";
+    delete manifest.lipSync;
     for (const scene of scenes) {
       delete scene.imageFile;
       delete scene.videoFile;

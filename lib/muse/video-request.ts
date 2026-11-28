@@ -151,7 +151,11 @@ export function planMuseVideoRequest(message: string, attachments: MuseAttachmen
     totalDurationSeconds: Math.round(scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0) * 10) / 10,
   };
   if (attachments.lipsync) manifest.lipsyncFile = "lipsync";
-  else if (attachments.image) {
+  else if (wantsLipsync && attachments.image && attachments.voice) {
+    manifest.lipSync = { engine: "musetalk" };
+    const first = manifest.scenes as Array<Record<string, unknown>>;
+    first[0].imageFile = "scene-1";
+  } else if (attachments.image) {
     const first = manifest.scenes as Array<Record<string, unknown>>;
     first[0].imageFile = "scene-1";
   }
