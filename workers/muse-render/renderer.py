@@ -71,14 +71,19 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             duration = scene["durationSeconds"]
             clip = tempdir / f"scene-{index:03d}.mp4"
             text = drawtext_escape(scene["text"] or scene["title"])
-            # Motion is intentionally restrained for a readable first renderer.
+            # Apply each preset in the encoded frames, not only in the browser preview.
+            x_expr = "(w-text_w)/2"
+            y_expr = "(h-text_h)/2"
+            size_expr = "68"
             if scene["motionPreset"] == "slide-left":
-                x_expr = "if(lt(t,0.5),960-960*t/0.5,0)"
+                x_expr = "(w-text_w)/2+240*(1-min(t/0.55\\,1))"
             elif scene["motionPreset"] == "fade-up":
-                x_expr = "0"
-            else:
-                x_expr = "0"
-            vf = f"drawtext=fontfile='{font}':text='{text}':fontcolor=white:fontsize=68:borderw=3:bordercolor=black@0.65:x=(w-text_w)/2+({x_expr}):y=(h-text_h)/2:enable='between(t,0,{duration})',fade=t=in:st=0:d=0.35,fade=t=out:st={max(0,duration-0.35)}:d=0.35,format=yuv420p"
+                y_expr = "(h-text_h)/2+60*(1-min(t/0.55\\,1))"
+            elif scene["motionPreset"] == "soft-zoom":
+                size_expr = "68*(0.88+0.12*min(t/0.8\\,1))"
+            elif scene["motionPreset"] == "pop":
+                size_expr = "68*(0.72+0.28*min(t/0.32\\,1))"
+            vf = f"drawtext=fontfile='{font}':text='{text}':fontcolor=white:fontsize='{size_expr}':borderw=3:bordercolor=black@0.65:x='{x_expr}':y='{y_expr}',fade=t=in:st=0:d=0.35,fade=t=out:st={max(0,duration-0.35)}:d=0.35,format=yuv420p"
             run([ffmpeg, "-y", "-f", "lavfi", "-i", f"color=c=0x101827:s=1920x1080:r=30:d={duration}", "-vf", vf, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(clip)])
             clips.append(clip)
             offset += duration
