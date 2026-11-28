@@ -131,7 +131,7 @@
       onComplete: () => setStatus("プレビュー再生が完了しました。"),
       onStart: () => setStatus("プレビュー再生中…")
     });
-    scenes.forEach(animateScene);
+    scenes.forEach((scene, index) => animateScene(scene, index, timeline));
     timeline.play(0);
   }
 
