@@ -278,8 +278,7 @@
     if (!token) { setStatus("先にTRACER管理トークンを入力してください。"); $("token")?.focus(); return; }
     if (!bridge || typeof bridge.getLines !== "function") { setStatus("ドラマスタジオとの接続がありません。ページを再読み込みしてください。"); return; }
     if (!scenes.length) { setStatus("シーンがありません。"); return; }
-    const lines = bridge.getLines();
-    const ready = lines.filter(line => line.audioReady && line.audioUrl);
+    const ready = scenes.map((scene, index) => ({ scene, index })).filter(item => item.scene.audioReady && item.scene.audioUrl);
     if (!ready.length) { setStatus("生成済みセリフ音声がありません。先にFish Audioで音声を生成してください。"); return; }
     renderButton.disabled = true;
     video.style.display = "none";
@@ -287,7 +286,7 @@
     resultText.textContent = "";
     try {
       const manifest = currentManifest();
-      const assetPaths = ready.map((_, index) => "voice-" + (index + 1) + ".mp3");
+      const assetPaths = ready.map(item => "voice-" + (item.index + 1) + ".mp3");
       let bgmBlob = null;
       if (selectedBgm?.url) {
         const response = await fetch(selectedBgm.url, { cache: "no-store" });
@@ -305,10 +304,10 @@
       const jobId = created.job.id;
       for (let i = 0; i < ready.length; i++) {
         setStatus("音声素材をアップロード中… " + (i + 1) + "/" + ready.length);
-        const response = await fetch(ready[i].audioUrl);
+        const response = await fetch(ready[i].scene.audioUrl);
         if (!response.ok) throw new Error("セリフ音声 " + (i + 1) + " を読み込めません。再生成してください。");
         const blob = await response.blob();
-        await uploadAsset(jobId, "voice-" + (i + 1), blob, "audio/mpeg");
+        await uploadAsset(jobId, "voice-" + (ready[i].index + 1), blob, "audio/mpeg");
       }
       if (bgmBlob) {
         setStatus("BGMをアップロード中…");
