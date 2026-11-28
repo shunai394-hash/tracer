@@ -61,7 +61,9 @@ export async function POST(request: Request) {
     const { data, error } = await db.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: false });
     if (error) throw error;
     const { url } = getSupabasePublicConfig();
-    return json({ ok: true, upload: { url: new URL(data.signedUrl, url).toString(), token: data.token, path } }, 201);
+    const signedUrl = new URL(data.signedUrl, url);
+    if (!signedUrl.searchParams.has("token")) signedUrl.searchParams.set("token", data.token);
+    return json({ ok: true, upload: { url: signedUrl.toString(), token: data.token, path } }, 201);
   } catch {
     return json({ ok: false, error: "muse_render_asset_upload_prepare_failed" }, 503);
   }
