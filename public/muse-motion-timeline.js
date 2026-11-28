@@ -162,7 +162,8 @@
         speakerName: scene.speakerName || "",
         voiceName: scene.voiceName || "",
         voiceId: scene.voiceId || "",
-        narrationAudioReady: Boolean(scene.audioReady)
+        narrationAudioReady: Boolean(scene.audioReady),
+        ...(scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
       })),
       bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
       totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
@@ -198,7 +199,8 @@
       voiceName: line.voiceName,
       voiceId: line.voiceId,
       audioReady: line.audioReady,
-      audioUrl: line.audioUrl || ""
+      audioUrl: line.audioUrl || "",
+      imageUrl: line.imageUrl || line.characterImageUrl || line.backgroundImageUrl || ""
     }));
     selectedBgm = typeof bridge.getBgm === "function" ? bridge.getBgm() : null;
     if (selectedBgm) selectedBgm.url = bridge.getBgmUrl ? bridge.getBgmUrl() : "";
@@ -266,7 +268,8 @@
         order: index + 1, title: scene.title, text: scene.text,
         durationSeconds: Number(scene.duration), motionPreset: scene.preset,
         speakerName: scene.speakerName || "", voiceName: scene.voiceName || "",
-        voiceId: scene.voiceId || "", narrationAudioReady: Boolean(scene.audioReady)
+        voiceId: scene.voiceId || "", narrationAudioReady: Boolean(scene.audioReady),
+        ...(scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
       })),
       bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
       totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
@@ -287,6 +290,19 @@
     try {
       const manifest = currentManifest();
       const assetPaths = ready.map(item => "voice-" + (item.index + 1) + ".mp3");
+      const sceneImages = scenes.map((scene, index) => ({ scene, index })).filter(item => item.scene.imageUrl);
+      const imageAssets = [];
+      for (const item of sceneImages) {
+        const response = await fetch(item.scene.imageUrl, { cache: "no-store" });
+        if (!response.ok) throw new Error("シーン画像 " + (item.index + 1) + " を取得できません。");
+        const blob = await response.blob();
+        const mime = (blob.type || response.headers.get("content-type") || "").split(";")[0].toLowerCase();
+        if (!["image/png", "image/jpeg", "image/webp"].includes(mime) || !blob.size || blob.size > 25 * 1024 * 1024) {
+          throw new Error("シーン画像はPNG/JPEG/WebP・25MB以下にしてください。");
+        }
+        imageAssets.push({ index: item.index, blob, mime, fileName: "scene-" + (item.index + 1) });
+        assetPaths.push("scene-" + (item.index + 1) + (mime === "image/png" ? ".png" : mime === "image/webp" ? ".webp" : ".jpg"));
+      }
       let bgmBlob = null;
       if (selectedBgm?.url) {
         const response = await fetch(selectedBgm.url, { cache: "no-store" });
@@ -308,6 +324,11 @@
         if (!response.ok) throw new Error("セリフ音声 " + (i + 1) + " を読み込めません。再生成してください。");
         const blob = await response.blob();
         await uploadAsset(jobId, "voice-" + (ready[i].index + 1), blob, "audio/mpeg");
+      }
+      for (let i = 0; i < imageAssets.length; i++) {
+        const asset = imageAssets[i];
+        setStatus("シーン画像をアップロード中… " + (i + 1) + "/" + imageAssets.length);
+        await uploadAsset(jobId, asset.fileName, asset.blob, asset.mime);
       }
       if (bgmBlob) {
         setStatus("BGMをアップロード中…");
