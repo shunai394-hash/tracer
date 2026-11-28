@@ -118,6 +118,7 @@ textarea{min-height:88px;line-height:1.6;resize:vertical}button{background:#1d4e
 <p id="mixStatus" class="status" role="status" aria-live="polite">台詞音声を生成し、BGMを選択すると合成できます。</p>
 <audio id="mixPreview" controls preload="none" style="width:100%;display:none"></audio>
 <a id="mixDownload" style="display:none;color:#93c5fd" download="tracer-short-drama-mix.wav">完成したドラマ音源を保存（WAV）</a>
+<div class="scene" id="videoExportPanel"><h3>リップシンク動画を書き出す</h3><p class="muted">生成したセリフ音声・タイムスタンプ・人物画像（読み込み可能な画像）を使い、口の動きと字幕を映像に描画して録画します。BGMも同じタイムラインで合成します。MP4に対応するブラウザーではMP4、非対応の場合はWebMで保存します。</p><button id="exportLipSyncVideo" type="button">口パク付き動画を書き出す</button><p id="videoExportStatus" class="status" role="status" aria-live="polite">全セリフの音声を生成すると動画を書き出せます。</p><a id="videoExportDownload" style="display:none;color:#93c5fd" download>完成した動画を保存</a></div>
 </div>
 </section>
 <script src="/tracer-lip-sync.js"></script>
@@ -356,6 +357,97 @@ async function createDramaMix(){
  }catch(error){mixStatus.textContent=error instanceof Error?error.message:"音声合成に失敗しました。";}
  finally{if(context)await context.close().catch(()=>{});button.disabled=false;}
 }
+
+async function exportLipSyncVideo(){
+ const button=$("exportLipSyncVideo"),message=$("videoExportStatus"),download=$("videoExportDownload");
+ const rows=lineRows.filter(row=>row.text.trim());
+ if(pending||scenePlaybackActive||sceneExporting){message.textContent="音声生成・再生・書き出し中は実行できません。";return;}
+ if(!rows.length||rows.some(row=>!row.audioUrl||!Array.isArray(row.timeline)||!row.timeline.length)){message.textContent="全セリフの音声とタイムスタンプを生成してから実行してください。";return;}
+ if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){message.textContent="このブラウザーは動画録画に対応していません。最新のChromeまたはEdgeを使用してください。";return;}
+ const mp4Types=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4"];
+ const webmTypes=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+ const mimeType=mp4Types.find(type=>MediaRecorder.isTypeSupported(type))||webmTypes.find(type=>MediaRecorder.isTypeSupported(type));
+ if(!mimeType){message.textContent="このブラウザーで利用できるMP4/WebM録画形式がありません。";return;}
+ button.disabled=true;download.style.display="none";message.textContent="音声・BGMを準備しています…";
+ let context=null,canvasStream=null,raf=0,recorder=null;
+ try{
+  const AudioClass=window.AudioContext||window.webkitAudioContext;
+  if(!AudioClass)throw new Error("Web Audio APIに対応したChromeまたはEdgeが必要です。");
+  context=new AudioClass();
+  const buffers=[];
+  for(let i=0;i<rows.length;i++){
+   message.textContent="セリフ音声を読み込み中："+(i+1)+"/"+rows.length;
+   const response=await fetch(rows[i].audioUrl);if(!response.ok)throw new Error("セリフ音声を取得できません："+(i+1)+"行目");
+   buffers.push(await context.decodeAudioData(await response.arrayBuffer()));
+  }
+  const gap=Math.max(0,Math.min(2,Number($("mixGap").value)||0.45));
+  const starts=[];let duration=0;
+  for(const buffer of buffers){starts.push(duration);duration+=buffer.duration+gap;}
+  duration=Math.max(.1,duration-gap);
+  if(duration>300)throw new Error("動画は5分以内に分けて書き出してください。");
+  const canvas=document.createElement("canvas");canvas.width=1280;canvas.height=720;
+  const ctx=canvas.getContext("2d");if(!ctx)throw new Error("動画描画用Canvasを作成できません。");
+  const faceImages=new Map();
+  await Promise.all(characterRows.map(character=>new Promise(resolve=>{
+   const url=String(character.imageUrl||"").trim();if(!/^https:\/\//i.test(url)){resolve();return;}
+   const img=new Image();img.crossOrigin="anonymous";img.onload=()=>{faceImages.set(character.id,img);resolve();};img.onerror=()=>resolve();img.src=url;
+  })));
+  const visemeRows=rows.map(row=>{
+   const list=[];
+   const vowels=[["あかがさざただなはばぱまやらわぁゃ","a"],["いきぎしじちぢにひびぴみりゐぃ","i"],["うくぐすずつづぬふぶぷむゆるゔぅゅ","u"],["えけげせぜてでねへべぺめれゑぇ","e"],["おこごそぞとどのほぼぽもよろをぉょ","o"]];
+   const bilabial=new Set(Array.from("まみむめもばびぶべぼぱぴぷぺぽ"));
+   const vowelOf=ch=>{const n=ch.normalize("NFKC"),code=n.codePointAt(0),kana=code>=0x30a1&&code<=0x30f6?String.fromCodePoint(code-0x60):n;for(const [chars,v] of vowels)if(chars.includes(kana))return v;return null;};
+   for(const seg of row.timeline){const text=String(seg.text||"");const start=Number(seg.start),end=Number(seg.end);if(!text||!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;const chars=Array.from(text).filter(ch=>!(/[\s、。,.!?！？「」『』（）()…ー]/u.test(ch)));if(!chars.length)continue;const unit=(end-start)/chars.length;chars.forEach((ch,i)=>{const vowel=vowelOf(ch);if(!vowel)return;const a=start+unit*i,b=a+unit;const shape={a:{open:1,wide:.18,round:.04},i:{open:.34,wide:1,round:.02},u:{open:.38,wide:.08,round:1},e:{open:.66,wide:.78,round:.04},o:{open:.72,wide:.05,round:.9}}[vowel];if(bilabial.has(ch.normalize("NFKC"))){list.push({start:a,end:a+unit*.22,open:0,wide:0,round:0});list.push({start:a+unit*.22,end:b,...shape});}else list.push({start:a,end:b,...shape});});}
+   return list.sort((a,b)=>a.start-b.start);
+  });
+  const stream=canvas.captureStream(30);
+  const destination=context.createMediaStreamDestination();
+  const sources=buffers.map((buffer,index)=>{const source=context.createBufferSource();source.buffer=buffer;const gainNode=context.createGain();source.connect(gainNode);gainNode.connect(destination);source.start(0,0,buffer.duration);source.__start=starts[index];return source;});
+  const mixGain=context.createGain();mixGain.gain.value=1;destination.connect(mixGain);mixGain.connect(context.destination);
+  const selected=bgmTracks.find(track=>track.name===bgmSelect.value);
+  if(selected&&Number($("mixBgmVolume").value)>0){
+   const response=await fetch(selected.url,{cache:"no-store"});if(!response.ok)throw new Error("選択したBGMを読み込めません。");
+   const bgm=await context.decodeAudioData(await response.arrayBuffer());const music=context.createBufferSource();music.buffer=bgm;music.loop=$("mixBgmLoop").checked;const gainNode=context.createGain();const volume=Math.max(0,Math.min(.5,Number($("mixBgmVolume").value)/100));const fadeIn=Math.min(Number($("mixFadeIn").value)||0,duration/2),fadeOut=Math.min(Number($("mixFadeOut").value)||0,Math.max(0,duration-fadeIn));gainNode.gain.setValueAtTime(fadeIn?0:volume,context.currentTime);if(fadeIn)gainNode.gain.linearRampToValueAtTime(volume,context.currentTime+fadeIn);if(fadeOut){gainNode.gain.setValueAtTime(volume,context.currentTime+duration-fadeOut);gainNode.gain.linearRampToValueAtTime(0,context.currentTime+duration);}music.connect(gainNode);gainNode.connect(destination);music.start(context.currentTime+.15);
+  }
+  for(const track of destination.stream.getAudioTracks())stream.addTrack(track);
+  const chunks=[];recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:5000000,audioBitsPerSecond:192000});
+  const draw=(elapsed)=>{
+   const index=starts.findIndex((start,i)=>elapsed>=start&&elapsed<start+buffers[i].duration);
+   const row=index>=0?rows[index]:null;const localTime=row?elapsed-starts[index]:0;const character=row?characterRows.find(item=>item.id===row.speakerId):null;
+   ctx.fillStyle="#101827";ctx.fillRect(0,0,1280,720);
+   const gradient=ctx.createLinearGradient(0,0,1280,720);gradient.addColorStop(0,"#25364d");gradient.addColorStop(1,"#101827");ctx.fillStyle=gradient;ctx.fillRect(0,0,1280,720);
+   ctx.fillStyle="#f8fafc";ctx.font="600 30px system-ui";ctx.textAlign="left";ctx.fillText(String($("title").value||"ショートドラマ").slice(0,42),64,66);
+   ctx.fillStyle="#9fb2ca";ctx.font="20px system-ui";ctx.fillText("第"+($("episodeNumber").value||1)+"話",64,102);
+   const cx=640,cy=330,r=155;
+   const image=character&&faceImages.get(character.id);
+   if(image){ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.clip();const scale=Math.max(2*r/image.width,2*r/image.height);const w=image.width*scale,h=image.height*scale;ctx.drawImage(image,cx-w/2,cy-h/2,w,h);ctx.restore();}
+   else{const skin=ctx.createRadialGradient(cx-45,cy-55,15,cx,cy,r);skin.addColorStop(0,"#ffe6d1");skin.addColorStop(1,"#bd8065");ctx.fillStyle=skin;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#30251f";ctx.beginPath();ctx.arc(cx-58,cy-35,13,0,Math.PI*2);ctx.arc(cx+58,cy-35,13,0,Math.PI*2);ctx.fill();}
+   let shape={open:0,wide:0,round:0};if(index>=0){const current=visemeRows[index].find(item=>item.start<=localTime&&item.end>=localTime);if(current)shape=current;}
+   const mouthX=cx+(Number(character?.mouthX??50)-50)*2.4;const mouthY=cy+(Number(character?.mouthY??65)-65)*2.4+45;
+   const mw=30+shape.wide*43,mh=3+shape.open*48;
+   ctx.fillStyle="#642b38";ctx.beginPath();ctx.ellipse(mouthX,mouthY,mw/2,mh/2,0,0,Math.PI*2);ctx.fill();
+   if(character?.name){ctx.fillStyle="#e2e8f0";ctx.font="24px system-ui";ctx.textAlign="center";ctx.fillText(character.name,cx,cy+r+42);}
+   ctx.fillStyle="rgba(2,6,23,.78)";ctx.fillRect(80,570,1120,100);
+   ctx.fillStyle="#fff";ctx.font="30px system-ui";ctx.textAlign="center";
+   const caption=row?.text||" ";const maxChars=42;const shown=Array.from(caption);const lines=[];for(let i=0;i<shown.length;i+=maxChars)lines.push(shown.slice(i,i+maxChars).join(""));lines.slice(0,2).forEach((line,i)=>ctx.fillText(line,640,615+i*38));
+   ctx.fillStyle="#93c5fd";ctx.fillRect(80,690,1120*Math.max(0,Math.min(1,elapsed/duration)),5);
+  };
+  const startedAt=context.currentTime+.15;const startWall=performance.now()+150;
+  recorder.ondataavailable=event=>{if(event.data?.size)chunks.push(event.data);};
+  const stopped=new Promise((resolve,reject)=>{recorder.onerror=event=>reject(event.error||new Error("動画録画に失敗しました。"));recorder.onstop=resolve;});
+  draw(0);recorder.start(1000);message.textContent="口の動き・字幕・音声を動画に記録中…";
+  await context.resume();
+  await new Promise(resolve=>{
+   const tick=()=>{const elapsed=Math.min(duration,Math.max(0,(performance.now()-startWall)/1000));draw(elapsed);if(elapsed>=duration){resolve();return;}raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);
+  });
+  await new Promise(resolve=>setTimeout(resolve,250));recorder.stop();await stopped;
+  const blob=new Blob(chunks,{type:mimeType});if(!blob.size)throw new Error("動画データが空でした。");
+  const ext=mimeType.startsWith("video/mp4")?"mp4":"webm";const url=URL.createObjectURL(blob);if(download.dataset.url)URL.revokeObjectURL(download.dataset.url);download.href=url;download.download=((String($("title").value||"short-drama").replace(/[^\\p{L}\\p{N}_-]+/gu,"-").slice(0,50)||"short-drama")+"-lipsync."+ext);download.textContent="完成した動画を保存（"+ext.toUpperCase()+"）";download.style.display="inline-block";message.textContent="動画を書き出しました："+ext.toUpperCase()+"／"+Math.ceil(duration)+"秒。口の動き・字幕・音声を映像に記録済みです。";
+ }catch(error){message.textContent="動画書き出しエラー："+(error instanceof Error?error.message:"不明なエラー");}
+ finally{if(raf)cancelAnimationFrame(raf);if(recorder&&recorder.state!=="inactive")try{recorder.stop();}catch{}if(canvasStream)canvasStream.getTracks().forEach(track=>track.stop());if(context)await context.close().catch(()=>{});button.disabled=false;}
+}
+$("exportLipSyncVideo").addEventListener("click",exportLipSyncVideo);
+
 $("mixExport").addEventListener("click",createDramaMix);
 $("mixBgmVolume").addEventListener("input",()=>{$("mixBgmVolumeValue").textContent=$("mixBgmVolume").value+"%";});
 const bgmSelect=$("bgmSelect"), bgmPreview=$("bgmPreview");
