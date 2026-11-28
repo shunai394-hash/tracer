@@ -52,6 +52,22 @@ export async function POST(request: Request) {
         },
       } });
     }
+    if (body.action === "heartbeat") {
+      const id = typeof body.id === "string" ? body.id : "";
+      const leaseToken = typeof body.leaseToken === "string" ? body.leaseToken : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id) || !leaseToken || leaseToken.length > 100) {
+        return json({ ok: false, error: "invalid_heartbeat" }, 400);
+      }
+      const now = new Date().toISOString();
+      const { data, error } = await db.from("ai_live_muse_render_jobs")
+        .update({ leased_at: now, updated_at: now })
+        .eq("id", id).eq("lease_token", leaseToken).eq("status", "processing")
+        .gte("leased_at", new Date(Date.now() - 30 * 60 * 1000).toISOString())
+        .select("id,status,leased_at").maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ ok: false, error: "lease_expired_or_job_missing" }, 409);
+      return json({ ok: true, lease: { id: data.id, leasedAt: data.leased_at } });
+    }
     if (body.action === "complete") {
       const id = typeof body.id === "string" ? body.id : "";
       const leaseToken = typeof body.leaseToken === "string" ? body.leaseToken : "";
