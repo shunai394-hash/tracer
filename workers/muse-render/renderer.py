@@ -40,7 +40,10 @@ def validate_manifest(data: object) -> dict:
             raise ValueError(f"Scene {index + 1} has unsupported motion preset")
         title = str(item.get("title", ""))[:120]
         text = str(item.get("text", ""))[:500]
-        clean.append({"title": title, "text": text, "durationSeconds": float(duration), "motionPreset": preset})
+        image_file = item.get("imageFile")
+        if image_file is not None and (not isinstance(image_file, str) or not __import__("re").fullmatch(r"scene-[1-9][0-9]*", image_file)):
+            raise ValueError(f"Scene {index + 1} has invalid image asset name")
+        clean.append({"title": title, "text": text, "durationSeconds": float(duration), "motionPreset": preset, "imageFile": image_file})
         total += float(duration)
     if total > MAX_TOTAL:
         raise ValueError("Total duration exceeds 15 minutes")
@@ -83,8 +86,21 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
                 size_expr = "68*(0.88+0.12*min(t/0.8\\,1))"
             elif scene["motionPreset"] == "pop":
                 size_expr = "68*(0.72+0.28*min(t/0.32\\,1))"
-            vf = f"drawtext=fontfile='{font}':text='{text}':fontcolor=white:fontsize='{size_expr}':borderw=3:bordercolor=black@0.65:x='{x_expr}':y='{y_expr}',fade=t=in:st=0:d=0.35,fade=t=out:st={max(0,duration-0.35)}:d=0.35,format=yuv420p"
-            run([ffmpeg, "-y", "-f", "lavfi", "-i", f"color=c=0x101827:s=1920x1080:r=30:d={duration}", "-vf", vf, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(clip)])
+            draw = f"drawtext=fontfile='{font}':text='{text}':fontcolor=white:fontsize='{size_expr}':borderw=3:bordercolor=black@0.65:x='{x_expr}':y='{y_expr}',fade=t=in:st=0:d=0.35,fade=t=out:st={max(0,duration-0.35)}:d=0.35,format=yuv420p"
+            image_path = None
+            if scene.get("imageFile"):
+                for extension in (".png", ".jpg", ".jpeg", ".webp"):
+                    candidate = (assets_dir / (scene["imageFile"] + extension)).resolve()
+                    if candidate.is_file() and assets_dir in candidate.parents:
+                        image_path = candidate
+                        break
+                if image_path is None:
+                    raise ValueError(f"Scene {index + 1} image asset is missing")
+                vf = f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,{draw}"
+                command = [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-t", str(duration), "-i", str(image_path), "-vf", vf]
+            else:
+                command = [ffmpeg, "-y", "-f", "lavfi", "-i", f"color=c=0x101827:s=1920x1080:r=30:d={duration}", "-vf", draw]
+            run([*command, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(clip)])
             clips.append(clip)
             offset += duration
         concat = tempdir / "concat.txt"
