@@ -51,6 +51,39 @@ class ManifestValidationTests(unittest.TestCase):
             ], check=True, capture_output=True, text=True)
             self.assertGreaterEqual(float(probe.stdout.strip()), 1.9)
 
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is required for render integration test")
+    def test_scene_image_is_used_as_video_background(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            assets = root / "assets"
+            assets.mkdir()
+            image = assets / "scene-1.png"
+            subprocess.run([
+                shutil.which("ffmpeg"), "-y", "-f", "lavfi", "-i",
+                "color=c=red:s=64x64:d=1", "-frames:v", "1", str(image)
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "format": "muse-motion-manifest",
+                "version": 1,
+                "scenes": [{
+                    "title": "Image", "text": "Image",
+                    "durationSeconds": 1.0, "motionPreset": "fade",
+                    "imageFile": "scene-1"
+                }]
+            }), encoding="utf-8")
+            output = root / "image-output.mp4"
+            render(manifest_path, assets, output, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            frame = subprocess.run([
+                "ffmpeg", "-v", "error", "-i", str(output), "-frames:v", "1",
+                "-vf", "crop=1:1:0:0,format=rgb24", "-f", "rawvideo", "-"
+            ], check=True, capture_output=True).stdout
+            self.assertEqual(len(frame), 3)
+            self.assertGreater(frame[0], 150)
+            self.assertLess(frame[1], 100)
+            self.assertLess(frame[2], 100)
+
     def test_rejects_empty_scenes(self):
         with self.assertRaises(ValueError):
             validate_manifest({"format": "muse-motion-manifest", "version": 1, "scenes": []})
