@@ -39,6 +39,14 @@ declare
   claimed public.ai_live_musetalk_jobs;
 begin
   update public.ai_live_musetalk_jobs
+     set status = 'failed', lease_token = null,
+         error_message = 'Worker lease expired after maximum attempts',
+         completed_at = now(), updated_at = now()
+   where status = 'processing'
+     and leased_at < now() - interval '30 minutes'
+     and attempt_count >= 5;
+
+  update public.ai_live_musetalk_jobs
      set status = 'queued', lease_token = null, leased_at = null,
          updated_at = now()
    where status = 'processing'
