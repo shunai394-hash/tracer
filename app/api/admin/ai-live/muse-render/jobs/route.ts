@@ -55,7 +55,14 @@ export async function GET(request: Request) {
     if (id) query = query.eq("id", id);
     const { data, error } = await query;
     if (error) throw error;
-    return json({ ok: true, jobs: data ?? [] });
+    const storage = createSupabaseAdminClient().storage.from(BUCKET);
+    const jobs = await Promise.all((data ?? []).map(async (job) => {
+      if (job.status !== "succeeded" || !job.output_path) return job;
+      const { data: signed, error: signError } = await storage.createSignedUrl(job.output_path, 60 * 60);
+      if (signError) throw signError;
+      return { ...job, output_video_url: signed.signedUrl };
+    }));
+    return json({ ok: true, jobs });
   } catch {
     return json({ ok: false, error: "muse_render_queue_unavailable" }, 503);
   }
