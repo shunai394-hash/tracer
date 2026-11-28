@@ -13,7 +13,7 @@ const privateCloneVoices = readFileSync("lib/ai-live/fish-audio-private-drama-cl
 const privateChildVoices = readFileSync("lib/ai-live/fish-audio-private-drama-voices.ts", "utf8");
 const voicesRoute = readFileSync("app/api/admin/ai-live/fish-audio/voices/route.ts", "utf8");
 const castRoute = readFileSync("app/api/admin/ai-live/short-drama/cast/route.ts", "utf8");
-const castMigration = readFileSync("supabase/migrations/20261111130000_create_ai_live_drama_casts.sql", "utf8");
+const castMigration = readFileSync("supabase/migrations/20261128120000_create_ai_live_drama_casts.sql", "utf8");
 const publicVoiceLibrary = readFileSync("lib/ai-live/fish-audio-public-voices.ts", "utf8");
 const bgmRoute = readFileSync("app/api/admin/ai-live/short-drama/bgm/route.ts", "utf8");
 
