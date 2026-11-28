@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const html = await readFile(new URL("../public/ai-live-short-drama-studio.html", import.meta.url), "utf8");
 const script = await readFile(new URL("../public/muse-motion-timeline.js", import.meta.url), "utf8");
 
-for (const id of ["museMotionPanel", "museMotionScenes", "museMotionPreview", "museMotionAdd", "museMotionPlay", "museMotionStop", "museMotionExport", "museMotionStatus", "museMotionSync"]) {
+for (const id of ["museMotionPanel", "museMotionScenes", "museMotionPreview", "museMotionAdd", "museMotionPlay", "museMotionStop", "museMotionExport", "museMotionStatus", "museMotionSync", "museMotionBgmInfo"]) {
   assert.ok(html.includes(`id="${id}"`), `Missing studio element: ${id}`);
 }
 assert.ok(html.includes("gsap@3.13.0"), "GSAP version must be pinned");
