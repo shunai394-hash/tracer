@@ -28,9 +28,18 @@ USER_AGENT = "TRACER-Muse-Render-Worker/1.0"
 
 def request_json(url: str, token: str, payload: dict) -> dict:
     data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+    }
+    # Optional Vercel Deployment Protection bypass for protected Preview URLs.
+    # Keep this secret in Colab Secrets; never print or persist it.
+    vercel_bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "").strip()
+    if vercel_bypass:
+        headers["x-vercel-protection-bypass"] = vercel_bypass
     req = urllib.request.Request(
-        url, data=data, method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": USER_AGENT},
+        url, data=data, method="POST", headers=headers,
     )
     with urllib.request.urlopen(req, timeout=60) as response:
         result = json.loads(response.read().decode("utf-8"))
