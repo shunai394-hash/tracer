@@ -43,10 +43,12 @@ export async function POST(request: Request) {
       const { data: upload, error: uploadError } = await storage.createSignedUploadUrl(outputPath, { upsert: true });
       if (uploadError) throw uploadError;
       const { url } = getSupabasePublicConfig();
+      const signedUploadUrl = new URL(upload.signedUrl, url);
+      if (!signedUploadUrl.searchParams.has("token")) signedUploadUrl.searchParams.set("token", upload.token);
       return json({ ok: true, job: {
         id: job.id, leaseToken: job.lease_token, attempt: job.attempt_count,
         manifest: job.manifest, assets, output: {
-          path: outputPath, url: new URL(upload.signedUrl, url).toString(), token: upload.token,
+          path: outputPath, url: signedUploadUrl.toString(), token: upload.token,
         },
       } });
     }
