@@ -104,6 +104,7 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
                 vf = f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30,{draw}"
                 command = [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(video_path), "-t", str(duration), "-vf", vf]
             elif scene.get("imageFile"):
+                image_path = None
                 for extension in (".png", ".jpg", ".jpeg", ".webp"):
                     candidate = (assets_dir / (scene["imageFile"] + extension)).resolve()
                     if candidate.is_file() and assets_dir in candidate.parents:
