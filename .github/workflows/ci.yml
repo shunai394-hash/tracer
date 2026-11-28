@@ -18,6 +18,16 @@ jobs:
       CJ_API_KEY: ci-cj-key
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python for Muse renderer tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg and Japanese font for Muse renderer tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Test Muse FFmpeg renderer
+        run: python -m unittest discover -s workers/muse-render -p 'test_*.py' -v
       - uses: actions/setup-node@v4
         with:
           node-version: 24
