@@ -147,6 +147,36 @@
     timeline.play(0);
   }
 
+  function lipSyncReady() {
+    const bridge = window.TracerMuseBridge;
+    const clip = bridge && typeof bridge.getLipSyncExport === "function" ? bridge.getLipSyncExport() : null;
+    return Boolean(clip && clip.blob && clip.blob.size);
+  }
+
+  function alignScenesToLipSync() {
+    const bridge = window.TracerMuseBridge;
+    const clip = bridge && typeof bridge.getLipSyncExport === "function" ? bridge.getLipSyncExport() : null;
+    if (!clip || !clip.blob || !clip.blob.size || !scenes.length) return null;
+    const lines = typeof bridge.getLines === "function" ? bridge.getLines() : [];
+    const gap = Number(clip.gapSeconds) || 0;
+    if (Array.isArray(lines) && lines.length === scenes.length) {
+      scenes.forEach((scene, index) => {
+        const audio = Number(lines[index] && lines[index].durationSeconds);
+        const base = Number.isFinite(audio) && audio > 0 ? audio : Number(scene.duration) || 0.5;
+        const extra = index < scenes.length - 1 ? gap : 0;
+        scene.duration = Math.min(60, Math.max(0.5, base + extra));
+      });
+    }
+    const target = Number(clip.durationSeconds);
+    const sum = scenes.reduce((total, scene) => total + Number(scene.duration), 0);
+    if (Number.isFinite(target) && target >= 0.5 && Math.abs(sum - target) > 0.08) {
+      const last = scenes[scenes.length - 1];
+      last.duration = Math.min(60, Math.max(0.5, Number(last.duration) + (target - sum)));
+    }
+    renderScenes();
+    return clip;
+  }
+
   function exportManifest() {
     const manifest = {
       format: "muse-motion-manifest",
@@ -163,9 +193,11 @@
         voiceName: scene.voiceName || "",
         voiceId: scene.voiceId || "",
         narrationAudioReady: Boolean(scene.audioReady),
-        ...(scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
+        ...(!lipSyncReady() && scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
       })),
+      aspect: "16:9",
       bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
+      ...(lipSyncReady() ? { lipsyncFile: "lipsync" } : {}),
       totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
     };
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
@@ -269,9 +301,11 @@
         durationSeconds: Number(scene.duration), motionPreset: scene.preset,
         speakerName: scene.speakerName || "", voiceName: scene.voiceName || "",
         voiceId: scene.voiceId || "", narrationAudioReady: Boolean(scene.audioReady),
-        ...(scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
+        ...(!lipSyncReady() && scene.imageUrl ? { imageFile: "scene-" + (index + 1) } : {})
       })),
+      aspect: "16:9",
       bgm: selectedBgm ? { name: selectedBgm.name, title: selectedBgm.title, genre: selectedBgm.genre, volume: selectedBgm.volume, loop: selectedBgm.loop } : null,
+      ...(lipSyncReady() ? { lipsyncFile: "lipsync" } : {}),
       totalDurationSeconds: scenes.reduce((sum, scene) => sum + Number(scene.duration), 0)
     };
   }
@@ -281,6 +315,8 @@
     if (!token) { setStatus("先にTRACER管理トークンを入力してください。"); $("token")?.focus(); return; }
     if (!bridge || typeof bridge.getLines !== "function") { setStatus("ドラマスタジオとの接続がありません。ページを再読み込みしてください。"); return; }
     if (!scenes.length) { setStatus("シーンがありません。"); return; }
+    resetPreview();
+    const lipSync = alignScenesToLipSync();
     const ready = scenes.map((scene, index) => ({ scene, index })).filter(item => item.scene.audioReady && item.scene.audioUrl);
     if (!ready.length) { setStatus("生成済みセリフ音声がありません。先にFish Audioで音声を生成してください。"); return; }
     renderButton.disabled = true;
@@ -290,7 +326,15 @@
     try {
       const manifest = currentManifest();
       const assetPaths = ready.map(item => "voice-" + (item.index + 1) + ".mp3");
-      const sceneImages = scenes.map((scene, index) => ({ scene, index })).filter(item => item.scene.imageUrl);
+      let lipSyncUpload = null;
+      if (lipSync) {
+        const mime = String(lipSync.mime || "video/webm").split(";")[0].toLowerCase();
+        const contentType = mime === "video/mp4" ? "video/mp4" : "video/webm";
+        if (!lipSync.blob.size || lipSync.blob.size > 25 * 1024 * 1024) throw new Error("口パク動画は25MB以下のMP4/WebMにしてください。");
+        lipSyncUpload = { contentType, fileName: "lipsync" };
+        assetPaths.push("lipsync" + (contentType === "video/mp4" ? ".mp4" : ".webm"));
+      }
+      const sceneImages = lipSync ? [] : scenes.map((scene, index) => ({ scene, index })).filter(item => item.scene.imageUrl);
       const imageAssets = [];
       for (const item of sceneImages) {
         const response = await fetch(item.scene.imageUrl, { cache: "no-store" });
@@ -334,6 +378,10 @@
         setStatus("BGMをアップロード中…");
         await uploadAsset(jobId, "bgm", bgmBlob, "audio/mpeg");
       }
+      if (lipSyncUpload) {
+        setStatus("口パク動画をレンダーキューへ送っています…");
+        await uploadAsset(jobId, lipSyncUpload.fileName, lipSync.blob, lipSyncUpload.contentType);
+      }
       setStatus("ジョブ登録完了。Colabワーカーの処理待ちです。ジョブID：" + jobId);
       resultText.textContent = "ジョブID：" + jobId + " ／ ワーカー待機中";
       for (let attempt = 0; attempt < 360; attempt++) {
@@ -345,10 +393,22 @@
         if (!job) throw new Error("ジョブ状態を取得できません。");
         if (job.status === "failed") throw new Error("動画生成に失敗しました：" + (job.error_message || "詳細不明"));
         if (job.status === "succeeded" && job.output_video_url) {
+          resetPreview();
           video.src = job.output_video_url;
           video.style.display = "block";
           video.load();
-          resultText.textContent = "MP4生成完了。動画を再生して確認してください。";
+          let saveLink = videoWrap.querySelector("a");
+          if (!saveLink) {
+            saveLink = document.createElement("a");
+            saveLink.style.cssText = "display:inline-block;margin-top:8px;color:#93c5fd";
+            videoWrap.append(saveLink);
+          }
+          saveLink.href = job.output_video_url;
+          saveLink.download = "muse-render.mp4";
+          saveLink.target = "_blank";
+          saveLink.rel = "noopener";
+          saveLink.textContent = "MP4を保存";
+          resultText.textContent = "MP4生成完了。再生と保存ができます。";
           setStatus("MP4動画の生成が完了しました。");
           return;
         }

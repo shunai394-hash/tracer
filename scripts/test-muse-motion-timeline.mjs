@@ -23,3 +23,9 @@ assert.ok(script.includes("function syncFromDrama()"), "Timeline must import the
 assert.ok(script.includes("new Audio(scene.audioUrl)"), "Generated dialogue audio must play in the timeline");
 assert.ok(script.includes("new Audio(selectedBgm.url)"), "Selected BGM must play in the timeline");
 assert.ok(script.includes("narrationAudioReady"), "Exported manifest must preserve generated-audio readiness");
+assert.ok(script.includes('lipsyncFile: "lipsync"'), "Lip-sync export must be declared on the render manifest");
+assert.ok(script.includes('uploadAsset(jobId, lipSyncUpload.fileName, lipSync.blob, lipSyncUpload.contentType)'), "Lip-sync video must be uploaded to the Muse queue");
+assert.ok(script.includes('"-an"') || script.includes("resetPreview()"), "Preview audio must stop before the finished MP4 plays");
+assert.ok(html.includes("window.TracerLipSyncExport"), "Studio must keep the lip-sync render result");
+assert.ok(html.includes("getLipSyncExport:()=>window.TracerLipSyncExport||null"), "Bridge must expose the lip-sync result to the shared queue");
+assert.ok(script.includes('saveLink.download = "muse-render.mp4"'), "Finished studio MP4 must be downloadable");

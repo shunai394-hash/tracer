@@ -33,6 +33,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test Muse chat and studio video queue
+        run: |
+          node --experimental-strip-types --no-warnings scripts/test-muse-chat-video.mjs
+          node scripts/test-muse-motion-timeline.mjs
       - run: npm run test:tracer-core
       - name: Test BASE unfulfillable reconciliation retry filter
         run: node scripts/test-base-unfulfillable-reconciliation.mjs

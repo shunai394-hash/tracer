@@ -65,6 +65,6 @@ The lease duration is 30 minutes. The Colab worker renews its lease every four m
 
 ## Current limitations
 
-The first renderer creates 1920x1080 H.264 text-card scenes with simple motion/fades and mixes available narration/BGM. It does **not** yet composite character footage, generate 3D scenes, or render lip-sync mouth animation into the MP4. The existing browser lip-sync preview remains separate.
+The renderer builds H.264 scenes from text cards, still images, or a lip-sync MP4/WebM. Source audio inside a lip-sync or scene video is discarded. Fish dialogue (`voice-N.mp3` or one `narration.mp3`) and optional `bgm.mp3` are mixed once and trimmed to the manifest duration. Studio and chat both insert `ai_live_muse_render_jobs`; chat status is `GET /api/chat/muse-video?id=`. A signed MP4 URL is returned only after status is `succeeded`.
 
 No live Supabase migration, Colab execution, or end-to-end MP4 playback has been verified in this change. Do not treat the feature as production-validated until those checks pass.
