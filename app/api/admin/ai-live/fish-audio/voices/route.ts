@@ -197,3 +197,30 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "fish_audio_model_lookup_unavailable", message: "Fish Audioへのモデル照会に失敗しました。時間をおいて再試行してください。" }, 502);
   }
 }
+
+/** Remove a user-added voice from the TRACER catalogue only; never delete the model from Fish Audio. */
+export async function DELETE(request: Request) {
+  if (!authorizedAdminToken(request)) {
+    const authError = await requireAutomationAuth(request);
+    if (authError) return authError;
+  }
+  let input: Record<string, unknown>;
+  try {
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ ok: false, error: "invalid_json_object" }, 400);
+    input = parsed as Record<string, unknown>;
+  } catch { return json({ ok: false, error: "invalid_json" }, 400); }
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id)) return json({ ok: false, error: "invalid_voice_id" }, 400);
+  const protectedIds = new Set(["7478a76f38974bd2afa89c1bbe6831c7", "160840e5c583459d89dc5521e7f175e5"]);
+  if (protectedIds.has(id)) return json({ ok: false, error: "protected_voice", message: "蒼真・美月の固定ボイスは誤削除防止のため、この画面から削除できません。" }, 409);
+  try {
+    const db = createSupabaseAdminClient();
+    const { data, error } = await db.from("fish_audio_registered_voices").delete().eq("model_id", id).select("model_id").maybeSingle();
+    if (error) throw error;
+    if (!data) return json({ ok: false, error: "voice_not_found", message: "TRACER共通ボイス台帳に登録が見つかりません。" }, 404);
+    return json({ ok: true, id, message: "TRACER共通ボイス一覧から削除しました。Fish Audio側のモデルと過去のドラマ配役は削除していません。" });
+  } catch {
+    return json({ ok: false, error: "voice_delete_failed", message: "ボイス一覧から削除できませんでした。" }, 503);
+  }
+}
