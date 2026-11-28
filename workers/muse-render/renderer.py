@@ -41,9 +41,14 @@ def validate_manifest(data: object) -> dict:
         title = str(item.get("title", ""))[:120]
         text = str(item.get("text", ""))[:500]
         image_file = item.get("imageFile")
+        video_file = item.get("videoFile")
         if image_file is not None and (not isinstance(image_file, str) or not __import__("re").fullmatch(r"scene-[1-9][0-9]*", image_file)):
             raise ValueError(f"Scene {index + 1} has invalid image asset name")
-        clean.append({"title": title, "text": text, "durationSeconds": float(duration), "motionPreset": preset, "imageFile": image_file})
+        if video_file is not None and (not isinstance(video_file, str) or not __import__("re").fullmatch(r"scene-[1-9][0-9]*", video_file)):
+            raise ValueError(f"Scene {index + 1} has invalid video asset name")
+        if image_file and video_file:
+            raise ValueError(f"Scene {index + 1} cannot use both image and video backgrounds")
+        clean.append({"title": title, "text": text, "durationSeconds": float(duration), "motionPreset": preset, "imageFile": image_file, "videoFile": video_file})
         total += float(duration)
     if total > MAX_TOTAL:
         raise ValueError("Total duration exceeds 15 minutes")
@@ -87,8 +92,18 @@ def render(manifest_path: Path, assets_dir: Path, output: Path, font: str) -> No
             elif scene["motionPreset"] == "pop":
                 size_expr = "68*(0.72+0.28*min(t/0.32\\,1))"
             draw = f"drawtext=fontfile='{font}':text='{text}':fontcolor=white:fontsize='{size_expr}':borderw=3:bordercolor=black@0.65:x='{x_expr}':y='{y_expr}',fade=t=in:st=0:d=0.35,fade=t=out:st={max(0,duration-0.35)}:d=0.35,format=yuv420p"
-            image_path = None
-            if scene.get("imageFile"):
+            video_path = None
+            if scene.get("videoFile"):
+                for extension in (".mp4", ".webm"):
+                    candidate = (assets_dir / (scene["videoFile"] + extension)).resolve()
+                    if candidate.is_file() and assets_dir in candidate.parents:
+                        video_path = candidate
+                        break
+                if video_path is None:
+                    raise ValueError(f"Scene {index + 1} video asset is missing")
+                vf = f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30,{draw}"
+                command = [ffmpeg, "-y", "-stream_loop", "-1", "-i", str(video_path), "-t", str(duration), "-vf", vf]
+            elif scene.get("imageFile"):
                 for extension in (".png", ".jpg", ".jpeg", ".webp"):
                     candidate = (assets_dir / (scene["imageFile"] + extension)).resolve()
                     if candidate.is_file() and assets_dir in candidate.parents:
