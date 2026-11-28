@@ -252,7 +252,7 @@
       body: JSON.stringify({ jobId, fileName, contentType, size: blob.size })
     });
     const uploaded = await fetch(prepared.upload.url, {
-      method: "PUT",
+      method: "POST",
       headers: { "x-upsert": "false", "Content-Type": contentType },
       body: blob,
       cache: "no-store"
