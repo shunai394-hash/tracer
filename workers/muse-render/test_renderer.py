@@ -23,6 +23,14 @@ class ManifestValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_manifest({"format": "muse-motion-manifest", "version": 1, "scenes": [{"durationSeconds": 901, "motionPreset": "fade"}]})
 
+    def test_accepts_declared_video_background(self):
+        result = validate_manifest({"format": "muse-motion-manifest", "version": 1, "scenes": [{"title": "Lip sync", "text": "", "durationSeconds": 3, "motionPreset": "fade", "videoFile": "scene-1"}]})
+        self.assertEqual(result["scenes"][0]["videoFile"], "scene-1")
+
+    def test_rejects_scene_with_both_image_and_video(self):
+        with self.assertRaises(ValueError):
+            validate_manifest({"format": "muse-motion-manifest", "version": 1, "scenes": [{"title": "Invalid", "text": "", "durationSeconds": 3, "motionPreset": "fade", "imageFile": "scene-1", "videoFile": "scene-1"}]})
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is required for render integration test")
     def test_short_narration_does_not_shorten_video(self):
         with tempfile.TemporaryDirectory() as tmp:
