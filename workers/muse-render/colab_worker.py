@@ -49,7 +49,7 @@ def upload(url: str, token: str, source: Path) -> None:
     # Supabase signed-upload URL authorizes the upload; token is retained in
     # the response for SDK compatibility and is not the worker secret.
     req = urllib.request.Request(
-        url, data=source.read_bytes(), method="PUT",
+        url, data=source.read_bytes(), method="POST",
         headers={"Content-Type": "video/mp4", "x-upsert": "true", "User-Agent": USER_AGENT},
     )
     with urllib.request.urlopen(req, timeout=300) as response:
