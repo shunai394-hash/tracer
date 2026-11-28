@@ -18,11 +18,25 @@ jobs:
       CJ_API_KEY: ci-cj-key
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python for Muse renderer tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg and Japanese font for Muse renderer tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Test Muse FFmpeg renderer
+        run: python -m unittest discover -s workers/muse-render -p 'test_*.py' -v
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test Muse chat and studio video queue
+        run: |
+          node --experimental-strip-types --no-warnings scripts/test-muse-chat-video.mjs
+          node scripts/test-muse-motion-timeline.mjs
       - run: npm run test:tracer-core
       - name: Test BASE unfulfillable reconciliation retry filter
         run: node scripts/test-base-unfulfillable-reconciliation.mjs
